@@ -46,6 +46,7 @@ typedef int OSError;
 #define OS_SYSCALL_CREATE_MUTEX			(20)
 #define OS_SYSCALL_ACQUIRE_MUTEX		(21)
 #define OS_SYSCALL_RELEASE_MUTEX		(22)
+#define OS_SYSCALL_CLOSE_HANDLE			(23)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -148,6 +149,7 @@ enum OSDrawMode {
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSHandle OSCreateSurface(size_t width, size_t height);
 extern "C" OSHandle OSCreateMutex();
+extern "C" OSError OSCloseHandle(OSHandle handle);
 
 extern "C" OSError OSReleaseMutex(OSHandle handle);
 extern "C" OSError OSAcquireMutex(OSHandle handle);

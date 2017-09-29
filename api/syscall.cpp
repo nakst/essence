@@ -94,3 +94,7 @@ OSError OSAcquireMutex(OSHandle handle) {
 OSError OSReleaseMutex(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_RELEASE_MUTEX, handle, 0, 0, 0);
 }
+
+OSError OSCloseHandle(OSHandle handle) {
+	return OSSyscall(OS_SYSCALL_CLOSE_HANDLE, handle, 0, 0, 0);
+}

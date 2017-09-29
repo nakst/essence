@@ -4,22 +4,43 @@ uintptr_t DoSyscall(uintptr_t index,
 
 #ifdef IMPLEMENTATION
 
-void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type) {
+void Process::CloseHandle(OSHandle handle) {
+	handleTable.lock.Acquire();
+	Defer(handleTable.lock.Release());
+
+	uintptr_t l1Index = ((handle / HANDLE_TABLE_L3_ENTRIES) / HANDLE_TABLE_L2_ENTRIES);
+	uintptr_t l2Index = ((handle / HANDLE_TABLE_L3_ENTRIES) % HANDLE_TABLE_L2_ENTRIES);
+	uintptr_t l3Index = ((handle % HANDLE_TABLE_L3_ENTRIES));
+
+	HandleTableL1 *l1 = &handleTable;
+	HandleTableL2 *l2 = l1->t[l1Index];
+	HandleTableL3 *l3 = l2->t[l2Index];
+
+	Handle *_handle = l3->t + l3Index;
+	ZeroMemory(_handle, sizeof(Handle));
+
+	l1->u[l1Index]--;
+	l2->u[l2Index]--;
+}
+
+void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason) {
 	// Check that the handle is within the correct bounds.
 	if (!handle || handle >= HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES) {
 		return nullptr;
 	}
 
 	// Special handles.
-	if (handle == OS_CURRENT_THREAD && (type & KERNEL_OBJECT_THREAD)) {
-		type = KERNEL_OBJECT_THREAD;
-		return ProcessorGetLocalStorage()->currentThread;
-	} else if (handle == OS_CURRENT_PROCESS && (type & KERNEL_OBJECT_PROCESS)) {
-		type = KERNEL_OBJECT_PROCESS;
-		return ProcessorGetLocalStorage()->currentThread->process;
-	} else if (handle == OS_SURFACE_UI_SHEET && (type & KERNEL_OBJECT_SURFACE)) {
-		type = KERNEL_OBJECT_SURFACE;
-		return &uiSheetSurface;
+	if (reason == RESOLVE_HANDLE_TO_USE) { // We can't close these handles.
+		if (handle == OS_CURRENT_THREAD && (type & KERNEL_OBJECT_THREAD)) {
+			type = KERNEL_OBJECT_THREAD;
+			return ProcessorGetLocalStorage()->currentThread;
+		} else if (handle == OS_CURRENT_PROCESS && (type & KERNEL_OBJECT_PROCESS)) {
+			type = KERNEL_OBJECT_PROCESS;
+			return ProcessorGetLocalStorage()->currentThread->process;
+		} else if (handle == OS_SURFACE_UI_SHEET && (type & KERNEL_OBJECT_SURFACE)) {
+			type = KERNEL_OBJECT_SURFACE;
+			return &uiSheetSurface;
+		}
 	}
 
 	handleTable.lock.Acquire();
@@ -39,9 +60,25 @@ void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type) {
 
 	if ((_handle->type & type) && (_handle->object)) {
 		// Increment the handle's lock, so it cannot be closed until the system call has completed.
-		_handle->lock++;
 		type = _handle->type;
-		return _handle->object;
+
+		if (reason == RESOLVE_HANDLE_TO_USE) {
+			if (_handle->closing) {
+				return nullptr; // The handle is being closed.
+			} else {
+				_handle->lock++;
+				return _handle->object;
+			}
+		} else if (reason == RESOLVE_HANDLE_TO_CLOSE) {
+			if (_handle->lock) {
+				return nullptr; // The handle was locked and can't be closed.
+			} else {
+				return _handle->object;
+			}
+		} else {
+			KernelPanic("Process::ResolveHandle - Unsupported ResolveHandleReason.\n");
+			return nullptr;
+		}
 	} else {
 		return nullptr;
 	}
@@ -76,6 +113,9 @@ void Process::CompleteHandle(void *object, OSHandle handle) {
 OSHandle Process::OpenHandle(Handle &handle) {
 	handleTable.lock.Acquire();
 	Defer(handleTable.lock.Release());
+
+	handle.closing = false;
+	handle.lock = 0;
 
 	HandleTableL1 *l1 = &handleTable;
 	uintptr_t l1Index = HANDLE_TABLE_L1_ENTRIES;
@@ -239,6 +279,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Handle _handle = {};
 			_handle.type = KERNEL_OBJECT_SURFACE;
 			_handle.object = surface;
+			// TODO Prevent the program from deallocating the surface's linear buffer.
 			return currentProcess->OpenHandle(_handle);
 		} break;
 
@@ -495,6 +536,38 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (mutex->owner != currentThread) return OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD;
 			mutex->Release();
 			return OS_SUCCESS;
+		} break;
+
+		case OS_SYSCALL_CLOSE_HANDLE: {
+			KernelObjectType type = KERNEL_OBJECT_MUTEX; // TODO Closing handles to other object types.
+			void *object = currentProcess->ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
+
+			if (!object) {
+				return OS_ERROR_INVALID_HANDLE;
+			}
+
+			currentProcess->CloseHandle(argument0);
+
+			switch (type) {
+				case KERNEL_OBJECT_MUTEX: {
+					scheduler.lock.Acquire();
+
+					Mutex *mutex = (Mutex *) object;
+					mutex->handles--;
+
+					bool deallocateMutex = !mutex->handles;
+
+					scheduler.lock.Release();
+
+					if (deallocateMutex) {
+						scheduler.globalMutexPool.Remove(mutex);
+					}
+				} break;
+
+				default: {
+					KernelPanic("DoSyscall - Cannot close object of type %d.\n", type);
+				} break;
+			}
 		} break;
 	}
 	

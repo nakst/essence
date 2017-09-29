@@ -114,14 +114,19 @@ struct HandleTableL1 {
 	Mutex lock;
 };
 
+enum ResolveHandleReason {
+	RESOLVE_HANDLE_TO_USE,
+	RESOLVE_HANDLE_TO_CLOSE,
+};
+
 struct Process {
 	OSHandle OpenHandle(Handle &handle);
 	void CloseHandle(OSHandle handle);
 
 	// Resolve the handle if it is valid and return the type in type.
 	// The initial value of type is used as a mask of expected object types for the handle.
-	void *ResolveHandle(OSHandle handle, KernelObjectType &type); 		// Increments handle lock.
-	void CompleteHandle(void *object, OSHandle handle);			// Decrements handle lock.
+	void *ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason = RESOLVE_HANDLE_TO_USE); 
+	void CompleteHandle(void *object, OSHandle handle); // Decrements handle lock.
 
 	bool SendMessage(OSMessage &message); // Returns false if the message queue is full.
 #define MESSAGE_QUEUE_MAX_LENGTH 4096

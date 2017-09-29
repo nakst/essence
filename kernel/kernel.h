@@ -170,6 +170,7 @@ struct Handle {
 	void *object;
 	volatile unsigned lock; // Must be 0 to close the handle.
 			        // Incremented when the handle is used in a system call.
+	volatile unsigned closing;
 };
 
 #endif

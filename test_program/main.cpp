@@ -3,6 +3,9 @@
 void *a[0x10000];
 
 extern "C" void ProgramEntry() {
+	OSHandle mutex = OSCreateMutex();
+	OSCloseHandle(mutex);
+
 #if 0
 	void *m1 = OSHeapAllocate(131072);
 	OSPrint("m1 = %x\n", m1);
