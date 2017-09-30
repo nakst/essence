@@ -145,7 +145,7 @@ struct Process {
 	void *creationArgument;
 
 	uintptr_t id;
-	size_t handles;
+	volatile size_t handles;
 
 #define PROCESS_EXECUTABLE_NOT_LOADED 0
 #define PROCESS_EXECUTABLE_FAILED_TO_LOAD 1
@@ -168,9 +168,12 @@ struct Scheduler {
 	void Initialise();
 	void InitialiseAP();
 	void Yield(InterruptContext *context);
+
 	Thread *SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveList = true);
 	void RemoveThread(Thread *thread);
+
 	Process *SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess = false, void *argument = nullptr);
+	void RemoveProcess(Process *process);
 
 	void AddActiveThread(Thread *thread, bool start);
 	void InsertNewThread(Thread *thread, bool addToActiveList, Process *owner);
@@ -534,17 +537,40 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument) {
 	local->asyncTasksCount++;
 }
 
+void Scheduler::RemoveProcess(Process *process) {
+	KernelLog(LOG_VERBOSE, "Removing process %d.\n", process->id);
+
+	scheduler.lock.Acquire();
+	allProcesses.Remove(&process->allItem);
+	scheduler.lock.Release();
+
+	processPool.Remove(process);
+}
+
 void FinishThreadRemoval(void *_thread) {
 	Thread *thread = (Thread *) _thread;
+
+	scheduler.lock.Acquire();
+	scheduler.allThreads.Remove(&thread->allItem);
+	thread->process->threads.Remove(&thread->processItem);
+	scheduler.lock.Release();
 
 	Event *killEvent = &thread->killedEvent;
 	killEvent->Set();
 
 	Process *process = thread->process;
+	scheduler.lock.Acquire();
 	process->handles--;
-	// TODO Destroy the process if the number of handles reaches 0.
+	bool destroyProcess = !process->handles;
+	KernelLog(LOG_VERBOSE, "Having removed a thread, its process now has %d handles.\n", process->handles);
+	scheduler.lock.Release();
+
+	if (destroyProcess) {
+		scheduler.RemoveProcess(process);
+	}
 
 	// TODO Free the thread's kernel and user stack.
+
 	scheduler.threadPool.Remove(thread);
 }
 
@@ -568,9 +594,6 @@ void Scheduler::Yield(InterruptContext *context) {
 	bool threadIsDead = local->currentThread->state == THREAD_DEAD;
 
 	if (threadIsDead) {
-		allThreads.Remove(&local->currentThread->allItem);
-		local->currentThread->process->threads.Remove(&local->currentThread->processItem);
-
 		RegisterAsyncTask(FinishThreadRemoval, local->currentThread);
 	}
 

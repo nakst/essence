@@ -98,3 +98,7 @@ OSError OSReleaseMutex(OSHandle handle) {
 OSError OSCloseHandle(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_CLOSE_HANDLE, handle, 0, 0, 0);
 }
+
+OSError OSTerminateThread(OSHandle thread) {
+	return OSSyscall(OS_SYSCALL_TERMINATE_THREAD, thread, 0, 0, 0);
+}

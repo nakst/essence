@@ -3,8 +3,34 @@
 void *a[0x10000];
 
 extern "C" void ProgramEntry() {
+	if (!OSGetCreationArgument(OS_CURRENT_PROCESS)) {
+		OSPrint("Creating process 2...\n");
+		OSProcessInformation process;
+		const char *executablePath = "/os/test";
+		OSCreateProcess(executablePath, OSCStringLength((char *) executablePath), &process, (void *) 1);
+		OSPrint("Created.\n");
+		OSCloseHandle(process.handle);
+	} else {
+		OSPrint("I am process 2!\n");
+		OSTerminateThread(OS_CURRENT_THREAD);
+		OSPrint("...but I exited :(\n");
+	}
+
+#if 0
+	float x = 50.0f;
+	x += 100.0f;
+	// Floats don't work :(
+	OSPrint("x = %x\n", x);
+
+	int y = 0;
+	y += 1;
+	OSPrint("y = %d\n", y);
+#endif
+
+#if 0
 	OSHandle mutex = OSCreateMutex();
 	OSCloseHandle(mutex);
+#endif
 
 #if 0
 	void *m1 = OSHeapAllocate(131072);

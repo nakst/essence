@@ -351,10 +351,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_FORCE_SCREEN_UPDATE: {
-			// uint64_t startTimeStamp = ProcessorReadTimeStamp();
 			graphics.UpdateScreen();
-			// uint64_t endTimeStamp = ProcessorReadTimeStamp();
-			// KernelLog(LOG_VERBOSE, "Updated screen from system call request in %d time units.\n", endTimeStamp - startTimeStamp);
 		} break;
 
 		case OS_SYSCALL_COPY_SURFACE: {
@@ -539,7 +536,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_CLOSE_HANDLE: {
-			KernelObjectType type = KERNEL_OBJECT_MUTEX; // TODO Closing handles to other object types.
+			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS); 
 			void *object = currentProcess->ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
 
 			if (!object) {
@@ -555,12 +552,27 @@ uintptr_t DoSyscall(uintptr_t index,
 					Mutex *mutex = (Mutex *) object;
 					mutex->handles--;
 
-					bool deallocateMutex = !mutex->handles;
+					bool deallocate = !mutex->handles;
 
 					scheduler.lock.Release();
 
-					if (deallocateMutex) {
+					if (deallocate) {
 						scheduler.globalMutexPool.Remove(mutex);
+					}
+				} break;
+
+				case KERNEL_OBJECT_PROCESS: {
+					scheduler.lock.Acquire();
+
+					Process *process = (Process *) object;
+					process->handles--;
+
+					bool deallocate = !process->handles;
+
+					scheduler.lock.Release();
+
+					if (deallocate) {
+						scheduler.RemoveProcess(process);
 					}
 				} break;
 
@@ -568,6 +580,16 @@ uintptr_t DoSyscall(uintptr_t index,
 					KernelPanic("DoSyscall - Cannot close object of type %d.\n", type);
 				} break;
 			}
+		} break;
+
+		case OS_SYSCALL_TERMINATE_THREAD: {
+			KernelObjectType type = KERNEL_OBJECT_THREAD;
+			Thread *thread = (Thread *) currentProcess->ResolveHandle(argument0, type);
+			if (!thread) return OS_ERROR_INVALID_HANDLE;
+			Defer(currentProcess->CompleteHandle(thread, argument0));
+
+			scheduler.RemoveThread(thread);
+			return OS_SUCCESS;
 		} break;
 	}
 	

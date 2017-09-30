@@ -47,6 +47,7 @@ typedef int OSError;
 #define OS_SYSCALL_ACQUIRE_MUTEX		(21)
 #define OS_SYSCALL_RELEASE_MUTEX		(22)
 #define OS_SYSCALL_CLOSE_HANDLE			(23)
+#define OS_SYSCALL_TERMINATE_THREAD		(24)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -151,8 +152,10 @@ extern "C" OSHandle OSCreateSurface(size_t width, size_t height);
 extern "C" OSHandle OSCreateMutex();
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
-extern "C" OSError OSReleaseMutex(OSHandle handle);
-extern "C" OSError OSAcquireMutex(OSHandle handle);
+extern "C" OSError OSTerminateThread(OSHandle thread);
+
+extern "C" OSError OSReleaseMutex(OSHandle mutex);
+extern "C" OSError OSAcquireMutex(OSHandle mutex);
 
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);
