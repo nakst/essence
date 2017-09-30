@@ -4,7 +4,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 #ifdef IMPLEMENTATION
 
-void Process::CloseHandleToObject(void *object, KernelObjectType type) {
+void CloseHandleToObject(void *object, KernelObjectType type) {
 	switch (type) {
 		case KERNEL_OBJECT_MUTEX: {
 			scheduler.lock.Acquire();
@@ -162,6 +162,10 @@ OSHandle Process::OpenHandle(Handle &handle) {
 	handleTable.lock.Acquire();
 	Defer(handleTable.lock.Release());
 
+	if (!handle.object) {
+		KernelPanic("Process::OpenHandle - Invalid object.\n");
+	}
+
 	handle.closing = false;
 	handle.lock = 0;
 
@@ -311,9 +315,15 @@ uintptr_t DoSyscall(uintptr_t index,
 				handle.type = KERNEL_OBJECT_PROCESS;
 				handle.object = processObject;
 
+				Handle handle2 = {};
+				handle2.type = KERNEL_OBJECT_THREAD;
+				handle2.object = processObject->executableMainThread;
+
 				// Register processObject as a handle.
 				process->handle = currentProcess->OpenHandle(handle); 
 				process->pid = processObject->id;
+				process->mainThread.handle = currentProcess->OpenHandle(handle2);
+				process->mainThread.tid = processObject->executableMainThread->id;
 
 				SYSCALL_RETURN(OS_SUCCESS);
 			}

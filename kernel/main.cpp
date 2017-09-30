@@ -3,6 +3,11 @@
 
 // TODO I don't think floats work.
 
+// TODO Startup bug page faulting from trying to execute at 0?
+// 		- I can't reproduce this.
+
+// TODO Implement OSWait (thread synchronization, events).
+
 #include "kernel.h"
 #define IMPLEMENTATION
 #include "kernel.h"

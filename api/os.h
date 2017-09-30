@@ -60,14 +60,15 @@ typedef int OSError;
 
 typedef uintptr_t OSHandle;
 
-struct OSProcessInformation {
-	OSHandle handle;
-	uintptr_t pid;
-};
-
 struct OSThreadInformation {
 	OSHandle handle;
 	uintptr_t tid;
+};
+
+struct OSProcessInformation {
+	OSHandle handle;
+	uintptr_t pid;
+	OSThreadInformation mainThread;
 };
 
 struct OSPoint {

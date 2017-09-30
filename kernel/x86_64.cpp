@@ -221,7 +221,7 @@ const char *exceptionInformation[] = {
 };
 
 void ContextSanityCheck(InterruptContext *context) {
-	if (context->cs > 0x100 || context->ds > 0x100 || context->ss > 0x100) {
+	if (context->cs > 0x100 || context->ds > 0x100 || context->ss > 0x100 || context->rip == 0) {
 		KernelPanic("InterruptHandler - Corrupt context (%x/%x/%x)\nRIP = %x, RSP = %x\n", context->cs, context->ds, context->ss, context->rip, context->rsp);
 	}
 }

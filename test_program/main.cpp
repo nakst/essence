@@ -4,6 +4,7 @@ volatile int variable = 10;
 OSHandle mutex;
 
 void ThreadEntry(void *argument) {
+	int i = 0xF0000000; while (++i);
 	OSPrint("I am another thread in the same process.\n");
 	OSPrint("The variable is equal to %d.\n", variable);
 	OSPrint("My thread creation argument was %d.\n", argument);
@@ -15,6 +16,23 @@ void ThreadEntry(void *argument) {
 }
 
 extern "C" void ProgramEntry() {
+	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
+		ThreadEntry(nullptr);
+	} else {
+		OSProcessInformation process;
+		const char *executablePath = "/os/test";
+		OSPrint("a\n");
+		OSCreateProcess(executablePath, OSCStringLength((char *) executablePath), &process, (void *) 1);
+		OSPrint("b\n");
+		OSCloseHandle(process.handle);
+		OSPrint("c\n");
+		OSTerminateThread(process.mainThread.handle);
+		OSPrint("d\n");
+		OSTerminateThread(OS_CURRENT_THREAD);
+		OSPrint("e\n");
+	}
+
+#if 0
 	mutex = OSCreateMutex();
 	OSAcquireMutex(mutex);
 	variable = 20;
@@ -23,6 +41,7 @@ extern "C" void ProgramEntry() {
 	int i = 0xF0000000; while (++i);
 	OSPrint("Terminating the thread...\n");
 	OSTerminateThread(thread.handle);
+#endif
 
 #if 0
 	if (!OSGetCreationArgument(OS_CURRENT_PROCESS)) {

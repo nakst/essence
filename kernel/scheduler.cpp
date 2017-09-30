@@ -129,7 +129,6 @@ enum ResolveHandleReason {
 struct Process {
 	OSHandle OpenHandle(Handle &handle);
 	void CloseHandle(OSHandle handle);
-	void CloseHandleToObject(void *object, KernelObjectType type);
 
 	// Resolve the handle if it is valid and return the type in type.
 	// The initial value of type is used as a mask of expected object types for the handle.
@@ -159,6 +158,8 @@ struct Process {
 #define PROCESS_EXECUTABLE_FAILED_TO_LOAD 1
 #define PROCESS_EXECUTABLE_LOADED 2
 	uintptr_t executableState;
+	Event executableLoadAttemptComplete;
+	Thread *executableMainThread;
 
 	HandleTableL1 handleTable;
 };
@@ -479,12 +480,13 @@ void NewProcess() {
 
 	if (processStartAddress) {
 		thisProcess->executableState = PROCESS_EXECUTABLE_LOADED;
-		scheduler.SpawnThread(processStartAddress, 0, thisProcess, true);
+		thisProcess->executableMainThread = scheduler.SpawnThread(processStartAddress, 0, thisProcess, true);
 	} else {
 		thisProcess->executableState = PROCESS_EXECUTABLE_FAILED_TO_LOAD;
 		KernelPanic("NewProcess - Could not start a new process.\n");
 	}
 
+	thisProcess->executableLoadAttemptComplete.Set();
 	scheduler.TerminateThread(ProcessorGetLocalStorage()->currentThread);
 }
 
@@ -512,6 +514,12 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 
 	if (!kernelProcess) {
 		SpawnThread((uintptr_t) NewProcess, 0, process, false);
+		process->executableLoadAttemptComplete.Wait(OS_WAIT_NO_TIMEOUT);
+		// TODO Close the handle to the process if this fails?
+
+		if (process->executableState == PROCESS_EXECUTABLE_FAILED_TO_LOAD) {
+			return nullptr;
+		}
 	}
 
 	return process; 
@@ -609,7 +617,7 @@ void Scheduler::RemoveProcess(Process *process) {
 	allProcesses.Remove(&process->allItem);
 	scheduler.lock.Release();
 
-	// TODO Free:
+	// TODO When a process is removed the following must be freed/closed:
 	// 	- VMM
 	// 	- Message queue
 	// 	- Handle table (and close the handles in it)
@@ -622,9 +630,6 @@ void Scheduler::RemoveThread(Thread *thread) {
 	scheduler.allThreads.Remove(&thread->allItem);
 	thread->process->threads.Remove(&thread->processItem);
 	scheduler.lock.Release();
-
-	Event *killEvent = &thread->killedEvent;
-	killEvent->Set();
 
 	kernelVMM.Free((void *) thread->kernelStackBase);
 	if (thread->userStackBase) thread->process->vmm->Free((void *) thread->userStackBase);
@@ -681,6 +686,8 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	if (killThread) {
 		local->currentThread->state = THREAD_TERMINATED;
+		Event *killEvent = &local->currentThread->killedEvent;
+		killEvent->Set(true);
 		RegisterAsyncTask(CloseThreadHandle, local->currentThread);
 	}
 
