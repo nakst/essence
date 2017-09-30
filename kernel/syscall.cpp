@@ -36,6 +36,10 @@ void Process::CloseHandleToObject(void *object, KernelObjectType type) {
 			}
 		} break;
 
+		case KERNEL_OBJECT_THREAD: {
+			CloseThreadHandle(object);
+		} break;
+
 		default: {
 			KernelPanic("DoSyscall - Cannot close object of type %d.\n", type);
 		} break;
@@ -594,7 +598,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_CLOSE_HANDLE: {
-			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS); 
+			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD); 
 			void *object = currentProcess->ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
 
 			if (!object) {
@@ -613,6 +617,29 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			scheduler.TerminateThread(thread);
 			SYSCALL_RETURN(OS_SUCCESS);
+		} break;
+
+		case OS_SYSCALL_CREATE_THREAD: {
+			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(OSThreadInformation));
+			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region2));
+
+			OSThreadInformation *thread = (OSThreadInformation *) argument2;
+			Thread *threadObject = scheduler.SpawnThread(argument0, argument3, currentProcess, true, true);
+
+			if (!threadObject) {
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			} else {
+				Handle handle = {};
+				handle.type = KERNEL_OBJECT_THREAD;
+				handle.object = threadObject;
+
+				// Register processObject as a handle.
+				thread->handle = currentProcess->OpenHandle(handle); 
+				thread->tid = threadObject->id;
+
+				SYSCALL_RETURN(OS_SUCCESS);
+			}
 		} break;
 	}
 

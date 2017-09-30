@@ -15,6 +15,7 @@ extern "C" void ProgramEntry();
 
 extern "C" void _start() {
 	OSHeapInitialise();
+	printMutex = OSCreateMutex();
 
 	ProgramEntry();
 

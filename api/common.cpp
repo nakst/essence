@@ -225,6 +225,8 @@ void CF(FormatStringCallback)(int character, void *data) {
 }
 
 #ifndef KERNEL
+static OSHandle printMutex;
+
 static char printBuffer[32768];
 static uintptr_t printBufferPosition = 0;
 
@@ -241,12 +243,14 @@ void CF(PrintCallback)(int character, void *data) {
 }
 
 void CF(Print)(const char *format, ...) {
+	OSAcquireMutex(printMutex);
 	printBufferPosition = 0;
 	va_list arguments;
 	va_start(arguments, format);
 	CF(_FormatString)(CF(PrintCallback), nullptr, format, arguments);
 	va_end(arguments);
 	OSSyscall(OS_SYSCALL_PRINT, (uintptr_t) printBuffer, printBufferPosition, 0, 0);
+	OSReleaseMutex(printMutex);
 }
 #endif
 

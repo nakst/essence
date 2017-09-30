@@ -1,6 +1,29 @@
 #include "../api/os.h"
 
+volatile int variable = 10;
+OSHandle mutex;
+
+void ThreadEntry(void *argument) {
+	OSPrint("I am another thread in the same process.\n");
+	OSPrint("The variable is equal to %d.\n", variable);
+	OSPrint("My thread creation argument was %d.\n", argument);
+	OSAcquireMutex(mutex);
+	OSPrint("This never happens :(\n");
+	// _OSSyscall(30, 0, 0, 0, 0, 0);
+	while (true);
+	OSTerminateThread(OS_CURRENT_THREAD);
+}
+
 extern "C" void ProgramEntry() {
+	mutex = OSCreateMutex();
+	OSAcquireMutex(mutex);
+	variable = 20;
+	OSThreadInformation thread;
+	OSCreateThread(ThreadEntry, &thread, (void *) 1);
+	int i = 0xF0000000; while (++i);
+	OSPrint("Terminating the thread...\n");
+	OSTerminateThread(thread.handle);
+
 #if 0
 	if (!OSGetCreationArgument(OS_CURRENT_PROCESS)) {
 		OSPrint("Creating process 2...\n");
@@ -216,7 +239,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 1
+#if 0
 	OSProcessInformation process;
 	char *testProcessImage = (char *) "/os/test";
 

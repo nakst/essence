@@ -102,3 +102,7 @@ OSError OSCloseHandle(OSHandle handle) {
 OSError OSTerminateThread(OSHandle thread) {
 	return OSSyscall(OS_SYSCALL_TERMINATE_THREAD, thread, 0, 0, 0);
 }
+
+OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument) {
+	return OSSyscall(OS_SYSCALL_CREATE_THREAD, (uintptr_t) entryFunction, 0, (uintptr_t) information, (uintptr_t) argument);
+}

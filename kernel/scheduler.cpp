@@ -98,6 +98,8 @@ struct Thread {
 	ThreadType type;
 
 	volatile ThreadTerminatableState terminatableState;
+
+	volatile size_t handles;
 };
 
 struct HandleTableL3 {
@@ -359,6 +361,11 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	Thread *thread = (Thread *) threadPool.Add();
 	thread->isKernelThread = !userland;
 
+	// 2 handles to the thread:
+	// 	One for spawning the thread, 
+	// 	and the other for remaining during the thread's life.
+	thread->handles = 2;
+
 	// Allocate the thread's stacks.
 	uintptr_t kernelStackSize = userland ? 0x4000 : 0x10000;
 	uintptr_t userStackSize = userland ? 0x100000 : 0x10000;
@@ -402,6 +409,8 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	return thread;
 }
 
+void CloseThreadHandle(void *_thread);
+
 void Scheduler::TerminateThread(Thread *thread) {
 	scheduler.lock.Acquire();
 	thread->terminating = true;
@@ -414,18 +423,22 @@ void Scheduler::TerminateThread(Thread *thread) {
 		ProcessorFakeTimerInterrupt();
 		KernelPanic("Scheduler::TerminateThread - ProcessorFakeTimerInterrupt returned.\n");
 	} else {
-		// TODO Test all the branches here.
+		if (thread->terminatableState == THREAD_TERMINATABLE) {
+			if (thread->executing) {
+				// The thread is executing, so the next time it tries to make a system call or
+				// is pre-empted, it will be terminated.
+				scheduler.lock.Release();
+			} else {
+				if (thread->state != THREAD_ACTIVE) {
+					KernelPanic("Scheduler::TerminateThread - Terminatable thread non-active.\n");
+				}
 
-		if (thread->terminatableState == THREAD_TERMINATABLE && !thread->executing) {
-			if (thread->state != THREAD_ACTIVE) {
-				KernelPanic("Scheduler::TerminateThread - Terminatable thread non-active.\n");
+				// The thread is terminatable and it isn't executing.
+				// Remove it from the executing list, and then remove the thread.
+				activeThreads.Remove(&thread->item[0]);
+				scheduler.lock.Release();
+				CloseThreadHandle(thread);
 			}
-
-			// The thread is terminatable and it isn't executing.
-			// Remove it from the executing list, and then remove the thread.
-			activeThreads.Remove(&thread->item[0]);
-			scheduler.lock.Release();
-			RemoveThread(thread);
 		} else if (thread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
 			if (thread->executing) {
 				// The mutex and event waiting code is designed to recognise when a thread is in this state,
@@ -630,12 +643,23 @@ void Scheduler::RemoveThread(Thread *thread) {
 	scheduler.threadPool.Remove(thread);
 }
 
-void _RemoveThread(void *_thread) {
+void CloseThreadHandle(void *_thread) {
+	Print("Closing handle to thread....\n");
+
 	Thread *thread = (Thread *) _thread;
-	scheduler.RemoveThread(thread);
+
+	scheduler.lock.Acquire();
+	thread->handles--;
+	bool removeThread = thread->handles == 0;
+	scheduler.lock.Release();
+
+	if (removeThread) {
+		scheduler.RemoveThread(thread);
+	}
 }
 
 void Scheduler::Yield(InterruptContext *context) {
+	// Deferred statements don't work in this function.
 #undef Defer
 
 	CPULocalStorage *local = ProcessorGetLocalStorage();
@@ -653,11 +677,11 @@ void Scheduler::Yield(InterruptContext *context) {
 	bool killThread = local->currentThread->terminatableState == THREAD_TERMINATABLE 
 		&& local->currentThread->terminating;
 	bool keepThreadAlive = local->currentThread->terminatableState == THREAD_USER_BLOCK_REQUEST
-		&& local->currentThread->terminating;
+		&& local->currentThread->terminating; // The user can't make the thread block if it is terminating.
 
 	if (killThread) {
 		local->currentThread->state = THREAD_TERMINATED;
-		RegisterAsyncTask(_RemoveThread, local->currentThread);
+		RegisterAsyncTask(CloseThreadHandle, local->currentThread);
 	}
 
 	// If the thread is waiting for an object to be notified, put it in the relevant blockedThreads list.
@@ -874,6 +898,8 @@ void Mutex::Acquire() {
 
 	if (!currentThread) {
 		currentThread = (Thread *) 1;
+	} else {
+		currentThread->blockingEventCount = 1;
 	}
 
 	if (local && owner && owner == currentThread && local->currentThread) {

@@ -49,6 +49,7 @@ typedef int OSError;
 #define OS_SYSCALL_RELEASE_MUTEX		(22)
 #define OS_SYSCALL_CLOSE_HANDLE			(23)
 #define OS_SYSCALL_TERMINATE_THREAD		(24)
+#define OS_SYSCALL_CREATE_THREAD		(25)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -62,6 +63,11 @@ typedef uintptr_t OSHandle;
 struct OSProcessInformation {
 	OSHandle handle;
 	uintptr_t pid;
+};
+
+struct OSThreadInformation {
+	OSHandle handle;
+	uintptr_t tid;
 };
 
 struct OSPoint {
@@ -147,10 +153,14 @@ enum OSDrawMode {
 	OS_DRAW_MODE_REPEAT_FIRST,
 };
 
+typedef void (*OSThreadEntryFunction)(void *argument);
+
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
+extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
 extern "C" OSHandle OSCreateSurface(size_t width, size_t height);
 extern "C" OSHandle OSCreateMutex();
+
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
