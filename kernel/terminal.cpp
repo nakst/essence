@@ -202,7 +202,7 @@ void DebuggerThread(Thread *thread) {
 			DebuggerProcess(thread->process);
 		}
 
-		Print("state = %z\n", thread->state == THREAD_ACTIVE ? "Active" : (thread->state == THREAD_DEAD ? "Dead" : "Waiting"));
+		Print("state = %z\n", thread->state == THREAD_ACTIVE ? "Active" : (thread->state == THREAD_TERMINATED ? "Dead" : "Waiting"));
 		Print("type = %z\n", thread->type == THREAD_NORMAL ? "Normal" : (thread->type == THREAD_IDLE ? "Idle" : "AsyncTask"));
 
 		if (thread->executing) {
@@ -283,7 +283,7 @@ void DebuggerThreads(LinkedList &list) {
 			Thread *thread = (Thread *) item->thisItem;
 			Print("Thread %d (%x)", thread->id, thread);
 
-			Print(" %z", thread->state == THREAD_ACTIVE ? "Active" : (thread->state == THREAD_DEAD ? "Dead" : "Waiting"));
+			Print(" %z", thread->state == THREAD_ACTIVE ? "Active" : (thread->state == THREAD_TERMINATED ? "Terminated" : "Waiting"));
 			Print("/%z", thread->type == THREAD_NORMAL ? "Normal" : (thread->type == THREAD_IDLE ? "Idle" : "AsyncTask"));
 			Print("/Proc %d", thread->process->id);
 

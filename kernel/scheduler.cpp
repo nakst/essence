@@ -43,8 +43,8 @@ enum ThreadState {
 	THREAD_ACTIVE,			// An active thread. `executing` determines if it executing.
 	THREAD_WAITING_MUTEX,		// Waiting for a mutex to be released.
 	THREAD_WAITING_EVENT,		// Waiting for a event to be notified.
-	THREAD_DEAD,			// The thread is killed, or waiting to stop executing. 
-					// 	It will be deallocated when all handles are closed.
+	THREAD_TERMINATED,		// The thread has been terminated. It will be deallocated when all handles are closed.
+					// 	I believe this is called a "zombie thread" in UNIX terminology.
 };
 
 enum ThreadType {
@@ -73,9 +73,11 @@ struct Thread {
 	struct Process *process;
 
 	uintptr_t id;
+	uintptr_t timeSlices;
+
 	volatile ThreadState state;
 	volatile bool executing;
-	uintptr_t timeSlices;
+	volatile bool terminating; // Set when a request to terminate the thread has been registered.
 
 	int executingProcessorID;
 
@@ -125,6 +127,7 @@ enum ResolveHandleReason {
 struct Process {
 	OSHandle OpenHandle(Handle &handle);
 	void CloseHandle(OSHandle handle);
+	void CloseHandleToObject(void *object, KernelObjectType type);
 
 	// Resolve the handle if it is valid and return the type in type.
 	// The initial value of type is used as a mask of expected object types for the handle.
@@ -173,6 +176,7 @@ struct Scheduler {
 	void Yield(InterruptContext *context);
 
 	Thread *SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveList = true);
+	void TerminateThread(Thread *thread);
 	void RemoveThread(Thread *thread);
 
 	Process *SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess = false, void *argument = nullptr);
@@ -184,6 +188,7 @@ struct Scheduler {
 	void WaitMutex(Mutex *mutex);
 	uintptr_t WaitEvents(Event **events, size_t count); // Returns index of notified object.
 	void NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLocked = false, bool unblockAll = false);
+	void UnblockThread(Thread *unblockedThread);
 
 	Pool threadPool, processPool;
 	LinkedList activeThreads;
@@ -297,12 +302,20 @@ void Spinlock::AssertLocked() {
 }
 
 void Scheduler::AddActiveThread(Thread *thread, bool start) {
+	if (thread->type == THREAD_ASYNC_TASK) {
+		// An asynchronous task thread was unblocked.
+		// It will be run immediately, so there's no need to add it to the active thread list.
+		return;
+	}
+	
 	lock.AssertLocked();
 
 	if (thread->state != THREAD_ACTIVE) {
 		KernelPanic("Scheduler::AddActiveThread - Thread %d not active\n", thread->id);
 	} else if (thread->executing) {
 		KernelPanic("Scheduler::AddActiveThread - Thread %d executing\n", thread->id);
+	} else if (thread->type != THREAD_NORMAL) {
+		KernelPanic("Scheduler::AddActiveThread - Thread %d has type %d\n", thread->id, thread->type);
 	}
 
 	if (start) {
@@ -360,6 +373,8 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	thread->kernelStackBase = kernelStack;
 	thread->userStackBase = userland ? stack : 0;
 
+	thread->terminatableState = userland ? THREAD_TERMINATABLE : THREAD_IN_SYSCALL;
+
 #ifdef ARCH_X86_64
 	InterruptContext *context = ((InterruptContext *) (kernelStack + kernelStackSize - 8)) - 1;
 	thread->interruptContext = context;
@@ -387,19 +402,49 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	return thread;
 }
 
-void Scheduler::RemoveThread(Thread *thread) {
-	thread->state = THREAD_DEAD;
+void Scheduler::TerminateThread(Thread *thread) {
+	scheduler.lock.Acquire();
+	thread->terminating = true;
 
 	if (thread == ProcessorGetLocalStorage()->currentThread) {
+		thread->terminatableState = THREAD_TERMINATABLE;
+		scheduler.lock.Release();
+
 		// We cannot return to the previous function as it expects to be killed.
 		ProcessorFakeTimerInterrupt();
-		KernelPanic("Scheduler::RemvoeThread - ProcessorFakeTimerInterrupt returned.\n");
+		KernelPanic("Scheduler::TerminateThread - ProcessorFakeTimerInterrupt returned.\n");
 	} else {
-		// TODO Killing other threads.
-		KernelPanic("Scheduler::RemoveThread - Incomplete.\n");
-	}
+		// TODO Test all the branches here.
 
-	// TODO Deallocate the memory when all handles are closed.
+		if (thread->terminatableState == THREAD_TERMINATABLE && !thread->executing) {
+			if (thread->state != THREAD_ACTIVE) {
+				KernelPanic("Scheduler::TerminateThread - Terminatable thread non-active.\n");
+			}
+
+			// The thread is terminatable and it isn't executing.
+			// Remove it from the executing list, and then remove the thread.
+			activeThreads.Remove(&thread->item[0]);
+			scheduler.lock.Release();
+			RemoveThread(thread);
+		} else if (thread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
+			if (thread->executing) {
+				// The mutex and event waiting code is designed to recognise when a thread is in this state,
+				// and exit to the system call handler immediately.
+				// If the thread however is pre-empted while in a blocked state before this code can execute,
+				// Scheduler::Yield will automatically force the thread to be active again.
+			} else {
+				// Unblock the thread.
+				UnblockThread(thread);
+			}
+
+			scheduler.lock.Release();
+		} else {
+			// The thread is executing kernel code.
+			// Therefore, we can't simply terminate the thread.
+			// The thread will set its state to THREAD_TERMINATABLE whenever it can be terminated.
+			scheduler.lock.Release();
+		}
+	}
 }
 
 void Scheduler::Start() {
@@ -427,7 +472,7 @@ void NewProcess() {
 		KernelPanic("NewProcess - Could not start a new process.\n");
 	}
 
-	scheduler.RemoveThread(ProcessorGetLocalStorage()->currentThread);
+	scheduler.TerminateThread(ProcessorGetLocalStorage()->currentThread);
 }
 
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
@@ -551,12 +596,15 @@ void Scheduler::RemoveProcess(Process *process) {
 	allProcesses.Remove(&process->allItem);
 	scheduler.lock.Release();
 
+	// TODO Free:
+	// 	- VMM
+	// 	- Message queue
+	// 	- Handle table (and close the handles in it)
+
 	processPool.Remove(process);
 }
 
-void FinishThreadRemoval(void *_thread) {
-	Thread *thread = (Thread *) _thread;
-
+void Scheduler::RemoveThread(Thread *thread) {
 	scheduler.lock.Acquire();
 	scheduler.allThreads.Remove(&thread->allItem);
 	thread->process->threads.Remove(&thread->processItem);
@@ -582,6 +630,11 @@ void FinishThreadRemoval(void *_thread) {
 	scheduler.threadPool.Remove(thread);
 }
 
+void _RemoveThread(void *_thread) {
+	Thread *thread = (Thread *) _thread;
+	scheduler.RemoveThread(thread);
+}
+
 void Scheduler::Yield(InterruptContext *context) {
 #undef Defer
 
@@ -597,19 +650,21 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	local->currentThread->executing = false;
 
-	// If we're killing the thread make it dead.
+	bool killThread = local->currentThread->terminatableState == THREAD_TERMINATABLE 
+		&& local->currentThread->terminating;
+	bool keepThreadAlive = local->currentThread->terminatableState == THREAD_USER_BLOCK_REQUEST
+		&& local->currentThread->terminating;
 
-	bool threadIsDead = local->currentThread->state == THREAD_DEAD;
-
-	if (threadIsDead) {
-		RegisterAsyncTask(FinishThreadRemoval, local->currentThread);
+	if (killThread) {
+		local->currentThread->state = THREAD_TERMINATED;
+		RegisterAsyncTask(_RemoveThread, local->currentThread);
 	}
 
 	// If the thread is waiting for an object to be notified, put it in the relevant blockedThreads list.
 	// But if the object has been notified yet hasn't made itself active yet, do that for it.
 
 	else if (local->currentThread->state == THREAD_WAITING_MUTEX) {
-		if (local->currentThread->blockingMutex->owner) {
+		if (!keepThreadAlive && local->currentThread->blockingMutex->owner) {
 			local->currentThread->blockingMutex->blockedThreads.InsertEnd(&local->currentThread->item[0]);
 		} else {
 			local->currentThread->state = THREAD_ACTIVE;
@@ -617,26 +672,30 @@ void Scheduler::Yield(InterruptContext *context) {
 	}
 
 	else if (local->currentThread->state == THREAD_WAITING_EVENT) {
-		bool unblocked = false;
+		if (keepThreadAlive) {
+			local->currentThread->state = THREAD_ACTIVE;
+		} else {
+			bool unblocked = false;
 
-		for (uintptr_t i = 0; i < local->currentThread->blockingEventCount; i++) {
-			if (local->currentThread->blockingEvents[i]->state) {
-				local->currentThread->state = THREAD_ACTIVE;
-				unblocked = true;
-				break;
-			}
-		}
-
-		if (!unblocked) {
 			for (uintptr_t i = 0; i < local->currentThread->blockingEventCount; i++) {
-				KernelLog(LOG_VERBOSE, "Thread blocked from event.\n");
-				local->currentThread->blockingEvents[i]->blockedThreads.InsertEnd(&local->currentThread->item[i]);
+				if (local->currentThread->blockingEvents[i]->state) {
+					local->currentThread->state = THREAD_ACTIVE;
+					unblocked = true;
+					break;
+				}
+			}
+
+			if (!unblocked) {
+				for (uintptr_t i = 0; i < local->currentThread->blockingEventCount; i++) {
+					KernelLog(LOG_VERBOSE, "Thread blocked from event.\n");
+					local->currentThread->blockingEvents[i]->blockedThreads.InsertEnd(&local->currentThread->item[i]);
+				}
 			}
 		}
 	}
 
 	// Put the current thread at the end of the activeThreads list.
-	if (!threadIsDead && local->currentThread->state == THREAD_ACTIVE) {
+	if (!killThread && local->currentThread->state == THREAD_ACTIVE) {
 		if (local->currentThread->type == THREAD_NORMAL) {
 			AddActiveThread(local->currentThread, false);
 		} else if (local->currentThread->type == THREAD_IDLE || local->currentThread->type == THREAD_ASYNC_TASK) {
@@ -676,7 +735,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	}
 
 	if (newThread->executing) {
-		KernelPanic("Scheduler::Yield - Thread (ID %d) in active queue already executing with state %d\n", local->currentThread->id, local->currentThread->state);
+		KernelPanic("Scheduler::Yield - Thread (ID %d) in active queue already executing with state %d, type %d\n", local->currentThread->id, local->currentThread->state, local->currentThread->type);
 	}
 
 	// Remove the thread we're now executing.
@@ -711,7 +770,8 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 
 	lock.Release();
 
-	while (thread->blockingMutex->owner);
+	// Early exit if this is a user request to block the thread and the thread is terminating.
+	while ((!thread->terminating || thread->terminatableState != THREAD_USER_BLOCK_REQUEST) && thread->blockingMutex->owner);
 	thread->state = THREAD_ACTIVE;
 }
 
@@ -730,9 +790,9 @@ uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
 		thread->blockingEvents[i] = events[i];
 	}
 
-	thread->state = THREAD_WAITING_EVENT;
+	while (!thread->terminating || thread->terminatableState != THREAD_USER_BLOCK_REQUEST) {
+		thread->state = THREAD_WAITING_EVENT;
 
-	while (true) {
 		for (uintptr_t i = 0; i < count; i++) {
 			if (events[i]->autoReset) {
 				if (events[i]->state) {
@@ -752,6 +812,32 @@ uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
 			}
 		}
 	}
+
+	return -1; // Exited from termination.
+}
+
+void Scheduler::UnblockThread(Thread *unblockedThread) {
+	lock.AssertLocked();
+
+	if (unblockedThread->state != THREAD_WAITING_MUTEX && unblockedThread->state != THREAD_WAITING_EVENT) {
+		KernelPanic("Scheduler::UnblockedThread - Blocked thread in invalid state %d.\n", 
+				unblockedThread->state);
+	}
+
+	for (uintptr_t i = 0; i < unblockedThread->blockingEventCount; i++) {
+		if (unblockedThread->item[i].list) {
+			unblockedThread->item[i].list->Remove(unblockedThread->item + i);
+		}
+	}
+
+	unblockedThread->state = THREAD_ACTIVE;
+
+	if (!unblockedThread->executing) {
+		// Put the unblocked thread at the start of the activeThreads list
+		// so that it is immediately executed when the scheduler yields.
+		unblockedThread->state = THREAD_ACTIVE;
+		AddActiveThread(unblockedThread, true);
+	} 
 }
 
 void Scheduler::NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLocked, bool unblockAll) {
@@ -771,27 +857,7 @@ void Scheduler::NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLo
 		LinkedItem *nextUnblockedItem = unblockedItem->nextItem;
 		blockedThreads->Remove(unblockedItem);
 		Thread *unblockedThread = (Thread *) unblockedItem->thisItem;
-
-		if (unblockedThread->state != THREAD_WAITING_MUTEX && unblockedThread->state != THREAD_WAITING_EVENT) {
-			KernelPanic("Scheduler::NotifyObject - Thread in mutex blocked queue in invalid state %d.\n", 
-					unblockedThread->state);
-		}
-
-		for (uintptr_t i = 0; i < unblockedThread->blockingEventCount; i++) {
-			if (unblockedThread->item[i].list) {
-				unblockedThread->item[i].list->Remove(unblockedThread->item + i);
-			}
-		}
-
-		unblockedThread->state = THREAD_ACTIVE;
-
-		if (!unblockedThread->executing) {
-			// Put the unblocked thread at the start of the activeThreads list
-			// so that it is immediately executed when the scheduler yields.
-			unblockedThread->state = THREAD_ACTIVE;
-			AddActiveThread(unblockedThread, true);
-		} 
-
+		UnblockThread(unblockedThread);
 		unblockedItem = nextUnblockedItem;
 	} while (unblockAll && unblockedItem);
 
@@ -824,6 +890,11 @@ void Mutex::Acquire() {
 			// let's tell the scheduler to not schedule this thread
 			// until it's released.
 			scheduler.WaitMutex(this);
+
+			if (currentThread->terminating) {
+				// We didn't acquire the mutex because the thread is terminating.
+				return;
+			}
 		}
 	}
 
@@ -891,8 +962,8 @@ bool Event::Wait(uint64_t timeoutMs) {
 	events[0] = this;
 
 	if (timeoutMs == (uint64_t) OS_WAIT_NO_TIMEOUT) {
-		scheduler.WaitEvents(events, 1);
-		return true;
+		int index = scheduler.WaitEvents(events, 1);
+		return index == 0;
 	} else {
 		Timer timer = {};
 		timer.Set(timeoutMs, false);

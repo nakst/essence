@@ -1,8 +1,7 @@
 #include "../api/os.h"
 
-void *a[0x10000];
-
 extern "C" void ProgramEntry() {
+#if 0
 	if (!OSGetCreationArgument(OS_CURRENT_PROCESS)) {
 		OSPrint("Creating process 2...\n");
 		OSProcessInformation process;
@@ -10,11 +9,16 @@ extern "C" void ProgramEntry() {
 		OSCreateProcess(executablePath, OSCStringLength((char *) executablePath), &process, (void *) 1);
 		OSPrint("Created.\n");
 		OSCloseHandle(process.handle);
-	} else {
+	} else if (OSGetCreationArgument(OS_CURRENT_PROCESS) == (void *) 1) {
+		OSProcessInformation process;
+		const char *executablePath = "/os/test";
+		OSCreateProcess(executablePath, OSCStringLength((char *) executablePath), &process, (void *) 2);
 		OSPrint("I am process 2!\n");
+		OSCloseHandle(process.handle);
+	} else {
 		OSTerminateThread(OS_CURRENT_THREAD);
-		OSPrint("...but I exited :(\n");
 	}
+#endif
 
 #if 0
 	float x = 50.0f;
@@ -212,12 +216,12 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
+#if 1
 	OSProcessInformation process;
 	char *testProcessImage = (char *) "/os/test";
 
 	while (true) {
-		OSCreateProcess(testProcessImage, CStringLength(testProcessImage), &process);
+		OSCreateProcess(testProcessImage, OSCStringLength(testProcessImage), &process, nullptr);
 	}
 #endif
 

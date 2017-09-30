@@ -18,7 +18,7 @@ void KernelInitilisation() {
 	scheduler.SpawnProcess(testProcessImage, CStringLength(testProcessImage));
 
 	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
-	scheduler.RemoveThread(ProcessorGetLocalStorage()->currentThread);
+	scheduler.TerminateThread(ProcessorGetLocalStorage()->currentThread);
 }
 
 extern "C" void KernelAPMain() {
