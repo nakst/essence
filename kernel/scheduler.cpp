@@ -87,6 +87,9 @@ struct Thread {
 
 	Event killedEvent;
 
+	uintptr_t userStackBase;
+	uintptr_t kernelStackBase;
+
 	uintptr_t kernelStack;
 	bool isKernelThread;
 
@@ -343,20 +346,24 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	Thread *thread = (Thread *) threadPool.Add();
 	thread->isKernelThread = !userland;
 
-	// Allocate a 64KiB stack for the thread.
-#define STACK_SIZE 0x10000
-	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate(STACK_SIZE, vmmMapAll);;
+	// Allocate the thread's stacks.
+	uintptr_t kernelStackSize = userland ? 0x4000 : 0x10000;
+	uintptr_t userStackSize = userland ? 0x100000 : 0x10000;
+	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate(kernelStackSize, vmmMapAll);;
 
 	if (userland) {
-		stack = (uintptr_t) process->vmm->Allocate(STACK_SIZE, vmmMapLazy);
+		stack = (uintptr_t) process->vmm->Allocate(userStackSize, vmmMapLazy);
 	} else {
 		stack = kernelStack;
 	}
 
+	thread->kernelStackBase = kernelStack;
+	thread->userStackBase = userland ? stack : 0;
+
 #ifdef ARCH_X86_64
-	InterruptContext *context = ((InterruptContext *) (kernelStack + STACK_SIZE - 8)) - 1;
+	InterruptContext *context = ((InterruptContext *) (kernelStack + kernelStackSize - 8)) - 1;
 	thread->interruptContext = context;
-	thread->kernelStack = kernelStack + STACK_SIZE - 8;
+	thread->kernelStack = kernelStack + kernelStackSize - 8;
 
 	if (userland) {
 		context->cs = 0x5B;
@@ -371,7 +378,7 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	context->_check = 0x123456789ABCDEF; // Stack corruption detection.
 	context->flags = 1 << 9; // Interrupt flag
 	context->rip = startAddress;
-	context->rsp = stack + STACK_SIZE - 8; // The stack should be 16-byte aligned before the call instruction.
+	context->rsp = stack + userStackSize - 8; // The stack should be 16-byte aligned before the call instruction.
 	context->rdi = argument;
 #endif
 
@@ -558,6 +565,9 @@ void FinishThreadRemoval(void *_thread) {
 	Event *killEvent = &thread->killedEvent;
 	killEvent->Set();
 
+	kernelVMM.Free((void *) thread->kernelStackBase);
+	if (thread->userStackBase) thread->process->vmm->Free((void *) thread->userStackBase);
+
 	Process *process = thread->process;
 	scheduler.lock.Acquire();
 	process->handles--;
@@ -568,8 +578,6 @@ void FinishThreadRemoval(void *_thread) {
 	if (destroyProcess) {
 		scheduler.RemoveProcess(process);
 	}
-
-	// TODO Free the thread's kernel and user stack.
 
 	scheduler.threadPool.Remove(thread);
 }

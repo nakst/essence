@@ -50,6 +50,7 @@ struct Surface {
 
 	// The memory used by the surface.
 	uint8_t *memory;
+	bool memoryInKernelAddressSpace;
 
 	uint8_t *linearBuffer; // The linear buffer of the surface. 
 			       // Currently each pixel is 32-bit [A/X]RGB, little-endian.
@@ -237,6 +238,8 @@ void Graphics::Initialise() {
 bool Surface::Initialise(VMM *vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {
 	resX = _resX;
 	resY = _resY;
+
+	memoryInKernelAddressSpace = vmm == &kernelVMM;
 
 	stride = resX * 4;
 

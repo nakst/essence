@@ -294,6 +294,10 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region1) return OS_ERROR_INVALID_BUFFER;
 			Defer(currentVMM->UnlockRegion(region1));
 
+			if (surface->memoryInKernelAddressSpace) {
+				return OS_ERROR_BUFFER_NOT_ACCESSIBLE;
+			}
+
 			linearBuffer->width = surface->resX;
 			linearBuffer->height = surface->resY;
 			linearBuffer->buffer = surface->linearBuffer;
@@ -519,7 +523,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->CompleteHandle(mutex, argument0));
 
 			// TODO OSTerminateThread needs to be able to wake up a thread here.
-			if (mutex->owner == currentThread) return OS_ERROR_MUTEX_ACQUIRED_BY_THREAD;
+			if (mutex->owner == currentThread) return OS_ERROR_MUTEX_ALREADY_ACQUIRED;
 			mutex->Acquire();
 			return OS_SUCCESS;
 		} break;

@@ -20,7 +20,8 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_NO_MESSAGES_AVAILABLE		(-9)
 #define OS_ERROR_MESSAGE_QUEUE_FULL		(-10)
 #define OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD	(-11)
-#define OS_ERROR_MUTEX_ACQUIRED_BY_THREAD	(-11)
+#define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)
+#define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)
 typedef int OSError;
 
 #define OS_SYSCALL_PRINT			(0)
