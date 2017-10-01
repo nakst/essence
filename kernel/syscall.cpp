@@ -37,7 +37,9 @@ void CloseHandleToObject(void *object, KernelObjectType type) {
 		} break;
 
 		case KERNEL_OBJECT_THREAD: {
-			CloseThreadHandle(object);
+			scheduler.lock.Acquire();
+			RegisterAsyncTask(CloseThreadHandle, object, &((Thread *) object)->process->vmm->virtualAddressSpace);
+			scheduler.lock.Release();
 		} break;
 
 		default: {

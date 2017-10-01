@@ -21,15 +21,11 @@ extern "C" void ProgramEntry() {
 	} else {
 		OSProcessInformation process;
 		const char *executablePath = "/os/test";
-		OSPrint("a\n");
 		OSCreateProcess(executablePath, OSCStringLength((char *) executablePath), &process, (void *) 1);
-		OSPrint("b\n");
-		OSCloseHandle(process.handle);
-		OSPrint("c\n");
+		OSCloseHandle(process.handle); 
 		OSTerminateThread(process.mainThread.handle);
-		OSPrint("d\n");
+		OSCloseHandle(process.mainThread.handle);
 		OSTerminateThread(OS_CURRENT_THREAD);
-		OSPrint("e\n");
 	}
 
 #if 0

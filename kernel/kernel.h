@@ -75,6 +75,7 @@ extern "C" void ProcessorDebugOutputByte(uint8_t byte);
 extern "C" void ProcessorFakeTimerInterrupt();
 extern "C" uint64_t ProcessorReadTimeStamp();
 extern "C" void DoContextSwitch(struct InterruptContext *context, uintptr_t virtualAddressSpace, uintptr_t threadKernelStack);
+extern "C" void ProcessorSetAddressSpace(uintptr_t virtualAddressSpaceIdentifier);
 
 volatile uintptr_t ipiVector;
 extern struct Spinlock ipiLock;
@@ -135,6 +136,7 @@ typedef void (*AsyncTaskCallback)(void *argument);
 struct AsyncTask {
 	AsyncTaskCallback callback;
 	void *argument;
+	struct VirtualAddressSpace *addressSpace;
 };
 
 struct CPULocalStorage {
@@ -172,6 +174,8 @@ struct Handle {
 			        // Incremented when the handle is used in a system call.
 	volatile unsigned closing;
 };
+
+void CloseHandleToObject(void *object, KernelObjectType type);
 
 #endif
 

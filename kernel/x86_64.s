@@ -661,6 +661,15 @@ ReturnFromInterruptHandler:
 	add	rsp,16
 	iretq
 
+[global ProcessorSetAddressSpace]
+ProcessorSetAddressSpace:
+	mov	rax,cr3
+	cmp	rax,rdi
+	je	.cont
+	mov	cr3,rdi
+	.cont:
+	ret
+
 [extern PostContextSwitch]
 [global DoContextSwitch]
 DoContextSwitch:

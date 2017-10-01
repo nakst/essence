@@ -93,7 +93,7 @@ struct VirtualAddressSpace {
 	Spinlock lock;
 
 #ifdef ARCH_X86_64
-#define VIRTUAL_ADDRESS_SPACE_IDENTIFIER(x) ((x).cr3)
+#define VIRTUAL_ADDRESS_SPACE_IDENTIFIER(x) ((x)->cr3)
 	uintptr_t cr3;
 	
 #define PAGE_TABLE_L4 ((volatile uint64_t *) 0xFFFFFFFFFFFFF000)
@@ -285,9 +285,19 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	return true;
 }
 
+void ValidateCurrentVMM(VMM *target) {
+	if (target != &kernelVMM 
+			&& target != ProcessorGetLocalStorage()->currentThread->process->vmm 
+			&& &target->virtualAddressSpace != ProcessorGetLocalStorage()->currentThread->asyncTempAddressSpace) {
+		KernelPanic("VMM::Allocate - Attempt to allocate VMM region with different VMM active.\n");
+	}
+}
+
 void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags) {
 	lock.Acquire();
 	Defer(lock.Release());
+
+	ValidateCurrentVMM(this);
 
 	if (!size) return nullptr;
 
@@ -378,6 +388,8 @@ OSError VMM::Free(void *address) {
 	if (!address) {
 		return OS_ERROR_INVALID_MEMORY_REGION;
 	}
+
+	ValidateCurrentVMM(this);
 
 	lock.Acquire();
 	Defer(lock.Release());
