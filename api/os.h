@@ -22,7 +22,7 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD	(-11)
 #define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)
 #define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)
-typedef int OSError;
+typedef intptr_t OSError;
 
 #define OS_SYSCALL_PRINT			(0)
 #define OS_SYSCALL_ALLOCATE 			(1)
@@ -137,6 +137,11 @@ struct OSWindow {
 	OSHandle surface;
 };
 
+struct OSControl {
+	OSWindow *window;
+	OSPoint position;
+};
+
 enum OSMessageType {
 };
 
@@ -189,6 +194,8 @@ extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
 extern "C" OSError OSCreateWindow(OSWindow *window, size_t width, size_t height);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
+
+extern "C" OSControl *OSCreateControl(OSWindow *window, OSPoint position);
 
 extern "C" void *OSHeapAllocate(size_t size);
 extern "C" void OSHeapFree(void *address);

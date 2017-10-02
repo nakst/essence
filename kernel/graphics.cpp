@@ -90,6 +90,9 @@ struct Graphics {
 
 	Surface frameBuffer;
 	Pool surfacePool;
+
+#define CURSOR_SWAP_SIZE (20)
+	Surface cursorSwap; // A surface for temporarily storing the pixels behind the cursor.
 };
 
 #ifdef ARCH_X86_64
@@ -209,6 +212,16 @@ void Graphics::UpdateScreen() {
 	if (!linearBuffer) {
 		return;
 	}
+
+	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(windowManager.cursor.x, windowManager.cursor.x + CURSOR_SWAP_SIZE,
+								windowManager.cursor.y, windowManager.cursor.y + CURSOR_SWAP_SIZE),
+			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
+	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
+			OSRectangle borderDimensions, OSDrawMode mode);
+	frameBuffer.Draw(uiSheetSurface, OSRectangle(windowManager.cursor.x, windowManager.cursor.x + 12,
+						     windowManager.cursor.y, windowManager.cursor.y + 19),
+					 OSRectangle(125, 125 + 12, 96, 96 + 19),
+					 OSRectangle(125 + 2, 125 + 3, 96 + 2, 96 + 3), OS_DRAW_MODE_REPEAT_FIRST);
 		
 	switch (colorMode) {
 		case VIDEO_COLOR_24_RGB: {
@@ -219,6 +232,9 @@ void Graphics::UpdateScreen() {
 			KernelPanic("Graphics::UpdateScreen - Unsupported color mode.\n");
 		} break;
 	}
+
+	frameBuffer.Copy(cursorSwap, windowManager.cursor, OSRectangle(0, CURSOR_SWAP_SIZE, 0, CURSOR_SWAP_SIZE),
+			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 }
 
 void Graphics::Initialise() {
@@ -231,6 +247,7 @@ void Graphics::Initialise() {
 
 	surfacePool.Initialise(sizeof(Surface));
 
+	cursorSwap.Initialise(&kernelVMM, CURSOR_SWAP_SIZE, CURSOR_SWAP_SIZE, false);
 	frameBuffer.Initialise(&kernelVMM, resX, resY, true /*Create depth buffer for window manager*/);
 	UpdateScreen();
 }
@@ -499,21 +516,38 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 		(void) mode;
 
 		uintptr_t sy = y - destinationRegion.top + sourceRegion.top;
-		if (y >= bottomBorderStart) sy = y - destinationRegion.top - bottomBorderStart + borderDimensions.bottom;
+		if (y >= bottomBorderStart) sy = y - bottomBorderStart + borderDimensions.bottom;
 		else if (sy > borderDimensions.top) sy = borderDimensions.top + 1;
 
 		InvalidateScanline(y, destinationRegion.left, destinationRegion.right);
 
 		for (uintptr_t x = destinationRegion.left; x < destinationRegion.right; x++) {
 			uintptr_t sx = x - destinationRegion.left + sourceRegion.left;
-			if (x >= rightBorderStart) sx = x - destinationRegion.left - rightBorderStart + borderDimensions.right;
+			if (x >= rightBorderStart) sx = x - rightBorderStart + borderDimensions.right;
 			else if (sx > borderDimensions.left) sx = borderDimensions.left + 1;
 
 			uint32_t *destinationPixel = (uint32_t *) (linearBuffer + x * 4 + y * stride);
 			uint32_t *sourcePixel = (uint32_t *) (source.linearBuffer + sx * 4 + sy * source.stride);
 
-			// TODO Alpha blending.
-			*destinationPixel = *sourcePixel;
+			uint32_t modified = *sourcePixel;
+
+			if ((modified & 0xFF000000) == 0xFF000000) {
+				*destinationPixel = modified;
+			} else {
+				uint32_t original = *destinationPixel;
+				uint32_t alpha1 = (modified & 0xFF000000) >> 24;
+				uint32_t alpha2 = 255 - alpha1;
+				uint32_t r2 = alpha2 * ((original & 0x000000FF) >> 0);
+				uint32_t g2 = alpha2 * ((original & 0x0000FF00) >> 8);
+				uint32_t b2 = alpha2 * ((original & 0x00FF0000) >> 16);
+				uint32_t r1 = alpha1 * ((modified & 0x000000FF) >> 0);
+				uint32_t g1 = alpha1 * ((modified & 0x0000FF00) >> 8);
+				uint32_t b1 = alpha1 * ((modified & 0x00FF0000) >> 16);
+				uint32_t result = 0xFF000000 | (0x00FF0000 & ((b1 + b2) << 8)) 
+							     | (0x0000FF00 & ((g1 + g2) << 0)) 
+							     | (0x000000FF & ((r1 + r2) >> 8));
+				*destinationPixel = result;
+			}
 		}
 	}
 }

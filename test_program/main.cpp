@@ -1,5 +1,6 @@
 #include "../api/os.h"
 
+#if 0
 volatile int variable = 10;
 OSHandle mutex;
 
@@ -14,8 +15,14 @@ void ThreadEntry(void *argument) {
 	while (true);
 	OSTerminateThread(OS_CURRENT_THREAD);
 }
+#endif
 
 extern "C" void ProgramEntry() {
+	OSWindow window;
+	OSCreateWindow(&window, 320, 200);
+	OSControl *button = OSCreateControl(&window, OSPoint(16, 16));
+		
+#if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
 		ThreadEntry(nullptr);
 	} else {
@@ -27,6 +34,7 @@ extern "C" void ProgramEntry() {
 		OSCloseHandle(process.mainThread.handle);
 		OSTerminateThread(OS_CURRENT_THREAD);
 	}
+#endif
 
 #if 0
 	mutex = OSCreateMutex();

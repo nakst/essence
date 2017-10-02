@@ -288,6 +288,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_ALLOCATE: {
 			uintptr_t address = (uintptr_t) currentVMM->Allocate(argument0);
+			Print("Allocated %x of size %d\n", address, argument0);
 			SYSCALL_RETURN(address);
 		} break;
 

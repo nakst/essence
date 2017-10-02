@@ -19,14 +19,16 @@ struct WindowManager {
 	size_t windowsCount, windowsAllocated;
 
 	Mutex mutex;
+
+	OSPoint cursor;
 };
 
 WindowManager windowManager;
+Surface uiSheetSurface;
 
 #else
 
 #include "../res/UISheet.c_bmp"
-Surface uiSheetSurface;
 
 void WindowManager::Initialise() {
 	windowPool.Initialise(sizeof(Window));
@@ -35,6 +37,8 @@ void WindowManager::Initialise() {
 	CopyMemory(uiSheetSurface.linearBuffer, uiSheet, uiSheetWidth * uiSheetHeight * 4);
 
 	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
+
+	cursor = OSPoint(graphics.resX / 2, graphics.resY / 2);
 }
 
 Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height) {

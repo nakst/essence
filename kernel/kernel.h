@@ -193,6 +193,7 @@ void CloseHandleToObject(void *object, KernelObjectType type);
 
 #include "vfs.cpp"
 #include "ext2.cpp"
+#include "ps2.cpp"
 #include "devices.cpp"
 #include "elf.cpp"
 

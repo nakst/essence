@@ -80,6 +80,7 @@ void DeviceManager::Initialise() {
 
 #ifdef ARCH_X86_64
 	pci.Enumerate();
+	ps2.Initialise();
 #endif
 
 	// Once we have initialised the device manager we should have found the drive from which we booted.

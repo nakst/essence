@@ -1,5 +1,5 @@
-// TODO Reference counting for more kernel objects like on processes
-// 		- threads, files, filesystems, mountpoints, devices, etc.
+// TODO Reference counting for more kernel objects 
+// 		- files, filesystems, mountpoints, devices, etc.
 
 // TODO I don't think floats work.
 
