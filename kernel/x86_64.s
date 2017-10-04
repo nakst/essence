@@ -388,8 +388,6 @@ SyscallEntry:
 	call	Syscall
 	mov	rsp,rbx
 
-	xchg	bx,bx
-
 	; Disable maskable interrupts.
 	cli
 

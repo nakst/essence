@@ -12,6 +12,7 @@ struct Window {
 struct WindowManager {
 	void Initialise();
 	Window *CreateWindow(Process *process, size_t width, size_t height);
+	void MoveCursor(int xMovement, int yMovement);
 
 	Pool windowPool;
 
@@ -20,7 +21,7 @@ struct WindowManager {
 
 	Mutex mutex;
 
-	OSPoint cursor;
+	int cursorX, cursorY;
 };
 
 WindowManager windowManager;
@@ -30,6 +31,29 @@ Surface uiSheetSurface;
 
 #include "../res/UISheet.c_bmp"
 
+void WindowManager::MoveCursor(int xMovement, int yMovement) {
+	cursorX += xMovement;
+	cursorY += yMovement;
+
+	if (cursorX < 0) {
+		cursorX = 0;
+	}
+
+	if (cursorY < 0) {
+		cursorY = 0;
+	}
+
+	if (cursorX >= (int) graphics.resX) {
+		cursorX = graphics.resX - 1;
+	}
+
+	if (cursorY >= (int) graphics.resY) {
+		cursorY = graphics.resY - 1;
+	}
+
+	graphics.UpdateScreen();
+}
+
 void WindowManager::Initialise() {
 	windowPool.Initialise(sizeof(Window));
 
@@ -38,7 +62,8 @@ void WindowManager::Initialise() {
 
 	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
 
-	cursor = OSPoint(graphics.resX / 2, graphics.resY / 2);
+	cursorX = graphics.resX / 2;
+	cursorY = graphics.resY / 2;
 }
 
 Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height) {

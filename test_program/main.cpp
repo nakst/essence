@@ -21,6 +21,7 @@ extern "C" void ProgramEntry() {
 	OSWindow window;
 	OSCreateWindow(&window, 320, 200);
 	OSControl *button = OSCreateControl(&window, OSPoint(16, 16));
+	(void) button;
 		
 #if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {

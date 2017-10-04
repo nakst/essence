@@ -351,8 +351,6 @@ void EnterDebugger() {
 }
 
 void KernelPanic(const char *format, ...) {
-	ProcessorMagicBreakpoint();
-
 	ProcessorDisableInterrupts();
 	scheduler.panic = true;
 	ProcessorSendIPI(KERNEL_PANIC_IPI, true);

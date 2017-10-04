@@ -561,8 +561,12 @@ void AsyncTaskThread() {
 		uintptr_t i = 0;
 		while (true) {
 			volatile AsyncTask *task = local->asyncTasks + i;
-			local->currentThread->asyncTempAddressSpace = task->addressSpace;
-			ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(task->addressSpace));
+
+			if (task->addressSpace) {
+				local->currentThread->asyncTempAddressSpace = task->addressSpace;
+				ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(task->addressSpace));
+			}
+
 			task->callback(task->argument);
 			i++;
 

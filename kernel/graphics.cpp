@@ -82,6 +82,7 @@ struct Graphics {
 
 	void UpdateScreen();
 	void UpdateScreen_VIDEO_COLOR_24_RGB();
+	Mutex updateScreenMutex;
 
 	uint8_t *linearBuffer; 
 	size_t resX, resY; 
@@ -213,13 +214,16 @@ void Graphics::UpdateScreen() {
 		return;
 	}
 
-	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(windowManager.cursor.x, windowManager.cursor.x + CURSOR_SWAP_SIZE,
-								windowManager.cursor.y, windowManager.cursor.y + CURSOR_SWAP_SIZE),
+	updateScreenMutex.Acquire();
+	Defer(updateScreenMutex.Release());
+
+	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(windowManager.cursorX, windowManager.cursorX + CURSOR_SWAP_SIZE,
+								windowManager.cursorY, windowManager.cursorY + CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
 			OSRectangle borderDimensions, OSDrawMode mode);
-	frameBuffer.Draw(uiSheetSurface, OSRectangle(windowManager.cursor.x, windowManager.cursor.x + 12,
-						     windowManager.cursor.y, windowManager.cursor.y + 19),
+	frameBuffer.Draw(uiSheetSurface, OSRectangle(windowManager.cursorX, windowManager.cursorX + 12,
+						     windowManager.cursorY, windowManager.cursorY + 19),
 					 OSRectangle(125, 125 + 12, 96, 96 + 19),
 					 OSRectangle(125 + 2, 125 + 3, 96 + 2, 96 + 3), OS_DRAW_MODE_REPEAT_FIRST);
 		
@@ -233,7 +237,8 @@ void Graphics::UpdateScreen() {
 		} break;
 	}
 
-	frameBuffer.Copy(cursorSwap, windowManager.cursor, OSRectangle(0, CURSOR_SWAP_SIZE, 0, CURSOR_SWAP_SIZE),
+	frameBuffer.Copy(cursorSwap, OSPoint(windowManager.cursorX, windowManager.cursorY), 
+			OSRectangle(0, CURSOR_SWAP_SIZE, 0, CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 }
 
