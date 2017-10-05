@@ -8,6 +8,7 @@ struct Window {
 	size_t width, height;
 	uintptr_t z;
 	Process *owner;
+	OSWindow *apiWindow;
 };
 
 struct WindowManager {
@@ -35,24 +36,27 @@ Surface uiSheetSurface;
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
 	int oldCursorX = cursorX;
 	int oldCursorY = cursorY;
-	cursorX += xMovement;
-	cursorY += yMovement;
+	int _cursorX = oldCursorX + xMovement;
+	int _cursorY = oldCursorY + yMovement;
 
-	if (cursorX < 0) {
-		cursorX = 0;
+	if (_cursorX < 0) {
+		_cursorX = 0;
 	}
 
-	if (cursorY < 0) {
-		cursorY = 0;
+	if (_cursorY < 0) {
+		_cursorY = 0;
 	}
 
-	if (cursorX >= (int) graphics.resX) {
-		cursorX = graphics.resX - 1;
+	if (_cursorX >= (int) graphics.resX) {
+		_cursorX = graphics.resX - 1;
 	}
 
-	if (cursorY >= (int) graphics.resY) {
-		cursorY = graphics.resY - 1;
+	if (_cursorY >= (int) graphics.resY) {
+		_cursorY = graphics.resY - 1;
 	}
+
+	cursorX = _cursorX;
+	cursorY = _cursorY;
 
 	// Work out which window the mouse is now over.
 	uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
@@ -61,10 +65,11 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_MOVED;
-		message.mouseMoved.newPositionX = cursorX;
-		message.mouseMoved.newPositionY = cursorY;
-		message.mouseMoved.oldPositionX = oldCursorX;
-		message.mouseMoved.oldPositionY = oldCursorY;
+		message.targetWindow = window->apiWindow;
+		message.mouseMoved.newPositionX = cursorX - window->position.x;
+		message.mouseMoved.newPositionY = cursorY - window->position.y;
+		message.mouseMoved.oldPositionX = oldCursorX - window->position.x;
+		message.mouseMoved.oldPositionY = oldCursorY - window->position.y;
 		window->owner->SendMessage(message);
 	} else {
 		// The cursor is not in a window.
@@ -79,6 +84,7 @@ void WindowManager::Initialise() {
 	uiSheetSurface.Initialise(kernelProcess->vmm, uiSheetWidth, uiSheetHeight, false);
 	CopyMemory(uiSheetSurface.linearBuffer, uiSheet, uiSheetWidth * uiSheetHeight * 4);
 
+	// Draw the background.
 	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
 
 	cursorX = graphics.resX / 2;

@@ -217,13 +217,15 @@ void Graphics::UpdateScreen() {
 	updateScreenMutex.Acquire();
 	Defer(updateScreenMutex.Release());
 
-	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(windowManager.cursorX, windowManager.cursorX + CURSOR_SWAP_SIZE,
-								windowManager.cursorY, windowManager.cursorY + CURSOR_SWAP_SIZE),
+	int cursorX = windowManager.cursorX, cursorY = windowManager.cursorY;
+
+	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
+								cursorY, cursorY + CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
 			OSRectangle borderDimensions, OSDrawMode mode);
-	frameBuffer.Draw(uiSheetSurface, OSRectangle(windowManager.cursorX, windowManager.cursorX + 12,
-						     windowManager.cursorY, windowManager.cursorY + 19),
+	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + 12,
+						     cursorY, cursorY + 19),
 					 OSRectangle(125, 125 + 12, 96, 96 + 19),
 					 OSRectangle(125 + 2, 125 + 3, 96 + 2, 96 + 3), OS_DRAW_MODE_REPEAT_FIRST);
 		
@@ -237,7 +239,7 @@ void Graphics::UpdateScreen() {
 		} break;
 	}
 
-	frameBuffer.Copy(cursorSwap, OSPoint(windowManager.cursorX, windowManager.cursorY), 
+	frameBuffer.Copy(cursorSwap, OSPoint(cursorX, cursorY), 
 			OSRectangle(0, CURSOR_SWAP_SIZE, 0, CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 }
@@ -254,7 +256,6 @@ void Graphics::Initialise() {
 
 	cursorSwap.Initialise(&kernelVMM, CURSOR_SWAP_SIZE, CURSOR_SWAP_SIZE, false);
 	frameBuffer.Initialise(&kernelVMM, resX, resY, true /*Create depth buffer for window manager*/);
-	UpdateScreen();
 }
 
 bool Surface::Initialise(VMM *vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {
@@ -326,15 +327,23 @@ void Surface::InvalidateRectangle(OSRectangle rectangle) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	if (rectangle.bottom > resY) {
+	if (rectangle.top < 0) {
+		rectangle.top = 0;
+	}
+
+	if (rectangle.bottom > (intptr_t) resY) {
 		rectangle.bottom = resY;
 	}
 
-	if (rectangle.right > resX) {
+	if (rectangle.left < 0) {
+		rectangle.left = 0;
+	}
+
+	if (rectangle.right > (intptr_t) resX) {
 		rectangle.right = resX;
 	}
 
-	for (uintptr_t y = rectangle.top; y < rectangle.bottom; y++) {
+	for (intptr_t y = rectangle.top; y < rectangle.bottom; y++) {
 		InvalidateScanline(y, rectangle.left, rectangle.right);
 	}
 }
@@ -346,34 +355,12 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 		}
 	}
 
-	OSPoint sourceRegionDimensions = OSPoint(sourceRegion.right - sourceRegion.left,
-						 sourceRegion.bottom - sourceRegion.top);
-
 	OSRectangle destinationRegion = OSRectangle(destinationPoint.x,
-						    destinationPoint.x + sourceRegionDimensions.x,
+						    destinationPoint.x + sourceRegion.right - sourceRegion.left,
 						    destinationPoint.y,
-						    destinationPoint.y + sourceRegionDimensions.y);
+						    destinationPoint.y + sourceRegion.bottom - sourceRegion.top);
 
-	if (sourceRegion.top >= sourceRegion.bottom) return;
-	if (sourceRegion.left >= sourceRegion.right) return;
-
-	if (sourceRegion.bottom > source.resY) return;
-	if (sourceRegion.right > source.resX) return;
-
-	if (destinationRegion.bottom > resY) {
-		sourceRegion.bottom -= destinationRegion.bottom - resY;
-		sourceRegionDimensions.y -= destinationRegion.bottom - resY;
-		destinationRegion.bottom = resY;
-	}
-
-	if (destinationRegion.right > resX) {
-		sourceRegion.right -= destinationRegion.right - resX;
-		sourceRegionDimensions.x -= destinationRegion.right - resX;
-		destinationRegion.right = resX;
-	}
-
-	if (destinationRegion.top >= destinationRegion.bottom) return;
-	if (destinationRegion.left >= destinationRegion.right) return;
+	// TODO Region checking.
 
 	mutex.Acquire();
 	Defer(mutex.Release());
@@ -382,18 +369,22 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 	uint8_t *sourcePixel = source.linearBuffer + sourceRegion.top * source.stride + sourceRegion.left * 4;
 	uint16_t *depthPixel = depthBuffer + destinationRegion.top * resX + destinationRegion.left;
 
-	uintptr_t destinationY = destinationRegion.top;
-	uintptr_t sourceY = sourceRegion.top;
+	intptr_t destinationY = destinationRegion.top;
+	intptr_t sourceY = sourceRegion.top;
 
 	__m128i thisDepth = _mm_set1_epi16(depth);
 
 	while (sourceY < sourceRegion.bottom) {
-		uintptr_t offsetX = 0;
-		size_t countX = sourceRegionDimensions.x;
+		intptr_t offsetX = 0;
+		size_t countX = sourceRegion.right - sourceRegion.left;
 
 		uint8_t *destinationStart = destinationPixel;
 		uint8_t *sourceStart = sourcePixel;
 		uint16_t *depthStart = depthPixel;
+
+		if (sourceY < 0 || sourceY >= (intptr_t) source.resY) {
+			goto nextScanline;
+		}
 
 		if (avoidUnmodifiedRegions) {
 			if (source.modifiedScanlineBitset[sourceY / 8] & (1 << (sourceY & 7))) {
@@ -493,41 +484,26 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 
 void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
 		OSRectangle borderDimensions, OSDrawMode mode) {
-	// TODO Clean this code up here (same with Surface::Copy).
-	
-	if (sourceRegion.top >= sourceRegion.bottom) return;
-	if (sourceRegion.left >= sourceRegion.right) return;
-
-	if (sourceRegion.bottom > source.resY) return;
-	if (sourceRegion.right > source.resX) return;
-
-	if (destinationRegion.bottom > resY) destinationRegion.bottom = resY;
-	if (destinationRegion.right > resX) destinationRegion.right = resX;
-
-	if (destinationRegion.top >= destinationRegion.bottom) return;
-	if (destinationRegion.left >= destinationRegion.right) return;
-
-	if (borderDimensions.top + 1 >= sourceRegion.bottom) return;
-	if (borderDimensions.left + 1 >= sourceRegion.right) return;
+	// TODO Region checking.
 
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	uintptr_t rightBorderStart = destinationRegion.right - (sourceRegion.right - borderDimensions.right);
-	uintptr_t bottomBorderStart = destinationRegion.bottom - (sourceRegion.bottom - borderDimensions.bottom);
+	intptr_t rightBorderStart = destinationRegion.right - (sourceRegion.right - borderDimensions.right);
+	intptr_t bottomBorderStart = destinationRegion.bottom - (sourceRegion.bottom - borderDimensions.bottom);
 
-	for (uintptr_t y = destinationRegion.top; y < destinationRegion.bottom; y++) {
+	for (intptr_t y = destinationRegion.top; y < destinationRegion.bottom; y++) {
 		// TODO Other draw modes.
 		(void) mode;
 
-		uintptr_t sy = y - destinationRegion.top + sourceRegion.top;
+		intptr_t sy = y - destinationRegion.top + sourceRegion.top;
 		if (y >= bottomBorderStart) sy = y - bottomBorderStart + borderDimensions.bottom;
 		else if (sy > borderDimensions.top) sy = borderDimensions.top + 1;
 
 		InvalidateScanline(y, destinationRegion.left, destinationRegion.right);
 
-		for (uintptr_t x = destinationRegion.left; x < destinationRegion.right; x++) {
-			uintptr_t sx = x - destinationRegion.left + sourceRegion.left;
+		for (intptr_t x = destinationRegion.left; x < destinationRegion.right; x++) {
+			intptr_t sx = x - destinationRegion.left + sourceRegion.left;
 			if (x >= rightBorderStart) sx = x - rightBorderStart + borderDimensions.right;
 			else if (sx > borderDimensions.left) sx = borderDimensions.left + 1;
 
@@ -558,14 +534,10 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 }
 
 void Surface::FillRectangle(OSRectangle region, OSColor color) {
-	if (region.left >= resX) return;
-	if (region.top >= resY) return;
+	// TODO Region checking.
 
 	mutex.Acquire();
 	Defer(mutex.Release());
-
-	if (region.right > resX) region.right = resX;
-	if (region.bottom > resY) region.bottom = resY;
 
 	uint8_t *destinationPixel = linearBuffer;
 
@@ -581,7 +553,7 @@ void Surface::FillRectangle(OSRectangle region, OSColor color) {
 				 0, red, green, blue,
 				 0, red, green, blue);
 
-	for (uintptr_t y = region.top; y < region.bottom; y++) {
+	for (intptr_t y = region.top; y < region.bottom; y++) {
 		uintptr_t remainingX = region.right - region.left;
 		uint8_t *scanlineStart = destinationPixel;
 

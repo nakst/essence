@@ -18,22 +18,24 @@ void ThreadEntry(void *argument) {
 #endif
 
 extern "C" void ProgramEntry() {
-	OSWindow window;
-	OSCreateWindow(&window, 320, 200);
-	OSCreateControl(&window, OSPoint(16, 16));
+	OSWindow *window = OSCreateWindow(320, 200);
+	OSControl *button1 = OSCreateControl();
+	// OSControl *button2 = OSCreateControl();
+	OSAddControl(window, button1, 16, 16);
+	// OSAddControl(window, button2, 16, 16 + 21 + 16);
 
 	while (true) {
 		OSMessage message;
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
-			OSPoint drawPosition = OSPoint(message.mouseMoved.newPositionX - 40, message.mouseMoved.newPositionY - 40);
-			OSDrawSurface(window.surface, OS_SURFACE_UI_SHEET, 
-					OSRectangle(drawPosition.x, drawPosition.x + 80, drawPosition.y, drawPosition.y + 21),
-					OSRectangle(51, 51 + 8, 88, 88 + 21),
-					OSRectangle(51 + 3, 51 + 5, 88 + 10, 88 + 11),
-					OS_DRAW_MODE_REPEAT_FIRST);
-			OSUpdateWindow(&window);
+			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
+				continue;
+			}
+
+			// The message was not handled by the GUI.
+			// We should do something with it.
+			OSPrint("test_program received unhandled message of type %d\n", message.type);
 		}
 	}
 		

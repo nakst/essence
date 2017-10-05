@@ -552,6 +552,8 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 			} else {
+				window->apiWindow = osWindow;
+
 				Handle _handle = {};
 
 				_handle.type = KERNEL_OBJECT_WINDOW;

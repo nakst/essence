@@ -22,6 +22,7 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD	(-11)
 #define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)
 #define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)
+#define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
 typedef intptr_t OSError;
 
 #define OS_SYSCALL_PRINT			(0)
@@ -74,29 +75,29 @@ struct OSProcessInformation {
 struct OSPoint {
 	OSPoint() {}
 
-	OSPoint(uintptr_t _x, uintptr_t _y) {
+	OSPoint(intptr_t _x, intptr_t _y) {
 		x = _x;
 		y = _y;
 	}
 
-	uintptr_t x;
-	uintptr_t y;
+	intptr_t x;
+	intptr_t y;
 };
 
 struct OSRectangle {
 	OSRectangle() {}
 
-	OSRectangle(uintptr_t _left, uintptr_t _right, uintptr_t _top, uintptr_t _bottom) {
+	OSRectangle(intptr_t _left, intptr_t _right, intptr_t _top, intptr_t _bottom) {
 		left = _left;
 		right = _right;
 		top = _top;
 		bottom = _bottom;
 	}
 
-	uintptr_t left;
-	uintptr_t right;
-	uintptr_t top;
-	uintptr_t bottom;
+	intptr_t left;
+	intptr_t right;
+	intptr_t top;
+	intptr_t bottom;
 };
 
 struct OSColor {
@@ -132,28 +133,35 @@ struct _OSDrawSurfaceArguments {
 	OSRectangle source, destination, border;
 };
 
+struct OSControl {
+	int x;
+	int y;
+	int width;
+	int height;
+};
+
 struct OSWindow {
 	OSHandle handle;
 	OSHandle surface;
-};
 
-struct OSControl {
-	OSWindow *window;
-	OSPoint position;
+	OSControl *controls[256];
+	size_t controlsCount;
+
+	OSControl *hoverControl;
 };
 
 enum OSMessageType {
-	OS_MESSAGE_MOUSE_MOVED,
+	OS_MESSAGE_MOUSE_MOVED = 0x1000,
 };
 
 struct OSMessage {
 	OSMessageType type;
+	OSWindow *targetWindow;
 
 	union {
 		uint8_t data[32];
 
 		struct {
-			// TODO Window.
 			int oldPositionX;
 			int newPositionX;
 			int oldPositionY;
@@ -201,10 +209,11 @@ extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
 extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
-extern "C" OSError OSCreateWindow(OSWindow *window, size_t width, size_t height);
+extern "C" OSWindow *OSCreateWindow(size_t width, size_t height);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
-
-extern "C" OSControl *OSCreateControl(OSWindow *window, OSPoint position);
+extern "C" OSControl *OSCreateControl();
+extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
+extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 
 extern "C" void *OSHeapAllocate(size_t size);
 extern "C" void OSHeapFree(void *address);

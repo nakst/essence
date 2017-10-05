@@ -106,7 +106,7 @@ struct Thread {
 	// If the type of the thread is THREAD_ASYNC_TASK,
 	// then this is the virtual address space that should be loaded
 	// when the task is being executed.
-	VirtualAddressSpace *asyncTempAddressSpace;
+	VirtualAddressSpace *volatile asyncTempAddressSpace;
 };
 
 struct HandleTableL3 {
@@ -820,9 +820,14 @@ void Scheduler::Yield(InterruptContext *context) {
 }
 
 void Scheduler::WaitMutex(Mutex *mutex) {
+	Thread *thread = ProcessorGetLocalStorage()->currentThread;
+
+	if (thread->state != THREAD_ACTIVE) {
+		KernelPanic("Scheduler::WaitMutex - Attempting to wait on a mutex in a non-active thread.\n");
+	}
+
 	lock.Acquire();
 
-	Thread *thread = ProcessorGetLocalStorage()->currentThread;
 	thread->state = THREAD_WAITING_MUTEX;
 	thread->blockingMutex = mutex;
 
@@ -937,7 +942,8 @@ void Mutex::Acquire() {
 	}
 
 	if (local && owner && owner == currentThread && local->currentThread) {
-		KernelPanic("Mutex::Acquire - Attempt to acquire mutex (%x) at %x owned by current thread (?) acquired at %x.\n", this, __builtin_return_address(0), acquireAddress);
+		KernelPanic("Mutex::Acquire - Attempt to acquire mutex (%x) at %x owned by current thread (%x) acquired at %x.\n", 
+				this, __builtin_return_address(0), local->currentThread, acquireAddress);
 	}
 
 	if (!ProcessorAreInterruptsEnabled()) {
@@ -945,6 +951,8 @@ void Mutex::Acquire() {
 	}
 
 	while (__sync_val_compare_and_swap(&owner, nullptr, currentThread)) {
+		__sync_synchronize();
+
 		if (local && local->schedulerReady) {
 			// Instead of spinning on the lock, 
 			// let's tell the scheduler to not schedule this thread
@@ -958,6 +966,10 @@ void Mutex::Acquire() {
 		}
 	}
 
+	if (owner != currentThread) {
+		KernelPanic("Mutex::Acquire - Invalid owner thread (%x, expected %x).\n", owner, currentThread);
+	}
+
 	acquireAddress = (uintptr_t) __builtin_return_address(0);
 }
 
@@ -966,7 +978,17 @@ void Mutex::Release() {
 
 	AssertLocked();
 
-	owner = nullptr;
+	CPULocalStorage *local = ProcessorGetLocalStorage();
+	if (local && local->currentThread) {
+		Thread *temp;
+		if (local->currentThread != (temp = __sync_val_compare_and_swap(&owner, local->currentThread, nullptr))) {
+			KernelPanic("Mutex::Release - Invalid owner thread (%x, expected %x).\n", temp, local->currentThread);
+		}
+	} else {
+		owner = nullptr;
+	}
+
+	__sync_synchronize();
 
 	if (scheduler.started) {
 		scheduler.NotifyObject(&blockedThreads, false);
@@ -985,7 +1007,8 @@ void Mutex::AssertLocked() {
 
 	if (owner != currentThread) {
 		KernelPanic("Mutex::AssertLocked - Mutex not correctly acquired\n"
-				"currentThread = %x, owner = %x\nthis = %x\nReturn %x/%x\n", currentThread, owner, this, __builtin_return_address(0), __builtin_return_address(1));
+				"currentThread = %x, owner = %x\nthis = %x\nReturn %x/%x\nLast acquired at %x\n", 
+				currentThread, owner, this, __builtin_return_address(0), __builtin_return_address(1), acquireAddress);
 	}
 }
 

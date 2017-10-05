@@ -5,6 +5,7 @@
 
 // TODO Startup bug page faulting from trying to execute at 0?
 // 		- I can't reproduce this.
+// 		- Possibly related to the mutex bug?
 
 // TODO Implement OSWait (thread synchronization, events).
 
