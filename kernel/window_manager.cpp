@@ -7,6 +7,7 @@ struct Window {
 	OSPoint position;
 	size_t width, height;
 	uintptr_t z;
+	Process *owner;
 };
 
 struct WindowManager {
@@ -32,6 +33,8 @@ Surface uiSheetSurface;
 #include "../res/UISheet.c_bmp"
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
+	int oldCursorX = cursorX;
+	int oldCursorY = cursorY;
 	cursorX += xMovement;
 	cursorY += yMovement;
 
@@ -49,6 +52,22 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 
 	if (cursorY >= (int) graphics.resY) {
 		cursorY = graphics.resY - 1;
+	}
+
+	// Work out which window the mouse is now over.
+	uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
+	if (index) {
+		Window *window = windows[index - 1];
+
+		OSMessage message = {};
+		message.type = OS_MESSAGE_MOUSE_MOVED;
+		message.mouseMoved.newPositionX = cursorX;
+		message.mouseMoved.newPositionY = cursorY;
+		message.mouseMoved.oldPositionX = oldCursorX;
+		message.mouseMoved.oldPositionY = oldCursorY;
+		window->owner->SendMessage(message);
+	} else {
+		// The cursor is not in a window.
 	}
 
 	graphics.UpdateScreen();
@@ -83,6 +102,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	window->width = width;
 	window->height = height;
 	window->z = windowsCount;
+	window->owner = process;
 
 	ArrayAdd(windows, window);
 
@@ -90,7 +110,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 }
 
 void Window::Update() {
-	graphics.frameBuffer.Copy(surface, position, OSRectangle(0, width, 0, height), true, z);
+	graphics.frameBuffer.Copy(surface, position, OSRectangle(0, width, 0, height), true, z + 1);
 	graphics.UpdateScreen();
 
 	surface.mutex.Acquire();

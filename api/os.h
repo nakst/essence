@@ -143,13 +143,22 @@ struct OSControl {
 };
 
 enum OSMessageType {
+	OS_MESSAGE_MOUSE_MOVED,
 };
 
 struct OSMessage {
 	OSMessageType type;
 
 	union {
-		uint8_t data[16];
+		uint8_t data[32];
+
+		struct {
+			// TODO Window.
+			int oldPositionX;
+			int newPositionX;
+			int oldPositionY;
+			int newPositionY;
+		} mouseMoved;
 	};
 };
 

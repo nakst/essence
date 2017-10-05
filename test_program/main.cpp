@@ -20,8 +20,22 @@ void ThreadEntry(void *argument) {
 extern "C" void ProgramEntry() {
 	OSWindow window;
 	OSCreateWindow(&window, 320, 200);
-	OSControl *button = OSCreateControl(&window, OSPoint(16, 16));
-	(void) button;
+	OSCreateControl(&window, OSPoint(16, 16));
+
+	while (true) {
+		OSMessage message;
+		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
+
+		if (OSGetMessage(&message) == OS_SUCCESS) {
+			OSPoint drawPosition = OSPoint(message.mouseMoved.newPositionX - 40, message.mouseMoved.newPositionY - 40);
+			OSDrawSurface(window.surface, OS_SURFACE_UI_SHEET, 
+					OSRectangle(drawPosition.x, drawPosition.x + 80, drawPosition.y, drawPosition.y + 21),
+					OSRectangle(51, 51 + 8, 88, 88 + 21),
+					OSRectangle(51 + 3, 51 + 5, 88 + 10, 88 + 11),
+					OS_DRAW_MODE_REPEAT_FIRST);
+			OSUpdateWindow(&window);
+		}
+	}
 		
 #if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
