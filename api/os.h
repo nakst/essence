@@ -133,11 +133,19 @@ struct _OSDrawSurfaceArguments {
 	OSRectangle source, destination, border;
 };
 
+typedef void (*_OSEventCallback)(struct OSControl *generator, void *argument);
+
+struct OSEventCallback {
+	_OSEventCallback callback;
+	void *argument;
+};
+
 struct OSControl {
 	int x;
 	int y;
 	int width;
 	int height;
+	OSEventCallback action;
 };
 
 struct OSWindow {
@@ -148,10 +156,13 @@ struct OSWindow {
 	size_t controlsCount;
 
 	OSControl *hoverControl;
+	OSControl *pressedControl;
 };
 
 enum OSMessageType {
 	OS_MESSAGE_MOUSE_MOVED = 0x1000,
+	OS_MESSAGE_MOUSE_LEFT_PRESSED = 0x1001,
+	OS_MESSAGE_MOUSE_LEFT_RELEASED = 0x1002,
 };
 
 struct OSMessage {
@@ -167,6 +178,11 @@ struct OSMessage {
 			int oldPositionY;
 			int newPositionY;
 		} mouseMoved;
+
+		struct {
+			int positionX;
+			int positionY;
+		} mousePressed;
 	};
 };
 

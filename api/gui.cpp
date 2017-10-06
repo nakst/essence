@@ -6,7 +6,8 @@
 
 static void OSDrawControl(OSWindow *window, OSControl *control) {
 	bool isHoverControl = control == window->hoverControl;
-	intptr_t styleX = isHoverControl ? 42 : 51;
+	bool isPressedControl = control == window->pressedControl;
+	intptr_t styleX = (isPressedControl && isHoverControl) ? 60 : ((isPressedControl || isHoverControl) ? 42 : 51);
 
 	OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
 			OSRectangle(control->x, control->x + control->width,
@@ -69,9 +70,16 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 	return window;
 }
 
+static void SendCallback(OSControl *from, OSEventCallback *callback) {
+	if (callback->callback) {
+		callback->callback(from, callback->argument);
+	}
+}
+
 OSError OSProcessGUIMessage(OSMessage *message) {
 	// TODO Message security. 
 	// 	How should we tell who sent the message?
+	// 	(and that they gave us a valid window?)
 
 	OSWindow *window = message->targetWindow;
 	bool updateWindow = false;
@@ -95,6 +103,27 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					window->hoverControl = control;
 					OSDrawControl(window, window->hoverControl);
 					updateWindow = true;
+				}
+			}
+		} break;
+
+		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
+			if (window->hoverControl) {
+				window->pressedControl = window->hoverControl;
+				OSDrawControl(window, window->pressedControl);
+				updateWindow = true;
+			}
+		} break;
+
+		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
+			if (window->pressedControl) {
+				OSControl *previousPressedControl = window->pressedControl;
+				window->pressedControl = nullptr;
+				OSDrawControl(window, previousPressedControl);
+				updateWindow = true;
+
+				if (window->hoverControl == previousPressedControl) {
+					SendCallback(previousPressedControl, &previousPressedControl->action);
 				}
 			}
 		} break;

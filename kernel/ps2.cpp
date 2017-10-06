@@ -1,7 +1,8 @@
 #ifndef IMPLEMENTATION
 
-struct PS2MouseMovement {
+struct PS2MouseUpdate {
 	volatile int xMovement, yMovement;
+	volatile unsigned buttons;
 };
 
 struct PS2 {
@@ -19,7 +20,9 @@ struct PS2 {
 	uint8_t mouseType;
 	size_t channels;
 
-	PS2MouseMovement lastMovement;
+	volatile uintptr_t lastUpdatesIndex;
+	PS2MouseUpdate lastUpdates[16];
+	Spinlock lastUpdatesLock;
 };
 
 PS2 ps2;
@@ -78,9 +81,11 @@ PS2 ps2;
 #define PS2_MOUSE_READ		(0xEB)
 #define PS2_MOUSE_RESOLUTION	(0xE8)
 
-void PS2MoveMouse(void *_movement) {
-	PS2MouseMovement *movement = (PS2MouseMovement *) _movement;
-	windowManager.MoveCursor(movement->xMovement, movement->yMovement);
+void PS2MouseUpdated(void *_update) {
+	PS2MouseUpdate *update = (PS2MouseUpdate *) _update;
+	if (update->xMovement || update->yMovement)
+		windowManager.MoveCursor(update->xMovement, update->yMovement);
+	windowManager.ClickCursor(update->buttons);
 }
 
 bool PS2::PollRead(uint8_t *value, bool forMouse) {
@@ -119,11 +124,20 @@ bool PS2IRQHandler(uintptr_t interruptIndex) {
 		}
 
 		// KernelLog(LOG_VERBOSE, "Mouse data: %X%X%X\n", firstByte, secondByte, thirdByte);
-		ps2.lastMovement.xMovement = secondByte - ((firstByte << 4) & 0x100);
-		ps2.lastMovement.yMovement = -(thirdByte - ((firstByte << 3) & 0x100));
+
+		ps2.lastUpdatesLock.Acquire();
+		PS2MouseUpdate *update = ps2.lastUpdates + ps2.lastUpdatesIndex;
+		ps2.lastUpdatesIndex = (ps2.lastUpdatesIndex + 1) % 16;
+		ps2.lastUpdatesLock.Release();
+
+		update->xMovement = secondByte - ((firstByte << 4) & 0x100);
+		update->yMovement = -(thirdByte - ((firstByte << 3) & 0x100));
+		update->buttons = ((firstByte & (1 << 0)) ? LEFT_BUTTON : 0)
+			      	| ((firstByte & (1 << 1)) ? RIGHT_BUTTON : 0)
+				| ((firstByte & (1 << 2)) ? MIDDLE_BUTTON : 0);
 
 		scheduler.lock.Acquire();
-		RegisterAsyncTask(PS2MoveMouse, &ps2.lastMovement, &kernelVMM.virtualAddressSpace);
+		RegisterAsyncTask(PS2MouseUpdated, update, &kernelVMM.virtualAddressSpace);
 		scheduler.lock.Release();
 
 		firstByte = 0;

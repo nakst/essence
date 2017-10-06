@@ -1,5 +1,9 @@
 #ifndef IMPLEMENTATION
 
+#define LEFT_BUTTON (1)
+#define MIDDLE_BUTTON (2)
+#define RIGHT_BUTTON (4)
+
 struct Window {
 	void Update();
 
@@ -15,6 +19,7 @@ struct WindowManager {
 	void Initialise();
 	Window *CreateWindow(Process *process, size_t width, size_t height);
 	void MoveCursor(int xMovement, int yMovement);
+	void ClickCursor(unsigned buttons);
 
 	Pool windowPool;
 
@@ -24,6 +29,7 @@ struct WindowManager {
 	Mutex mutex;
 
 	int cursorX, cursorY;
+	unsigned lastButtons;
 };
 
 WindowManager windowManager;
@@ -32,6 +38,31 @@ Surface uiSheetSurface;
 #else
 
 #include "../res/UISheet.c_bmp"
+
+void WindowManager::ClickCursor(unsigned buttons) {
+	unsigned delta = lastButtons ^ buttons;
+
+	if (delta & LEFT_BUTTON) {
+		// TODO Send mouse released messages to the window the cursor was over when the mouse was pressed.
+		// 	And do the same thing for mouse movement messages.
+		// Send a mouse pressed message to the window the cursor is over.
+		uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
+		if (index) {
+			Window *window = windows[index - 1];
+
+			OSMessage message = {};
+			message.type = (buttons & LEFT_BUTTON) ? OS_MESSAGE_MOUSE_LEFT_PRESSED : OS_MESSAGE_MOUSE_LEFT_RELEASED;
+			message.targetWindow = window->apiWindow;
+			message.mousePressed.positionX = cursorX - window->position.x;
+			message.mousePressed.positionY = cursorY - window->position.y;
+			window->owner->SendMessage(message);
+		} else {
+			// The cursor is not in a window.
+		}
+	}
+
+	lastButtons = buttons;
+}
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
 	int oldCursorX = cursorX;
