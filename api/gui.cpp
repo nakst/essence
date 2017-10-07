@@ -15,8 +15,6 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 			OSRectangle(styleX, styleX + 8, 88, 88 + 21),
 			OSRectangle(styleX + 3, styleX + 5, 88 + 10, 88 + 11),
 			OS_DRAW_MODE_REPEAT_FIRST);
-
-	OSUpdateWindow(window);
 }
 
 static bool OSControlHitTest(OSControl *control, int x, int y) {
@@ -126,6 +124,10 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					SendCallback(previousPressedControl, &previousPressedControl->action);
 				}
 			}
+		} break;
+
+		case OS_MESSAGE_WINDOW_CREATED: {
+			updateWindow = true;
 		} break;
 
 		default: {

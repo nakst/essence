@@ -17,19 +17,24 @@ void ThreadEntry(void *argument) {
 }
 #endif
 
+OSWindow *window;
+
 void ButtonCallback(OSControl *generator, void *argument) {
-	OSPrint("Button callback!! %x, %X\n", generator, argument);
-	generator->action.argument = (void *) ((uintptr_t) generator->action.argument + 1);
+	(void) generator;
+	OSControl *newButton = OSCreateControl();
+	OSAddControl(window, newButton, 16, (uintptr_t) argument);
+	newButton->action.callback = ButtonCallback;
+	newButton->action.argument = (void *) ((uintptr_t) argument + 8 + 21);
 }
 
 extern "C" void ProgramEntry() {
-	OSWindow *window = OSCreateWindow(320, 200);
+	window = OSCreateWindow(320, 200);
 	OSControl *button1 = OSCreateControl();
 	OSAddControl(window, button1, 16, 16);
 	
 	OSEventCallback *callback = &button1->action;
 	callback->callback = ButtonCallback;
-	callback->argument = (void *) 0;
+	callback->argument = (void *) (16 + 8 + 21);
 
 	while (true) {
 		OSMessage message;

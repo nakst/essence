@@ -564,6 +564,11 @@ uintptr_t DoSyscall(uintptr_t index,
 				_handle.object = &window->surface;
 				osWindow->surface = currentProcess->OpenHandle(_handle);
 				
+				OSMessage message = {};
+				message.type = OS_MESSAGE_WINDOW_CREATED;
+				message.targetWindow = window->apiWindow;
+				window->owner->SendMessage(message);
+
 				SYSCALL_RETURN(OS_SUCCESS);
 			}
 		} break;

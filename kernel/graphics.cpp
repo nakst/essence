@@ -355,12 +355,39 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 		}
 	}
 
+	if (destinationPoint.x < 0) {
+		intptr_t shiftRight = -destinationPoint.x;
+		destinationPoint.x = 0;
+		sourceRegion.left += shiftRight;
+	}
+
+	if (destinationPoint.y < 0) {
+		intptr_t shiftDown = -destinationPoint.y;
+		destinationPoint.y = 0;
+		sourceRegion.top += shiftDown;
+	}
+
+	if (destinationPoint.x + sourceRegion.right - sourceRegion.left > (intptr_t) resX) {
+		intptr_t shiftLeft = destinationPoint.x + sourceRegion.right - sourceRegion.left - resX;
+		sourceRegion.right -= shiftLeft;
+	}
+
+	if (destinationPoint.y + sourceRegion.bottom - sourceRegion.top > (intptr_t) resY) {
+		intptr_t shiftUp = destinationPoint.y + sourceRegion.bottom - sourceRegion.top - resY;
+		sourceRegion.bottom -= shiftUp;
+	}
+
+	if (sourceRegion.left < 0 || sourceRegion.top < 0
+			|| sourceRegion.right > (intptr_t) source.resX || sourceRegion.bottom > (intptr_t) source.resY
+			|| sourceRegion.left >= sourceRegion.right || sourceRegion.top >= sourceRegion.bottom) {
+		// If the source region was invalid, don't perform the operation.
+		return;
+	}
+
 	OSRectangle destinationRegion = OSRectangle(destinationPoint.x,
 						    destinationPoint.x + sourceRegion.right - sourceRegion.left,
 						    destinationPoint.y,
 						    destinationPoint.y + sourceRegion.bottom - sourceRegion.top);
-
-	// TODO Region checking.
 
 	mutex.Acquire();
 	Defer(mutex.Release());
@@ -484,7 +511,19 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 
 void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
 		OSRectangle borderDimensions, OSDrawMode mode) {
-	// TODO Region checking.
+	if (destinationRegion.left >= destinationRegion.right 
+			|| destinationRegion.top >= destinationRegion.bottom
+			|| destinationRegion.right < 0
+			|| destinationRegion.bottom < 0) {
+		return;
+	}
+
+	if (sourceRegion.left < 0 || sourceRegion.top < 0
+			|| sourceRegion.right > (intptr_t) source.resX || sourceRegion.bottom > (intptr_t) source.resY
+			|| sourceRegion.left >= sourceRegion.right || sourceRegion.top >= sourceRegion.bottom) {
+		// If the source region was invalid, don't perform the operation.
+		return;
+	}
 
 	mutex.Acquire();
 	Defer(mutex.Release());
@@ -496,13 +535,20 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 		// TODO Other draw modes.
 		(void) mode;
 
+		if (y < 0) continue;
+		if (y >= (intptr_t) resY) break;
+
 		intptr_t sy = y - destinationRegion.top + sourceRegion.top;
 		if (y >= bottomBorderStart) sy = y - bottomBorderStart + borderDimensions.bottom;
 		else if (sy > borderDimensions.top) sy = borderDimensions.top + 1;
 
-		InvalidateScanline(y, destinationRegion.left, destinationRegion.right);
+		InvalidateScanline(y, destinationRegion.left < 0 ? 0 : destinationRegion.left, 
+				      destinationRegion.right >= (intptr_t) resX ? (intptr_t) resX : destinationRegion.right);
 
 		for (intptr_t x = destinationRegion.left; x < destinationRegion.right; x++) {
+			if (x < 0) continue;
+			if (x >= (intptr_t) resX) break;
+
 			intptr_t sx = x - destinationRegion.left + sourceRegion.left;
 			if (x >= rightBorderStart) sx = x - rightBorderStart + borderDimensions.right;
 			else if (sx > borderDimensions.left) sx = borderDimensions.left + 1;
@@ -534,7 +580,12 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 }
 
 void Surface::FillRectangle(OSRectangle region, OSColor color) {
-	// TODO Region checking.
+	if (region.left < 0 || region.top < 0
+			|| region.right > (intptr_t) resX || region.bottom > (intptr_t) resY
+			|| region.left >= region.right || region.top >= region.bottom) {
+		// If the destination region was invalid, don't perform the operation.
+		return;
+	}
 
 	mutex.Acquire();
 	Defer(mutex.Release());
