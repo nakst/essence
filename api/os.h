@@ -140,12 +140,16 @@ struct OSEventCallback {
 	void *argument;
 };
 
+enum OSControlType {
+	OS_CONTROL_BUTTON,
+};
+
 struct OSControl {
-	int x;
-	int y;
-	int width;
-	int height;
+	OSRectangle bounds;
 	OSEventCallback action;
+	OSControlType type;
+	bool disabled;
+	struct OSWindow *parent;
 };
 
 struct OSWindow {
@@ -157,6 +161,8 @@ struct OSWindow {
 
 	OSControl *hoverControl;
 	OSControl *pressedControl;
+
+	bool dirty;
 };
 
 enum OSMessageType {
@@ -196,6 +202,9 @@ enum OSDrawMode {
 
 typedef void (*OSThreadEntryFunction)(void *argument);
 
+#define OS_CONTROL_ENABLED  (false)
+#define OS_CONTROL_DISABLED (true)
+
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
@@ -229,9 +238,10 @@ extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
 extern "C" OSWindow *OSCreateWindow(size_t width, size_t height);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
-extern "C" OSControl *OSCreateControl();
+extern "C" OSControl *OSCreateControl(OSControlType type);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
+extern "C" void OSDisableControl(OSControl *control, bool disabled);
 
 extern "C" void *OSHeapAllocate(size_t size);
 extern "C" void OSHeapFree(void *address);

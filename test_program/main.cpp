@@ -20,16 +20,16 @@ void ThreadEntry(void *argument) {
 OSWindow *window;
 
 void ButtonCallback(OSControl *generator, void *argument) {
-	(void) generator;
-	OSControl *newButton = OSCreateControl();
+	OSControl *newButton = OSCreateControl(OS_CONTROL_BUTTON);
 	OSAddControl(window, newButton, 16, (uintptr_t) argument);
 	newButton->action.callback = ButtonCallback;
 	newButton->action.argument = (void *) ((uintptr_t) argument + 8 + 21);
+	OSDisableControl(generator, OS_CONTROL_DISABLED);
 }
 
 extern "C" void ProgramEntry() {
 	window = OSCreateWindow(320, 200);
-	OSControl *button1 = OSCreateControl();
+	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
 	OSAddControl(window, button1, 16, 16);
 	
 	OSEventCallback *callback = &button1->action;
