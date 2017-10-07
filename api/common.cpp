@@ -262,3 +262,52 @@ size_t CF(FormatString)(char *buffer, size_t bufferLength, const char *format, .
 	va_end(arguments);
 	return bufferLength - fsi.bytesRemaining;
 }
+
+// Basic C functions.
+
+#ifndef KERNEL
+void *memset(void *s, int c, size_t n) {
+	uint8_t *s8 = (uint8_t *) s;
+	for (uintptr_t i = 0; i < n; i++) {
+		s8[i] = (uint8_t) c;
+	}
+	return s;
+}
+
+void *memcpy(void *dest, const void *src, size_t n) {
+	uint8_t *dest8 = (uint8_t *) dest;
+	const uint8_t *src8 = (const uint8_t *) src;
+	for (uintptr_t i = 0; i < n; i++) {
+		dest8[i] = src8[i];
+	}
+	return dest;
+}
+
+size_t strlen(const char *s) {
+	size_t n = 0;
+	while (s[n]) n++;
+	return n;
+}
+
+void *malloc(size_t size) {
+	return OSHeapAllocate(size);
+}
+
+void free(void *ptr) {
+	OSHeapFree(ptr);
+}
+
+double fabs(double x) {
+	if (x < 0) 	return 0 - x;
+	else		return x;
+}
+
+int ifloor(double x) {
+	int trunc = (int) fabs(x);
+	return x < 0 ? -trunc : trunc;
+}
+
+int iceil(double x) {
+	return ifloor(x + 1.0);
+}
+#endif

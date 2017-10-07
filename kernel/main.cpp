@@ -1,8 +1,6 @@
 // TODO Reference counting for more kernel objects 
 // 		- files, filesystems, mountpoints, devices, etc.
 
-// TODO I don't think floats work.
-
 // TODO Startup bug page faulting from trying to execute at 0?
 // 		- I can't reproduce this.
 // 		- Possibly related to the mutex bug?

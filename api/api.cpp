@@ -14,6 +14,9 @@ void Panic() {
 extern "C" void ProgramEntry();
 
 extern "C" void _start() {
+	void OSFPInitialise();
+	OSFPInitialise();
+
 	OSHeapInitialise();
 	printMutex = OSCreateMutex();
 

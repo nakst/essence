@@ -119,7 +119,7 @@ enum OSColorFormat {
 }; 
 
 struct OSLinearBuffer {
-	size_t width, height;
+	size_t width, height, stride;
 	OSColorFormat colorFormat;
 	void *buffer;
 };
@@ -253,4 +253,15 @@ extern "C" int OSCompareBytes(void *a, void *b, size_t bytes);
 extern "C" uint8_t OSSumBytes(uint8_t *data, size_t bytes);
 extern "C" void OSPrint(const char *format, ...);
 extern "C" size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
+
+extern "C" void *memset(void *s, int c, size_t n);
+extern "C" void *memcpy(void *dest, const void *src, size_t n);
+extern "C" size_t strlen(const char *s);
+extern "C" void *malloc(size_t size);
+extern "C" void free(void *ptr);
+extern "C" double fabs(double x);
+extern "C" int ifloor(double x);
+extern "C" int iceil(double x);
+extern "C" double sqrt(double x);
+#define assert(x) do{if (!(x)) OSPrint("Assertion failure.\n");}while(0)
 #endif

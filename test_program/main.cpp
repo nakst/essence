@@ -1,5 +1,10 @@
 #include "../api/os.h"
 
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
+
+#include "../../Font.c"
+
 #if 0
 volatile int variable = 10;
 OSHandle mutex;
@@ -35,6 +40,38 @@ extern "C" void ProgramEntry() {
 	OSEventCallback *callback = &button1->action;
 	callback->callback = ButtonCallback;
 	callback->argument = (void *) (16 + 8 + 21);
+
+	float real = sqrt(4 * 5);
+	int round = (int) real;
+	OSPrint("Value of real: %d\n", round);
+
+	stbtt_fontinfo fontInfo;
+
+	if (stbtt_InitFont(&fontInfo, font, 0)) {
+		OSPrint("InitFont succeeded.\n");
+		float height = stbtt_ScaleForPixelHeight(&fontInfo, 20.0f);
+		int outWidth, outHeight, glyphX, glyphY;
+		unsigned char *image = stbtt_GetCodepointBitmap(&fontInfo, height, height, 'A', &outWidth, &outHeight, &glyphX, &glyphY);
+		OSPrint("image = %x (%d by %d)\n", image, outWidth, outHeight);
+		OSPrint("checksum = %d\n", OSSumBytes(image, outWidth * outHeight));
+		OSHandle surface = OSCreateSurface(outWidth, outHeight);
+		OSLinearBuffer linearBuffer;
+		OSGetLinearBuffer(surface, &linearBuffer);
+		for (int y = 0; y < outHeight; y++) {
+			for (int x = 0; x < outWidth; x++) {
+				uint8_t pixel = image[x + y * outWidth];
+				uint32_t *destination = (uint32_t *) ((uint8_t *) linearBuffer.buffer + x * 4 + y * linearBuffer.stride);
+				*destination = (pixel << 24);
+			}
+		}
+		int tx = button1->bounds.left + 36, ty = button1->bounds.top + 5;
+		OSDrawSurface(window->surface, surface, OSRectangle(tx, tx + outWidth, ty, ty + outHeight), 
+							OSRectangle(0, outWidth, 0, outHeight),
+							OSRectangle(1, 2, 1, 2),
+							OS_DRAW_MODE_REPEAT_FIRST);
+	} else {
+		OSPrint("InitFont failed.\n");
+	}
 
 	while (true) {
 		OSMessage message;

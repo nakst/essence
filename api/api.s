@@ -10,3 +10,15 @@ _OSSyscall:
 	pop	r11
 	pop	r12
 	ret
+
+[global sqrt]
+sqrt:
+	sqrtsd	xmm0,xmm0
+	ret
+
+[global OSFPInitialise]
+OSFPInitialise:
+	mov	rax,.init
+	ldmxcsr	[rax]
+	ret
+.init:	dd	0x00001FC0

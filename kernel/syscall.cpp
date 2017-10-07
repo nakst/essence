@@ -373,6 +373,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			linearBuffer->width = surface->resX;
 			linearBuffer->height = surface->resY;
 			linearBuffer->buffer = surface->linearBuffer;
+			linearBuffer->stride = surface->stride;
 			linearBuffer->colorFormat = OS_COLOR_FORMAT_32_XRGB;
 
 			SYSCALL_RETURN(OS_SUCCESS);
