@@ -1,11 +1,9 @@
 // TODO Reference counting for more kernel objects 
 // 		- files, filesystems, mountpoints, devices, etc.
 
-// TODO Startup bug page faulting from trying to execute at 0?
-// 		- I can't reproduce this.
-// 		- Possibly related to the mutex bug?
-
 // TODO Implement OSWait (thread synchronization, events).
+
+// TODO Switch from pools to heap?
 
 #include "kernel.h"
 #define IMPLEMENTATION
@@ -17,9 +15,9 @@ void KernelInitilisation() {
 	vfs.Initialise();
 	deviceManager.Initialise();
 
-	KernelLog(LOG_INFO, "KernelInitilisation - Spawning process for /os/test...\n");
-	char *testProcessImage = (char *) "/os/test";
-	scheduler.SpawnProcess(testProcessImage, CStringLength(testProcessImage));
+	KernelLog(LOG_INFO, "KernelInitilisation - Starting the shell...\n");
+	char *shellExecutable = (char *) "/os/shell";
+	scheduler.SpawnProcess(shellExecutable, CStringLength(shellExecutable));
 
 	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
 	scheduler.TerminateThread(ProcessorGetLocalStorage()->currentThread);

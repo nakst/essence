@@ -51,6 +51,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_CLOSE_HANDLE			(23)
 #define OS_SYSCALL_TERMINATE_THREAD		(24)
 #define OS_SYSCALL_CREATE_THREAD		(25)
+#define OS_SYSCALL_READ_ENTIRE_FILE		(26)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -213,6 +214,8 @@ extern "C" OSHandle OSCreateMutex();
 
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
+extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); // TODO Temporary. Replace with a proper file I/O API.
+
 extern "C" OSError OSTerminateThread(OSHandle thread);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
@@ -259,9 +262,16 @@ extern "C" void *memcpy(void *dest, const void *src, size_t n);
 extern "C" size_t strlen(const char *s);
 extern "C" void *malloc(size_t size);
 extern "C" void free(void *ptr);
+extern "C" void *realloc(void *ptr, size_t size);
 extern "C" double fabs(double x);
+extern "C" int abs(int n);
 extern "C" int ifloor(double x);
 extern "C" int iceil(double x);
 extern "C" double sqrt(double x);
 #define assert(x) do{if (!(x)) OSPrint("Assertion failure.\n");}while(0)
+
+#define STBI_NO_STDIO
+#define STBI_ONLY_PNG
+#define STBI_NO_LINEAR
+#include "stb_image.h"
 #endif

@@ -1,5 +1,8 @@
 #include "os.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 void Panic() {
 	// TODO Temporary.
 	OSPrint("OSPanic was called.\n");

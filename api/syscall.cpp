@@ -106,3 +106,13 @@ OSError OSTerminateThread(OSHandle thread) {
 OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument) {
 	return OSSyscall(OS_SYSCALL_CREATE_THREAD, (uintptr_t) entryFunction, 0, (uintptr_t) information, (uintptr_t) argument);
 }
+
+void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize) {
+	intptr_t result = OSSyscall(OS_SYSCALL_READ_ENTIRE_FILE, (uintptr_t) filePath, filePathLength, (uintptr_t) fileSize, 0);
+
+	if (result >= 0) {
+		return (void *) result;
+	} else {
+		return nullptr;
+	}
+}

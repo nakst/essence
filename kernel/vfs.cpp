@@ -81,10 +81,13 @@ void VFS::Initialise() {
 bool Ext2FSScan(char *name, size_t nameLength, File *file, Filesystem *filesystem);
 
 void VFS::CloseFile(File *file) {
+	KernelLog(LOG_VERBOSE, "Closing file: %x\n", file);
 	vfs.filePool.Remove(file);
 }
 
 File *VFS::OpenFile(char *name, size_t nameLength) {
+	KernelLog(LOG_VERBOSE, "Opening file: %s\n", nameLength, name);
+
 	lock.Acquire();
 	Defer(lock.Release());
 

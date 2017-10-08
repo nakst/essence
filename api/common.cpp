@@ -302,6 +302,11 @@ double fabs(double x) {
 	else		return x;
 }
 
+int abs(int n) {
+	if (n < 0)	return 0 - n;
+	else		return n;
+}
+
 int ifloor(double x) {
 	int trunc = (int) fabs(x);
 	return x < 0 ? -trunc : trunc;
@@ -309,5 +314,24 @@ int ifloor(double x) {
 
 int iceil(double x) {
 	return ifloor(x + 1.0);
+}
+
+void *realloc(void *ptr, size_t size) {
+	if (!ptr) return malloc(size);
+
+	uint16_t oldSize = ((OSHeapRegion *) ((uint8_t *) ptr - 0x10))->size;
+
+	if (!oldSize) {
+		// Oops. We currently don't store the size of these regions.
+		// TODO Reallocating large heap allocations.
+		OSPrint("TODO Large heap reallocations.\n");
+		Panic();
+	}
+
+	void *newBlock = malloc(size);
+	if (!newBlock) return nullptr;
+	memcpy(newBlock, ptr, oldSize);
+	free(ptr);
+	return newBlock;
 }
 #endif

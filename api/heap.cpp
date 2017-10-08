@@ -63,6 +63,7 @@ void *OSHeapAllocate(size_t size) {
 	if (size >= 32768) {
 		// This is a very large allocation, so allocate it by itself.
 		OSHeapRegion *region = (OSHeapRegion *) OSAllocate(size);
+		region->used = 0xABCD;
 		if (!region) return nullptr; else return OS_HEAP_REGION_DATA(region);
 	}
 

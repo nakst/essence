@@ -37,8 +37,6 @@ Surface uiSheetSurface;
 
 #else
 
-#include "../res/UISheet.c_bmp"
-
 void WindowManager::ClickCursor(unsigned buttons) {
 	unsigned delta = lastButtons ^ buttons;
 
@@ -111,9 +109,7 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 
 void WindowManager::Initialise() {
 	windowPool.Initialise(sizeof(Window));
-
-	uiSheetSurface.Initialise(kernelProcess->vmm, uiSheetWidth, uiSheetHeight, false);
-	CopyMemory(uiSheetSurface.linearBuffer, uiSheet, uiSheetWidth * uiSheetHeight * 4);
+	uiSheetSurface.Initialise(kernelProcess->vmm, 256, 256, false);
 
 	// Draw the background.
 	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));

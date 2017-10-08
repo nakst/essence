@@ -661,6 +661,36 @@ uintptr_t DoSyscall(uintptr_t index,
 				SYSCALL_RETURN(OS_SUCCESS);
 			}
 		} break;
+
+		case OS_SYSCALL_READ_ENTIRE_FILE: {
+			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
+			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region1));
+
+			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(size_t *));
+			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region2));
+
+			File *file = vfs.OpenFile((char *) argument0, argument1);
+
+			if (!file) SYSCALL_RETURN(0);
+			if (!file->fileSize) SYSCALL_RETURN(0);
+
+			size_t fileSize = file->fileSize;
+			uint8_t *buffer = (uint8_t *) currentVMM->Allocate(fileSize);
+			if (!buffer) SYSCALL_RETURN(0);
+			bool success = file->Read(0, fileSize, buffer);
+
+			vfs.CloseFile(file);
+
+			if (!success) {
+				currentVMM->Free(buffer);
+				SYSCALL_RETURN(0);
+			} else {
+				*((size_t *) argument2) = fileSize;
+				SYSCALL_RETURN((uintptr_t) buffer);
+			}
+		} break;
 	}
 
 	end:;
