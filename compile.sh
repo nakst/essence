@@ -1,8 +1,8 @@
 nasm -felf64 api/api.s -o bin/os/api1.o -Fdwarf
-x86_64-elf-g++ -c api/api.cpp -o bin/os/api2.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address    
+x86_64-elf-g++ -c api/api.cpp -o bin/os/api2.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address   -O3
 x86_64-elf-ar -rcs bin/os/libapi.a bin/os/api1.o bin/os/api2.o
 
-x86_64-elf-g++ -c test_program/main.cpp -o bin/os/test.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DOS_H_HELPER_FUNCTIONS -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address  
+x86_64-elf-g++ -c test_program/main.cpp -o bin/os/test.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DOS_H_HELPER_FUNCTIONS -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address -O3
 x86_64-elf-gcc -T linker_userland64.ld -o bin/os/test -ffreestanding -nostdlib bin/os/test.o -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi  
 
 nasm -felf64 kernel/x86_64.s -o bin/os/kernel_x86_64.o -Fdwarf

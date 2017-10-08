@@ -375,7 +375,10 @@ void KernelPanic(const char *format, ...) {
 	ProcessorHalt();
 }
 
+#define ENABLE_OUTPUT
+
 void Print(const char *format, ...) {
+#ifdef ENABLE_OUTPUT
 	printLock.Acquire();
 	Defer(printLock.Release());
 
@@ -385,6 +388,7 @@ void Print(const char *format, ...) {
 	va_start(arguments, format);
 	_FormatString(TerminalCallback, (void *) 0x0700, format, arguments);
 	va_end(arguments);
+#endif
 }
 
 void _KernelLog(const char *format, ...) {
@@ -395,6 +399,7 @@ void _KernelLog(const char *format, ...) {
 }
 
 void KernelLog(LogLevel level, const char *format, ...) {
+#ifdef ENABLE_OUTPUT
 	printLock.Acquire();
 	Defer(printLock.Release());
 
@@ -417,6 +422,7 @@ void KernelLog(LogLevel level, const char *format, ...) {
 	va_start(arguments, format);
 	_FormatString(TerminalCallback, (void *) 0x0700, format, arguments);
 	va_end(arguments);
+#endif
 }
 
 void PrintStats() {

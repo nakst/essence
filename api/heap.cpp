@@ -71,7 +71,7 @@ void *OSHeapAllocate(size_t size) {
 	OSHeapRegion *region = nullptr;
 
 	for (int i = OSHeapCalculateIndex(size); i < 12; i++) {
-		if (heapRegions[i] == nullptr) {
+		if (heapRegions[i] == nullptr || heapRegions[i]->size < size) {
 			continue;
 		}
 
@@ -90,12 +90,14 @@ void *OSHeapAllocate(size_t size) {
 	// Prevent OSHeapFree trying to merge off the end of the block.
 	{
 		OSHeapRegion *endRegion = OS_HEAP_REGION_NEXT(region);
-		endRegion->used = true;
+		endRegion->used = 0xABCD;
 	}
 
 	foundRegion:
 
-	if (region->used) Panic();
+	if (region->used || region->size < size) {
+		Panic();
+	}
 
 	if (region->size == size) {
 		// If the size of this region is equal to the size of the region we're trying to allocate,

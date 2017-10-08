@@ -65,6 +65,7 @@ extern "C" void ProgramEntry() {
 			}
 		}
 		int tx = (button1->bounds.left + button1->bounds.right) / 2 - outWidth / 2, ty = (button1->bounds.top + button1->bounds.bottom) / 2 - outHeight / 2;
+
 		OSDrawSurface(window->surface, surface, OSRectangle(tx, tx + outWidth, ty, ty + outHeight), 
 							OSRectangle(0, outWidth, 0, outHeight),
 							OSRectangle(1, 2, 1, 2),
