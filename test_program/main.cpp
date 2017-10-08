@@ -49,9 +49,9 @@ extern "C" void ProgramEntry() {
 
 	if (stbtt_InitFont(&fontInfo, font, 0)) {
 		OSPrint("InitFont succeeded.\n");
-		float height = stbtt_ScaleForPixelHeight(&fontInfo, 20.0f);
+		float height = stbtt_ScaleForPixelHeight(&fontInfo, 16.0f);
 		int outWidth, outHeight, glyphX, glyphY;
-		unsigned char *image = stbtt_GetCodepointBitmap(&fontInfo, height, height, 'A', &outWidth, &outHeight, &glyphX, &glyphY);
+		unsigned char *image = stbtt_GetCodepointBitmap(&fontInfo, height, height, 'K', &outWidth, &outHeight, &glyphX, &glyphY);
 		OSPrint("image = %x (%d by %d)\n", image, outWidth, outHeight);
 		OSPrint("checksum = %d\n", OSSumBytes(image, outWidth * outHeight));
 		OSHandle surface = OSCreateSurface(outWidth, outHeight);
@@ -64,7 +64,7 @@ extern "C" void ProgramEntry() {
 				*destination = (pixel << 24);
 			}
 		}
-		int tx = button1->bounds.left + 36, ty = button1->bounds.top + 5;
+		int tx = (button1->bounds.left + button1->bounds.right) / 2 - outWidth / 2, ty = (button1->bounds.top + button1->bounds.bottom) / 2 - outHeight / 2;
 		OSDrawSurface(window->surface, surface, OSRectangle(tx, tx + outWidth, ty, ty + outHeight), 
 							OSRectangle(0, outWidth, 0, outHeight),
 							OSRectangle(1, 2, 1, 2),

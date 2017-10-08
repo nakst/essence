@@ -348,9 +348,10 @@ void ACPI::Initialise() {
 				*startupFlag = 0;
 
 				// Put the stack at AP_TRAMPOLINE + 0xFD0.
-				void *stack = kernelVMM.Allocate(0x1000);
+				void *stack = (void *) ((uintptr_t) kernelVMM.Allocate(0x4000) + 0x4000);
 				CopyMemory((void *) (LOW_MEMORY_MAP_START + AP_TRAMPOLINE + 0xFD0),
 						&stack, sizeof(void *));
+				KernelLog(LOG_VERBOSE, "Trampoline stack: %x->%x\n", stack, (uintptr_t) stack + 0x4000);
 
 				// Send an INIT IPI.
 				lapic.WriteRegister(0x310 >> 2, processor->apicID << 24);
@@ -408,9 +409,11 @@ void ACPI::Initialise() {
 		}
 
 		// Set up the LAPIC's time
+		ProcessorDisableInterrupts();
 		acpi.lapic.WriteRegister(0x380 >> 2, (uint32_t) -1); 
-		for (int i = 0; i < 16; i++) Delay1MS(); // Average over 16ms
+		for (int i = 0; i < 64; i++) Delay1MS(); // Average over 64ms
 		acpi.lapic.ticksPerMs = ((uint32_t) -1 - acpi.lapic.ReadRegister(0x390 >> 2)) >> 4;
+		ProcessorEnableInterrupts();
 	}
 #endif
 }

@@ -6,7 +6,7 @@ x86_64-elf-g++ -c test_program/main.cpp -o bin/os/test.o -ffreestanding -Wall -W
 x86_64-elf-gcc -T linker_userland64.ld -o bin/os/test -ffreestanding -nostdlib bin/os/test.o -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi  
 
 nasm -felf64 kernel/x86_64.s -o bin/os/kernel_x86_64.o -Fdwarf
-x86_64-elf-g++ -c kernel/main.cpp -o bin/os/kernel.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -mno-red-zone -fno-rtti -g -DOS_H_HELPER_FUNCTIONS -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address -DDEBUG_BUILD -O3
+x86_64-elf-g++ -c kernel/main.cpp -o bin/os/kernel.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -mno-red-zone -fno-rtti -g -DOS_H_HELPER_FUNCTIONS -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address -DDEBUG_BUILD  -O3
 x86_64-elf-gcc -T linker64.ld -o bin/os/kernel -ffreestanding -nostdlib bin/os/kernel_x86_64.o bin/os/kernel.o -lgcc -g -mno-red-zone -z max-page-size=0x1000
 cp bin/os/kernel bin/os/kernel_symbols
 x86_64-elf-strip --strip-all bin/os/kernel

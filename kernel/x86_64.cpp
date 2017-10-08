@@ -183,6 +183,9 @@ extern "C" void SetupProcessor2() {
 
 		ProcessorInstallTSS(gdt, tss);
 	}
+
+	// Create the idle thread for this processor.
+	scheduler.CreateProcessorThreads();
 }
 
 const char *exceptionInformation[] = {
@@ -233,10 +236,6 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 
 	if (ProcessorAreInterruptsEnabled()) {
 		KernelPanic("InterruptHandler - Interrupts were enabled at the start of an interrupt handler.\n");
-	}
-
-	if (context->rsp < 0xffff900000992000 && context->rsp > 0xffff900000990000) {
-		ProcessorBreakpointHelper();
 	}
 
 	CPULocalStorage *local = ProcessorGetLocalStorage();

@@ -183,6 +183,7 @@ struct Scheduler {
 	void Start();
 	void Initialise();
 	void InitialiseAP();
+	void CreateProcessorThreads();
 	void Yield(InterruptContext *context);
 
 	Thread *SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveList = true);
@@ -349,6 +350,8 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 	thread->processItem.thisItem = thread;
 	owner->threads.InsertEnd(&thread->processItem);
 
+	KernelLog(LOG_VERBOSE, "Create thread ID %d, type %d\n", thread->id, thread->type);
+
 	for (uintptr_t i = 0; i < MAX_BLOCKING_EVENTS; i++) {
 		thread->item[i].thisItem = thread;
 	}
@@ -384,6 +387,8 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	} else {
 		stack = kernelStack;
 	}
+
+	KernelLog(LOG_VERBOSE, "Spawning thread with stacks (k,u): %x->%x, %x->%x\n", kernelStack, kernelStack + kernelStackSize, stack, stack + userStackSize);
 
 	thread->kernelStackBase = kernelStack;
 	thread->userStackBase = userland ? stack : 0;
@@ -584,9 +589,8 @@ void AsyncTaskThread() {
 	}
 }
 
-void Scheduler::InitialiseAP() {
+void Scheduler::CreateProcessorThreads() {
 	CPULocalStorage *local = ProcessorGetLocalStorage();
-	local->currentThread = nullptr;
 
 	Thread *idleThread = (Thread *) threadPool.Add();
 	idleThread->isKernelThread = true;
@@ -598,7 +602,7 @@ void Scheduler::InitialiseAP() {
 	lock.Acquire();
 
 	if (currentProcessorID >= MAX_PROCESSORS) { 
-		KernelPanic("Scheduler::InitialiseAP - Maximum processor count (%d) exceeded.\n", currentProcessorID);
+		KernelPanic("Scheduler::CreateProcessorThreads - Maximum processor count (%d) exceeded.\n", currentProcessorID);
 	}
 	
 	local->processorID = currentProcessorID++;
@@ -612,8 +616,11 @@ void Scheduler::InitialiseAP() {
 
 	local->asyncTaskThread = SpawnThread((uintptr_t) AsyncTaskThread, 0, kernelProcess, false, false);
 	local->asyncTaskThread->type = THREAD_ASYNC_TASK;
+}
 
-	local->schedulerReady = true; // The processor can now be pre-empted.
+void Scheduler::InitialiseAP() {
+//	CreateProcessorThreads(); (Moved to x86_64.cpp)
+	ProcessorGetLocalStorage()->schedulerReady = true; // The processor can now be pre-empted.
 }
 
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, VirtualAddressSpace *addressSpace) {
@@ -965,6 +972,8 @@ void Mutex::Acquire() {
 			}
 		}
 	}
+
+	__sync_synchronize();
 
 	if (owner != currentThread) {
 		KernelPanic("Mutex::Acquire - Invalid owner thread (%x, expected %x).\n", owner, currentThread);
