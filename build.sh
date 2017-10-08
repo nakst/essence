@@ -37,6 +37,7 @@ echo -n 1234 > bin/os/bootfsid
 echo "Copying the files to the drive..."
 # Copy the bin directory to the mount
 cp -r bin/* mount/
+cp -r res/* mount/os/
 
 echo "Unmounting the loop device..."
 # Unmount the loop device

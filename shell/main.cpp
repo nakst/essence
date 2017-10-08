@@ -24,7 +24,11 @@ extern "C" void ProgramEntry() {
 			}
 		}
 
+		OSInvalidateRectangle(OS_SURFACE_UI_SHEET, OSRectangle(0, imageX, 0, imageY));
 		OSCopySurface(OS_SURFACE_UI_SHEET, surface, OSPoint(0, 0));
+
+		free(image);
+		OSFree(loadedFile);
 	}
 
 	{
