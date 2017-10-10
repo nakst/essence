@@ -9,6 +9,10 @@ void Panic() {
 	while (true);
 }
 
+#ifndef CF
+#define CF(x) OS ## x
+#endif
+
 #include "heap.cpp"
 #include "gui.cpp"
 #include "common.cpp"

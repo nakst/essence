@@ -246,7 +246,7 @@ extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSDisableControl(OSControl *control, bool disabled);
 
-extern "C" void *OSHeapAllocate(size_t size);
+extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);
 
 extern "C" size_t OSCStringLength(char *string);

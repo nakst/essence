@@ -55,10 +55,8 @@ OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
 }
 
 OSControl *OSCreateControl(OSControlType type) {
-	OSControl *control = (OSControl *) OSHeapAllocate(sizeof(OSControl));
+	OSControl *control = (OSControl *) OSHeapAllocate(sizeof(OSControl), true);
 	if (!control) return nullptr;
-
-	OSZeroMemory(control, sizeof(OSControl));
 
 	control->type = type;
 	control->bounds.right = 80;
@@ -68,8 +66,7 @@ OSControl *OSCreateControl(OSControlType type) {
 }
 
 OSWindow *OSCreateWindow(size_t width, size_t height) {
-	OSWindow *window = (OSWindow *) OSHeapAllocate(sizeof(OSWindow));
-	OSZeroMemory(window, sizeof(OSWindow));
+	OSWindow *window = (OSWindow *) OSHeapAllocate(sizeof(OSWindow), true);
 
 	// Add the size of the border.
 	width += BORDER_SIZE_X;

@@ -87,8 +87,8 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	if (header.type != 2) return 0;
 	if (header.instructionSet != 0x3E) return 0;
 
-	ElfProgramHeader *programHeaders = (ElfProgramHeader *) kernelVMM.Allocate(programHeaderEntrySize * header.programHeaderEntries);
-	Defer(kernelVMM.Free(programHeaders));
+	ElfProgramHeader *programHeaders = (ElfProgramHeader *) OSHeapAllocate(programHeaderEntrySize * header.programHeaderEntries, false);
+	Defer(OSHeapFree(programHeaders));
 
 	s = file->Read(header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders);
 	if (!s) return 0;

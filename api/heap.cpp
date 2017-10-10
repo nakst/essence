@@ -71,14 +71,17 @@ static void OSHeapAddFreeRegion(OSHeapRegion *region) {
 	region->regionListReference = heapRegions + index;
 }
 
-void *OSHeapAllocate(size_t size) {
+void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	if (!size) return nullptr;
+
+	size_t originalSize = size;
 
 	size += 0x10; // Region metadata.
 	size = (size + 0x1F) & ~0x1F; // Allocation granularity: 32 bytes.
 
 	if (size >= 32768) {
 		// This is a very large allocation, so allocate it by itself.
+		// We don't need to zero this memory. (It'll be done by the PMM).
 		OSHeapRegion *region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(size);
 		region->used = 0xABCD;
 		if (!region) return nullptr; else return OS_HEAP_REGION_DATA(region);
@@ -122,6 +125,7 @@ void *OSHeapAllocate(size_t size) {
 		// return this region immediately.
 		region->used = 0xABCD;
 		OS_HEAP_RELEASE_MUTEX();
+		if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(region), originalSize);
 		return OS_HEAP_REGION_DATA(region);
 	}
 
@@ -143,6 +147,7 @@ void *OSHeapAllocate(size_t size) {
 	nextRegion->previous = freeRegion->size;
 
 	OS_HEAP_RELEASE_MUTEX();
+	if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(allocatedRegion), originalSize);
 	return OS_HEAP_REGION_DATA(allocatedRegion);
 }
 

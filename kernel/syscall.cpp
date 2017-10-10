@@ -187,7 +187,7 @@ OSHandle Process::OpenHandle(Handle &handle) {
 	}
 
 	if (!l1->t[l1Index]) {
-		l1->t[l1Index] = (HandleTableL2 *) kernelVMM.Allocate(sizeof(HandleTableL2));
+		l1->t[l1Index] = (HandleTableL2 *) OSHeapAllocate(sizeof(HandleTableL2), true);
 	}
 
 	HandleTableL2 *l2 = l1->t[l1Index];
@@ -206,7 +206,7 @@ OSHandle Process::OpenHandle(Handle &handle) {
 	}
 
 	if (!l2->t[l2Index]) {
-		l2->t[l2Index] = (HandleTableL3 *) kernelVMM.Allocate(sizeof(HandleTableL3));
+		l2->t[l2Index] = (HandleTableL3 *) OSHeapAllocate(sizeof(HandleTableL3), true);
 	}
 
 	HandleTableL3 *l3 = l2->t[l2Index];

@@ -290,7 +290,7 @@ size_t strlen(const char *s) {
 }
 
 void *malloc(size_t size) {
-	return OSHeapAllocate(size);
+	return OSHeapAllocate(size, false);
 }
 
 void free(void *ptr) {

@@ -100,8 +100,8 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 	lock.Release();
 
 	if (device->type == DEVICE_TYPE_BLOCK) {
-		uint8_t *information = (uint8_t *) kernelVMM.Allocate(device->block.sectorSize * 4);
-		Defer(kernelVMM.Free(information));
+		uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 4, false);
+		Defer(OSHeapFree(information));
 
 		// Load the first 4 sectors of the drive to identify its filesystem.
 		// Why don't we do this in vfs.cpp? Because C++ headers are driving me insane!!
@@ -113,13 +113,13 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 		}
 
 		if (information[1080] == 0x53 && information[1081] == 0xEF) {
-			Ext2FS *filesystem = (Ext2FS *) kernelVMM.Allocate(sizeof(Ext2FS));
+			Ext2FS *filesystem = (Ext2FS *) OSHeapAllocate(sizeof(Ext2FS), true);
 			File *root = filesystem->Initialise(device);
 			if (root) {
 				vfs.RegisterFilesystem(root, FILESYSTEM_EXT2, filesystem);
 			} else {
 				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid ext2 filesystem.\n", device->id);
-				kernelVMM.Free(filesystem);
+				OSHeapFree(filesystem);
 			}
 		} else if (information[510] == 0x55 && information[511] == 0xAA && !device->block.sectorOffset /*Must be at start of drive*/) {
 			// Check each partition in the table.

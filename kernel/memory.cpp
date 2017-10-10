@@ -1,5 +1,7 @@
 #ifndef IMPLEMENTATION
 
+#define USE_OLD_POOLS 0
+
 #ifdef ARCH_X86_64
 #define PAGE_BITS (12)
 #define PAGE_SIZE (1 << PAGE_BITS)
@@ -140,6 +142,7 @@ struct VMM {
 
 extern VMM kernelVMM;
 
+#if USE_OLD_POOLS
 #define POOL_GROUP_PADDING 32
 struct PoolGroup {
 	union {
@@ -176,6 +179,14 @@ struct Pool {
 
 	bool concurrentModificationCheck;
 };
+#else
+struct Pool {
+	void Initialise(size_t _elementSize);
+	void *Add(); // Aligned to the size of a pointer.
+	void Remove(void *element);
+	size_t elementSize;
+};
+#endif
 
 #endif
 
@@ -872,6 +883,7 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 }
 #endif
 
+#if USE_OLD_POOLS 
 void Pool::Initialise(size_t _elementSize) {
 	if (elementSize) {
 		KernelPanic("Pool::Initialise - Attempt to reinitilise a pool.\n");
@@ -992,6 +1004,20 @@ void Pool::Remove(void *element) {
 		return;
 	}
 }
+#else
+void Pool::Initialise(size_t _elementSize) {
+	elementSize = _elementSize;
+}
+
+void *Pool::Add() {
+	void *address = OSHeapAllocate(elementSize, true);
+	return address;
+}
+
+void Pool::Remove(void *address) {
+	OSHeapFree(address);
+}
+#endif
 
 void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *item, size_t itemSize) {
 	if (arrayCount == arrayAllocated) {
