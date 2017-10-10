@@ -19,20 +19,37 @@ static uintptr_t OSHeapCalculateIndex(uintptr_t size) {
 }
 
 static OSHeapRegion *heapRegions[12];
+
+#ifdef KERNEL
+Mutex heapMutex;
+#define OS_HEAP_ACQUIRE_MUTEX() heapMutex.Acquire()
+#define OS_HEAP_RELEASE_MUTEX() heapMutex.Release()
+#define OS_HEAP_PANIC() KernelPanic("Heap panic.\n")
+#define OS_HEAP_ALLOCATE_CALL(x) kernelVMM.Allocate(x)
+#define OS_HEAP_FREE_CALL(x) kernelVMM.Free(x)
+#else
 static OSHandle heapMutex;
+#define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(heapMutex)
+#define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(heapMutex)
+#define OS_HEAP_PANIC() Panic()
+#define OS_HEAP_ALLOCATE_CALL(x) OSAllocate(x)
+#define OS_HEAP_FREE_CALL(x) OSFree(x)
+#endif
 
 #define OS_HEAP_REGION_HEADER(region) ((OSHeapRegion *) ((uint8_t *) region - 0x10))
 #define OS_HEAP_REGION_DATA(region) ((uint8_t *) region + 0x10)
 #define OS_HEAP_REGION_NEXT(region) ((OSHeapRegion *) ((uint8_t *) region + region->next))
 #define OS_HEAP_REGION_PREVIOUS(region) (region->previous ? ((OSHeapRegion *) ((uint8_t *) region - region->previous)) : nullptr)
 
+#ifndef KERNEL
 static void OSHeapInitialise() {
 	heapMutex = OSCreateMutex();
 }
+#endif
 
 static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 	if (!region->regionListReference || region->used) {
-		Panic();
+		OS_HEAP_PANIC();
 	}
 
 	*region->regionListReference = region->regionListNext;
@@ -44,7 +61,7 @@ static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 
 static void OSHeapAddFreeRegion(OSHeapRegion *region) {
 	if (region->used || region->size < 32) {
-		Panic();
+		OS_HEAP_PANIC();
 	}
 
 	int index = OSHeapCalculateIndex(region->size);
@@ -62,12 +79,12 @@ void *OSHeapAllocate(size_t size) {
 
 	if (size >= 32768) {
 		// This is a very large allocation, so allocate it by itself.
-		OSHeapRegion *region = (OSHeapRegion *) OSAllocate(size);
+		OSHeapRegion *region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(size);
 		region->used = 0xABCD;
 		if (!region) return nullptr; else return OS_HEAP_REGION_DATA(region);
 	}
 
-	OSAcquireMutex(heapMutex);
+	OS_HEAP_ACQUIRE_MUTEX();
 
 	OSHeapRegion *region = nullptr;
 
@@ -81,9 +98,9 @@ void *OSHeapAllocate(size_t size) {
 		goto foundRegion;
 	}
 
-	region = (OSHeapRegion *) OSAllocate(65536);
+	region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(65536);
 	if (!region) {
-		OSReleaseMutex(heapMutex);
+		OS_HEAP_RELEASE_MUTEX();
 		return nullptr; 
 	}
 	region->size = 65536 - 32;
@@ -97,14 +114,14 @@ void *OSHeapAllocate(size_t size) {
 	foundRegion:
 
 	if (region->used || region->size < size) {
-		Panic();
+		OS_HEAP_PANIC();
 	}
 
 	if (region->size == size) {
 		// If the size of this region is equal to the size of the region we're trying to allocate,
 		// return this region immediately.
 		region->used = 0xABCD;
-		OSReleaseMutex(heapMutex);
+		OS_HEAP_RELEASE_MUTEX();
 		return OS_HEAP_REGION_DATA(region);
 	}
 
@@ -125,7 +142,7 @@ void *OSHeapAllocate(size_t size) {
 	OSHeapRegion *nextRegion = OS_HEAP_REGION_NEXT(freeRegion);
 	nextRegion->previous = freeRegion->size;
 
-	OSReleaseMutex(heapMutex);
+	OS_HEAP_RELEASE_MUTEX();
 	return OS_HEAP_REGION_DATA(allocatedRegion);
 }
 
@@ -133,16 +150,16 @@ void OSHeapFree(void *address) {
 	if (!address) return;
 
 	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);
-	if (region->used != 0xABCD) Panic();
+	if (region->used != 0xABCD) OS_HEAP_PANIC();
 	region->used = false;
 
 	if (!region->size) {
 		// The region was allocated by itself.
-		OSFree(region);
+		OS_HEAP_FREE_CALL(region);
 		return;
 	}
 
-	OSAcquireMutex(heapMutex);
+	OS_HEAP_ACQUIRE_MUTEX();
 
 	// Attempt to merge with the next region.
 
@@ -170,15 +187,15 @@ void OSHeapFree(void *address) {
 	}
 
 	if (region->size == 65536 - 32) {
-		if (region->offset) Panic();
+		if (region->offset) OS_HEAP_PANIC();
 
 		// The memory block is empty.
-		OSFree(region);
-		OSReleaseMutex(heapMutex);
+		OS_HEAP_FREE_CALL(region);
+		OS_HEAP_RELEASE_MUTEX();
 		return;
 	}
 
 	// Put the free region in the region list.
 	OSHeapAddFreeRegion(region);
-	OSReleaseMutex(heapMutex);
+	OS_HEAP_RELEASE_MUTEX();
 }

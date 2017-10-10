@@ -297,6 +297,8 @@ void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uin
 	lock.Acquire();
 	Defer(lock.Release());
 
+	KernelLog(LOG_VERBOSE, "VMM::Allocate - %d bytes, %z\n", size, this == &kernelVMM ? "kernel" : "user");
+
 	ValidateCurrentVMM(this);
 
 	if (!size) return nullptr;
@@ -393,6 +395,8 @@ OSError VMM::Free(void *address) {
 
 	lock.Acquire();
 	Defer(lock.Release());
+
+	KernelLog(LOG_VERBOSE, "VMM::Free - %x, %z\n", address, this == &kernelVMM ? "kernel" : "user");
 
 	uintptr_t baseAddress = (uintptr_t) address;
 	VMMRegion *region = FindRegion(baseAddress, regions, regionsCount);

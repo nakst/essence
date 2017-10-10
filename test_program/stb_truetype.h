@@ -1,3 +1,5 @@
+// TODO Investigate assertion failure with capital O
+//
 // stb_truetype.h - v1.17 - public domain
 // authored from 2009-2016 by Sean Barrett / RAD Game Tools
 //

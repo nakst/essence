@@ -185,6 +185,10 @@ void CloseHandleToObject(void *object, KernelObjectType type);
 #include "graphics.cpp"
 #include "acpi.cpp"
 
+#ifndef IMPLEMENTATION
+#include "../api/heap.cpp"
+#endif
+
 #ifdef ARCH_X86_64
 #include "x86_64.cpp"
 #include "pci.cpp"

@@ -47,6 +47,7 @@ extern "C" void ProgramEntry() {
 
 	stbtt_fontinfo fontInfo;
 
+	OSPrint("Creating font....\n");
 	if (stbtt_InitFont(&fontInfo, font, 0)) {
 		OSPrint("InitFont succeeded.\n");
 		float height = stbtt_ScaleForPixelHeight(&fontInfo, 16.0f);
