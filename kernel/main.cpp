@@ -19,6 +19,20 @@ void KernelInitilisation() {
 	char *shellExecutable = (char *) "/os/shell";
 	scheduler.SpawnProcess(shellExecutable, CStringLength(shellExecutable));
 
+	{
+		SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(1000000);
+		uint8_t *memory1 = (uint8_t *) kernelVMM.Allocate(1000000, vmmMapLazy, vmmRegionShared, 0, VMM_REGION_FLAG_CACHABLE, region);
+		uint8_t *memory2 = (uint8_t *) kernelVMM.Allocate(1000000, vmmMapLazy, vmmRegionShared, 0, VMM_REGION_FLAG_CACHABLE, region);
+
+		for (int i = 0; i < 1000000; i++) {
+			memory1[i] = (uint8_t) (i * i);
+
+			if (memory2[i] != memory1[i]) {
+				KernelPanic("Shared memory test failed at %d.\n", i);
+			}
+		}
+	}
+
 	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
 	scheduler.TerminateThread(ProcessorGetLocalStorage()->currentThread);
 }

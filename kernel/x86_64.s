@@ -674,13 +674,13 @@ ProcessorSetAddressSpace:
 [global DoContextSwitch]
 DoContextSwitch:
 	cli
+	mov	[fs:8],rdx
 	mov	rax,cr3
 	cmp	rax,rsi
 	je	.cont
 	mov	cr3,rsi
 	.cont:
 	mov	rsp,rdi
-	mov	[fs:8],rdx
 	call	PostContextSwitch
 	jmp	ReturnFromInterruptHandler
 

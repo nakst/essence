@@ -143,10 +143,12 @@ struct OSEventCallback {
 
 enum OSControlType {
 	OS_CONTROL_BUTTON,
+	OS_CONTROL_IMAGE_BUTTON,
 };
 
 struct OSControl {
 	OSRectangle bounds;
+	OSRectangle image;
 	OSEventCallback action;
 	OSControlType type;
 	bool disabled;

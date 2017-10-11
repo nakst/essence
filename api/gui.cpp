@@ -82,10 +82,6 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 	// Draw the window background and border.
 	OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
 			OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
-	OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(width - 4 - 95 + 28, width - 4, 5, 5 + 43 - 22), 
-			OSRectangle(28, 95, 22, 43), OSRectangle(30, 31, 23, 24), OS_DRAW_MODE_REPEAT_FIRST);
-	OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(width - 4 - 95 + 28, width - 4, 5, 5 + 43 - 22), 
-			OSRectangle(28, 95, 44, 65), OSRectangle(30, 31, 45, 46), OS_DRAW_MODE_REPEAT_FIRST);
 	OSUpdateWindow(window);
 
 	return window;

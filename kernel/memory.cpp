@@ -60,6 +60,7 @@ enum VMMRegionType {
 	vmmRegionFree,
 	vmmRegionStandard, // Allocate and zero on write
 	vmmRegionPhysical,
+	vmmRegionShared,  
 };
 
 enum VMMMapPolicy {
@@ -79,6 +80,7 @@ struct VMMRegion {
 
 	// Fields used to distinguish regions in lookupRegions
 	uintptr_t offset;
+	void *object;
 	VMMRegionType type;
 	VMMMapPolicy mapPolicy;
 	unsigned flags;
@@ -109,7 +111,7 @@ struct VirtualAddressSpace {
 
 struct VMM {
 	void Initialise();
-	void *Allocate(size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE);
+	void *Allocate(size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address);
 	bool HandlePageFault(uintptr_t address);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
@@ -121,7 +123,7 @@ struct VMM {
 	VirtualAddressSpace virtualAddressSpace;
 	Mutex lock; 
 
-	bool AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags);
+	bool AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object);
 	uintptr_t AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated);
 	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region);
 	VMMRegion *FindRegion(uintptr_t address, VMMRegion *array, size_t arrayCount);
@@ -141,6 +143,21 @@ struct VMM {
 };
 
 extern VMM kernelVMM;
+
+struct SharedMemoryRegion {
+	Mutex mutex;
+	size_t handles;
+	size_t sizeBytes;
+
+	// Follows is a list of physical addresses,
+	// that contain the memory in the region.
+};
+
+struct SharedMemoryManager {
+	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes);
+};
+
+SharedMemoryManager sharedMemoryManager;
 
 #if USE_OLD_POOLS
 #define POOL_GROUP_PADDING 32
@@ -211,7 +228,7 @@ void VMM::Initialise() {
 		lookupRegions = (VMMRegion *) 0xFFFF8F8000000000;
 		// regionsAllocated = 0x8000000000 / sizeof(VMMRegion);
 		lookupRegionsAllocated = 65536; 
-		AddRegion(0xFFFF900000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true);
+		AddRegion(0xFFFF900000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = ProcessorReadCR3();
 #endif
@@ -220,7 +237,7 @@ void VMM::Initialise() {
 
 		// Initialise the virtual address space for a new process.
 #ifdef ARCH_X86_64
-		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true);
+		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
 		uint64_t *pageTable = (uint64_t *) kernelVMM.Allocate(PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
@@ -257,7 +274,7 @@ uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCoun
 	return regionIndex;
 }
 
-bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags) {
+bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object) {
 	lock.AssertLocked();
 
 	if (FindRegion(baseAddress, regions, regionsCount)) {
@@ -273,6 +290,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	region.type = type;
 	region.mapPolicy = mapPolicy;
 	region.flags = flags;
+	region.object = object;
 
 	if (type != vmmRegionFree) {
 		allocatedVirtualMemory += pageCount * PAGE_SIZE;
@@ -287,10 +305,20 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 
 	// Map the first few pages in to reduce the number of initial page faults.
 	if (type != vmmRegionFree) {
+		if (type == vmmRegionShared) {
+			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+			region->mutex.Acquire();
+		}
+
 		virtualAddressSpace.lock.Acquire();
 		Defer(virtualAddressSpace.lock.Release());
 
 		HandlePageFaultInRegion(baseAddress, regions + regionIndex);
+
+		if (type == vmmRegionShared) {
+			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+			region->mutex.Release();
+		}
 	}
 
 	return true;
@@ -304,11 +332,9 @@ void ValidateCurrentVMM(VMM *target) {
 	}
 }
 
-void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags) {
+void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
 	lock.Acquire();
 	Defer(lock.Release());
-
-	KernelLog(LOG_VERBOSE, "VMM::Allocate - %d bytes, %z\n", size, this == &kernelVMM ? "kernel" : "user");
 
 	ValidateCurrentVMM(this);
 
@@ -336,27 +362,35 @@ void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uin
 	region->baseAddress += pageCount << PAGE_BITS;
 	region->pageCount -= pageCount;
 
-	bool success = AddRegion(baseAddress, pageCount, offset & ~(PAGE_SIZE - 1), type, mapPolicy, flags);
+	bool success = AddRegion(baseAddress, pageCount, offset & ~(PAGE_SIZE - 1), type, mapPolicy, flags, object);
 	if (!success) return nullptr;
 	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1)));
+
 	return address;
 }
 
 void VMM::MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t &arrayCount) {
 	lock.AssertLocked();
 
-	// TODO Check this function works properly?
+	intptr_t remove1 = -1, remove2 = -1;
 
-	uintptr_t remove1 = -1, remove2 = -1;
-
-	for (uintptr_t i = 0; i < arrayCount; i++) {
+	for (uintptr_t i = 0; i < arrayCount && (remove1 != -1 || remove2 != 1); i++) {
 		VMMRegion *r = array + i;
 
 		if (r->type != region->type) continue;
-		if (r->offset != region->offset) continue;
-		if (r->mapPolicy != region->mapPolicy) continue;
-		if (r->flags != region->flags) continue;
 		if (r == region) continue;
+
+		if (r->type != vmmRegionStandard && r->type != vmmRegionFree) {
+			// We can only merge standard and free regions.
+			continue;
+		}
+
+		if (r->type == vmmRegionStandard) {
+			if (r->mapPolicy != region->mapPolicy) continue;
+			if (r->offset != region->offset) continue;
+			if (r->flags != region->flags) continue;
+			if (r->object != region->object) continue;
+		}
 
 		if (r->baseAddress == region->baseAddress + (region->pageCount << PAGE_BITS)) {
 			region->pageCount += r->pageCount;
@@ -368,9 +402,9 @@ void VMM::MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, siz
 		}
 	}
 
-	if (remove1 != (uintptr_t) -1) array[remove1] = array[--arrayCount];
-	if (remove2 == arrayCount) remove2 = remove1;
-	if (remove2 != (uintptr_t) -1) array[remove2] = array[--arrayCount];
+	if (remove1 != -1) array[remove1] = array[--arrayCount];
+	if (remove2 == (intptr_t) arrayCount) remove2 = remove1;
+	if (remove2 != -1) array[remove2] = array[--arrayCount];
 }
 
 void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayCount, size_t &arrayAllocated) {
@@ -407,8 +441,6 @@ OSError VMM::Free(void *address) {
 	lock.Acquire();
 	Defer(lock.Release());
 
-	KernelLog(LOG_VERBOSE, "VMM::Free - %x, %z\n", address, this == &kernelVMM ? "kernel" : "user");
-
 	uintptr_t baseAddress = (uintptr_t) address;
 	VMMRegion *region = FindRegion(baseAddress, regions, regionsCount);
 
@@ -444,6 +476,10 @@ OSError VMM::Free(void *address) {
 						// Do nothing.
 					} break;
 
+					case vmmRegionShared: {
+						// This memory will be freed when the last handle to the shared memory region is closed.
+					} break;
+
 					default: {
 						KernelPanic("VMM::Free - Cannot free VMMRegion of type %d\n", region->type);
 					} break;
@@ -457,9 +493,6 @@ OSError VMM::Free(void *address) {
 	size_t regionPageCount = region->pageCount;
 	VMMMapPolicy mapPolicy = region->mapPolicy;
 
-	region->type = vmmRegionFree;
-	MergeIdenticalAdjacentRegions(region, regions, regionsCount);
-
 	if (mapPolicy != vmmMapAll) {
 		VMMRegion *lookupRegion = FindRegion(baseAddress, lookupRegions, lookupRegionsCount);
 		SplitRegion(lookupRegion, baseAddress, true, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
@@ -467,11 +500,15 @@ OSError VMM::Free(void *address) {
 		*lookupRegion = lookupRegions[--lookupRegionsCount];
 	}
 
+	region->type = vmmRegionFree;
+	MergeIdenticalAdjacentRegions(region, regions, regionsCount);
+
 	return OS_SUCCESS;
 }
 
 bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region) {
 	lock.AssertLocked();
+	virtualAddressSpace.lock.AssertLocked();
 
 	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
 
@@ -496,6 +533,28 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region) {
 
 			case vmmRegionPhysical: {
 				virtualAddressSpace.Map(address - region->baseAddress + region->offset, address, region->flags);
+			} break;
+
+			case vmmRegionShared: {
+				if (address == page || !virtualAddressSpace.Get(address)) {
+					SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
+					sharedRegion->mutex.AssertLocked();
+					uintptr_t *volatile addresses = (uintptr_t *) (sharedRegion + 1);
+					uintptr_t index = (address - region->baseAddress + region->offset) >> PAGE_BITS;
+
+					if (addresses[index]) {
+						virtualAddressSpace.Map(addresses[index], address, region->flags);
+					} else {
+						// NOTE Duplicated from above.
+						uintptr_t physicalPage = pmm.AllocatePage();
+						allocatedPhysicalMemory += PAGE_SIZE;
+						virtualAddressSpace.Map(physicalPage, address, region->flags);
+						ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
+						addresses[index] = physicalPage;
+					}
+				} else {
+					// Ignore pages that have already been mapped.
+				}
 			} break;
 
 			default: {
@@ -564,23 +623,40 @@ void VMM::UnlockRegion(VMMRegion *region) {
 
 bool VMM::HandlePageFault(uintptr_t address) {
 	lock.AssertLocked();
-	virtualAddressSpace.lock.Acquire();
-	Defer(virtualAddressSpace.lock.Release());
 
-	if (virtualAddressSpace.Get(address)) {
-		// If the processor "remembers" a non-present page then we'll get a page fault here.
-		// ...so invalidate the page.
-		ProcessorInvalidatePage(address);
-		return true;
+	{
+		virtualAddressSpace.lock.Acquire();
+		Defer(virtualAddressSpace.lock.Release());
+
+		if (virtualAddressSpace.Get(address)) {
+			// If the processor "remembers" a non-present page then we'll get a page fault here.
+			// ...so invalidate the page.
+			ProcessorInvalidatePage(address);
+			return true;
+		}
 	}
 
 	uintptr_t page = address & ~(PAGE_SIZE - 1);
 	VMMRegion *region = FindRegion(address, lookupRegions, lookupRegionsCount);
 
-	if (region) return HandlePageFaultInRegion(page, region);
-	else return false;
+	if (region) {
 
-	return false;
+		if (region->type == vmmRegionShared) {
+			SharedMemoryRegion *_region = (SharedMemoryRegion *) region->object;
+			_region->mutex.Acquire();
+		}
+
+		virtualAddressSpace.lock.Acquire();
+		bool result = HandlePageFaultInRegion(page, region);
+		virtualAddressSpace.lock.Release();
+
+		if (region->type == vmmRegionShared) {
+			SharedMemoryRegion *_region = (SharedMemoryRegion *) region->object;
+			_region->mutex.Release();
+		}
+
+		return result;
+	} else return false;
 }
 
 #ifdef ARCH_X86_64
@@ -813,6 +889,7 @@ uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress) {
 void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 	lock.AssertLocked();
 
+	uintptr_t virtualAddressU = _virtualAddress;
 	_virtualAddress &= 0x0000FFFFFFFFF000;
 
 	for (uintptr_t i = 0; i < pageCount; i++) {
@@ -821,7 +898,7 @@ void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 		if (Get(virtualAddress)) {
 			uintptr_t indexL1 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0);
 			PAGE_TABLE_L1[indexL1] = 0;
-			ProcessorInvalidatePage(virtualAddress);
+			ProcessorInvalidatePage((i << PAGE_BITS) + virtualAddressU);
 		}
 	}
 
@@ -1042,5 +1119,18 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 }
 
 #define ArrayAdd(_array, _item) _ArrayAdd((void **) &(_array), (_array ## Count), (_array ## Allocated), &(_item), sizeof(_item))
+
+SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes) {
+	size_t pages = sizeBytes / PAGE_SIZE;
+	if (sizeBytes & (PAGE_SIZE - 1)) pages++;
+
+	// Allocate enough space for the SharedMemoryRegion itself,
+	// and the list of physical addresses.
+	SharedMemoryRegion *region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), true);
+	region->sizeBytes = sizeBytes;
+	region->handles = 1;
+
+	return region;
+}
 
 #endif

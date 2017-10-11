@@ -3,7 +3,9 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
+#if 0
 #include "../../Font.c"
+#endif
 
 #if 0
 volatile int variable = 10;
@@ -33,7 +35,8 @@ void ButtonCallback(OSControl *generator, void *argument) {
 }
 
 extern "C" void ProgramEntry() {
-	window = OSCreateWindow(320, 200);
+	window = OSCreateWindow(640, 480);
+	window = OSCreateWindow(640, 480);
 	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
 	OSAddControl(window, button1, 16, 16);
 	
@@ -41,10 +44,13 @@ extern "C" void ProgramEntry() {
 	callback->callback = ButtonCallback;
 	callback->argument = (void *) (16 + 8 + 21);
 
+#if 0
 	float real = sqrt(4 * 5);
 	int round = (int) real;
 	OSPrint("Value of real: %d\n", round);
+#endif
 
+#if 0
 	stbtt_fontinfo fontInfo;
 
 	OSPrint("Creating font....\n");
@@ -74,6 +80,7 @@ extern "C" void ProgramEntry() {
 	} else {
 		OSPrint("InitFont failed.\n");
 	}
+#endif
 
 	while (true) {
 		OSMessage message;
