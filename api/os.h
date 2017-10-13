@@ -216,6 +216,9 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE (1073742824)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
+#define OS_SHARED_MEMORY_MAP_ALL (0)
+
+#define OS_GUI_FONT_REGULAR ((char *) "Shell/Font/RegularGUI")
 
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);

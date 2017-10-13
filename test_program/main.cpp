@@ -37,6 +37,18 @@ void ButtonCallback(OSControl *generator, void *argument) {
 extern "C" void ProgramEntry() {
 #define C_STRING_TO_API_STRING(literal) (char *) literal, OSCStringLength((char *) literal)
 
+	window = OSCreateWindow(640, 480);
+	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
+	OSAddControl(window, button1, 16, 16);
+	
+	OSEventCallback *callback = &button1->action;
+	callback->callback = ButtonCallback;
+	callback->argument = (void *) (16 + 8 + 21);
+
+	OSHandle regularFontHandle = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING(OS_GUI_FONT_REGULAR));
+	void *font = OSMapSharedMemory(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL);
+
+#if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
 		OSHandle sharedMemory = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING("TestProgram/Shmem1"));
 		uint8_t *s1 = (uint8_t *) OSMapSharedMemory(sharedMemory, 0, 0x4000);
@@ -80,6 +92,7 @@ extern "C" void ProgramEntry() {
 
 	OSProcessInformation newProcess;
 	OSCreateProcess(C_STRING_TO_API_STRING("/os/test"), &newProcess, (void *) 1);
+#endif
 
 #if 0
 	float real = sqrt(4 * 5);
@@ -87,11 +100,11 @@ extern "C" void ProgramEntry() {
 	OSPrint("Value of real: %d\n", round);
 #endif
 
-#if 0
+#if 1
 	stbtt_fontinfo fontInfo;
 
 	OSPrint("Creating font....\n");
-	if (stbtt_InitFont(&fontInfo, font, 0)) {
+	if (stbtt_InitFont(&fontInfo, (uint8_t *) font, 0)) {
 		OSPrint("InitFont succeeded.\n");
 		float height = stbtt_ScaleForPixelHeight(&fontInfo, 16.0f);
 		int outWidth, outHeight, glyphX, glyphY;

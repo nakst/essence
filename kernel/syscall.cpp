@@ -752,6 +752,10 @@ uintptr_t DoSyscall(uintptr_t index,
 			region->handles++;
 			region->mutex.Release();
 
+			if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
+				argument2 = region->sizeBytes;
+			}
+
 			uintptr_t address = (uintptr_t) currentVMM->Allocate(argument2, vmmMapLazy, vmmRegionShared, argument1, VMM_REGION_FLAG_CACHABLE, region);
 
 			if (!address) {

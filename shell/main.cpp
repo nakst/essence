@@ -32,6 +32,23 @@ extern "C" void ProgramEntry() {
 	}
 
 	{
+		// Load the GUI font.
+
+		char *fontFile = (char *) "/os/source_sans/regular.ttf";
+		size_t fileSize;
+		void *loadedFile = OSReadEntireFile(fontFile, OSCStringLength(fontFile), &fileSize);
+
+		if (!loadedFile) {
+			OSPrint("Error: Could not load the font file.\n");
+		}
+
+		char *fontName = OS_GUI_FONT_REGULAR;
+		OSHandle sharedMemory = OSCreateSharedMemory(fileSize, fontName, OSCStringLength(fontName));
+		OSCopyMemory(OSMapSharedMemory(sharedMemory, 0, fileSize), loadedFile, fileSize);
+		OSFree(loadedFile);
+	}
+
+	{
 		// Start the test program.
 		const char *testProgram = "/os/test";
 		OSProcessInformation testProcess;
