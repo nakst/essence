@@ -148,14 +148,27 @@ struct SharedMemoryRegion {
 	Mutex mutex;
 	volatile size_t handles;
 	size_t sizeBytes;
-
+	bool named;
+	
 	// Follows is a list of physical addresses,
 	// that contain the memory in the region.
 };
 
+struct NamedSharedMemoryRegion {
+	SharedMemoryRegion *region;
+	char name[OS_SHARED_MEMORY_NAME_MAX_LENGTH];
+	size_t nameLength;
+};
+
 struct SharedMemoryManager {
-	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes);
+	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0);
+	SharedMemoryRegion *LookupSharedMemory(char *name, size_t nameLength);
 	void DestroySharedMemory(SharedMemoryRegion *region);
+
+	NamedSharedMemoryRegion *namedSharedMemoryRegions;
+	size_t namedSharedMemoryRegionsCount, namedSharedMemoryRegionsAllocated;
+
+	Mutex mutex;
 };
 
 SharedMemoryManager sharedMemoryManager;
@@ -1124,7 +1137,31 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 
 #define ArrayAdd(_array, _item) _ArrayAdd((void **) &(_array), (_array ## Count), (_array ## Allocated), &(_item), sizeof(_item))
 
-SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes) {
+SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, char *name, size_t nameLength) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	NamedSharedMemoryRegion *namedRegion = nullptr;
+
+	if (name) {
+		if (!nameLength) {
+			KernelPanic("SharedMemoryManager::CreateSharedMemory - Invalid name length.\n");
+		}
+
+		for (uintptr_t i = 0; i < namedSharedMemoryRegionsCount; i++) {
+			if (namedSharedMemoryRegions[i].nameLength == nameLength 
+					&& !CompareBytes(namedSharedMemoryRegions[i].name, name, nameLength)) {
+				// Name overlap.
+				return nullptr;
+			}
+		}
+
+		NamedSharedMemoryRegion region = {};
+		region.nameLength = nameLength;
+		CopyMemory(region.name, name, nameLength);
+		namedRegion = (NamedSharedMemoryRegion *) ArrayAdd(namedSharedMemoryRegions, region);
+	}
+
 	size_t pages = sizeBytes / PAGE_SIZE;
 	if (sizeBytes & (PAGE_SIZE - 1)) pages++;
 
@@ -1132,14 +1169,40 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes) {
 	// and the list of physical addresses.
 	SharedMemoryRegion *region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), true);
 	region->sizeBytes = sizeBytes;
-	region->handles = 1;
+
+	if (namedRegion) {
+		region->named = true;
+		region->handles = 2; // Named regions must always be present.
+		namedRegion->region = region;
+	} else {
+		region->named = false;
+		region->handles = 1;
+	}
 
 	return region;
+}
+
+SharedMemoryRegion *SharedMemoryManager::LookupSharedMemory(char *name, size_t nameLength) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	for (uintptr_t i = 0; i < namedSharedMemoryRegionsCount; i++) {
+		if (namedSharedMemoryRegions[i].nameLength == nameLength 
+				&& !CompareBytes(namedSharedMemoryRegions[i].name, name, nameLength)) {
+			return namedSharedMemoryRegions[i].region;
+		}
+	}
+
+	return nullptr;
 }
 
 void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 	if (region->handles) {
 		KernelPanic("SharedMemoryManager::DestroySharedMemory - Region has handles.\n");
+	}
+	
+	if (region->named) {
+		KernelPanic("SharedMemoryManager::DestroySharedMemory - Cannot destroy named regions (yet).\n");
 	}
 
 	size_t pages = region->sizeBytes / PAGE_SIZE;

@@ -35,6 +35,19 @@ void ButtonCallback(OSControl *generator, void *argument) {
 }
 
 extern "C" void ProgramEntry() {
+#define C_STRING_TO_API_STRING(literal) (char *) literal, OSCStringLength((char *) literal)
+
+	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
+		OSHandle sharedMemory = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING("TestProgram/Shmem1"));
+		uint8_t *s1 = (uint8_t *) OSMapSharedMemory(sharedMemory, 0, 0x4000);
+
+		for (int i = 0; i < 10; i++) {
+			OSPrint("s1[%d] = %d\n", i, s1[i]);
+		}
+
+		OSTerminateThread(OS_CURRENT_THREAD);
+	}
+
 	window = OSCreateWindow(640, 480);
 	window = OSCreateWindow(640, 480);
 	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
@@ -44,7 +57,7 @@ extern "C" void ProgramEntry() {
 	callback->callback = ButtonCallback;
 	callback->argument = (void *) (16 + 8 + 21);
 
-	OSHandle sharedMemory = OSCreateSharedMemory(0x4000);
+	OSHandle sharedMemory = OSCreateSharedMemory(0x4000, C_STRING_TO_API_STRING("TestProgram/Shmem1"));
 	uint8_t *s1 = (uint8_t *) OSMapSharedMemory(sharedMemory, 0, 0x4000);
 	uint8_t *s2 = (uint8_t *) OSMapSharedMemory(sharedMemory, 0, 0x4000);
 
@@ -64,6 +77,9 @@ extern "C" void ProgramEntry() {
 	OSFree(s1);
 	OSCloseHandle(sharedMemory);
 	OSFree(s2);
+
+	OSProcessInformation newProcess;
+	OSCreateProcess(C_STRING_TO_API_STRING("/os/test"), &newProcess, (void *) 1);
 
 #if 0
 	float real = sqrt(4 * 5);

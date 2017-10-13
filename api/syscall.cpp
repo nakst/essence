@@ -117,8 +117,12 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 	}
 }
 
-OSHandle OSCreateSharedMemory(size_t size) {
-	return OSSyscall(OS_SYSCALL_CREATE_SHARED_MEMORY, size, 0, 0, 0);
+OSHandle OSOpenNamedSharedMemory(char *name, size_t nameLength) {
+	return OSSyscall(OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY, (uintptr_t) name, nameLength, 0, 0);
+}
+
+OSHandle OSCreateSharedMemory(size_t size, char *name, size_t nameLength) {
+	return OSSyscall(OS_SYSCALL_CREATE_SHARED_MEMORY, size, (uintptr_t) name, nameLength, 0);
 }
 
 OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, uint32_t flags) {

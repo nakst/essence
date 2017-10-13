@@ -724,7 +724,17 @@ uintptr_t DoSyscall(uintptr_t index,
 				SYSCALL_RETURN(OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE);
 			}
 
-			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0);
+			if (argument2 > OS_SHARED_MEMORY_NAME_MAX_LENGTH) {
+				SYSCALL_RETURN(OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT);
+			}
+
+			if (argument1 && !argument2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+
+			VMMRegion *region1 = argument1 ? currentVMM->FindAndLockRegion(argument1, argument2) : nullptr;
+			if (!region1 && argument1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(if (region1) currentVMM->UnlockRegion(region1));
+
+			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0, (char *) argument1, argument2);
 			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE);
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
@@ -749,6 +759,24 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 
 			SYSCALL_RETURN(address);
+		} break;
+
+		case OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY: {
+			if (argument1 > OS_SHARED_MEMORY_NAME_MAX_LENGTH) {
+				SYSCALL_RETURN(OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT);
+			}
+
+			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
+			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region1));
+
+			SharedMemoryRegion *region = sharedMemoryManager.LookupSharedMemory((char *) argument0, argument1);
+			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE);
+
+			Handle handle = {};
+			handle.type = KERNEL_OBJECT_SHMEM;
+			handle.object = region;
+			SYSCALL_RETURN(currentProcess->OpenHandle(handle));
 		} break;
 	}
 
