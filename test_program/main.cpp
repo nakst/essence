@@ -44,6 +44,27 @@ extern "C" void ProgramEntry() {
 	callback->callback = ButtonCallback;
 	callback->argument = (void *) (16 + 8 + 21);
 
+	OSHandle sharedMemory = OSCreateSharedMemory(0x4000);
+	uint8_t *s1 = (uint8_t *) OSMapSharedMemory(sharedMemory, 0, 0x4000);
+	uint8_t *s2 = (uint8_t *) OSMapSharedMemory(sharedMemory, 0, 0x4000);
+
+	OSPrint("sharedMemory = %x, s1 = %x, s2 = %x\n", sharedMemory, s1, s2);
+
+	for (int i = 0; i < 0x4000; i++) {
+		s1[i] = i * i;
+	}
+
+	for (int i = 0; i < 0x4000; i++) {
+		if (s2[i] != s1[i]) {
+			OSPrint("It didn't work!!!!\n");
+			break;
+		}
+	}
+
+	OSFree(s1);
+	OSCloseHandle(sharedMemory);
+	OSFree(s2);
+
 #if 0
 	float real = sqrt(4 * 5);
 	int round = (int) real;

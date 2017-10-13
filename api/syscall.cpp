@@ -116,3 +116,21 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 		return nullptr;
 	}
 }
+
+OSHandle OSCreateSharedMemory(size_t size) {
+	return OSSyscall(OS_SYSCALL_CREATE_SHARED_MEMORY, size, 0, 0, 0);
+}
+
+OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, uint32_t flags) {
+	return OSSyscall(OS_SYSCALL_SHARE_MEMORY, sharedMemoryRegion, targetProcess, flags, 0);
+}
+
+void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size) {
+	intptr_t result = OSSyscall(OS_SYSCALL_MAP_SHARED_MEMORY, sharedMemoryRegion, offset, size, 0);
+
+	if (result >= 0) {
+		return (void *) result;
+	} else {
+		return nullptr;
+	}
+}

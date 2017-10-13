@@ -112,7 +112,7 @@ struct VirtualAddressSpace {
 struct VMM {
 	void Initialise();
 	void *Allocate(size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
-	OSError Free(void *address);
+	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr);
 	bool HandlePageFault(uintptr_t address);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
 	void UnlockRegion(VMMRegion *region);
@@ -146,7 +146,7 @@ extern VMM kernelVMM;
 
 struct SharedMemoryRegion {
 	Mutex mutex;
-	size_t handles;
+	volatile size_t handles;
 	size_t sizeBytes;
 
 	// Follows is a list of physical addresses,
@@ -155,6 +155,7 @@ struct SharedMemoryRegion {
 
 struct SharedMemoryManager {
 	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes);
+	void DestroySharedMemory(SharedMemoryRegion *region);
 };
 
 SharedMemoryManager sharedMemoryManager;
@@ -431,7 +432,7 @@ void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMR
 	region->pageCount -= newRegion->pageCount;
 }
 
-OSError VMM::Free(void *address) {
+OSError VMM::Free(void *address, void **object, VMMRegionType *type) {
 	if (!address) {
 		return OS_ERROR_INVALID_MEMORY_REGION;
 	}
@@ -449,6 +450,9 @@ OSError VMM::Free(void *address) {
 	} else if (region->lock) {
 		return OS_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL;
 	}
+
+	if (object) *object = region->object;
+	if (type) *type = region->type;
 
 	allocatedVirtualMemory -= region->pageCount * PAGE_SIZE;
 
@@ -514,9 +518,9 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region) {
 
 	for (uintptr_t address = page, i = 0; 
 			// If we need to map all pages in now, then do that.
-			// Otherwise, just map in this page and any in the following 64 that haven't been mapped already.
+			// Otherwise, just map in this page and any in the following 16 that haven't been mapped already.
 			// (But make sure we don't go outside the region).
-			(region->mapPolicy == vmmMapAll || i < 64) && pageInRegion + i < region->pageCount; 
+			(region->mapPolicy == vmmMapAll || i < 16) && pageInRegion + i < region->pageCount; 
 			address += PAGE_SIZE, i++) {
 
 		switch (region->type) {
@@ -1131,6 +1135,26 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes) {
 	region->handles = 1;
 
 	return region;
+}
+
+void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
+	if (region->handles) {
+		KernelPanic("SharedMemoryManager::DestroySharedMemory - Region has handles.\n");
+	}
+
+	size_t pages = region->sizeBytes / PAGE_SIZE;
+	if (region->sizeBytes & (PAGE_SIZE - 1)) pages++;
+
+	uintptr_t *addresses = (uintptr_t *) (region + 1);
+
+	pmm.lock.Acquire();
+	for (uintptr_t i = 0; i < pages; i++) {
+		uintptr_t address = addresses[i];
+		pmm.FreePage(address);
+	}
+	pmm.lock.Release();
+
+	OSHeapFree(region);
 }
 
 #endif

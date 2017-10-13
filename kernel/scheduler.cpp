@@ -139,7 +139,7 @@ struct Process {
 
 	// Resolve the handle if it is valid and return the type in type.
 	// The initial value of type is used as a mask of expected object types for the handle.
-	void *ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason = RESOLVE_HANDLE_TO_USE); 
+	void *ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason = RESOLVE_HANDLE_TO_USE, Handle **handleData = nullptr); 
 	void CompleteHandle(void *object, OSHandle handle); // Decrements handle lock.
 
 	bool SendMessage(OSMessage &message); // Returns false if the message queue is full.

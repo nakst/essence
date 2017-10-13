@@ -42,6 +42,18 @@ void CloseHandleToObject(void *object, KernelObjectType type) {
 			scheduler.lock.Release();
 		} break;
 
+		case KERNEL_OBJECT_SHMEM: {
+			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+			region->mutex.Acquire();
+			bool destroy = region->handles == 1;
+			region->handles--;
+			region->mutex.Release();
+
+			if (destroy) {
+				sharedMemoryManager.DestroySharedMemory(region);
+			}
+		} break;
+
 		default: {
 			KernelPanic("DoSyscall - Cannot close object of type %d.\n", type);
 		} break;
@@ -73,7 +85,7 @@ void Process::CloseHandle(OSHandle handle) {
 	CloseHandleToObject(object, type);
 }
 
-void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason) {
+void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason, Handle **handleData) {
 	// Check that the handle is within the correct bounds.
 	if (!handle || handle >= HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES) {
 		return nullptr;
@@ -117,12 +129,15 @@ void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHan
 				return nullptr; // The handle is being closed.
 			} else {
 				_handle->lock++;
+				if (handleData) *handleData = _handle;
 				return _handle->object;
 			}
 		} else if (reason == RESOLVE_HANDLE_TO_CLOSE) {
 			if (_handle->lock) {
 				return nullptr; // The handle was locked and can't be closed.
 			} else {
+				_handle->closing = true;
+				if (handleData) *handleData = _handle;
 				return _handle->object;
 			}
 		} else {
@@ -292,7 +307,18 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_FREE: {
-			OSError error = currentVMM->Free((void *) argument0);
+			void *object;
+			VMMRegionType type;
+
+			OSError error = currentVMM->Free((void *) argument0, &object, &type);
+
+			if (error == OS_SUCCESS) {
+				if (type == vmmRegionShared) {
+					if (!object) KernelPanic("DoSyscall - Object from a freed shared memory region was null.\n");
+					CloseHandleToObject(object, KERNEL_OBJECT_SHMEM);
+				}
+			}
+	
 			SYSCALL_RETURN(error);
 		} break;
 
@@ -618,7 +644,8 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_CLOSE_HANDLE: {
-			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD); 
+			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS 
+					| KERNEL_OBJECT_THREAD | KERNEL_OBJECT_SHMEM); 
 			void *object = currentProcess->ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
 
 			if (!object) {
@@ -690,6 +717,38 @@ uintptr_t DoSyscall(uintptr_t index,
 				*((size_t *) argument2) = fileSize;
 				SYSCALL_RETURN((uintptr_t) buffer);
 			}
+		} break;
+
+		case OS_SYSCALL_CREATE_SHARED_MEMORY: {
+			if (argument0 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
+				SYSCALL_RETURN(OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE);
+			}
+
+			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0);
+			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE);
+			Handle handle = {};
+			handle.type = KERNEL_OBJECT_SHMEM;
+			handle.object = region;
+			SYSCALL_RETURN(currentProcess->OpenHandle(handle));
+		} break;
+
+		case OS_SYSCALL_MAP_SHARED_MEMORY: {
+			KernelObjectType type = KERNEL_OBJECT_SHMEM;
+			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->ResolveHandle(argument0, type);
+			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->CompleteHandle(region, argument0));
+
+			region->mutex.Acquire();
+			region->handles++;
+			region->mutex.Release();
+
+			uintptr_t address = (uintptr_t) currentVMM->Allocate(argument2, vmmMapLazy, vmmRegionShared, argument1, VMM_REGION_FLAG_CACHABLE, region);
+
+			if (!address) {
+				CloseHandleToObject(region, KERNEL_OBJECT_SHMEM);
+			}
+
+			SYSCALL_RETURN(address);
 		} break;
 	}
 

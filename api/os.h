@@ -23,6 +23,8 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)
 #define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)
 #define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
+#define OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE	(-14)
+#define OS_ERROR_SHARED_MEMORY_STILL_MAPPED	(-15)
 typedef intptr_t OSError;
 
 #define OS_SYSCALL_PRINT			(0)
@@ -52,6 +54,9 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_TERMINATE_THREAD		(24)
 #define OS_SYSCALL_CREATE_THREAD		(25)
 #define OS_SYSCALL_READ_ENTIRE_FILE		(26)
+#define OS_SYSCALL_CREATE_SHARED_MEMORY		(27)
+#define OS_SYSCALL_SHARE_MEMORY			(28)
+#define OS_SYSCALL_MAP_SHARED_MEMORY		(29)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -208,6 +213,8 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_CONTROL_ENABLED  (false)
 #define OS_CONTROL_DISABLED (true)
 
+#define OS_SHARED_MEMORY_MAXIMUM_SIZE (1073742824)
+
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
@@ -222,6 +229,10 @@ extern "C" OSError OSTerminateThread(OSHandle thread);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);
+
+extern "C" OSHandle OSCreateSharedMemory(size_t size);
+extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
+extern "C" void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size);
 
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);
