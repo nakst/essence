@@ -31,25 +31,52 @@ static void SendCallback(OSControl *from, OSEventCallback &callback, OSEvent &ev
 static void OSDrawControl(OSWindow *window, OSControl *control) {
 	if (!window) return;
 
+	int imageWidth = control->image.right - control->image.left;
+	int imageHeight = control->image.bottom - control->image.top;
+
 	bool isHoverControl = control == window->hoverControl;
 	bool isPressedControl = control == window->pressedControl;
-	intptr_t styleX = (control->disabled ? 69
-			: ((isPressedControl && isHoverControl) ? 60 : ((isPressedControl || isHoverControl) ? 42 : 51)));
+	intptr_t styleX = (control->disabled ? 3
+			: ((isPressedControl && isHoverControl) ? 2 
+			: ((isPressedControl || isHoverControl) ? 0 : 1)));
+	styleX = (imageWidth + 1) * styleX + control->image.left;
 
-	OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
-			control->bounds,
-			OSRectangle(styleX, styleX + 8, 88, 88 + 21),
-			OSRectangle(styleX + 3, styleX + 5, 88 + 10, 88 + 11),
-			OS_DRAW_MODE_REPEAT_FIRST);
+	if (control->fillImageToBounds) {
+		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
+				control->bounds,
+				OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
+				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
+				OS_DRAW_MODE_REPEAT_FIRST);
+	} else {
+		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
+				OSRectangle(control->bounds.left, control->bounds.left + control->fillWidth, 
+					control->bounds.top, control->bounds.top + imageHeight),
+				OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
+				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
+				OS_DRAW_MODE_REPEAT_FIRST);
+	}
+
+	if (control->checked) {
+		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
+				OSRectangle(control->bounds.left, control->bounds.left + control->fillWidth, 
+					control->bounds.top, control->bounds.top + imageHeight),
+				OSRectangle(96, 96 + 13, 92, 92 + 13),
+				OSRectangle(96 + 3, 96 + 5, 92 + 10, 92 + 11),
+				OS_DRAW_MODE_REPEAT_FIRST);
+	}
 
 	OSEvent labelEvent = {};
 	labelEvent.type = OS_EVENT_GET_LABEL;
 	SendCallback(control, control->getLabel, labelEvent);
 
-	OSDrawString(window->surface, control->bounds, 
+	OSDrawString(window->surface, 
+			(!control->fillImageToBounds) ? OSRectangle(control->bounds.left + control->fillWidth + 4, 
+				control->bounds.right, control->bounds.top, control->bounds.bottom) : control->bounds, 
 			labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
-			OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
-			control->disabled ? 0x808080 : 0x000000);
+			((!control->fillImageToBounds) ? OS_DRAW_STRING_HALIGN_LEFT : OS_DRAW_STRING_HALIGN_CENTER) 
+				| OS_DRAW_STRING_VALIGN_CENTER,
+			control->disabled ? 0x808080 : 0x000000, 
+			(!control->fillImageToBounds) ? 0xF0F0F5 : -1);
 
 	if (labelEvent.getLabel.freeLabel) {
 		OSHeapFree(labelEvent.getLabel.label);
@@ -105,6 +132,12 @@ void OSDisableControl(OSControl *control, bool disabled) {
 	OSDrawControl(control->parent, control);
 }
 
+void OSCheckControl(OSControl *control, bool checked) {
+	control->checked = checked;
+
+	OSDrawControl(control->parent, control);
+}
+
 OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
 	control->bounds.left    = x + BORDER_OFFSET_X;
 	control->bounds.top     = y + BORDER_OFFSET_Y;
@@ -120,13 +153,30 @@ OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
 	return OS_SUCCESS;
 }
 
-OSControl *OSCreateControl(OSControlType type) {
+OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, bool cloneLabel) {
 	OSControl *control = (OSControl *) OSHeapAllocate(sizeof(OSControl), true);
 	if (!control) return nullptr;
 
 	control->type = type;
-	control->bounds.right = 80;
-	control->bounds.bottom = 21;
+
+	switch (type) {
+		case OS_CONTROL_BUTTON: {
+			control->bounds.right = 80;
+			control->bounds.bottom = 21;
+			control->fillImageToBounds = true;
+			control->image = OSRectangle(42, 42 + 8, 88, 88 + 21);
+		} break;
+
+		case OS_CONTROL_CHECKBOX: {
+			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
+			control->bounds.bottom = 13;
+			control->fillImageToBounds = false;
+			control->fillWidth = 13;
+			control->image = OSRectangle(42, 42 + 8, 110, 110 + 13);
+		} break;
+	}
+
+	OSSetControlLabel(control, label, labelLength, cloneLabel);
 
 	return control;
 }
@@ -192,6 +242,11 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 			if (window->pressedControl) {
 				OSControl *previousPressedControl = window->pressedControl;
 				window->pressedControl = nullptr;
+
+				if (previousPressedControl->type == OS_CONTROL_CHECKBOX) {
+					previousPressedControl->checked = !previousPressedControl->checked;
+				}
+
 				OSDrawControl(window, previousPressedControl);
 
 				if (window->hoverControl == previousPressedControl) {

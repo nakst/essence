@@ -27,31 +27,12 @@ static void OSFontRendererInitialise() {
 	fontRendererInitialised = true;
 }
 
-OSError OSDrawString(OSHandle surface, OSRectangle region, 
-		char *string, size_t stringLength,
-		unsigned alignment, uint32_t color) {
-	if (!stringLength) return OS_SUCCESS;
+static int MeasureStringWidth(char *string, size_t stringLength, float scale) {
+	char *stringEnd = string + stringLength;
+	int totalWidth = 0;
 
 	OSFontRendererInitialise();
-	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
-
-#define FONT_SIZE (16.0f)
-	float scale = stbtt_ScaleForPixelHeight(&guiRegularFont, FONT_SIZE);
-	int ascent, descent, lineGap;
-	stbtt_GetFontVMetrics(&guiRegularFont, &ascent, &descent, &lineGap);
-	ascent  *= scale;
-	descent *= scale;
-	lineGap *= scale;
-
-	int lineHeight = ascent - descent + lineGap;
-
-	char *stringStart = string;
-	char *stringEnd = string + stringLength;
-
-	OSLinearBuffer linearBuffer;
-	OSGetLinearBuffer(surface, &linearBuffer);
-
-	int totalWidth = 0;
+	if (!fontRendererInitialised) return -1;
 
 	while (string < stringEnd) {
 		int character = utf8_value(string);
@@ -66,7 +47,42 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		string = utf8_advance(string);
 	}
 
-	string = stringStart;
+	return totalWidth;
+}
+
+static float GetGUIFontScale() {
+	OSFontRendererInitialise();
+	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
+
+#define FONT_SIZE (16.0f)
+	float scale = stbtt_ScaleForPixelHeight(&guiRegularFont, FONT_SIZE);
+	return scale;
+}
+
+OSError OSDrawString(OSHandle surface, OSRectangle region, 
+		char *string, size_t stringLength,
+		unsigned alignment, uint32_t color, int32_t backgroundColor) {
+	if (!stringLength) return OS_SUCCESS;
+
+	OSFontRendererInitialise();
+	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
+
+	float scale = GetGUIFontScale();
+
+	int ascent, descent, lineGap;
+	stbtt_GetFontVMetrics(&guiRegularFont, &ascent, &descent, &lineGap);
+	ascent  *= scale;
+	descent *= scale;
+	lineGap *= scale;
+
+	int lineHeight = ascent - descent + lineGap;
+
+	char *stringEnd = string + stringLength;
+
+	OSLinearBuffer linearBuffer;
+	OSGetLinearBuffer(surface, &linearBuffer);
+
+	int totalWidth = MeasureStringWidth(string, stringLength, scale);
 
 	OSPoint outputPosition;
 
@@ -98,6 +114,9 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 
 	outputPosition.y += ascent;
 
+	OSRectangle invalidatedRegion = OSRectangle(outputPosition.x, outputPosition.x,
+			outputPosition.y, outputPosition.y);
+
 	while (string < stringEnd) {
 		int character = utf8_value(string);
 
@@ -125,24 +144,41 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		}
 
 		for (int y = 0; y < height; y++) {
-			if (outputPosition.y + iy0 + y < region.top) continue;
-			if (outputPosition.y + iy0 + y >= region.bottom) break;
+			int oY = outputPosition.y + iy0 + y;
+
+			if (oY < region.top) continue;
+			if (oY >= region.bottom) break;
+
+			if (oY < invalidatedRegion.top) invalidatedRegion.top = oY;
+			if (oY > invalidatedRegion.bottom) invalidatedRegion.bottom = oY;
 
 			for (int x = 0; x < width; x++) {
-				if (outputPosition.x + ix0 + x < region.left) continue;
-				if (outputPosition.x + ix0 + x >= region.right) break;
+				int oX = outputPosition.x + ix0 + x;
+			
+				if (oX < region.left) continue;
+				if (oX >= region.right) break;
+
+				if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
+				if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
 				uint8_t pixel = output[x + y * width];
 				uint32_t *destination = (uint32_t *) ((uint8_t *) linearBuffer.buffer + 
-						(x + outputPosition.x + ix0) * 4 + 
-						(y + outputPosition.y + iy0) * linearBuffer.stride);
+						(oX) * 4 + 
+						(oY) * linearBuffer.stride);
 
 				uint32_t sourcePixel = (pixel << 24) | color;
 
 				if (pixel == 0xFF) {
 					*destination = sourcePixel;
 				} else {
-					uint32_t original = *destination;
+					uint32_t original;
+
+					if (backgroundColor < 0) {
+						original = *destination;
+					} else {
+						original = backgroundColor;
+					}
+
 					uint32_t modified = sourcePixel;
 
 					uint32_t alpha1 = (modified & 0xFF000000) >> 24;
@@ -168,6 +204,11 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		outputPosition.x += advanceWidth;
 		string = utf8_advance(string);
 	}
+
+	OSPrint("drawn string, invalidating: %d, %d, %d, %d\n", 
+			invalidatedRegion.left, invalidatedRegion.right,
+			invalidatedRegion.top, invalidatedRegion.bottom);
+	OSInvalidateRectangle(surface, invalidatedRegion);
 
 	return OS_SUCCESS;
 }

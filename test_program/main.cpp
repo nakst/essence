@@ -35,7 +35,7 @@ void GetTextCallback(OSControl *generator, void *argument, OSEvent *event) {
 void ButtonCallback(OSControl *generator, void *argument, OSEvent *event) {
 	(void) event;
 
-	OSControl *newButton = OSCreateControl(OS_CONTROL_BUTTON);
+	OSControl *newButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "", 0, false);
 	OSAddControl(window, newButton, 16, (uintptr_t) argument);
 
 	newButton->action.callback = ButtonCallback;
@@ -52,18 +52,35 @@ extern "C" void ProgramEntry() {
 #define C_STRING_TO_API_STRING(literal) (char *) literal, OSCStringLength((char *) literal)
 
 	window = OSCreateWindow(640, 480);
-	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
+	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "", 0, false);
+	OSControl *button2 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "", 0, false);
+	OSControl *button3 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "", 0, false);
+	button1->image = OSRectangle(28, 28 + 21, 66, 66 + 21);
+	button2->image = OSRectangle(28, 28 + 21, 44, 44 + 21);
+	button3->image = OSRectangle(28, 28 + 21, 22, 22 + 21);
+	button1->bounds = OSRectangle(0, 21, 0, 21);
+	button2->bounds = OSRectangle(0, 21, 0, 21);
+	button3->bounds = OSRectangle(0, 21, 0, 21);
+#if 0
 	char n[4];
 	OSCopyMemory(n, (void *) "1234", 4);
 	OSSetControlLabel(button1, (char *) n, 4, true);
 	OSCopyMemory(n, (void *) "5678", 4);
 	OSSetControlLabel(button1, (char *) n, 4, false);
 	OSCopyMemory(n, (void *) "9012", 4);
-	OSAddControl(window, button1, 16, 16);
+#endif
+	OSAddControl(window, button1, 640 - 23 -  0, -24);
+	OSAddControl(window, button2, 640 - 23 - 22, -24);
+	OSAddControl(window, button3, 640 - 23 - 44, -24);
 	
-	OSEventCallback *callback = &button1->action;
+	OSControl *button4 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Test", 4, false);
+	OSEventCallback *callback = &button4->action;
 	callback->callback = ButtonCallback;
 	callback->argument = (void *) (16 + 8 + 21);
+	OSAddControl(window, button4, 16, 16);
+
+	OSControl *checkbox = OSCreateControl(OS_CONTROL_CHECKBOX, (char *) "Checkbox", 8, false);
+	OSAddControl(window, checkbox, 120, 20);
 
 #if 0
 	OSHandle regularFontHandle = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING(OS_GUI_FONT_REGULAR));

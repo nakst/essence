@@ -170,12 +170,11 @@ struct OSEventCallback {
 
 enum OSControlType {
 	OS_CONTROL_BUTTON,
-	OS_CONTROL_IMAGE_BUTTON,
+	OS_CONTROL_CHECKBOX,
 };
 
 struct OSControl {
 	OSRectangle bounds;
-	OSRectangle image;
 
 	OSControlType type;
 
@@ -188,6 +187,13 @@ struct OSControl {
 	char *label;
 	size_t labelLength;
 	bool freeLabel;
+
+	OSRectangle image;
+
+	bool fillImageToBounds;
+	int fillWidth;
+
+	bool checked;
 };
 
 struct OSWindow {
@@ -290,7 +296,7 @@ extern "C" OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSCo
 extern "C" OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 extern "C" OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
 extern "C" OSError OSClearModifiedRegion(OSHandle surface);
-extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, char *string, size_t stringLength, unsigned flags, uint32_t color);
+extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, char *string, size_t stringLength, unsigned flags, uint32_t color, int32_t backgroundColor);
 
 extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
@@ -298,10 +304,11 @@ extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
 extern "C" OSWindow *OSCreateWindow(size_t width, size_t height);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
-extern "C" OSControl *OSCreateControl(OSControlType type);
+extern "C" OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, bool cloneLabel);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSDisableControl(OSControl *control, bool disabled);
+extern "C" void OSCheckControl(OSControl *control, bool checked);
 extern "C" OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, bool clone);
 extern "C" OSError OSInvalidateControl(OSControl *control);
 
