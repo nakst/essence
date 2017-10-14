@@ -146,7 +146,7 @@ struct _OSDrawSurfaceArguments {
 enum OSEventType {
 	OS_EVENT_INVALID,
 	OS_EVENT_ACTION,
-	OS_EVENT_GET_TEXT,
+	OS_EVENT_GET_LABEL,
 };
 
 struct OSEvent {
@@ -154,13 +154,10 @@ struct OSEvent {
 
 	union {
 		struct {
-			uintptr_t inputOffset;
-			size_t inputLength;
-
-			char *outputText;
-			size_t outputTextLength;
-			bool freeOutputText;
-		} getText;
+			char *label;
+			size_t labelLength;
+			bool freeLabel;
+		} getLabel;
 	};
 };
 
@@ -186,10 +183,11 @@ struct OSControl {
 	struct OSWindow *parent;
 
 	OSEventCallback action;
-	OSEventCallback getText;
+	OSEventCallback getLabel;
 
-	char *text;
-	size_t textLength;
+	char *label;
+	size_t labelLength;
+	bool freeLabel;
 };
 
 struct OSWindow {
@@ -259,8 +257,6 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_DRAW_STRING_VALIGN_BOTTOM 	(8)
 #define OS_DRAW_STRING_VALIGN_CENTER 	(OS_DRAW_STRING_VALIGN_TOP | OS_DRAW_STRING_VALIGN_BOTTOM)
 
-#define OS_INVALIDATE_CONTROL_TEXT_ALL (-1)
-
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
@@ -306,8 +302,8 @@ extern "C" OSControl *OSCreateControl(OSControlType type);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSDisableControl(OSControl *control, bool disabled);
-extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone);
-extern "C" OSError OSInvalidateControlText(OSControl *control, uintptr_t offset, size_t modifiedTextLength);
+extern "C" OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, bool clone);
+extern "C" OSError OSInvalidateControl(OSControl *control);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);

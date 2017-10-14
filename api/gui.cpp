@@ -17,21 +17,12 @@ static void SendCallback(OSControl *from, OSEventCallback &callback, OSEvent &ev
 				// We can't really do anything if the program doesn't want to handle the action.
 			} break;
 
-			case OS_EVENT_GET_TEXT: {
+			case OS_EVENT_GET_LABEL: {
 				// The program wants us to store the text.
 				// Therefore, use the text we have stored in the control.
-
-				if (event.getText.inputOffset >= from->textLength) {
-					event.getText.outputText = nullptr;
-					event.getText.outputTextLength = 0;
-				} else {
-					event.getText.outputText = from->text + event.getText.inputOffset;
-					event.getText.outputTextLength = from->textLength - event.getText.inputOffset;
-
-					if (event.getText.outputTextLength >= event.getText.inputLength) {
-						event.getText.outputTextLength = event.getText.inputLength;
-					}
-				}
+				event.getLabel.label = from->label;
+				event.getLabel.labelLength = from->labelLength;
+				event.getLabel.freeLabel = false;
 			} break;
 		}
 	}
@@ -51,44 +42,45 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 			OSRectangle(styleX + 3, styleX + 5, 88 + 10, 88 + 11),
 			OS_DRAW_MODE_REPEAT_FIRST);
 
-	OSEvent textEvent = {};
-	textEvent.type = OS_EVENT_GET_TEXT;
-	textEvent.getText.inputLength = -1; // Get all the text.
-	SendCallback(control, control->getText, textEvent);
+	OSEvent labelEvent = {};
+	labelEvent.type = OS_EVENT_GET_LABEL;
+	SendCallback(control, control->getLabel, labelEvent);
 
 	OSDrawString(window->surface, control->bounds, 
-			textEvent.getText.outputText, textEvent.getText.outputTextLength,
+			labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 			OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
 			control->disabled ? 0x808080 : 0x000000);
 
-	if (textEvent.getText.freeOutputText) {
-		OSHeapFree(textEvent.getText.outputText);
+	if (labelEvent.getLabel.freeLabel) {
+		OSHeapFree(labelEvent.getLabel.label);
 	}
 
 	window->dirty = true;
 }
 
-OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone) {
-	if (clone) {
-		char *newText = (char *) OSHeapAllocate(textLength, false);
-		if (!newText) return OS_ERROR_COULD_NOT_ALLOCATE_MEMORY;
-		OSCopyMemory(newText, text, textLength);
-		text = newText;
+OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, bool clone) {
+	if (control->freeLabel) {
+		OSHeapFree(control->label);
 	}
 
-	control->text = text;
-	control->textLength = textLength;
-	control->getText.callback = nullptr;
+	if (clone) {
+		char *temp = (char *) OSHeapAllocate(labelLength, false);
+		if (!temp) return OS_ERROR_COULD_NOT_ALLOCATE_MEMORY;
+		OSCopyMemory(temp, label, labelLength);
+		label = temp;
+	}
+
+	control->freeLabel = clone;
+	control->label = label;
+	control->labelLength = labelLength;
+	control->getLabel.callback = nullptr;
 
 	OSDrawControl(control->parent, control);
 
 	return OS_SUCCESS;
 }
 
-OSError OSInvalidateControlText(OSControl *control, uintptr_t offset, size_t modifiedTextLength) {
-	(void) offset;
-	(void) modifiedTextLength;
-
+OSError OSInvalidateControl(OSControl *control) {
 	OSDrawControl(control->parent, control);
 	return OS_SUCCESS;
 }

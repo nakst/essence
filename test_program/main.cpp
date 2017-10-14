@@ -28,12 +28,8 @@ void GetTextCallback(OSControl *generator, void *argument, OSEvent *event) {
 	(void) generator;
 
 	size_t length = OSFormatString(getTextBuffer, 256, "B%d", argument);
-	event->getText.outputText = getTextBuffer + event->getText.inputOffset;
-	event->getText.outputTextLength = length - event->getText.inputOffset;
-
-	if (event->getText.outputTextLength > event->getText.inputLength) {
-		event->getText.outputTextLength = event->getText.inputLength;
-	}
+	event->getLabel.label = getTextBuffer;
+	event->getLabel.labelLength = length;
 }
 
 void ButtonCallback(OSControl *generator, void *argument, OSEvent *event) {
@@ -44,10 +40,10 @@ void ButtonCallback(OSControl *generator, void *argument, OSEvent *event) {
 
 	newButton->action.callback = ButtonCallback;
 	newButton->action.argument = (void *) ((uintptr_t) argument + 8 + 21);
-	newButton->getText.callback = GetTextCallback;
-	newButton->getText.argument = (void *) ((uintptr_t) argument + 8 + 21);
+	newButton->getLabel.callback = GetTextCallback;
+	newButton->getLabel.argument = (void *) ((uintptr_t) argument + 8 + 21);
 
-	OSInvalidateControlText(newButton, 0, OS_INVALIDATE_CONTROL_TEXT_ALL);
+	OSInvalidateControl(newButton);
 
 	OSDisableControl(generator, OS_CONTROL_DISABLED);
 }
@@ -57,7 +53,12 @@ extern "C" void ProgramEntry() {
 
 	window = OSCreateWindow(640, 480);
 	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
-	OSSetControlText(button1, (char *) "Test", 4, false);
+	char n[4];
+	OSCopyMemory(n, (void *) "1234", 4);
+	OSSetControlLabel(button1, (char *) n, 4, true);
+	OSCopyMemory(n, (void *) "5678", 4);
+	OSSetControlLabel(button1, (char *) n, 4, false);
+	OSCopyMemory(n, (void *) "9012", 4);
 	OSAddControl(window, button1, 16, 16);
 	
 	OSEventCallback *callback = &button1->action;
