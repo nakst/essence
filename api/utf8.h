@@ -1,3 +1,6 @@
+#ifndef __OS_UTF8
+#define __OS_UTF8
+
 #define UTF8_LENGTH_CHAR(character, value) { \
 	char first = *character; \
  \
@@ -93,3 +96,5 @@ int utf8_length(char *string, int max_bytes, int tab_size) {
 
 	return length;
 }
+
+#endif

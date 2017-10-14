@@ -283,6 +283,24 @@ void *memcpy(void *dest, const void *src, size_t n) {
 	return dest;
 }
 
+void *memmove(void *dest, const void *src, size_t n) {
+	if ((uintptr_t) dest < (uintptr_t) src) {
+		uint8_t *dest8 = (uint8_t *) dest;
+		const uint8_t *src8 = (const uint8_t *) src;
+		for (uintptr_t i = 0; i < n; i++) {
+			dest8[i] = src8[i];
+		}
+		return dest;
+	} else {
+		uint8_t *dest8 = (uint8_t *) dest;
+		const uint8_t *src8 = (const uint8_t *) src;
+		for (uintptr_t i = n; i; i--) {
+			dest8[i - 1] = src8[i - 1];
+		}
+		return dest;
+	}
+}
+
 size_t strlen(const char *s) {
 	size_t n = 0;
 	while (s[n]) n++;
@@ -291,6 +309,10 @@ size_t strlen(const char *s) {
 
 void *malloc(size_t size) {
 	return OSHeapAllocate(size, false);
+}
+
+void *calloc(size_t num, size_t size) {
+	return OSHeapAllocate(num * size, true);
 }
 
 void free(void *ptr) {
@@ -308,8 +330,9 @@ int abs(int n) {
 }
 
 int ifloor(double x) {
-	int trunc = (int) fabs(x);
-	return x < 0 ? -trunc : trunc;
+	int trunc = (int) x;
+	double dt = (double) trunc;
+	return x < 0 ? (dt == x ? trunc : trunc - 1) : trunc;
 }
 
 int iceil(double x) {
@@ -333,5 +356,19 @@ void *realloc(void *ptr, size_t size) {
 	memcpy(newBlock, ptr, oldSize);
 	free(ptr);
 	return newBlock;
+}
+
+extern "C" void write() {
+	// Temporary.
+	// Trying to get Odin to work.
+}
+
+void OSHelloWorld() {
+	OSPrint("Hello, world!!\n");
+}
+
+void OSAssertionFailure() {
+	OSPrint("Assertion failure.\n");
+	while (true);
 }
 #endif

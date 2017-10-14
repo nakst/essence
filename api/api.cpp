@@ -1,6 +1,7 @@
 #include "os.h"
 
 #define STB_IMAGE_IMPLEMENTATION
+#define STBTT_STATIC
 #include "stb_image.h"
 
 void Panic() {
@@ -13,7 +14,9 @@ void Panic() {
 #define CF(x) OS ## x
 #endif
 
+#include "utf8.h"
 #include "heap.cpp"
+#include "font.cpp"
 #include "gui.cpp"
 #include "common.cpp"
 #include "syscall.cpp"
@@ -30,4 +33,6 @@ extern "C" void _start() {
 	ProgramEntry();
 
 	// TODO Exit the process.
+	OSPrint("Program executed successfully!\n");
+	while (true);
 }

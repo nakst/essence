@@ -55,5 +55,12 @@ extern "C" void ProgramEntry() {
 		OSCreateProcess(testProgram, OSCStringLength((char *) testProgram), &testProcess, nullptr);
 	}
 
+	{
+		// ...and the other test program.
+		const char *testProgram = "/os/OdinHello";
+		OSProcessInformation testProcess;
+		OSCreateProcess(testProgram, OSCStringLength((char *) testProgram), &testProcess, nullptr);
+	}
+
 	OSTerminateThread(OS_CURRENT_THREAD);
 }

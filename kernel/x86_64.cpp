@@ -388,12 +388,6 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 	if (ProcessorAreInterruptsEnabled()) {
 		KernelPanic("PostContextSwitch - Interrupts were enabled. (2)\n");
 	}
-
-#if 0
-	if ((ProcessorIn8(0x64) & 1)) {
-		KernelPanic("Temporary debugger entry.\n");
-	}
-#endif
 }
 
 extern "C" uintptr_t Syscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 

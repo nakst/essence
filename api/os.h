@@ -25,6 +25,9 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
 #define OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE	(-14)
 #define OS_ERROR_SHARED_MEMORY_STILL_MAPPED	(-15)
+#define OS_ERROR_COULD_NOT_LOAD_FONT		(-16)
+#define OS_ERROR_COULD_NOT_DRAW_FONT		(-17)
+#define OS_ERROR_COULD_NOT_ALLOCATE_MEMORY	(-18)
 typedef intptr_t OSError;
 
 #define OS_SYSCALL_PRINT			(0)
@@ -140,7 +143,28 @@ struct _OSDrawSurfaceArguments {
 	OSRectangle source, destination, border;
 };
 
-typedef void (*_OSEventCallback)(struct OSControl *generator, void *argument);
+enum OSEventType {
+	OS_EVENT_INVALID,
+	OS_EVENT_ACTION,
+	OS_EVENT_GET_TEXT,
+};
+
+struct OSEvent {
+	OSEventType type;
+
+	union {
+		struct {
+			uintptr_t inputOffset;
+			size_t inputLength;
+
+			char *outputText;
+			size_t outputTextLength;
+			bool freeOutputText;
+		} getText;
+	};
+};
+
+typedef void (*_OSEventCallback)(struct OSControl *generator, void *argument, OSEvent *event);
 
 struct OSEventCallback {
 	_OSEventCallback callback;
@@ -155,10 +179,17 @@ enum OSControlType {
 struct OSControl {
 	OSRectangle bounds;
 	OSRectangle image;
-	OSEventCallback action;
+
 	OSControlType type;
+
 	bool disabled;
 	struct OSWindow *parent;
+
+	OSEventCallback action;
+	OSEventCallback getText;
+
+	char *text;
+	size_t textLength;
 };
 
 struct OSWindow {
@@ -220,6 +251,16 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 
 #define OS_GUI_FONT_REGULAR ((char *) "Shell/Font/RegularGUI")
 
+#define OS_DRAW_STRING_HALIGN_LEFT 	(1)
+#define OS_DRAW_STRING_HALIGN_RIGHT 	(2)
+#define OS_DRAW_STRING_HALIGN_CENTER 	(OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_HALIGN_RIGHT)
+
+#define OS_DRAW_STRING_VALIGN_TOP 	(4)
+#define OS_DRAW_STRING_VALIGN_BOTTOM 	(8)
+#define OS_DRAW_STRING_VALIGN_CENTER 	(OS_DRAW_STRING_VALIGN_TOP | OS_DRAW_STRING_VALIGN_BOTTOM)
+
+#define OS_INVALIDATE_CONTROL_TEXT_ALL (-1)
+
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
@@ -253,6 +294,7 @@ extern "C" OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSCo
 extern "C" OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 extern "C" OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
 extern "C" OSError OSClearModifiedRegion(OSHandle surface);
+extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, char *string, size_t stringLength, unsigned flags, uint32_t color);
 
 extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
@@ -264,6 +306,8 @@ extern "C" OSControl *OSCreateControl(OSControlType type);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSDisableControl(OSControl *control, bool disabled);
+extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone);
+extern "C" OSError OSInvalidateControlText(OSControl *control, uintptr_t offset, size_t modifiedTextLength);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);
@@ -275,11 +319,14 @@ extern "C" int OSCompareBytes(void *a, void *b, size_t bytes);
 extern "C" uint8_t OSSumBytes(uint8_t *data, size_t bytes);
 extern "C" void OSPrint(const char *format, ...);
 extern "C" size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
+extern "C" void OSHelloWorld();
 
 extern "C" void *memset(void *s, int c, size_t n);
 extern "C" void *memcpy(void *dest, const void *src, size_t n);
 extern "C" size_t strlen(const char *s);
 extern "C" void *malloc(size_t size);
+extern "C" void *calloc(size_t num, size_t size);
+extern "C" void *memmove(void *dest, const void *src, size_t n);
 extern "C" void free(void *ptr);
 extern "C" void *realloc(void *ptr, size_t size);
 extern "C" double fabs(double x);
@@ -287,7 +334,8 @@ extern "C" int abs(int n);
 extern "C" int ifloor(double x);
 extern "C" int iceil(double x);
 extern "C" double sqrt(double x);
-#define assert(x) do{if (!(x)) OSPrint("Assertion failure.\n");}while(0)
+extern "C" void OSAssertionFailure();
+#define assert(x) do{if (!(x)) OSAssertionFailure();}while(0)
 
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG

@@ -1,8 +1,5 @@
 #include "../api/os.h"
 
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "stb_truetype.h"
-
 #if 0
 #include "../../Font.c"
 #endif
@@ -26,11 +23,32 @@ void ThreadEntry(void *argument) {
 
 OSWindow *window;
 
-void ButtonCallback(OSControl *generator, void *argument) {
+char getTextBuffer[256];
+void GetTextCallback(OSControl *generator, void *argument, OSEvent *event) {
+	(void) generator;
+
+	size_t length = OSFormatString(getTextBuffer, 256, "B%d", argument);
+	event->getText.outputText = getTextBuffer + event->getText.inputOffset;
+	event->getText.outputTextLength = length - event->getText.inputOffset;
+
+	if (event->getText.outputTextLength > event->getText.inputLength) {
+		event->getText.outputTextLength = event->getText.inputLength;
+	}
+}
+
+void ButtonCallback(OSControl *generator, void *argument, OSEvent *event) {
+	(void) event;
+
 	OSControl *newButton = OSCreateControl(OS_CONTROL_BUTTON);
 	OSAddControl(window, newButton, 16, (uintptr_t) argument);
+
 	newButton->action.callback = ButtonCallback;
 	newButton->action.argument = (void *) ((uintptr_t) argument + 8 + 21);
+	newButton->getText.callback = GetTextCallback;
+	newButton->getText.argument = (void *) ((uintptr_t) argument + 8 + 21);
+
+	OSInvalidateControlText(newButton, 0, OS_INVALIDATE_CONTROL_TEXT_ALL);
+
 	OSDisableControl(generator, OS_CONTROL_DISABLED);
 }
 
@@ -39,14 +57,17 @@ extern "C" void ProgramEntry() {
 
 	window = OSCreateWindow(640, 480);
 	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON);
+	OSSetControlText(button1, (char *) "Test", 4, false);
 	OSAddControl(window, button1, 16, 16);
 	
 	OSEventCallback *callback = &button1->action;
 	callback->callback = ButtonCallback;
 	callback->argument = (void *) (16 + 8 + 21);
 
+#if 0
 	OSHandle regularFontHandle = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING(OS_GUI_FONT_REGULAR));
 	void *font = OSMapSharedMemory(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL);
+#endif
 
 #if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
@@ -100,7 +121,7 @@ extern "C" void ProgramEntry() {
 	OSPrint("Value of real: %d\n", round);
 #endif
 
-#if 1
+#if 0
 	stbtt_fontinfo fontInfo;
 
 	OSPrint("Creating font....\n");
