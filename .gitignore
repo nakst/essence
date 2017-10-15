@@ -8,3 +8,4 @@ vbox.vdi
 bin/
 bochs-config
 drive.7z
+make-vbox.sh
