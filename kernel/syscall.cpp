@@ -737,10 +737,6 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->CompleteHandle(region, argument0));
 
-			region->mutex.Acquire();
-			region->handles++;
-			region->mutex.Release();
-
 			if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
 				argument2 = region->sizeBytes;
 			}

@@ -56,9 +56,6 @@ enum ThreadType {
 };
 
 enum ThreadTerminatableState {
-	// TODO These states are not actually set yet.
-	// 	Implement them when we implement OSTerminateThread/Process.
-
 	THREAD_TERMINATABLE,		// The thread is currently executing user code.
 	THREAD_IN_SYSCALL,		// The thread is currently executing kernel code from a system call.
 					// It cannot be terminated until it returns from the system call.
@@ -528,9 +525,10 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 		Thread *newProcessThread = SpawnThread((uintptr_t) NewProcess, 0, process, false);
 		CloseHandleToObject(newProcessThread, KERNEL_OBJECT_THREAD);
 		process->executableLoadAttemptComplete.Wait(OS_WAIT_NO_TIMEOUT);
-		// TODO Close the handle to the process if this fails?
 
 		if (process->executableState == PROCESS_EXECUTABLE_FAILED_TO_LOAD) {
+			KernelLog(LOG_VERBOSE, "Executable failed to load, closing handle to process...\n");
+			CloseHandleToObject(process, KERNEL_OBJECT_PROCESS);
 			return nullptr;
 		}
 	}
@@ -644,6 +642,8 @@ void Scheduler::RemoveProcess(Process *process) {
 	scheduler.lock.Acquire();
 	allProcesses.Remove(&process->allItem);
 	scheduler.lock.Release();
+
+	// At this point, no pointers to the process remain.
 
 	// TODO When a process is removed the following must be freed/closed:
 	// 	- VMM

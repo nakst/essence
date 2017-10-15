@@ -51,7 +51,7 @@ struct PMM {
 	size_t bitsetPages; 
 	size_t bitsetGroups;
 
-	Spinlock lock; // TODO Make this a mutex?
+	Spinlock lock; 
 };
 
 extern PMM pmm;
@@ -322,6 +322,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		if (type == vmmRegionShared) {
 			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
 			region->mutex.Acquire();
+			region->handles++; // Increment the number of handles to the shared memory region.
 		}
 
 		virtualAddressSpace.lock.Acquire();
@@ -805,8 +806,6 @@ uintptr_t PMM::AllocatePage() {
 		physicalMemoryRegionsIndex = i;
 		goto returnFromStack;
 	} else {
-		// TODO Test this branch more.
-
 		for (uintptr_t i = 0; i < bitsetGroups; i++) {
 			if (bitsetGroupUsage[i]) {
 				for (uintptr_t j = 0; j < BITSET_GROUP_PAGES && bitsetGroupUsage[i] && pageStackIndex != PMM_PAGE_STACK_SIZE; j++) {
@@ -942,6 +941,8 @@ void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 
 void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddress, unsigned flags) {
 	// TODO Use the no-execute bit.
+	// TODO Support read-only pages.
+
 	lock.AssertLocked();
 
 	if ((virtualAddress & 0xFFFF000000000000) == 0

@@ -3,7 +3,7 @@
 
 // TODO Implement OSWait (thread synchronization, events).
 
-// TODO Switch from pools to heap?
+// TODO Finish process cleanup, and implement OSTerminateProcess.
 
 #include "kernel.h"
 #define IMPLEMENTATION

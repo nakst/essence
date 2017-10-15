@@ -94,7 +94,7 @@ bool ATADriver::Access(uintptr_t drive, uint64_t sector, size_t count, int opera
 
 	// Start a timeout.
 	Timer *timeout = timeouts + bus;
-	timeout->Set(100, false);
+	timeout->Set(1000, false);
 	Defer(timeout->Remove());
 
 	while ((ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 0x80) && !timeout->event.Poll());
@@ -126,10 +126,6 @@ bool ATADriver::Access(uintptr_t drive, uint64_t sector, size_t count, int opera
 	}
 
 	if (useDMA[drive]) {
-		// TODO Possibly disable interrupts during this code?
-		// 	There's a lot of timeout sensitive stuff here
-		// 	(although if we disabled interrupts that would break the timeouts!)
-
 		Event *event = irqs + bus;
 		event->autoReset = false;
 		event->Reset();
@@ -220,7 +216,10 @@ bool ATAIRQHandler(uintptr_t interruptIndex) {
 	} else {
 		Event *event = ata.irqs + bus;
 		event->Set();
-		ProcessorGetLocalStorage()->irqSwitchThread = true; // TODO Only do this if a thread was waiting on the event.
+
+		if (event->blockedThreads.count) {
+			ProcessorGetLocalStorage()->irqSwitchThread = true; 
+		}
 	}
 
 	return true;

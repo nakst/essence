@@ -345,10 +345,9 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 		}
 
-		if (local->irqSwitchThread) {
+		if (local->irqSwitchThread && scheduler.started && local->schedulerReady) {
 			scheduler.Yield(context);
 			KernelPanic("InterruptHandler - Returned from Scheduler::Yield.\n");
-			// TODO If the scheduler hasn't started we might return here. Think about how to detect this.
 		}
 
 		acpi.lapic.EndOfInterrupt();
