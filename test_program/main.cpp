@@ -82,6 +82,9 @@ extern "C" void ProgramEntry() {
 	OSControl *checkbox = OSCreateControl(OS_CONTROL_CHECKBOX, (char *) "Checkbox", 8, false);
 	OSAddControl(window, checkbox, 120, 20);
 
+	OSControl *radiobox = OSCreateControl(OS_CONTROL_RADIOBOX, (char *) "Radiobox", 8, false);
+	OSAddControl(window, radiobox, 120, 40);
+
 #if 0
 	OSHandle regularFontHandle = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING(OS_GUI_FONT_REGULAR));
 	void *font = OSMapSharedMemory(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL);

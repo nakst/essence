@@ -57,11 +57,12 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 	}
 
 	if (control->checked) {
+		int checkY = 92 + 13 * control->checked - 13; 
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
 				OSRectangle(control->bounds.left, control->bounds.left + control->fillWidth, 
 					control->bounds.top, control->bounds.top + imageHeight),
-				OSRectangle(96, 96 + 13, 92, 92 + 13),
-				OSRectangle(96 + 3, 96 + 5, 92 + 10, 92 + 11),
+				OSRectangle(96, 96 + 13, checkY, checkY + 13),
+				OSRectangle(96 + 1, 96 + 2, checkY + 1, checkY + 2),
 				OS_DRAW_MODE_REPEAT_FIRST);
 	}
 
@@ -132,7 +133,7 @@ void OSDisableControl(OSControl *control, bool disabled) {
 	OSDrawControl(control->parent, control);
 }
 
-void OSCheckControl(OSControl *control, bool checked) {
+void OSCheckControl(OSControl *control, int checked) {
 	control->checked = checked;
 
 	OSDrawControl(control->parent, control);
@@ -173,6 +174,14 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 			control->fillImageToBounds = false;
 			control->fillWidth = 13;
 			control->image = OSRectangle(42, 42 + 8, 110, 110 + 13);
+		} break;
+
+		case OS_CONTROL_RADIOBOX: {
+			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
+			control->bounds.bottom = 14;
+			control->fillImageToBounds = false;
+			control->fillWidth = 14;
+			control->image = OSRectangle(116, 116 + 14, 42, 42 + 14);
 		} break;
 	}
 
@@ -244,7 +253,13 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 				window->pressedControl = nullptr;
 
 				if (previousPressedControl->type == OS_CONTROL_CHECKBOX) {
-					previousPressedControl->checked = !previousPressedControl->checked;
+					// If this is a checkbox, then toggle the check.
+					previousPressedControl->checked = previousPressedControl->checked ? OS_CONTROL_NO_CHECK : OS_CONTROL_CHECKED;
+				} else if (previousPressedControl->type == OS_CONTROL_RADIOBOX) {
+					// TODO If this is a radiobox,
+					// 	clear the check on all other controls in the container,
+
+					previousPressedControl->checked = OS_CONTROL_RADIO_CHECK;
 				}
 
 				OSDrawControl(window, previousPressedControl);

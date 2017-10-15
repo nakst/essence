@@ -171,6 +171,7 @@ struct OSEventCallback {
 enum OSControlType {
 	OS_CONTROL_BUTTON,
 	OS_CONTROL_CHECKBOX,
+	OS_CONTROL_RADIOBOX,
 };
 
 struct OSControl {
@@ -193,7 +194,10 @@ struct OSControl {
 	bool fillImageToBounds;
 	int fillWidth;
 
-	bool checked;
+#define OS_CONTROL_NO_CHECK (0)
+#define OS_CONTROL_CHECKED (1)
+#define OS_CONTROL_RADIO_CHECK (2)
+	int checked;
 };
 
 struct OSWindow {
