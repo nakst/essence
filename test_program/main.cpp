@@ -51,6 +51,19 @@ void ButtonCallback(OSControl *generator, void *argument, OSEvent *event) {
 extern "C" void ProgramEntry() {
 #define C_STRING_TO_API_STRING(literal) (char *) literal, OSCStringLength((char *) literal)
 
+	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
+		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
+		OSMessage message;
+		OSGetMessage(&message);
+		void *s1 = OSMapSharedMemory((OSHandle) message.argument, 0, OS_SHARED_MEMORY_MAP_ALL);
+		for (int i = 0; i < 256; i++) {
+			OSPrint("s1[i] = %d\n", ((uint8_t *) s1)[i]);
+		}
+		OSFree(s1);
+		OSCloseHandle((OSHandle) message.argument);
+		OSTerminateThread(OS_CURRENT_THREAD);
+	}
+
 	window = OSCreateWindow(640, 480);
 	OSControl *button1 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "", 0, false);
 	OSControl *button2 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "", 0, false);
@@ -84,6 +97,21 @@ extern "C" void ProgramEntry() {
 
 	OSControl *radiobox = OSCreateControl(OS_CONTROL_RADIOBOX, (char *) "Radiobox", 8, false);
 	OSAddControl(window, radiobox, 120, 40);
+
+	OSHandle sh = OSCreateSharedMemory(256, nullptr, 0);
+	void *s1 = OSMapSharedMemory(sh, 0, OS_SHARED_MEMORY_MAP_ALL);
+	for (int i = 0; i < 256; i++) {
+		((uint8_t *) s1)[i] = i;
+	}
+	OSProcessInformation newProcess;
+	OSCreateProcess(C_STRING_TO_API_STRING("/os/test"), &newProcess, (void *) 1);
+	OSHandle osh = sh;
+	sh = OSShareMemory(sh, newProcess.handle, true);
+	OSCloseHandle(osh);
+	OSMessage message = {};
+	message.type = (OSMessageType) 0xF000;
+	message.argument = (void *) sh;
+	OSSendMessage(newProcess.handle, &message);
 
 #if 0
 	OSHandle regularFontHandle = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING(OS_GUI_FONT_REGULAR));

@@ -307,18 +307,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_FREE: {
-			void *object;
-			VMMRegionType type;
-
-			OSError error = currentVMM->Free((void *) argument0, &object, &type);
-
-			if (error == OS_SUCCESS) {
-				if (type == vmmRegionShared) {
-					if (!object) KernelPanic("DoSyscall - Object from a freed shared memory region was null.\n");
-					CloseHandleToObject(object, KERNEL_OBJECT_SHMEM);
-				}
-			}
-	
+			OSError error = currentVMM->Free((void *) argument0);
 			SYSCALL_RETURN(error);
 		} break;
 
@@ -763,6 +752,24 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 
 			SYSCALL_RETURN(address);
+		} break;
+
+		case OS_SYSCALL_SHARE_MEMORY: {
+			KernelObjectType type = KERNEL_OBJECT_SHMEM;
+			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->ResolveHandle(argument0, type);
+			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->CompleteHandle(region, argument0));
+
+			type = KERNEL_OBJECT_PROCESS;
+			Process *process = (Process *) currentProcess->ResolveHandle(argument1, type);
+			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->CompleteHandle(process, argument1));
+
+			Handle handle = {};
+			handle.type = KERNEL_OBJECT_SHMEM;
+			handle.object = region;
+			handle.readOnly = argument2 ? true : false;
+			SYSCALL_RETURN(process->OpenHandle(handle));
 		} break;
 
 		case OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY: {

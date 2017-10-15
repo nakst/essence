@@ -226,7 +226,7 @@ struct OSMessage {
 	OSWindow *targetWindow;
 
 	union {
-		uint8_t data[32];
+		void *argument;
 
 		struct {
 			int oldPositionX;

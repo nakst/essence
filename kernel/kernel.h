@@ -174,6 +174,8 @@ struct Handle {
 	volatile unsigned lock; // Must be 0 to close the handle.
 			        // Incremented when the handle is used in a system call.
 	volatile unsigned closing;
+
+	bool readOnly;
 };
 
 void CloseHandleToObject(void *object, KernelObjectType type);

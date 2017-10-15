@@ -125,8 +125,8 @@ OSHandle OSCreateSharedMemory(size_t size, char *name, size_t nameLength) {
 	return OSSyscall(OS_SYSCALL_CREATE_SHARED_MEMORY, size, (uintptr_t) name, nameLength, 0);
 }
 
-OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, uint32_t flags) {
-	return OSSyscall(OS_SYSCALL_SHARE_MEMORY, sharedMemoryRegion, targetProcess, flags, 0);
+OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly) {
+	return OSSyscall(OS_SYSCALL_SHARE_MEMORY, sharedMemoryRegion, targetProcess, readOnly, 0);
 }
 
 void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size) {

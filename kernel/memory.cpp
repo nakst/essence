@@ -342,7 +342,7 @@ void ValidateCurrentVMM(VMM *target) {
 	if (target != &kernelVMM 
 			&& target != ProcessorGetLocalStorage()->currentThread->process->vmm 
 			&& &target->virtualAddressSpace != ProcessorGetLocalStorage()->currentThread->asyncTempAddressSpace) {
-		KernelPanic("VMM::Allocate - Attempt to allocate VMM region with different VMM active.\n");
+		KernelPanic("ValidateCurrentVMM - Attempt to allocate VMM region with different VMM active.\n");
 	}
 }
 
@@ -466,6 +466,11 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type) {
 
 	if (object) *object = region->object;
 	if (type) *type = region->type;
+
+	if (region->type == vmmRegionShared) {
+		if (!region->object) KernelPanic("VMM::Free - Object from a freed shared memory region was null.\n");
+		CloseHandleToObject(region->object, KERNEL_OBJECT_SHMEM);
+	}
 
 	allocatedVirtualMemory -= region->pageCount * PAGE_SIZE;
 
@@ -1209,6 +1214,8 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 	if (region->sizeBytes & (PAGE_SIZE - 1)) pages++;
 
 	uintptr_t *addresses = (uintptr_t *) (region + 1);
+
+	KernelLog(LOG_VERBOSE, "Freeing shared memory region....\n");
 
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < pages; i++) {
