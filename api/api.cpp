@@ -31,8 +31,5 @@ extern "C" void _start() {
 	printMutex = OSCreateMutex();
 
 	ProgramEntry();
-
-	// TODO Exit the process.
-	OSPrint("Program executed successfully!\n");
-	while (true);
+	OSTerminateThread(OS_CURRENT_THREAD);
 }

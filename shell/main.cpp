@@ -48,19 +48,35 @@ extern "C" void ProgramEntry() {
 		OSFree(loadedFile);
 	}
 
+#if 1
 	{
 		// Start the test program.
 		const char *testProgram = "/os/test";
 		OSProcessInformation testProcess;
 		OSCreateProcess(testProgram, OSCStringLength((char *) testProgram), &testProcess, nullptr);
+		OSCloseHandle(testProcess.handle);
+		OSCloseHandle(testProcess.mainThread.handle);
 	}
+#endif
 
+#if 0
 	{
 		// ...and the other test program.
 		const char *testProgram = "/os/OdinHello";
 		OSProcessInformation testProcess;
 		OSCreateProcess(testProgram, OSCStringLength((char *) testProgram), &testProcess, nullptr);
+		OSCloseHandle(testProcess.handle);
 	}
+#endif
+
+#if 0
+	{
+		// Start the calculator.
+		const char *path = "/os/calculator";
+		OSProcessInformation process;
+		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
+	}
+#endif
 
 	OSTerminateThread(OS_CURRENT_THREAD);
 }

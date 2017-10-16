@@ -4,247 +4,6 @@ uintptr_t DoSyscall(uintptr_t index,
 
 #ifdef IMPLEMENTATION
 
-void CloseHandleToObject(void *object, KernelObjectType type) {
-	switch (type) {
-		case KERNEL_OBJECT_MUTEX: {
-			scheduler.lock.Acquire();
-
-			Mutex *mutex = (Mutex *) object;
-			mutex->handles--;
-
-			bool deallocate = !mutex->handles;
-
-			scheduler.lock.Release();
-
-			if (deallocate) {
-				scheduler.globalMutexPool.Remove(mutex);
-			}
-		} break;
-
-		case KERNEL_OBJECT_PROCESS: {
-			scheduler.lock.Acquire();
-
-			Process *process = (Process *) object;
-			process->handles--;
-
-			bool deallocate = !process->handles;
-
-			scheduler.lock.Release();
-
-			if (deallocate) {
-				scheduler.RemoveProcess(process);
-			}
-		} break;
-
-		case KERNEL_OBJECT_THREAD: {
-			scheduler.lock.Acquire();
-			RegisterAsyncTask(CloseThreadHandle, object, &((Thread *) object)->process->vmm->virtualAddressSpace);
-			scheduler.lock.Release();
-		} break;
-
-		case KERNEL_OBJECT_SHMEM: {
-			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
-			region->mutex.Acquire();
-			bool destroy = region->handles == 1;
-			region->handles--;
-			region->mutex.Release();
-
-			if (destroy) {
-				sharedMemoryManager.DestroySharedMemory(region);
-			}
-		} break;
-
-		default: {
-			KernelPanic("DoSyscall - Cannot close object of type %d.\n", type);
-		} break;
-	}
-}
-
-void Process::CloseHandle(OSHandle handle) {
-	handleTable.lock.Acquire();
-
-	uintptr_t l1Index = ((handle / HANDLE_TABLE_L3_ENTRIES) / HANDLE_TABLE_L2_ENTRIES);
-	uintptr_t l2Index = ((handle / HANDLE_TABLE_L3_ENTRIES) % HANDLE_TABLE_L2_ENTRIES);
-	uintptr_t l3Index = ((handle % HANDLE_TABLE_L3_ENTRIES));
-
-	HandleTableL1 *l1 = &handleTable;
-	HandleTableL2 *l2 = l1->t[l1Index];
-	HandleTableL3 *l3 = l2->t[l2Index];
-
-	Handle *_handle = l3->t + l3Index;
-	KernelObjectType type = _handle->type;
-	void *object = _handle->object;
-
-	ZeroMemory(_handle, sizeof(Handle));
-
-	l1->u[l1Index]--;
-	l2->u[l2Index]--;
-
-	handleTable.lock.Release();
-
-	CloseHandleToObject(object, type);
-}
-
-void *Process::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason, Handle **handleData) {
-	// Check that the handle is within the correct bounds.
-	if (!handle || handle >= HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES) {
-		return nullptr;
-	}
-
-	// Special handles.
-	if (reason == RESOLVE_HANDLE_TO_USE) { // We can't close these handles.
-		if (handle == OS_CURRENT_THREAD && (type & KERNEL_OBJECT_THREAD)) {
-			type = KERNEL_OBJECT_THREAD;
-			return ProcessorGetLocalStorage()->currentThread;
-		} else if (handle == OS_CURRENT_PROCESS && (type & KERNEL_OBJECT_PROCESS)) {
-			type = KERNEL_OBJECT_PROCESS;
-			return ProcessorGetLocalStorage()->currentThread->process;
-		} else if (handle == OS_SURFACE_UI_SHEET && (type & KERNEL_OBJECT_SURFACE)) {
-			type = KERNEL_OBJECT_SURFACE;
-			return &uiSheetSurface;
-		}
-	}
-
-	handleTable.lock.Acquire();
-	Defer(handleTable.lock.Release());
-
-	uintptr_t l1Index = ((handle / HANDLE_TABLE_L3_ENTRIES) / HANDLE_TABLE_L2_ENTRIES);
-	uintptr_t l2Index = ((handle / HANDLE_TABLE_L3_ENTRIES) % HANDLE_TABLE_L2_ENTRIES);
-	uintptr_t l3Index = ((handle % HANDLE_TABLE_L3_ENTRIES));
-
-	HandleTableL1 *l1 = &handleTable;
-	HandleTableL2 *l2 = l1->t[l1Index];
-	if (!l2) return nullptr;
-	HandleTableL3 *l3 = l2->t[l2Index];
-	if (!l3) return nullptr;
-
-	Handle *_handle = l3->t + l3Index;
-
-	if ((_handle->type & type) && (_handle->object)) {
-		// Increment the handle's lock, so it cannot be closed until the system call has completed.
-		type = _handle->type;
-
-		if (reason == RESOLVE_HANDLE_TO_USE) {
-			if (_handle->closing) {
-				return nullptr; // The handle is being closed.
-			} else {
-				_handle->lock++;
-				if (handleData) *handleData = _handle;
-				return _handle->object;
-			}
-		} else if (reason == RESOLVE_HANDLE_TO_CLOSE) {
-			if (_handle->lock) {
-				return nullptr; // The handle was locked and can't be closed.
-			} else {
-				_handle->closing = true;
-				if (handleData) *handleData = _handle;
-				return _handle->object;
-			}
-		} else {
-			KernelPanic("Process::ResolveHandle - Unsupported ResolveHandleReason.\n");
-			return nullptr;
-		}
-	} else {
-		return nullptr;
-	}
-}
-
-void Process::CompleteHandle(void *object, OSHandle handle) {
-	if (!object) {
-		// The object returned by ResolveHandle was invalid, so we don't need to complete the handle.
-		return;
-	}
-
-	// We've already checked that the handle is valid during ResolveHandle,
-	// and because the lock was incremented we know that it is still valid.
-	
-	handleTable.lock.Acquire();
-	Defer(handleTable.lock.Release());
-	
-	uintptr_t l1Index = ((handle / HANDLE_TABLE_L3_ENTRIES) / HANDLE_TABLE_L2_ENTRIES);
-	uintptr_t l2Index = ((handle / HANDLE_TABLE_L3_ENTRIES) % HANDLE_TABLE_L2_ENTRIES);
-	uintptr_t l3Index = ((handle % HANDLE_TABLE_L3_ENTRIES));
-
-	if (!l1Index) return; // Special handle.
-
-	HandleTableL1 *l1 = &handleTable;
-	HandleTableL2 *l2 = l1->t[l1Index];
-	HandleTableL3 *l3 = l2->t[l2Index];
-
-	Handle *_handle = l3->t + l3Index;
-	_handle->lock--;
-}
-
-OSHandle Process::OpenHandle(Handle &handle) {
-	handleTable.lock.Acquire();
-	Defer(handleTable.lock.Release());
-
-	if (!handle.object) {
-		KernelPanic("Process::OpenHandle - Invalid object.\n");
-	}
-
-	handle.closing = false;
-	handle.lock = 0;
-
-	HandleTableL1 *l1 = &handleTable;
-	uintptr_t l1Index = HANDLE_TABLE_L1_ENTRIES;
-
-	for (uintptr_t i = 1 /* The first set of handles are reserved. */; i < HANDLE_TABLE_L1_ENTRIES; i++) {
-		if (l1->u[i] != HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES) {
-			l1->u[i]++;
-			l1Index = i;
-			break;
-		}
-	}
-
-	if (l1Index == HANDLE_TABLE_L1_ENTRIES) {
-		return OS_INVALID_HANDLE;
-	}
-
-	if (!l1->t[l1Index]) {
-		l1->t[l1Index] = (HandleTableL2 *) OSHeapAllocate(sizeof(HandleTableL2), true);
-	}
-
-	HandleTableL2 *l2 = l1->t[l1Index];
-	uintptr_t l2Index = HANDLE_TABLE_L2_ENTRIES;
-
-	for (uintptr_t i = 0; i < HANDLE_TABLE_L2_ENTRIES; i++) {
-		if (l2->u[i] != HANDLE_TABLE_L3_ENTRIES) {
-			l2->u[i]++;
-			l2Index = i;
-			break;
-		}
-	}
-
-	if (l2Index == HANDLE_TABLE_L2_ENTRIES) {
-		KernelPanic("Process::OpenHandle - Unexpected lack of free handles.\n");
-	}
-
-	if (!l2->t[l2Index]) {
-		l2->t[l2Index] = (HandleTableL3 *) OSHeapAllocate(sizeof(HandleTableL3), true);
-	}
-
-	HandleTableL3 *l3 = l2->t[l2Index];
-	uintptr_t l3Index = HANDLE_TABLE_L3_ENTRIES;
-
-	for (uintptr_t i = 0; i < HANDLE_TABLE_L3_ENTRIES; i++) {
-		if (!l3->t[i].object) {
-			l3Index = i;
-			break;
-		}
-	}
-
-	if (l3Index == HANDLE_TABLE_L3_ENTRIES) {
-		KernelPanic("Process::OpenHandle - Unexpected lack of free handles.\n");
-	}
-
-	Handle *_handle = l3->t + l3Index;
-	*_handle = handle;
-
-	OSHandle index = (l3Index) + (l2Index * HANDLE_TABLE_L3_ENTRIES) + (l1Index * HANDLE_TABLE_L3_ENTRIES * HANDLE_TABLE_L2_ENTRIES);
-	return index;
-}
-
 bool Process::SendMessage(OSMessage &_message) {
 	messageQueueMutex.Acquire();
 	Defer(messageQueueMutex.Release());
@@ -285,6 +44,10 @@ uintptr_t DoSyscall(uintptr_t index,
 		// The thread has been terminated.
 		// Yield the scheduler so it can be removed.
 		ProcessorFakeTimerInterrupt();
+	}
+
+	if (currentThread->terminatableState != THREAD_TERMINATABLE) {
+		KernelPanic("DoSyscall - Thread was not terminatable. Are you trying to use system calls from a kernel thread?\n");
 	}
 
 	currentThread->terminatableState = THREAD_IN_SYSCALL;
@@ -337,9 +100,9 @@ uintptr_t DoSyscall(uintptr_t index,
 				handle2.object = processObject->executableMainThread;
 
 				// Register processObject as a handle.
-				process->handle = currentProcess->OpenHandle(handle); 
+				process->handle = currentProcess->handleTable.OpenHandle(handle); 
 				process->pid = processObject->id;
-				process->mainThread.handle = currentProcess->OpenHandle(handle2);
+				process->mainThread.handle = currentProcess->handleTable.OpenHandle(handle2);
 				process->mainThread.tid = processObject->executableMainThread->id;
 
 				SYSCALL_RETURN(OS_SUCCESS);
@@ -348,9 +111,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_GET_CREATION_ARGUMENT: {
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
-			Process *process = (Process *) currentProcess->ResolveHandle(argument0, type);
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!process) SYSCALL_RETURN(0);
-			Defer(currentProcess->CompleteHandle(process, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			uintptr_t creationArgument = (uintptr_t) process->creationArgument;
 			SYSCALL_RETURN(creationArgument);
@@ -366,14 +129,14 @@ uintptr_t DoSyscall(uintptr_t index,
 			_handle.type = KERNEL_OBJECT_SURFACE;
 			_handle.object = surface;
 			// TODO Prevent the program from deallocating the surface's linear buffer.
-			SYSCALL_RETURN(currentProcess->OpenHandle(_handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(_handle));
 		} break;
 
 		case OS_SYSCALL_GET_LINEAR_BUFFER: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
-			Surface *surface = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(surface, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSLinearBuffer *linearBuffer = (OSLinearBuffer *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) linearBuffer, sizeof(OSLinearBuffer));
@@ -395,9 +158,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_INVALIDATE_RECTANGLE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
-			Surface *surface = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(surface, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
@@ -411,9 +174,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_COPY_TO_SCREEN: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
-			Surface *surface = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(surface, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSPoint *point = (OSPoint *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) point, sizeof(OSPoint));
@@ -427,9 +190,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_FILL_RECTANGLE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
-			Surface *surface = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(surface, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			_OSRectangleAndColor *arg = (_OSRectangleAndColor *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) arg, sizeof(_OSRectangleAndColor));
@@ -448,13 +211,13 @@ uintptr_t DoSyscall(uintptr_t index,
 		case OS_SYSCALL_COPY_SURFACE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 
-			Surface *destination = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!destination) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(destination, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
-			Surface *source = (Surface *) currentProcess->ResolveHandle(argument1, type);
+			Surface *source = (Surface *) currentProcess->handleTable.ResolveHandle(argument1, type);
 			if (!source) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(source, argument1));
+			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			OSPoint *point = (OSPoint *) argument2;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) point, sizeof(OSPoint));
@@ -469,13 +232,13 @@ uintptr_t DoSyscall(uintptr_t index,
 		case OS_SYSCALL_DRAW_SURFACE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 
-			Surface *destination = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!destination) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(destination, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
-			Surface *source = (Surface *) currentProcess->ResolveHandle(argument1, type);
+			Surface *source = (Surface *) currentProcess->handleTable.ResolveHandle(argument1, type);
 			if (!source) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(source, argument1));
+			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			_OSDrawSurfaceArguments *arguments = (_OSDrawSurfaceArguments *) argument2;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) arguments, sizeof(_OSDrawSurfaceArguments));
@@ -489,9 +252,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_CLEAR_MODIFIED_REGION: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
-			Surface *destination = (Surface *) currentProcess->ResolveHandle(argument0, type);
+			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!destination) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(destination, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			destination->mutex.Acquire();
 			destination->ClearModifiedRegion();
@@ -542,9 +305,9 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentVMM->UnlockRegion(region1));
 
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
-			Process *process = (Process *) currentProcess->ResolveHandle(argument0, type);
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(process, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			{
 				currentProcess->messageQueueMutex.Acquire();
@@ -573,11 +336,11 @@ uintptr_t DoSyscall(uintptr_t index,
 
 				_handle.type = KERNEL_OBJECT_WINDOW;
 				_handle.object = window;
-				osWindow->handle = currentProcess->OpenHandle(_handle);
+				osWindow->handle = currentProcess->handleTable.OpenHandle(_handle);
 
 				_handle.type = KERNEL_OBJECT_SURFACE;
 				_handle.object = &window->surface;
-				osWindow->surface = currentProcess->OpenHandle(_handle);
+				osWindow->surface = currentProcess->handleTable.OpenHandle(_handle);
 				
 				OSMessage message = {};
 				message.type = OS_MESSAGE_WINDOW_CREATED;
@@ -590,9 +353,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_UPDATE_WINDOW: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
-			Window *window = (Window *) currentProcess->ResolveHandle(argument0, type);
+			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(window, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->Update();
 
@@ -606,14 +369,14 @@ uintptr_t DoSyscall(uintptr_t index,
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_MUTEX;
 			handle.object = mutex;
-			SYSCALL_RETURN(currentProcess->OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
 		} break;
 
 		case OS_SYSCALL_ACQUIRE_MUTEX: {
 			KernelObjectType type = KERNEL_OBJECT_MUTEX;
-			Mutex *mutex = (Mutex *) currentProcess->ResolveHandle(argument0, type);
+			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!mutex) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(mutex, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
 			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_ERROR_MUTEX_ALREADY_ACQUIRED);
 			currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
@@ -623,9 +386,9 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_RELEASE_MUTEX: {
 			KernelObjectType type = KERNEL_OBJECT_MUTEX;
-			Mutex *mutex = (Mutex *) currentProcess->ResolveHandle(argument0, type);
+			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!mutex) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(mutex, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
 			if (mutex->owner != currentThread) SYSCALL_RETURN(OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD);
 			mutex->Release();
@@ -633,23 +396,22 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_CLOSE_HANDLE: {
-			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS 
-					| KERNEL_OBJECT_THREAD | KERNEL_OBJECT_SHMEM); 
-			void *object = currentProcess->ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
+			KernelObjectType type = CLOSABLE_OBJECT_TYPES; 
+			void *object = currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
 
 			if (!object) {
 				SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			}
 
-			currentProcess->CloseHandle(argument0);
+			currentProcess->handleTable.CloseHandle(argument0);
 			SYSCALL_RETURN(OS_SUCCESS);
 		} break;
 
 		case OS_SYSCALL_TERMINATE_THREAD: {
 			KernelObjectType type = KERNEL_OBJECT_THREAD;
-			Thread *thread = (Thread *) currentProcess->ResolveHandle(argument0, type);
+			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!thread) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(thread, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
 
 			scheduler.TerminateThread(thread);
 			SYSCALL_RETURN(OS_SUCCESS);
@@ -671,7 +433,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				handle.object = threadObject;
 
 				// Register processObject as a handle.
-				thread->handle = currentProcess->OpenHandle(handle); 
+				thread->handle = currentProcess->handleTable.OpenHandle(handle); 
 				thread->tid = threadObject->id;
 
 				SYSCALL_RETURN(OS_SUCCESS);
@@ -728,14 +490,14 @@ uintptr_t DoSyscall(uintptr_t index,
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
-			SYSCALL_RETURN(currentProcess->OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
 		} break;
 
 		case OS_SYSCALL_MAP_SHARED_MEMORY: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
-			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->ResolveHandle(argument0, type);
+			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(region, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
 
 			if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
 				argument2 = region->sizeBytes;
@@ -752,20 +514,20 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_SHARE_MEMORY: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
-			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->ResolveHandle(argument0, type);
+			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(region, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
 
 			type = KERNEL_OBJECT_PROCESS;
-			Process *process = (Process *) currentProcess->ResolveHandle(argument1, type);
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument1, type);
 			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->CompleteHandle(process, argument1));
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument1));
 
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
 			handle.readOnly = argument2 ? true : false;
-			SYSCALL_RETURN(process->OpenHandle(handle));
+			SYSCALL_RETURN(process->handleTable.OpenHandle(handle));
 		} break;
 
 		case OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY: {
@@ -783,7 +545,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
-			SYSCALL_RETURN(currentProcess->OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
 		} break;
 	}
 

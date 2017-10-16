@@ -1,3 +1,5 @@
+// TODO Clipping at right hand side? Not invalidating properly?
+
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 

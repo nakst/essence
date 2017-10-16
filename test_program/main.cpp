@@ -51,6 +51,7 @@ void ButtonCallback(OSControl *generator, void *argument, OSEvent *event) {
 extern "C" void ProgramEntry() {
 #define C_STRING_TO_API_STRING(literal) (char *) literal, OSCStringLength((char *) literal)
 
+#if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
 		OSMessage message;
@@ -112,6 +113,7 @@ extern "C" void ProgramEntry() {
 	message.type = (OSMessageType) 0xF000;
 	message.argument = (void *) sh;
 	OSSendMessage(newProcess.handle, &message);
+#endif
 
 #if 0
 	OSHandle regularFontHandle = OSOpenNamedSharedMemory(C_STRING_TO_API_STRING(OS_GUI_FONT_REGULAR));
@@ -202,6 +204,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
+#if 0
 	while (true) {
 		OSMessage message;
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
@@ -216,6 +219,7 @@ extern "C" void ProgramEntry() {
 			OSPrint("test_program received unhandled message of type %d\n", message.type);
 		}
 	}
+#endif
 		
 #if 0
 	if (OSGetCreationArgument(OS_CURRENT_PROCESS)) {
@@ -475,10 +479,11 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
-	OSExit(OSCurrentThread());
-#else
 	OSPrint("Completed test program.\n");
+
+#if 1
+	OSTerminateThread(OS_CURRENT_THREAD);
+#else
 	while (true);
 #endif
 }

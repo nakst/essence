@@ -3,6 +3,9 @@
 
 #ifndef IMPLEMENTATION
 
+void CloseHandleToThread(void *_thread);
+void CloseHandleToProcess(void *_thread);
+
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, VirtualAddressSpace *addressSpace);
 
 struct Event {
@@ -56,6 +59,7 @@ enum ThreadType {
 };
 
 enum ThreadTerminatableState {
+	THREAD_INVALID_TS,
 	THREAD_TERMINATABLE,		// The thread is currently executing user code.
 	THREAD_IN_SYSCALL,		// The thread is currently executing kernel code from a system call.
 					// It cannot be terminated until it returns from the system call.
@@ -106,39 +110,7 @@ struct Thread {
 	VirtualAddressSpace *volatile asyncTempAddressSpace;
 };
 
-struct HandleTableL3 {
-#define HANDLE_TABLE_L3_ENTRIES 512
-	Handle t[HANDLE_TABLE_L3_ENTRIES];
-};
-
-struct HandleTableL2 {
-#define HANDLE_TABLE_L2_ENTRIES 512
-	HandleTableL3 *t[HANDLE_TABLE_L2_ENTRIES];
-	size_t u[HANDLE_TABLE_L2_ENTRIES];
-};
-
-struct HandleTableL1 {
-#define HANDLE_TABLE_L1_ENTRIES 64
-	HandleTableL2 *t[HANDLE_TABLE_L1_ENTRIES];
-	size_t u[HANDLE_TABLE_L1_ENTRIES];
-
-	Mutex lock;
-};
-
-enum ResolveHandleReason {
-	RESOLVE_HANDLE_TO_USE,
-	RESOLVE_HANDLE_TO_CLOSE,
-};
-
 struct Process {
-	OSHandle OpenHandle(Handle &handle);
-	void CloseHandle(OSHandle handle);
-
-	// Resolve the handle if it is valid and return the type in type.
-	// The initial value of type is used as a mask of expected object types for the handle.
-	void *ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason = RESOLVE_HANDLE_TO_USE, Handle **handleData = nullptr); 
-	void CompleteHandle(void *object, OSHandle handle); // Decrements handle lock.
-
 	bool SendMessage(OSMessage &message); // Returns false if the message queue is full.
 #define MESSAGE_QUEUE_MAX_LENGTH 4096
 	LinkedList messageQueue;
@@ -165,7 +137,7 @@ struct Process {
 	Event executableLoadAttemptComplete;
 	Thread *executableMainThread;
 
-	HandleTableL1 handleTable;
+	HandleTable handleTable;
 };
 
 struct Message {
@@ -185,10 +157,10 @@ struct Scheduler {
 
 	Thread *SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveList = true);
 	void TerminateThread(Thread *thread);
-	void RemoveThread(Thread *thread);
+	void RemoveThread(Thread *thread); // Do not call. Use TerminateThread/CloseHandleToObject.
 
 	Process *SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess = false, void *argument = nullptr);
-	void RemoveProcess(Process *process);
+	void RemoveProcess(Process *process); // Do not call. Use TerminateProcess/CloseHandleToObject.
 
 	void AddActiveThread(Thread *thread, bool start);
 	void InsertNewThread(Thread *thread, bool addToActiveList, Process *owner);
@@ -419,8 +391,6 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	return thread;
 }
 
-void CloseThreadHandle(void *_thread);
-
 void Scheduler::TerminateThread(Thread *thread) {
 	scheduler.lock.Acquire();
 	thread->terminating = true;
@@ -446,7 +416,7 @@ void Scheduler::TerminateThread(Thread *thread) {
 				// The thread is terminatable and it isn't executing.
 				// Remove it from the executing list, and then remove the thread.
 				activeThreads.Remove(&thread->item[0]);
-				RegisterAsyncTask(CloseThreadHandle, thread, &thread->process->vmm->virtualAddressSpace);
+				RegisterAsyncTask(CloseHandleToThread, thread, &thread->process->vmm->virtualAddressSpace);
 				scheduler.lock.Release();
 			}
 		} else if (thread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
@@ -595,6 +565,7 @@ void Scheduler::CreateProcessorThreads() {
 	idleThread->state = THREAD_ACTIVE;
 	idleThread->executing = true;
 	idleThread->type = THREAD_IDLE;
+	idleThread->terminatableState = THREAD_IN_SYSCALL;
 	local->currentThread = local->idleThread = idleThread;
 
 	lock.Acquire();
@@ -643,12 +614,21 @@ void Scheduler::RemoveProcess(Process *process) {
 	allProcesses.Remove(&process->allItem);
 	scheduler.lock.Release();
 
-	// At this point, no pointers to the process remain.
+	// At this point, no pointers to the process (should) remain (I think).
 
-	// TODO When a process is removed the following must be freed/closed:
-	// 	- VMM
-	// 	- Message queue
-	// 	- Handle table (and close the handles in it)
+	// Free all the remaining messages in the message queue.
+	LinkedList &messageQueue = process->messageQueue;
+	LinkedItem *item = messageQueue.firstItem;
+	while (item != messageQueue.lastItem) {
+		Message *message = (Message *) item->thisItem;
+		messagePool.Remove(message);
+	}
+
+	// Destroy the handle table.
+	process->handleTable.Destroy();
+
+	// Destroy the virtual memory manager.
+	process->vmm->Destroy();
 
 	processPool.Remove(process);
 }
@@ -662,20 +642,28 @@ void Scheduler::RemoveThread(Thread *thread) {
 	kernelVMM.Free((void *) thread->kernelStackBase);
 	if (thread->userStackBase) thread->process->vmm->Free((void *) thread->userStackBase);
 
-	Process *process = thread->process;
-	scheduler.lock.Acquire();
-	process->handles--;
-	bool destroyProcess = !process->handles;
-	scheduler.lock.Release();
-
-	if (destroyProcess) {
-		scheduler.RemoveProcess(process);
-	}
-
+	CloseHandleToObject(thread->process, KERNEL_OBJECT_PROCESS);
 	scheduler.threadPool.Remove(thread);
 }
 
-void CloseThreadHandle(void *_thread) {
+void CloseHandleToProcess(void *_process) {
+	scheduler.lock.Acquire();
+
+	Process *process = (Process *) _process;
+	process->handles--;
+
+	bool deallocate = !process->handles;
+
+	KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
+
+	scheduler.lock.Release();
+
+	if (deallocate) {
+		scheduler.RemoveProcess(process);
+	}
+}
+
+void CloseHandleToThread(void *_thread) {
 	// This must be done in the correct virtual address space!
 	// Use RegisterAsyncTask to call this function.
 
@@ -683,10 +671,11 @@ void CloseThreadHandle(void *_thread) {
 
 	scheduler.lock.Acquire();
 	if (!thread->handles) {
-		KernelPanic("CloseThreadHandle - All handles to thread have been closed.\n");
+		KernelPanic("CloseHandleToThread - All handles to thread have been closed.\n");
 	}
 	thread->handles--;
 	bool removeThread = thread->handles == 0;
+	KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
 	scheduler.lock.Release();
 
 	if (removeThread) {
@@ -719,7 +708,7 @@ void Scheduler::Yield(InterruptContext *context) {
 		local->currentThread->state = THREAD_TERMINATED;
 		Event *killEvent = &local->currentThread->killedEvent;
 		killEvent->Set(true);
-		RegisterAsyncTask(CloseThreadHandle, local->currentThread, &local->currentThread->process->vmm->virtualAddressSpace);
+		RegisterAsyncTask(CloseHandleToThread, local->currentThread, &local->currentThread->process->vmm->virtualAddressSpace);
 	}
 
 	// If the thread is waiting for an object to be notified, put it in the relevant blockedThreads list.
@@ -946,6 +935,10 @@ void Mutex::Acquire() {
 		currentThread = (Thread *) 1;
 	} else {
 		currentThread->blockingEventCount = 1;
+
+		if (currentThread->terminatableState == THREAD_TERMINATABLE) {
+			KernelPanic("Mutex::Acquire - Thread is terminatable.\n");
+		}
 	}
 
 	if (local && owner && owner == currentThread && local->currentThread) {

@@ -159,30 +159,10 @@ struct CPULocalStorage {
 	struct InterruptContext *interruptContexts[16];
 };
 
-enum KernelObjectType {
-	KERNEL_OBJECT_PROCESS 	= 0x00000001,
-	KERNEL_OBJECT_THREAD	= 0x00000002,
-	KERNEL_OBJECT_SURFACE	= 0x00000004,
-	KERNEL_OBJECT_WINDOW	= 0x00000008,
-	KERNEL_OBJECT_MUTEX	= 0x00000010,
-	KERNEL_OBJECT_SHMEM	= 0x00000020,
-};
-
-struct Handle {
-	KernelObjectType type;
-	void *object;
-	volatile unsigned lock; // Must be 0 to close the handle.
-			        // Incremented when the handle is used in a system call.
-	volatile unsigned closing;
-
-	bool readOnly;
-};
-
-void CloseHandleToObject(void *object, KernelObjectType type);
-
 #endif
 
 #include "memory.cpp"
+#include "object_manager.cpp"
 #include "scheduler.cpp"
 #include "terminal.cpp"
 #include "graphics.cpp"
@@ -205,5 +185,4 @@ void CloseHandleToObject(void *object, KernelObjectType type);
 #include "elf.cpp"
 
 #include "window_manager.cpp"
-
 #include "syscall.cpp"

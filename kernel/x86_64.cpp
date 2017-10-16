@@ -264,6 +264,12 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
 			}
 
+			ThreadTerminatableState previousTerminatableState = THREAD_IN_SYSCALL;
+			if (local && local->currentThread) {
+				previousTerminatableState = local->currentThread->terminatableState;
+				local->currentThread->terminatableState = THREAD_IN_SYSCALL;
+			}
+
 			if (interrupt == 14) {
 				if (local && local->spinlockCount) {
 					KernelPanic("InterruptHandler - Page fault occurred with spinlock acquired.");
@@ -281,6 +287,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					exceptionInformation[interrupt], context->rip, local->processorID, context->errorCode, context->cr2);
 
 			resolved:;
+
+			if (local && local->currentThread) {
+				local->currentThread->terminatableState = previousTerminatableState;
+			}
 		} else {
 			if (context->cs != 0x48) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);

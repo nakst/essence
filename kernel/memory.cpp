@@ -111,6 +111,8 @@ struct VirtualAddressSpace {
 
 struct VMM {
 	void Initialise();
+	void Destroy(); // This MUST be called with the kernelVMM active!
+
 	void *Allocate(size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr);
 	bool HandlePageFault(uintptr_t address);
@@ -140,6 +142,10 @@ struct VMM {
 	size_t lookupRegionsCount, lookupRegionsAllocated;
 
 	uintptr_t allocatedVirtualMemory, allocatedPhysicalMemory;
+
+#ifdef ARCH_X86_64
+	uint64_t *pageTable;
+#endif
 };
 
 extern VMM kernelVMM;
@@ -254,13 +260,43 @@ void VMM::Initialise() {
 		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
-		uint64_t *pageTable = (uint64_t *) kernelVMM.Allocate(PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
+		pageTable = (uint64_t *) kernelVMM.Allocate(PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
 		CopyMemory(pageTable + 0x100, (uint64_t *) (PAGE_TABLE_L4 + 0x100), PAGE_SIZE / 2);
 		pageTable[512 - 1] = virtualAddressSpace.cr3 | 3;
-		kernelVMM.Free(pageTable);
 #endif
 	}
+}
+
+void ValidateCurrentVMM(VMM *target, bool inverse) {
+	if (inverse && target == &kernelVMM) {
+		KernelPanic("ValidateCurrentVMM - Attempting to destroy the kernel's VMM.\n");
+	}
+
+	if (target != &kernelVMM 
+			&& target != ProcessorGetLocalStorage()->currentThread->process->vmm 
+			&& &target->virtualAddressSpace != ProcessorGetLocalStorage()->currentThread->asyncTempAddressSpace) {
+		if (!inverse) {
+			KernelPanic("ValidateCurrentVMM - Attempt to modify a VMM with different VMM active.\n");
+		}
+	} else if (inverse) {
+		KernelPanic("ValidateCurrentVMM - Attempt to destroy a VMM with the VMM active.\n");
+	}
+}
+
+void VMM::Destroy() {
+	ValidateCurrentVMM(this, true);
+
+#ifdef ARCH_X86_64
+	for (uintptr_t i = 0; i < 256; i++) {
+	}
+
+	kernelVMM.Free(pageTable);
+
+	pmm.lock.Acquire();
+	pmm.FreePage(virtualAddressSpace.cr3);
+	pmm.lock.Release();
+#endif
 }
 
 uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated) {
@@ -339,19 +375,11 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	return true;
 }
 
-void ValidateCurrentVMM(VMM *target) {
-	if (target != &kernelVMM 
-			&& target != ProcessorGetLocalStorage()->currentThread->process->vmm 
-			&& &target->virtualAddressSpace != ProcessorGetLocalStorage()->currentThread->asyncTempAddressSpace) {
-		KernelPanic("ValidateCurrentVMM - Attempt to allocate VMM region with different VMM active.\n");
-	}
-}
-
 void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
 	lock.Acquire();
 	Defer(lock.Release());
 
-	ValidateCurrentVMM(this);
+	ValidateCurrentVMM(this, false);
 
 	if (!size) return nullptr;
 
@@ -451,7 +479,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type) {
 		return OS_ERROR_INVALID_MEMORY_REGION;
 	}
 
-	ValidateCurrentVMM(this);
+	ValidateCurrentVMM(this, false);
 
 	lock.Acquire();
 	Defer(lock.Release());

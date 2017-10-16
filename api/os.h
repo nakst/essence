@@ -172,6 +172,13 @@ enum OSControlType {
 	OS_CONTROL_BUTTON,
 	OS_CONTROL_CHECKBOX,
 	OS_CONTROL_RADIOBOX,
+	OS_CONTROL_STATIC,
+};
+
+enum OSControlImageType {
+	OS_CONTROL_IMAGE_FILL,
+	OS_CONTROL_IMAGE_CENTER_LEFT,
+	OS_CONTROL_IMAGE_NONE,
 };
 
 struct OSControl {
@@ -191,7 +198,7 @@ struct OSControl {
 
 	OSRectangle image;
 
-	bool fillImageToBounds;
+	OSControlImageType imageType;
 	int fillWidth;
 
 #define OS_CONTROL_NO_CHECK (0)

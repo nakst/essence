@@ -41,19 +41,40 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 			: ((isPressedControl || isHoverControl) ? 0 : 1)));
 	styleX = (imageWidth + 1) * styleX + control->image.left;
 
-	if (control->fillImageToBounds) {
+	OSEvent labelEvent = {};
+	labelEvent.type = OS_EVENT_GET_LABEL;
+	SendCallback(control, control->getLabel, labelEvent);
+
+	if (control->imageType == OS_CONTROL_IMAGE_FILL) {
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
 				control->bounds,
 				OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
 				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
 				OS_DRAW_MODE_REPEAT_FIRST);
-	} else {
+		OSDrawString(window->surface, control->bounds, 
+				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
+				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
+				control->disabled ? 0x808080 : 0x000000, -1);
+	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
+		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
 				OSRectangle(control->bounds.left, control->bounds.left + control->fillWidth, 
 					control->bounds.top, control->bounds.top + imageHeight),
 				OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
 				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
 				OS_DRAW_MODE_REPEAT_FIRST);
+		OSDrawString(window->surface, 
+				OSRectangle(control->bounds.left + control->fillWidth + 4, 
+					control->bounds.right, control->bounds.top, control->bounds.bottom), 
+				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
+				OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
+	} else if (control->imageType == OS_CONTROL_IMAGE_NONE) {
+		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
+		OSDrawString(window->surface, control->bounds, 
+				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
+				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
+				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	}
 
 	if (control->checked) {
@@ -66,18 +87,6 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 				OS_DRAW_MODE_REPEAT_FIRST);
 	}
 
-	OSEvent labelEvent = {};
-	labelEvent.type = OS_EVENT_GET_LABEL;
-	SendCallback(control, control->getLabel, labelEvent);
-
-	OSDrawString(window->surface, 
-			(!control->fillImageToBounds) ? OSRectangle(control->bounds.left + control->fillWidth + 4, 
-				control->bounds.right, control->bounds.top, control->bounds.bottom) : control->bounds, 
-			labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
-			((!control->fillImageToBounds) ? OS_DRAW_STRING_HALIGN_LEFT : OS_DRAW_STRING_HALIGN_CENTER) 
-				| OS_DRAW_STRING_VALIGN_CENTER,
-			control->disabled ? 0x808080 : 0x000000, 
-			(!control->fillImageToBounds) ? 0xF0F0F5 : -1);
 
 	if (labelEvent.getLabel.freeLabel) {
 		OSHeapFree(labelEvent.getLabel.label);
@@ -164,14 +173,14 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		case OS_CONTROL_BUTTON: {
 			control->bounds.right = 80;
 			control->bounds.bottom = 21;
-			control->fillImageToBounds = true;
+			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(42, 42 + 8, 88, 88 + 21);
 		} break;
 
 		case OS_CONTROL_CHECKBOX: {
 			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
 			control->bounds.bottom = 13;
-			control->fillImageToBounds = false;
+			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
 			control->fillWidth = 13;
 			control->image = OSRectangle(42, 42 + 8, 110, 110 + 13);
 		} break;
@@ -179,9 +188,15 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		case OS_CONTROL_RADIOBOX: {
 			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
 			control->bounds.bottom = 14;
-			control->fillImageToBounds = false;
+			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
 			control->fillWidth = 14;
 			control->image = OSRectangle(116, 116 + 14, 42, 42 + 14);
+		} break;
+
+		case OS_CONTROL_STATIC: {
+			control->bounds.right = 4 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
+			control->bounds.bottom = 14;
+			control->imageType = OS_CONTROL_IMAGE_NONE;
 		} break;
 	}
 
