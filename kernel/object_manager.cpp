@@ -84,7 +84,7 @@ void CloseHandleToObject(void *object, KernelObjectType type) {
 
 		case KERNEL_OBJECT_PROCESS: {
 			scheduler.lock.Acquire();
-			RegisterAsyncTask(CloseHandleToProcess, object, &kernelVMM.virtualAddressSpace);
+			RegisterAsyncTask(CloseHandleToProcess, object, &((Process *) object)->vmm->virtualAddressSpace);
 			scheduler.lock.Release();
 		} break;
 

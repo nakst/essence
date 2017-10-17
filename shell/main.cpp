@@ -59,7 +59,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
+#if 1
 	{
 		// ...and the other test program.
 		const char *testProgram = "/os/OdinHello";
@@ -69,7 +69,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
+#if 1
 	{
 		// Start the calculator.
 		const char *path = "/os/calculator";

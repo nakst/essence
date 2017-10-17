@@ -91,7 +91,7 @@ struct VirtualAddressSpace {
 		 uintptr_t virtualAddress,
 		 unsigned flags);
 	void Remove(uintptr_t virtualAddress, size_t pageCount);
-	uintptr_t Get(uintptr_t virtualAddress);
+	uintptr_t Get(uintptr_t virtualAddress, bool force = false);
 	
 	bool userland;
 	Spinlock lock;
@@ -114,7 +114,7 @@ struct VMM {
 	void Destroy(); // This MUST be called with the kernelVMM active!
 
 	void *Allocate(size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
-	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr);
+	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
 	bool HandlePageFault(uintptr_t address);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
 	void UnlockRegion(VMMRegion *region);
@@ -268,35 +268,78 @@ void VMM::Initialise() {
 	}
 }
 
-void ValidateCurrentVMM(VMM *target, bool inverse) {
-	if (inverse && target == &kernelVMM) {
-		KernelPanic("ValidateCurrentVMM - Attempting to destroy the kernel's VMM.\n");
-	}
-
+void ValidateCurrentVMM(VMM *target) {
 	if (target != &kernelVMM 
 			&& target != ProcessorGetLocalStorage()->currentThread->process->vmm 
 			&& &target->virtualAddressSpace != ProcessorGetLocalStorage()->currentThread->asyncTempAddressSpace) {
-		if (!inverse) {
-			KernelPanic("ValidateCurrentVMM - Attempt to modify a VMM with different VMM active.\n");
-		}
-	} else if (inverse) {
-		KernelPanic("ValidateCurrentVMM - Attempt to destroy a VMM with the VMM active.\n");
+		KernelPanic("ValidateCurrentVMM - Attempt to modify a VMM with different VMM active.\n");
 	}
 }
 
-void VMM::Destroy() {
-	ValidateCurrentVMM(this, true);
-
 #ifdef ARCH_X86_64
-	for (uintptr_t i = 0; i < 256; i++) {
+void CleanupVirtualAddressSpace(void *argument) {
+	pmm.lock.Acquire();
+	pmm.FreePage((uintptr_t) argument);
+	pmm.lock.Release();
+}
+#endif
+
+void VMM::Destroy() {
+	ValidateCurrentVMM(this);
+
+	while (true) {
+		uintptr_t regionsFreed = 0;
+		for (uintptr_t i = 0; i < regionsCount; i++) {
+			VMMRegion *region = regions + i;
+
+			if (region->type != vmmRegionFree) {
+				regionsFreed++;
+				KernelLog(LOG_VERBOSE, "Freeing VMM region at %x...\n", region->baseAddress);
+				Free((void *) region->baseAddress);
+			}
+		}
+		if (!regionsFreed) break;
 	}
 
-	kernelVMM.Free(pageTable);
+	KernelLog(LOG_VERBOSE, "Freeing region arrays...\n");
 
+	if (regions) kernelVMM.Free(regions);
+	if (lookupRegions) kernelVMM.Free(lookupRegions);
+
+#ifdef ARCH_X86_64
+	KernelLog(LOG_VERBOSE, "Freeing virtual address space...\n");
 	pmm.lock.Acquire();
-	pmm.FreePage(virtualAddressSpace.cr3);
+	for (uintptr_t i = 0; i < 256; i++) {
+		if (PAGE_TABLE_L4[i]) {
+			for (uintptr_t j = i * 512; j < (i + 1) * 512; j++) {
+				if (PAGE_TABLE_L3[j]) {
+					for (uintptr_t k = j * 512; k < (j + 1) * 512; k++) {
+						if (PAGE_TABLE_L2[k]) {
+							pmm.FreePage(PAGE_TABLE_L2[k] & (~0xFFF));
+						}
+					}
+					pmm.FreePage(PAGE_TABLE_L3[j] & (~0xFFF));
+				}
+			}
+			pmm.FreePage(PAGE_TABLE_L4[i] & (~0xFFF));
+		}
+	}
 	pmm.lock.Release();
+
+	kernelVMM.Free(pageTable);
 #endif
+
+	// TODO Work out why enabling this can cause triple faults?
+	// 	It looks like the VAS may still be used causing fetch PFs?
+#if 0
+#if ARCH_X86_64
+	scheduler.lock.Acquire();
+	RegisterAsyncTask(CleanupVirtualAddressSpace, (void *) virtualAddressSpace.cr3, &kernelVMM.virtualAddressSpace);
+	scheduler.lock.Release();
+#endif
+#endif
+
+	KernelLog(LOG_VERBOSE, "VMM destroyed,\n");
 }
 
 uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated) {
@@ -379,7 +422,7 @@ void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uin
 	lock.Acquire();
 	Defer(lock.Release());
 
-	ValidateCurrentVMM(this, false);
+	ValidateCurrentVMM(this);
 
 	if (!size) return nullptr;
 
@@ -474,12 +517,12 @@ void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMR
 	region->pageCount -= newRegion->pageCount;
 }
 
-OSError VMM::Free(void *address, void **object, VMMRegionType *type) {
+OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVirtualAddressSpaceUpdate) {
 	if (!address) {
 		return OS_ERROR_INVALID_MEMORY_REGION;
 	}
 
-	ValidateCurrentVMM(this, false);
+	ValidateCurrentVMM(this);
 
 	lock.Acquire();
 	Defer(lock.Release());
@@ -538,7 +581,9 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type) {
 			}
 		}
 
-		virtualAddressSpace.Remove(region->baseAddress, region->pageCount);
+		if (!skipVirtualAddressSpaceUpdate) {
+			virtualAddressSpace.Remove(region->baseAddress, region->pageCount);
+		}
 	}
 
 	size_t regionPageCount = region->pageCount;
@@ -675,18 +720,6 @@ void VMM::UnlockRegion(VMMRegion *region) {
 bool VMM::HandlePageFault(uintptr_t address) {
 	lock.AssertLocked();
 
-	{
-		virtualAddressSpace.lock.Acquire();
-		Defer(virtualAddressSpace.lock.Release());
-
-		if (virtualAddressSpace.Get(address)) {
-			// If the processor "remembers" a non-present page then we'll get a page fault here.
-			// ...so invalidate the page.
-			ProcessorInvalidatePage(address);
-			return true;
-		}
-	}
-
 	uintptr_t page = address & ~(PAGE_SIZE - 1);
 	VMMRegion *region = FindRegion(address, lookupRegions, lookupRegionsCount);
 
@@ -721,6 +754,23 @@ bool HandlePageFault(uintptr_t page) {
 	// 	TODO Think about whether I really want this ^^^ (it won't really work on 32-bit processors)
 	// FFFF_FF01_0000_0000 -> FFFF_FF80_0000_0000	unused
 	// FFFF_FF80_0000_0000 -> FFFF_FFFF_FFFF_FFFF	paging tables
+
+	{
+		VirtualAddressSpace *virtualAddressSpace;
+
+		if (page < 0x0000800000000000) {
+			virtualAddressSpace = &ProcessorGetLocalStorage()->currentThread->process->vmm->virtualAddressSpace;
+		} else {
+			virtualAddressSpace = &kernelVMM.virtualAddressSpace;
+		}
+
+		if (virtualAddressSpace->Get(page, true)) {
+			// If the processor "remembers" a non-present page then we'll get a page fault here.
+			// ...so invalidate the page.
+			ProcessorInvalidatePage(page);
+			return true;
+		}
+	}
 
 	if (page >= 0xFFFF810000000000 && page < 0xFFFF900000000000) {
 		kernelVMM.virtualAddressSpace.lock.Acquire();
@@ -904,8 +954,10 @@ void PMM::FreePage(uintptr_t address, bool bypassStack) {
 }
 
 #ifdef ARCH_X86_64
-uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress) {
-	lock.AssertLocked();
+uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force) {
+	if (!force) {
+		lock.AssertLocked();
+	}
 
 	virtualAddress  &= 0x0000FFFFFFFFF000;
 

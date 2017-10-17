@@ -1,9 +1,10 @@
-// TODO Reference counting for more kernel objects 
-// 		- files, filesystems, mountpoints, devices, etc.
+// TODO File API.
 
 // TODO Implement OSWait (thread synchronization, events).
+// TODO Implement OSTerminateProcess.
 
-// TODO Finish process cleanup, and implement OSTerminateProcess.
+// TODO DoSyscall not terminatable bug,
+// 	Triple fault on startup bug.
 
 #include "kernel.h"
 #define IMPLEMENTATION
@@ -36,6 +37,7 @@ extern "C" void KernelAPMain() {
 }
 
 extern "C" void KernelMain() {
+	Print("---------------------------\n");
 	kernelVMM.Initialise();
 	pmm.Initialise();
 	scheduler.Initialise();

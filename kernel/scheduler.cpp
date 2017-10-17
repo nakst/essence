@@ -452,7 +452,7 @@ void Scheduler::Start() {
 
 void NewProcess() {
 	Process *thisProcess = ProcessorGetLocalStorage()->currentThread->process;
-	KernelLog(LOG_VERBOSE, "Created process %d.\n", thisProcess->id);
+	KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	// TODO Shared memory with executables.
 	uintptr_t processStartAddress = LoadELF(thisProcess->executablePath, thisProcess->executablePathLength);
@@ -608,7 +608,7 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, VirtualAddres
 }
 
 void Scheduler::RemoveProcess(Process *process) {
-	KernelLog(LOG_VERBOSE, "Removing process %d.\n", process->id);
+	KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
 	scheduler.lock.Acquire();
 	allProcesses.Remove(&process->allItem);
@@ -627,8 +627,10 @@ void Scheduler::RemoveProcess(Process *process) {
 	// Destroy the handle table.
 	process->handleTable.Destroy();
 
+#if 1
 	// Destroy the virtual memory manager.
 	process->vmm->Destroy();
+#endif
 
 	processPool.Remove(process);
 }
