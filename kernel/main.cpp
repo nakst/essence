@@ -4,7 +4,6 @@
 // TODO Implement OSTerminateProcess.
 
 // TODO DoSyscall not terminatable bug,
-// 	Triple fault on startup bug.
 
 #include "kernel.h"
 #define IMPLEMENTATION

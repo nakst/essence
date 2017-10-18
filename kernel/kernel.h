@@ -76,6 +76,7 @@ extern "C" void ProcessorFakeTimerInterrupt();
 extern "C" uint64_t ProcessorReadTimeStamp();
 extern "C" void DoContextSwitch(struct InterruptContext *context, uintptr_t virtualAddressSpace, uintptr_t threadKernelStack);
 extern "C" void ProcessorSetAddressSpace(uintptr_t virtualAddressSpaceIdentifier);
+extern "C" uintptr_t ProcessorGetAddressSpace();
 
 volatile uintptr_t ipiVector;
 extern struct Spinlock ipiLock;

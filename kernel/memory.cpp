@@ -260,6 +260,7 @@ void VMM::Initialise() {
 		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
+		KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
 		pageTable = (uint64_t *) kernelVMM.Allocate(PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
 		CopyMemory(pageTable + 0x100, (uint64_t *) (PAGE_TABLE_L4 + 0x100), PAGE_SIZE / 2);
@@ -279,6 +280,8 @@ void ValidateCurrentVMM(VMM *target) {
 #ifdef ARCH_X86_64
 void CleanupVirtualAddressSpace(void *argument) {
 	pmm.lock.Acquire();
+	KernelLog(LOG_INFO, "Removing virtual address space page %x...\n", argument);
+	KernelLog(LOG_INFO, "Current CR3 is %x\n", ProcessorGetAddressSpace());
 	pmm.FreePage((uintptr_t) argument);
 	pmm.lock.Release();
 }
@@ -331,12 +334,11 @@ void VMM::Destroy() {
 
 	// TODO Work out why enabling this can cause triple faults?
 	// 	It looks like the VAS may still be used causing fetch PFs?
-#if 0
+	// 	--> On async task threads??!?
 #if ARCH_X86_64
 	scheduler.lock.Acquire();
-	RegisterAsyncTask(CleanupVirtualAddressSpace, (void *) virtualAddressSpace.cr3, &kernelVMM.virtualAddressSpace);
+	RegisterAsyncTask(CleanupVirtualAddressSpace, (void *) virtualAddressSpace.cr3, kernelProcess);
 	scheduler.lock.Release();
-#endif
 #endif
 
 	KernelLog(LOG_VERBOSE, "VMM destroyed,\n");

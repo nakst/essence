@@ -137,7 +137,7 @@ bool PS2IRQHandler(uintptr_t interruptIndex) {
 				| ((firstByte & (1 << 2)) ? MIDDLE_BUTTON : 0);
 
 		scheduler.lock.Acquire();
-		RegisterAsyncTask(PS2MouseUpdated, update, &kernelVMM.virtualAddressSpace);
+		RegisterAsyncTask(PS2MouseUpdated, update, kernelProcess);
 		scheduler.lock.Release();
 
 		firstByte = 0;

@@ -6,7 +6,7 @@
 void CloseHandleToThread(void *_thread);
 void CloseHandleToProcess(void *_thread);
 
-void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, VirtualAddressSpace *addressSpace);
+void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Process *targetProcess);
 
 struct Event {
 	void Set(bool schedulerAlreadyLocked = false);
@@ -319,7 +319,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 	thread->processItem.thisItem = thread;
 	owner->threads.InsertEnd(&thread->processItem);
 
-	KernelLog(LOG_VERBOSE, "Create thread ID %d, type %d\n", thread->id, thread->type);
+	KernelLog(LOG_VERBOSE, "Create thread ID %d, type %d, owner process %d\n", thread->id, thread->type, owner->id);
 
 	for (uintptr_t i = 0; i < MAX_BLOCKING_EVENTS; i++) {
 		thread->item[i].thisItem = thread;
@@ -416,7 +416,7 @@ void Scheduler::TerminateThread(Thread *thread) {
 				// The thread is terminatable and it isn't executing.
 				// Remove it from the executing list, and then remove the thread.
 				activeThreads.Remove(&thread->item[0]);
-				RegisterAsyncTask(CloseHandleToThread, thread, &thread->process->vmm->virtualAddressSpace);
+				RegisterAsyncTask(CloseHandleToThread, thread, thread->process);
 				scheduler.lock.Release();
 			}
 		} else if (thread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
@@ -538,10 +538,16 @@ void AsyncTaskThread() {
 			if (task->addressSpace) {
 				local->currentThread->asyncTempAddressSpace = task->addressSpace;
 				ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(task->addressSpace));
+			} else {
+				local->currentThread->asyncTempAddressSpace = nullptr;
+				ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(&kernelVMM.virtualAddressSpace));
 			}
 
 			task->callback(task->argument);
 			i++;
+
+			local->currentThread->asyncTempAddressSpace = nullptr;
+			ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(&kernelVMM.virtualAddressSpace));
 
 			// If that was the last task, exit.
 			if (i == __sync_val_compare_and_swap(&local->asyncTasksCount, i, 0)) {
@@ -592,7 +598,7 @@ void Scheduler::InitialiseAP() {
 	ProcessorGetLocalStorage()->schedulerReady = true; // The processor can now be pre-empted.
 }
 
-void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, VirtualAddressSpace *addressSpace) {
+void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targetProcess) {
 	scheduler.lock.AssertLocked();
 
 	CPULocalStorage *local = ProcessorGetLocalStorage();
@@ -601,9 +607,14 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, VirtualAddres
 		KernelPanic("RegisterAsyncTask - Maximum number of queued asynchronous tasks reached.\n");
 	}
 
-	local->asyncTasks[local->asyncTasksCount].callback = callback;
-	local->asyncTasks[local->asyncTasksCount].argument = argument;
-	local->asyncTasks[local->asyncTasksCount].addressSpace = addressSpace;
+	if (!targetProcess->handles) {
+		KernelPanic("RegisterAsyncTask - Process has no handles.\n");
+	}
+
+	volatile AsyncTask *task = local->asyncTasks + local->asyncTasksCount;
+	task->callback = callback;
+	task->argument = argument;
+	task->addressSpace = &targetProcess->vmm->virtualAddressSpace;
 	local->asyncTasksCount++;
 }
 
@@ -627,10 +638,8 @@ void Scheduler::RemoveProcess(Process *process) {
 	// Destroy the handle table.
 	process->handleTable.Destroy();
 
-#if 1
 	// Destroy the virtual memory manager.
 	process->vmm->Destroy();
-#endif
 
 	processPool.Remove(process);
 }
@@ -710,7 +719,7 @@ void Scheduler::Yield(InterruptContext *context) {
 		local->currentThread->state = THREAD_TERMINATED;
 		Event *killEvent = &local->currentThread->killedEvent;
 		killEvent->Set(true);
-		RegisterAsyncTask(CloseHandleToThread, local->currentThread, &local->currentThread->process->vmm->virtualAddressSpace);
+		RegisterAsyncTask(CloseHandleToThread, local->currentThread, local->currentThread->process);
 	}
 
 	// If the thread is waiting for an object to be notified, put it in the relevant blockedThreads list.
@@ -812,6 +821,9 @@ void Scheduler::Yield(InterruptContext *context) {
 	InterruptContext *newContext = newThread->interruptContext;
 	VirtualAddressSpace *addressSpace = &newThread->process->vmm->virtualAddressSpace;
 	if (newThreadIsAsyncTask && newThread->asyncTempAddressSpace) addressSpace = newThread->asyncTempAddressSpace;
+#if 0
+	KernelLog(LOG_VERBOSE, "%x/%d/%d\n", VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->id, newThread->type);
+#endif
 	DoContextSwitch(newContext, VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->kernelStack);
 
 #define Defer(code) _Defer(code)

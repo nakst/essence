@@ -670,6 +670,11 @@ ProcessorSetAddressSpace:
 	.cont:
 	ret
 
+[global ProcessorGetAddressSpace]
+ProcessorGetAddressSpace:
+	mov	rax,cr3
+	ret
+
 [extern PostContextSwitch]
 [global DoContextSwitch]
 DoContextSwitch:
