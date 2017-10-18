@@ -264,11 +264,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
 			}
 
-			ThreadTerminatableState previousTerminatableState = THREAD_IN_SYSCALL;
-			if (local && local->currentThread) {
-				previousTerminatableState = local->currentThread->terminatableState;
-				local->currentThread->terminatableState = THREAD_IN_SYSCALL;
-			}
+			ThreadTerminatableState previousTerminatableState;
+			previousTerminatableState = local->currentThread->terminatableState;
+			local->currentThread->terminatableState = THREAD_IN_SYSCALL;
+			KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt)\n", local->currentThread);
 
 			if (interrupt == 14) {
 				if (local && local->spinlockCount) {
@@ -287,10 +286,8 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					exceptionInformation[interrupt], context->rip, local->processorID, context->errorCode, context->cr2);
 
 			resolved:;
-
-			if (local && local->currentThread) {
-				local->currentThread->terminatableState = previousTerminatableState;
-			}
+			local->currentThread->terminatableState = previousTerminatableState;
+			KernelLog(LOG_VERBOSE, "Thread %x terminatable (interrupt done)\n", local->currentThread);
 		} else {
 			if (context->cs != 0x48) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);

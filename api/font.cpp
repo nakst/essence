@@ -207,9 +207,11 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		string = utf8_advance(string);
 	}
 
+#if 0
 	OSPrint("drawn string, invalidating: %d, %d, %d, %d\n", 
 			invalidatedRegion.left, invalidatedRegion.right,
 			invalidatedRegion.top, invalidatedRegion.bottom);
+#endif
 	OSInvalidateRectangle(surface, invalidatedRegion);
 
 	return OS_SUCCESS;

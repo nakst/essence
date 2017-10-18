@@ -61,6 +61,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_SHARE_MEMORY			(28)
 #define OS_SYSCALL_MAP_SHARED_MEMORY		(29)
 #define OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY	(30)
+#define OS_SYSCALL_TERMINATE_PROCESS		(31)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -285,6 +286,7 @@ extern "C" OSError OSCloseHandle(OSHandle handle);
 extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); // TODO Temporary. Replace with a proper file I/O API.
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
+extern "C" OSError OSTerminateProcess(OSHandle thread);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);

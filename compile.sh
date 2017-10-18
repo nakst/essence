@@ -15,7 +15,7 @@ x86_64-elf-g++ -c test_program/main.cpp -o bin/os/test.o -ffreestanding -Wall -W
 x86_64-elf-gcc -T linker_userland64.ld -o bin/os/test -ffreestanding -nostdlib bin/os/test.o -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi  
 
 echo -e "-> Building ${ColorBlue}calculator${ColorNormal}..."
-x86_64-elf-g++ -c calculator/main.cpp -o bin/os/calculator.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address   
+x86_64-elf-g++ -c calculator/main.cpp -o bin/os/calculator.o -ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address  
 x86_64-elf-gcc -T linker_userland64.ld -o bin/os/calculator -ffreestanding -nostdlib bin/os/calculator.o -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi  
 
 echo -e "-> Building ${ColorBlue}kernel${ColorNormal}..."

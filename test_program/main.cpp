@@ -21,6 +21,11 @@ void ThreadEntry(void *argument) {
 }
 #endif
 
+void ThreadTest(void *argument) {
+	(void) argument;
+	while (true);
+}
+
 OSWindow *window;
 
 char getTextBuffer[256];
@@ -479,7 +484,15 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
+#if 1
+	OSThreadInformation thread;
+	OSCreateThread(ThreadTest, &thread, nullptr);
+#endif
+
 	OSPrint("Completed test program.\n");
+#if 0
+	OSTerminateProcess(OS_CURRENT_PROCESS);
+#endif
 
 #if 1
 	OSTerminateThread(OS_CURRENT_THREAD);

@@ -1,7 +1,6 @@
 // TODO File API.
 
 // TODO Implement OSWait (thread synchronization, events).
-// TODO Implement OSTerminateProcess.
 
 // TODO DoSyscall not terminatable bug,
 

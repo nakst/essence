@@ -5,6 +5,7 @@
 
 void CloseHandleToThread(void *_thread);
 void CloseHandleToProcess(void *_thread);
+void KillThread(void *_thread);
 
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Process *targetProcess);
 
@@ -156,10 +157,11 @@ struct Scheduler {
 	void Yield(InterruptContext *context);
 
 	Thread *SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveList = true);
-	void TerminateThread(Thread *thread);
+	void TerminateThread(Thread *thread, bool lockAlreadyAcquired = false);
 	void RemoveThread(Thread *thread); // Do not call. Use TerminateThread/CloseHandleToObject.
 
 	Process *SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess = false, void *argument = nullptr);
+	void TerminateProcess(Process *process);
 	void RemoveProcess(Process *process); // Do not call. Use TerminateProcess/CloseHandleToObject.
 
 	void AddActiveThread(Thread *thread, bool start);
@@ -363,6 +365,7 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	thread->userStackBase = userland ? stack : 0;
 
 	thread->terminatableState = userland ? THREAD_TERMINATABLE : THREAD_IN_SYSCALL;
+	KernelLog(LOG_VERBOSE, "Thread %x terminatable = %d (creation)\n", thread, thread->terminatableState);
 
 #ifdef ARCH_X86_64
 	InterruptContext *context = ((InterruptContext *) (kernelStack + kernelStackSize - 8)) - 1;
@@ -391,12 +394,48 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	return thread;
 }
 
-void Scheduler::TerminateThread(Thread *thread) {
+void Scheduler::TerminateProcess(Process *process) {
 	scheduler.lock.Acquire();
+	Defer(scheduler.lock.Release());
+
+	CPULocalStorage *local = ProcessorGetLocalStorage();
+
+	Thread *currentThread = local->currentThread;
+	bool isCurrentProcess = process == currentThread->process;
+	bool foundCurrentThread = false;
+
+	LinkedItem *thread = process->threads.firstItem;
+
+	while (thread) {
+		Thread *threadObject = (Thread *) thread->thisItem;
+		thread = thread->nextItem;
+
+		if (threadObject != currentThread) {
+			TerminateThread(threadObject, true);
+		} else if (isCurrentProcess) {
+			foundCurrentThread = true;
+		} else {
+			KernelPanic("Scheduler::TerminateProcess - Found current thread in the wrong process?!\n");
+		}
+	}
+
+	if (!foundCurrentThread && isCurrentProcess) {
+		KernelPanic("Scheduler::TerminateProcess - Could not find current thread in the current process?!\n");
+	} else if (isCurrentProcess) {
+		TerminateThread(currentThread, true);
+	}
+}
+
+void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
+	if (!lockAlreadyAcquired) {
+		scheduler.lock.Acquire();
+	}
+
 	thread->terminating = true;
 
 	if (thread == ProcessorGetLocalStorage()->currentThread) {
 		thread->terminatableState = THREAD_TERMINATABLE;
+		KernelLog(LOG_VERBOSE, "Terminating current thread %x, so making THREAD_TERMINATABLE\n", thread);
 		scheduler.lock.Release();
 
 		// We cannot return to the previous function as it expects to be killed.
@@ -407,7 +446,7 @@ void Scheduler::TerminateThread(Thread *thread) {
 			if (thread->executing) {
 				// The thread is executing, so the next time it tries to make a system call or
 				// is pre-empted, it will be terminated.
-				scheduler.lock.Release();
+				if (!lockAlreadyAcquired) scheduler.lock.Release();
 			} else {
 				if (thread->state != THREAD_ACTIVE) {
 					KernelPanic("Scheduler::TerminateThread - Terminatable thread non-active.\n");
@@ -416,8 +455,8 @@ void Scheduler::TerminateThread(Thread *thread) {
 				// The thread is terminatable and it isn't executing.
 				// Remove it from the executing list, and then remove the thread.
 				activeThreads.Remove(&thread->item[0]);
-				RegisterAsyncTask(CloseHandleToThread, thread, thread->process);
-				scheduler.lock.Release();
+				RegisterAsyncTask(KillThread, thread, thread->process);
+				if (!lockAlreadyAcquired) scheduler.lock.Release();
 			}
 		} else if (thread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
 			if (thread->executing) {
@@ -427,15 +466,16 @@ void Scheduler::TerminateThread(Thread *thread) {
 				// Scheduler::Yield will automatically force the thread to be active again.
 			} else {
 				// Unblock the thread.
+				// See comment above.
 				UnblockThread(thread);
 			}
 
-			scheduler.lock.Release();
+			if (!lockAlreadyAcquired) scheduler.lock.Release();
 		} else {
 			// The thread is executing kernel code.
 			// Therefore, we can't simply terminate the thread.
 			// The thread will set its state to THREAD_TERMINATABLE whenever it can be terminated.
-			scheduler.lock.Release();
+			if (!lockAlreadyAcquired) scheduler.lock.Release();
 		}
 	}
 }
@@ -645,19 +685,16 @@ void Scheduler::RemoveProcess(Process *process) {
 }
 
 void Scheduler::RemoveThread(Thread *thread) {
-	scheduler.lock.Acquire();
-	scheduler.allThreads.Remove(&thread->allItem);
-	thread->process->threads.Remove(&thread->processItem);
-	scheduler.lock.Release();
+	// The last handle to the thread has been closed,
+	// so we can finally deallocate the thread.
 
-	kernelVMM.Free((void *) thread->kernelStackBase);
-	if (thread->userStackBase) thread->process->vmm->Free((void *) thread->userStackBase);
-
-	CloseHandleToObject(thread->process, KERNEL_OBJECT_PROCESS);
 	scheduler.threadPool.Remove(thread);
 }
 
 void CloseHandleToProcess(void *_process) {
+	// This must be done in the correct virtual address space!
+	// Use RegisterAsyncTask to call this function.
+
 	scheduler.lock.Acquire();
 
 	Process *process = (Process *) _process;
@@ -694,6 +731,23 @@ void CloseHandleToThread(void *_thread) {
 	}
 }
 
+void KillThread(void *_thread) {
+	Thread *thread = (Thread *) _thread;
+
+	scheduler.lock.Acquire();
+	scheduler.allThreads.Remove(&thread->allItem);
+	thread->process->threads.Remove(&thread->processItem);
+	scheduler.lock.Release();
+
+	kernelVMM.Free((void *) thread->kernelStackBase);
+	if (thread->userStackBase) thread->process->vmm->Free((void *) thread->userStackBase);
+
+	// Close the handle that this thread owns of its owner process.
+	CloseHandleToObject(thread->process, KERNEL_OBJECT_PROCESS);
+
+	CloseHandleToThread(_thread);
+}
+
 void Scheduler::Yield(InterruptContext *context) {
 	// Deferred statements don't work in this function.
 #undef Defer
@@ -719,7 +773,7 @@ void Scheduler::Yield(InterruptContext *context) {
 		local->currentThread->state = THREAD_TERMINATED;
 		Event *killEvent = &local->currentThread->killedEvent;
 		killEvent->Set(true);
-		RegisterAsyncTask(CloseHandleToThread, local->currentThread, local->currentThread->process);
+		RegisterAsyncTask(KillThread, local->currentThread, local->currentThread->process);
 	}
 
 	// If the thread is waiting for an object to be notified, put it in the relevant blockedThreads list.

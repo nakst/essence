@@ -47,10 +47,12 @@ uintptr_t DoSyscall(uintptr_t index,
 	}
 
 	if (currentThread->terminatableState != THREAD_TERMINATABLE) {
-		KernelPanic("DoSyscall - Thread was not terminatable. Are you trying to use system calls from a kernel thread?\n");
+		KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d). Are you trying to use system calls from a kernel thread?\n", 
+				currentThread, currentThread->terminatableState);
 	}
 
 	currentThread->terminatableState = THREAD_IN_SYSCALL;
+	// KernelLog(LOG_VERBOSE, "Thread %x now in syscall\n", currentThread);
 
 	OSError returnValue = OS_ERROR_UNKNOWN_SYSCALL;
 #define SYSCALL_RETURN(value) {returnValue = value; goto end;}
@@ -292,6 +294,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		case OS_SYSCALL_WAIT_MESSAGE: {
 			while (!currentProcess->messageQueue.count) {
 				currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
+				// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
 				currentProcess->messageQueueIsNotEmpty.Wait(argument0 /*Timeout*/);
 			}
 
@@ -380,6 +383,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_ERROR_MUTEX_ALREADY_ACQUIRED);
 			currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
+			// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
 			mutex->Acquire();
 			SYSCALL_RETURN(OS_SUCCESS);
 		} break;
@@ -414,6 +418,16 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
 
 			scheduler.TerminateThread(thread);
+			SYSCALL_RETURN(OS_SUCCESS);
+		} break;
+
+		case OS_SYSCALL_TERMINATE_PROCESS: {
+			KernelObjectType type = KERNEL_OBJECT_PROCESS;
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
+
+			scheduler.TerminateProcess(process);
 			SYSCALL_RETURN(OS_SUCCESS);
 		} break;
 
@@ -552,6 +566,7 @@ uintptr_t DoSyscall(uintptr_t index,
 	end:;
 
 	currentThread->terminatableState = THREAD_TERMINATABLE;
+	// KernelLog(LOG_VERBOSE, "Thread %x finished syscall\n", currentThread);
 
 	if (currentThread->terminating) {
 		// The thread has been terminated.
