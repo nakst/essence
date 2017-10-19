@@ -490,7 +490,7 @@ extern "C" void ProgramEntry() {
 #endif
 
 	OSPrint("Completed test program.\n");
-#if 0
+#if 1
 	OSTerminateProcess(OS_CURRENT_PROCESS);
 #endif
 

@@ -675,9 +675,6 @@ void Scheduler::RemoveProcess(Process *process) {
 		messagePool.Remove(message);
 	}
 
-	// Destroy the handle table.
-	process->handleTable.Destroy();
-
 	// Destroy the virtual memory manager.
 	process->vmm->Destroy();
 
@@ -739,8 +736,18 @@ void KillThread(void *_thread) {
 	thread->process->threads.Remove(&thread->processItem);
 	scheduler.lock.Release();
 
+	if (thread->process->threads.count == 0) {
+		// There are no threads left in this process.
+		// We should destroy the handle table at this point.
+		// Otherwise, the process might never be freed
+		// because of a cyclic-dependency.
+		thread->process->handleTable.Destroy();
+	}
+
 	kernelVMM.Free((void *) thread->kernelStackBase);
 	if (thread->userStackBase) thread->process->vmm->Free((void *) thread->userStackBase);
+
+	thread->killedEvent.Set();
 
 	// Close the handle that this thread owns of its owner process.
 	CloseHandleToObject(thread->process, KERNEL_OBJECT_PROCESS);
@@ -771,8 +778,6 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	if (killThread) {
 		local->currentThread->state = THREAD_TERMINATED;
-		Event *killEvent = &local->currentThread->killedEvent;
-		killEvent->Set(true);
 		RegisterAsyncTask(KillThread, local->currentThread, local->currentThread->process);
 	}
 
