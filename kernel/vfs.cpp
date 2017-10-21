@@ -153,6 +153,7 @@ File *VFS::OpenFile(char *name, size_t nameLength) {
 	}
 
 	File *file = (File *) vfs.filePool.Add();
+	KernelLog(LOG_VERBOSE, "Allocated file, %x -> %x\n", file, 1 + file);
 	CopyMemory(file, &directory, sizeof(File));
 	file->filesystem = filesystem;
 	return file;

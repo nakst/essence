@@ -1,6 +1,5 @@
 // TODO File API.
 // TODO Implement OSWait (thread synchronization, events).
-// TODO DoSyscall not terminatable bug,
 
 #include "kernel.h"
 #define IMPLEMENTATION

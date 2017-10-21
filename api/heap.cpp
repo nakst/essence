@@ -8,6 +8,7 @@ struct OSHeapRegion {
 	uint16_t offset;
 	uint16_t used;
 
+	// Valid if the region is not in use.
 	OSHeapRegion *regionListNext;
 	OSHeapRegion **regionListReference;
 };
@@ -57,6 +58,8 @@ static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 	if (region->regionListNext) {
 		region->regionListNext->regionListReference = region->regionListReference;
 	}
+
+	region->regionListReference = nullptr;
 }
 
 static void OSHeapAddFreeRegion(OSHeapRegion *region) {
@@ -89,6 +92,10 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 
 	OS_HEAP_ACQUIRE_MUTEX();
 
+	static bool concurrentModificationCheck = false;
+	if (concurrentModificationCheck) OS_HEAP_PANIC();
+	concurrentModificationCheck = true;
+
 	OSHeapRegion *region = nullptr;
 
 	for (int i = OSHeapCalculateIndex(size); i < 12; i++) {
@@ -103,6 +110,7 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 
 	region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(65536);
 	if (!region) {
+		concurrentModificationCheck = false;
 		OS_HEAP_RELEASE_MUTEX();
 		return nullptr; 
 	}
@@ -124,6 +132,7 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 		// If the size of this region is equal to the size of the region we're trying to allocate,
 		// return this region immediately.
 		region->used = 0xABCD;
+		concurrentModificationCheck = false;
 		OS_HEAP_RELEASE_MUTEX();
 		if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(region), originalSize);
 		return OS_HEAP_REGION_DATA(region);
@@ -146,17 +155,25 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	OSHeapRegion *nextRegion = OS_HEAP_REGION_NEXT(freeRegion);
 	nextRegion->previous = freeRegion->size;
 
+	concurrentModificationCheck = false;
 	OS_HEAP_RELEASE_MUTEX();
 	if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(allocatedRegion), originalSize);
 	return OS_HEAP_REGION_DATA(allocatedRegion);
 }
 
-void OSHeapFree(void *address) {
+#ifdef KERNEL
+void OSHeapFree(void *address, size_t expectedSize = 0);
+#endif
+
+void OSHeapFree(void *address, size_t expectedSize) {
 	if (!address) return;
 
 	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);
 	if (region->used != 0xABCD) OS_HEAP_PANIC();
-	region->used = false;
+
+	bool expectingSize = expectedSize != 0;
+	expectedSize += 0x10; // Region metadata.
+	expectedSize = (expectedSize + 0x1F) & ~0x1F; // Allocation granularity: 32 bytes.
 
 	if (!region->size) {
 		// The region was allocated by itself.
@@ -165,6 +182,9 @@ void OSHeapFree(void *address) {
 	}
 
 	OS_HEAP_ACQUIRE_MUTEX();
+
+	region->used = false;
+	if (expectingSize && region->size != expectedSize) OS_HEAP_PANIC();
 
 	// Attempt to merge with the next region.
 

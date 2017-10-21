@@ -325,11 +325,11 @@ void HandleTable::Destroy() {
 						}
 					}
 
-					OSHeapFree(l3);
+					OSHeapFree(l3, sizeof(HandleTableL3));
 				}
 			}
 
-			OSHeapFree(l2);
+			OSHeapFree(l2, sizeof(HandleTableL2));
 		}
 	}
 }

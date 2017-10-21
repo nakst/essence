@@ -21,6 +21,11 @@ extern "C" void ProgramEntry() {
 	textOutput->bounds.right = 200 - 32;
 	OSAddControl(window, textOutput, 16, 14);
 
+	OSControl *groupBox = OSCreateControl(OS_CONTROL_GROUP, nullptr, 0, false);
+	groupBox->bounds.right = 200 - 24;
+	groupBox->bounds.bottom = 25;
+	OSAddControl(window, groupBox, 12, 10);
+
 	for (int i = 0; i <= 9; i++) {
 		int y = ((i + 2) / 3) * -25 + 150 - 14 - 21;
 		int x = ((i + 2) % 3) * 40 + 42;

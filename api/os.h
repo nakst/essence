@@ -174,6 +174,7 @@ enum OSControlType {
 	OS_CONTROL_CHECKBOX,
 	OS_CONTROL_RADIOBOX,
 	OS_CONTROL_STATIC,
+	OS_CONTROL_GROUP,
 };
 
 enum OSControlImageType {
@@ -198,6 +199,7 @@ struct OSControl {
 	bool freeLabel;
 
 	OSRectangle image;
+	OSRectangle imageBorder;
 
 	OSControlImageType imageType;
 	int fillWidth;
@@ -326,7 +328,7 @@ extern "C" OSError OSSetControlLabel(OSControl *control, char *label, size_t lab
 extern "C" OSError OSInvalidateControl(OSControl *control);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
-extern "C" void OSHeapFree(void *address);
+void OSHeapFree(void *address, size_t expectedSize = 0);
 
 extern "C" size_t OSCStringLength(char *string);
 extern "C" void OSCopyMemory(void *destination, void *source, size_t bytes);

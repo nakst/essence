@@ -69,6 +69,8 @@ enum ThreadTerminatableState {
 };
 
 struct Thread {
+	void *temporary;
+
 #define MAX_BLOCKING_EVENTS 16
 	LinkedItem item[MAX_BLOCKING_EVENTS];	// Entry in activeThreads or blockedThreads list.
 	LinkedItem allItem; 			// Entry in the allThreads list.
@@ -109,6 +111,9 @@ struct Thread {
 	// then this is the virtual address space that should be loaded
 	// when the task is being executed.
 	VirtualAddressSpace *volatile asyncTempAddressSpace;
+
+	// TODO Temporary.
+	uintptr_t lastKnownExecutionAddress;
 };
 
 struct Process {
@@ -139,6 +144,8 @@ struct Process {
 	Thread *executableMainThread;
 
 	HandleTable handleTable;
+
+	Event killedEvent;
 };
 
 struct Message {
@@ -341,6 +348,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 
 Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveThreads) {
 	Thread *thread = (Thread *) threadPool.Add();
+	KernelLog(LOG_VERBOSE, "Created thread, %x -> %x\n", thread, thread + 1);
 	thread->isKernelThread = !userland;
 
 	// 2 handles to the thread:
@@ -388,6 +396,8 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	context->rsp = stack + userStackSize - 8; // The stack should be 16-byte aligned before the call instruction.
 	context->rdi = argument;
 #endif
+
+	KernelLog(LOG_VERBOSE, "Starting off new thread %x at %x\n", thread, startAddress);
 
 	InsertNewThread(thread, addToActiveThreads, process);
 
@@ -512,6 +522,7 @@ void NewProcess() {
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
 	// Process initilisation.
 	Process *process = (Process *) processPool.Add();
+	KernelLog(LOG_VERBOSE, "Created process, %x -> %x\n", process, process + 1);
 	process->allItem.thisItem = process;
 	process->vmm = &process->_vmm;
 	process->handles = 1;
@@ -661,10 +672,6 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 void Scheduler::RemoveProcess(Process *process) {
 	KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
-	scheduler.lock.Acquire();
-	allProcesses.Remove(&process->allItem);
-	scheduler.lock.Release();
-
 	// At this point, no pointers to the process (should) remain (I think).
 
 	// Free all the remaining messages in the message queue.
@@ -736,12 +743,22 @@ void KillThread(void *_thread) {
 	thread->process->threads.Remove(&thread->processItem);
 	scheduler.lock.Release();
 
+	KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
+
 	if (thread->process->threads.count == 0) {
+		// Make sure that the process cannot be opened.
+		scheduler.lock.Acquire();
+		scheduler.allProcesses.Remove(&thread->process->allItem);
+		scheduler.lock.Release();
+
 		// There are no threads left in this process.
 		// We should destroy the handle table at this point.
 		// Otherwise, the process might never be freed
 		// because of a cyclic-dependency.
 		thread->process->handleTable.Destroy();
+
+		// We can now also set the killed event on the process.
+		thread->process->killedEvent.Set();
 	}
 
 	kernelVMM.Free((void *) thread->kernelStackBase);
@@ -765,6 +782,10 @@ void Scheduler::Yield(InterruptContext *context) {
 		return;
 	}
 
+	if (local->interruptRecurseCount > 1) {
+		KernelLog(LOG_VERBOSE, "yielding with recurse %d\n", local->interruptRecurseCount);
+	}
+
 	local->currentThread->interruptContext = context;
 
 	lock.Acquire();
@@ -778,6 +799,7 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	if (killThread) {
 		local->currentThread->state = THREAD_TERMINATED;
+		KernelLog(LOG_VERBOSE, "terminated yielded thread %x\n", local->currentThread);
 		RegisterAsyncTask(KillThread, local->currentThread, local->currentThread->process);
 	}
 

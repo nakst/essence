@@ -46,11 +46,20 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 	SendCallback(control, control->getLabel, labelEvent);
 
 	if (control->imageType == OS_CONTROL_IMAGE_FILL) {
-		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
-				control->bounds,
-				OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
-				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
-				OS_DRAW_MODE_REPEAT_FIRST);
+		if (control->imageBorder.left) {
+			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
+					control->bounds,
+					control->image,
+					control->imageBorder,
+					OS_DRAW_MODE_REPEAT_FIRST);
+		} else {
+			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
+					control->bounds,
+					OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
+					OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
+					OS_DRAW_MODE_REPEAT_FIRST);
+		}
+
 		OSDrawString(window->surface, control->bounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
@@ -175,6 +184,14 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 			control->bounds.bottom = 21;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(42, 42 + 8, 88, 88 + 21);
+		} break;
+
+		case OS_CONTROL_GROUP: {
+			control->bounds.right = 100;
+			control->bounds.bottom = 100;
+			control->imageType = OS_CONTROL_IMAGE_FILL;
+			control->image = OSRectangle(20, 20 + 6, 85, 85 + 6);
+			control->imageBorder = OSRectangle(22, 23, 87, 88);
 		} break;
 
 		case OS_CONTROL_CHECKBOX: {

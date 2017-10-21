@@ -1197,7 +1197,7 @@ void *Pool::Add() {
 }
 
 void Pool::Remove(void *address) {
-	OSHeapFree(address);
+	OSHeapFree(address, elementSize);
 }
 #endif
 

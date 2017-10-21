@@ -264,10 +264,12 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
 			}
 
+			if (local->currentThread->isKernelThread) KernelPanic("InterruptHandler - Kernel thread executing user code. (1)\n");
+
 			ThreadTerminatableState previousTerminatableState;
 			previousTerminatableState = local->currentThread->terminatableState;
 			local->currentThread->terminatableState = THREAD_IN_SYSCALL;
-			KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt)\n", local->currentThread);
+			KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt) was %d\n", local->currentThread, previousTerminatableState);
 
 			if (interrupt == 14) {
 				if (local && local->spinlockCount) {
@@ -281,13 +283,15 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				}
 			}
 
-			// TODO Usermode exceptions.
+			// TODO Usermode exceptions and debugging.
 			KernelPanic("InterruptHandler - Exception (%z) in userland program.\nRIP = %x (CPU %d)\nX86_64 error codes: [err] %x, [cr2] %x\n", 
 					exceptionInformation[interrupt], context->rip, local->processorID, context->errorCode, context->cr2);
 
 			resolved:;
+			if (local->currentThread->isKernelThread) KernelPanic("InterruptHandler - Kernel thread executing user code. (2)\n");
+			if (local->currentThread->terminatableState != THREAD_IN_SYSCALL) KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
 			local->currentThread->terminatableState = previousTerminatableState;
-			KernelLog(LOG_VERBOSE, "Thread %x terminatable (interrupt done)\n", local->currentThread);
+			KernelLog(LOG_VERBOSE, "Thread %x terminatable now %d (interrupt done)\n", local->currentThread, previousTerminatableState);
 		} else {
 			if (context->cs != 0x48) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
@@ -386,6 +390,12 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 	if (ProcessorAreInterruptsEnabled()) {
 		KernelPanic("PostContextSwitch - Interrupts were enabled. (1)\n");
 	}
+
+	if (local->currentThread->timeSlices == 1) {
+		KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
+	}
+
+	local->currentThread->lastKnownExecutionAddress = context->rip;
 
 	// We can only free the scheduler's spinlock when we are no longer using the stack
 	// from the previous thread. See DoContextSwitch in x86_64.s.
