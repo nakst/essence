@@ -80,7 +80,7 @@ bool RegisterIRQHandler(uintptr_t interrupt, IRQHandler handler) {
 	ioApic->WriteRegister(redirectionTableIndex, 1 << 16);
 
 	// Send the interrupt to the processor that registered the interrupt.
-	ioApic->WriteRegister(redirectionTableIndex + 1, ProcessorGetLocalStorage()->acpiProcessor->apicID); 
+	ioApic->WriteRegister(redirectionTableIndex + 1, GetLocalStorage()->acpiProcessor->apicID); 
 	ioApic->WriteRegister(redirectionTableIndex, redirectionEntry);
 
 	return true;
@@ -102,7 +102,7 @@ void ProcessorSendIPI(uintptr_t interrupt, bool nmi) {
 #endif
 
 	for (uintptr_t i = 0; i < acpi.processorCount; i++) {
-		if (acpi.processors + i == ProcessorGetLocalStorage()->acpiProcessor) {
+		if (acpi.processors + i == GetLocalStorage()->acpiProcessor) {
 			// Don't send the IPI to this processor.
 			continue;
 		}
@@ -238,7 +238,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 		KernelPanic("InterruptHandler - Interrupts were enabled at the start of an interrupt handler.\n");
 	}
 
-	CPULocalStorage *local = ProcessorGetLocalStorage();
+	CPULocalStorage *local = GetLocalStorage();
 	uintptr_t interrupt = context->interruptNumber;
 
 	if (local) {
@@ -246,10 +246,8 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 		local->interruptRecurseCount++;
 
 		if (local->interruptRecurseCount == 4) {
-			while (true);
 			ProcessorMagicBreakpoint();
 			KernelPanic("Interrupt recurse failure on CPU %d: local->interruptContexts[0]->rip = %x.\n", local->processorID, local->interruptContexts[0]->rip);
-			while (true);
 		}
 	}
 
@@ -264,12 +262,12 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
 			}
 
-			if (local->currentThread->isKernelThread) KernelPanic("InterruptHandler - Kernel thread executing user code. (1)\n");
+			if (GetCurrentThread()->isKernelThread) KernelPanic("InterruptHandler - Kernel thread executing user code. (1)\n");
 
 			ThreadTerminatableState previousTerminatableState;
-			previousTerminatableState = local->currentThread->terminatableState;
-			local->currentThread->terminatableState = THREAD_IN_SYSCALL;
-			KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt) was %d\n", local->currentThread, previousTerminatableState);
+			previousTerminatableState = GetCurrentThread()->terminatableState;
+			GetCurrentThread()->terminatableState = THREAD_IN_SYSCALL;
+			KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt) was %d\n", GetCurrentThread(), previousTerminatableState);
 
 			if (interrupt == 14) {
 				if (local && local->spinlockCount) {
@@ -288,10 +286,12 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					exceptionInformation[interrupt], context->rip, local->processorID, context->errorCode, context->cr2);
 
 			resolved:;
-			if (local->currentThread->isKernelThread) KernelPanic("InterruptHandler - Kernel thread executing user code. (2)\n");
-			if (local->currentThread->terminatableState != THREAD_IN_SYSCALL) KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
-			local->currentThread->terminatableState = previousTerminatableState;
-			KernelLog(LOG_VERBOSE, "Thread %x terminatable now %d (interrupt done)\n", local->currentThread, previousTerminatableState);
+			if (GetCurrentThread()->isKernelThread) {
+				KernelPanic("InterruptHandler - Kernel thread (is = %d) executing user code. (2)\n", GetCurrentThread()->isKernelThread);
+			}
+			if (GetCurrentThread()->terminatableState != THREAD_IN_SYSCALL) KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
+			GetCurrentThread()->terminatableState = previousTerminatableState;
+			KernelLog(LOG_VERBOSE, "Thread %x terminatable now %d (interrupt done)\n", GetCurrentThread(), previousTerminatableState);
 		} else {
 			if (context->cs != 0x48) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
@@ -377,22 +377,22 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 }
 
 extern "C" void PostContextSwitch(InterruptContext *context) {
-	CPULocalStorage *local = ProcessorGetLocalStorage();
+	CPULocalStorage *local = GetLocalStorage();
 
 	local->interruptRecurseCount--;
 
 	void *kernelStack = (void *) local->currentThread->kernelStack;
 	*local->acpiProcessor->kernelStack = kernelStack;
 
+	if (local->currentThread->timeSlices == 1) {
+		KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
+	}
+
 	acpi.lapic.EndOfInterrupt();
 	ContextSanityCheck(context);
 
 	if (ProcessorAreInterruptsEnabled()) {
 		KernelPanic("PostContextSwitch - Interrupts were enabled. (1)\n");
-	}
-
-	if (local->currentThread->timeSlices == 1) {
-		KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
 	}
 
 	local->currentThread->lastKnownExecutionAddress = context->rip;

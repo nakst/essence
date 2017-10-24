@@ -36,7 +36,7 @@ uintptr_t DoSyscall(uintptr_t index,
 	// because many of them block on mutexes or events.
 	ProcessorEnableInterrupts();
 
-	Thread *currentThread = ProcessorGetLocalStorage()->currentThread;
+	Thread *currentThread = GetCurrentThread();
 	Process *currentProcess = currentThread->process;
 	VMM *currentVMM = currentProcess->vmm;
 
@@ -46,8 +46,13 @@ uintptr_t DoSyscall(uintptr_t index,
 		ProcessorFakeTimerInterrupt();
 	}
 
+	if (currentThread->isKernelThread) {
+		KernelPanic("DoSyscall - Current thread %x was a kernel thread.\n", 
+				currentThread);
+	}
+
 	if (currentThread->terminatableState != THREAD_TERMINATABLE) {
-		KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d). Are you trying to use system calls from a kernel thread?\n", 
+		KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d).\n", 
 				currentThread, currentThread->terminatableState);
 	}
 

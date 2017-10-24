@@ -215,6 +215,11 @@ typedef struct {
 void CF(FormatStringCallback)(int character, void *data) {
 	CF(FormatStringInformation) *fsi = (CF(FormatStringInformation) *) data;
 
+	if (!fsi->buffer) {
+		// Just measure the length of the formatted string.
+		return;
+	}
+
 	// TODO UTF-8
 	if (fsi->bytesRemaining == 0) return;
 	else {

@@ -147,10 +147,10 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 	if (reason == RESOLVE_HANDLE_TO_USE) { // We can't close these handles.
 		if (handle == OS_CURRENT_THREAD && (type & KERNEL_OBJECT_THREAD)) {
 			type = KERNEL_OBJECT_THREAD;
-			return ProcessorGetLocalStorage()->currentThread;
+			return GetCurrentThread();
 		} else if (handle == OS_CURRENT_PROCESS && (type & KERNEL_OBJECT_PROCESS)) {
 			type = KERNEL_OBJECT_PROCESS;
-			return ProcessorGetLocalStorage()->currentThread->process;
+			return GetCurrentThread()->process;
 		} else if (handle == OS_SURFACE_UI_SHEET && (type & KERNEL_OBJECT_SURFACE)) {
 			type = KERNEL_OBJECT_SURFACE;
 			return &uiSheetSurface;

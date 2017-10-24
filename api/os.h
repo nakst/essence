@@ -328,7 +328,7 @@ extern "C" OSError OSSetControlLabel(OSControl *control, char *label, size_t lab
 extern "C" OSError OSInvalidateControl(OSControl *control);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
-void OSHeapFree(void *address, size_t expectedSize = 0);
+extern "C" void OSHeapFree(void *address);
 
 extern "C" size_t OSCStringLength(char *string);
 extern "C" void OSCopyMemory(void *destination, void *source, size_t bytes);

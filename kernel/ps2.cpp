@@ -1,3 +1,6 @@
+// TODO Scrolling
+// TODO Register the devices
+
 #ifndef IMPLEMENTATION
 
 struct PS2MouseUpdate {

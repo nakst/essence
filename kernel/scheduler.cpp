@@ -129,7 +129,7 @@ struct Process {
 	VMM *vmm;
 	VMM _vmm;
 
-	char executablePath[MAX_PATH];
+	char *executablePath;
 	size_t executablePathLength;
 	void *creationArgument;
 
@@ -218,7 +218,7 @@ void Spinlock::Acquire() {
 	bool _interruptsEnabled = ProcessorAreInterruptsEnabled();
 	ProcessorDisableInterrupts();
 
-	CPULocalStorage *storage = ProcessorGetLocalStorage();
+	CPULocalStorage *storage = GetLocalStorage();
 
 	if (storage && storage->currentThread && owner && owner == storage->currentThread) {
 		Print("__builtin_return_address(0) = %x\n", __builtin_return_address(0));
@@ -256,7 +256,7 @@ void Spinlock::Acquire() {
 void Spinlock::Release(bool force) {
 	if (scheduler.panic) return;
 
-	CPULocalStorage *storage = ProcessorGetLocalStorage();
+	CPULocalStorage *storage = GetLocalStorage();
 
 	if (storage) {
 		storage->spinlockCount--;
@@ -278,7 +278,7 @@ void Spinlock::Release(bool force) {
 void Spinlock::AssertLocked() {
 	if (scheduler.panic) return;
 
-	CPULocalStorage *storage = ProcessorGetLocalStorage();
+	CPULocalStorage *storage = GetLocalStorage();
 
 	if (!state || ProcessorAreInterruptsEnabled() 
 			|| (storage && owner != storage->currentThread)) {
@@ -408,9 +408,7 @@ void Scheduler::TerminateProcess(Process *process) {
 	scheduler.lock.Acquire();
 	Defer(scheduler.lock.Release());
 
-	CPULocalStorage *local = ProcessorGetLocalStorage();
-
-	Thread *currentThread = local->currentThread;
+	Thread *currentThread = GetCurrentThread();
 	bool isCurrentProcess = process == currentThread->process;
 	bool foundCurrentThread = false;
 
@@ -443,7 +441,7 @@ void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
 
 	thread->terminating = true;
 
-	if (thread == ProcessorGetLocalStorage()->currentThread) {
+	if (thread == GetCurrentThread()) {
 		thread->terminatableState = THREAD_TERMINATABLE;
 		KernelLog(LOG_VERBOSE, "Terminating current thread %x, so making THREAD_TERMINATABLE\n", thread);
 		scheduler.lock.Release();
@@ -501,7 +499,7 @@ void Scheduler::Start() {
 }
 
 void NewProcess() {
-	Process *thisProcess = ProcessorGetLocalStorage()->currentThread->process;
+	Process *thisProcess = GetCurrentThread()->process;
 	KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	// TODO Shared memory with executables.
@@ -516,7 +514,7 @@ void NewProcess() {
 	}
 
 	thisProcess->executableLoadAttemptComplete.Set();
-	scheduler.TerminateThread(ProcessorGetLocalStorage()->currentThread);
+	scheduler.TerminateThread(GetCurrentThread());
 }
 
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
@@ -528,14 +526,10 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 	process->handles = 1;
 	process->creationArgument = argument;
 	if (!kernelProcess) process->vmm->Initialise();
-	CopyMemory(process->executablePath, imagePath, imagePathLength);
+	CopyMemory((process->executablePath = (char *) OSHeapAllocate(imagePathLength, false)), imagePath, imagePathLength);
 	process->executablePathLength = imagePathLength;
 
 	lock.Acquire();
-
-	if (imagePathLength >= MAX_PATH) {
-		KernelPanic("Scheduler::SpawnProcess - imagePathLength >= MAX_PATH.\n");
-	}
 
 	process->id = nextProcessID++;
 	allProcesses.InsertEnd(&process->allItem);
@@ -575,7 +569,7 @@ void Scheduler::Initialise() {
 unsigned currentProcessorID = 0;
 
 void AsyncTaskThread() {
-	CPULocalStorage *local = ProcessorGetLocalStorage();
+	CPULocalStorage *local = GetLocalStorage();
 
 	if (!local->asyncTasksCount) {
 		KernelPanic("AsyncTaskThread - Thread started with no async tasks to execute.\n");
@@ -615,7 +609,7 @@ void AsyncTaskThread() {
 }
 
 void Scheduler::CreateProcessorThreads() {
-	CPULocalStorage *local = ProcessorGetLocalStorage();
+	CPULocalStorage *local = GetLocalStorage();
 
 	Thread *idleThread = (Thread *) threadPool.Add();
 	idleThread->isKernelThread = true;
@@ -646,13 +640,13 @@ void Scheduler::CreateProcessorThreads() {
 
 void Scheduler::InitialiseAP() {
 //	CreateProcessorThreads(); (Moved to x86_64.cpp)
-	ProcessorGetLocalStorage()->schedulerReady = true; // The processor can now be pre-empted.
+	GetLocalStorage()->schedulerReady = true; // The processor can now be pre-empted.
 }
 
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targetProcess) {
 	scheduler.lock.AssertLocked();
 
-	CPULocalStorage *local = ProcessorGetLocalStorage();
+	CPULocalStorage *local = GetLocalStorage();
 
 	if (local->asyncTasksCount == MAX_ASYNC_TASKS) {
 		KernelPanic("RegisterAsyncTask - Maximum number of queued asynchronous tasks reached.\n");
@@ -684,6 +678,9 @@ void Scheduler::RemoveProcess(Process *process) {
 
 	// Destroy the virtual memory manager.
 	process->vmm->Destroy();
+
+	// Deallocate the executable path.
+	OSHeapFree(process->executablePath, process->executablePathLength);
 
 	processPool.Remove(process);
 }
@@ -741,13 +738,13 @@ void KillThread(void *_thread) {
 	scheduler.lock.Acquire();
 	scheduler.allThreads.Remove(&thread->allItem);
 	thread->process->threads.Remove(&thread->processItem);
-	scheduler.lock.Release();
 
 	KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
 
 	if (thread->process->threads.count == 0) {
+		KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
+
 		// Make sure that the process cannot be opened.
-		scheduler.lock.Acquire();
 		scheduler.allProcesses.Remove(&thread->process->allItem);
 		scheduler.lock.Release();
 
@@ -759,6 +756,8 @@ void KillThread(void *_thread) {
 
 		// We can now also set the killed event on the process.
 		thread->process->killedEvent.Set();
+	} else {
+		scheduler.lock.Release();
 	}
 
 	kernelVMM.Free((void *) thread->kernelStackBase);
@@ -776,15 +775,17 @@ void Scheduler::Yield(InterruptContext *context) {
 	// Deferred statements don't work in this function.
 #undef Defer
 
-	CPULocalStorage *local = ProcessorGetLocalStorage();
+	CPULocalStorage *local = GetLocalStorage();
 
 	if (!started || !local || !local->schedulerReady) {
 		return;
 	}
 
+#if 0
 	if (local->interruptRecurseCount > 1) {
 		KernelLog(LOG_VERBOSE, "yielding with recurse %d\n", local->interruptRecurseCount);
 	}
+#endif
 
 	local->currentThread->interruptContext = context;
 
@@ -905,13 +906,13 @@ void Scheduler::Yield(InterruptContext *context) {
 #if 0
 	KernelLog(LOG_VERBOSE, "%x/%d/%d\n", VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->id, newThread->type);
 #endif
-	DoContextSwitch(newContext, VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->kernelStack);
+	DoContextSwitch(newContext, VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->kernelStack, newThread);
 
 #define Defer(code) _Defer(code)
 }
 
 void Scheduler::WaitMutex(Mutex *mutex) {
-	Thread *thread = ProcessorGetLocalStorage()->currentThread;
+	Thread *thread = GetCurrentThread();
 
 	if (thread->state != THREAD_ACTIVE) {
 		KernelPanic("Scheduler::WaitMutex - Attempting to wait on a mutex in a non-active thread.\n");
@@ -936,7 +937,7 @@ uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
 		KernelPanic("Scheduler::WaitEvents - Count is 0\n");
 	}
 
-	Thread *thread = ProcessorGetLocalStorage()->currentThread;
+	Thread *thread = GetCurrentThread();
 
 	thread->blockingEventCount = count;
 
@@ -972,6 +973,8 @@ uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
 
 void Scheduler::UnblockThread(Thread *unblockedThread) {
 	lock.AssertLocked();
+
+	KernelLog(LOG_VERBOSE, "Unblocking thread %x\n", unblockedThread);
 
 	if (unblockedThread->state != THREAD_WAITING_MUTEX && unblockedThread->state != THREAD_WAITING_EVENT) {
 		KernelPanic("Scheduler::UnblockedThread - Blocked thread in invalid state %d.\n", 
@@ -1021,10 +1024,8 @@ void Scheduler::NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLo
 void Mutex::Acquire() {
 	if (scheduler.panic) return;
 
-	// Since mutexes are used in early initilisation code,
-	// CPULocalStorage may not been initialised yet.
-	CPULocalStorage *local = ProcessorGetLocalStorage();
-	Thread *currentThread = local ? local->currentThread : nullptr;
+	Thread *currentThread = GetCurrentThread();
+	bool hasThread = currentThread;
 
 	if (!currentThread) {
 		currentThread = (Thread *) 1;
@@ -1036,9 +1037,9 @@ void Mutex::Acquire() {
 		}
 	}
 
-	if (local && owner && owner == currentThread && local->currentThread) {
+	if (hasThread && owner && owner == currentThread) {
 		KernelPanic("Mutex::Acquire - Attempt to acquire mutex (%x) at %x owned by current thread (%x) acquired at %x.\n", 
-				this, __builtin_return_address(0), local->currentThread, acquireAddress);
+				this, __builtin_return_address(0), currentThread, acquireAddress);
 	}
 
 	if (!ProcessorAreInterruptsEnabled()) {
@@ -1048,13 +1049,14 @@ void Mutex::Acquire() {
 	while (__sync_val_compare_and_swap(&owner, nullptr, currentThread)) {
 		__sync_synchronize();
 
-		if (local && local->schedulerReady) {
+		// TODO This is a bit of a hack.
+		if (GetLocalStorage() && GetLocalStorage()->schedulerReady) {
 			// Instead of spinning on the lock, 
 			// let's tell the scheduler to not schedule this thread
 			// until it's released.
 			scheduler.WaitMutex(this);
 
-			if (currentThread->terminating) {
+			if (currentThread->terminating && currentThread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
 				// We didn't acquire the mutex because the thread is terminating.
 				return;
 			}
@@ -1068,6 +1070,7 @@ void Mutex::Acquire() {
 	}
 
 	acquireAddress = (uintptr_t) __builtin_return_address(0);
+	AssertLocked();
 }
 
 void Mutex::Release() {
@@ -1075,11 +1078,11 @@ void Mutex::Release() {
 
 	AssertLocked();
 
-	CPULocalStorage *local = ProcessorGetLocalStorage();
-	if (local && local->currentThread) {
+	Thread *currentThread = GetCurrentThread();
+	if (currentThread) {
 		Thread *temp;
-		if (local->currentThread != (temp = __sync_val_compare_and_swap(&owner, local->currentThread, nullptr))) {
-			KernelPanic("Mutex::Release - Invalid owner thread (%x, expected %x).\n", temp, local->currentThread);
+		if (currentThread != (temp = __sync_val_compare_and_swap(&owner, currentThread, nullptr))) {
+			KernelPanic("Mutex::Release - Invalid owner thread (%x, expected %x).\n", temp, currentThread);
 		}
 	} else {
 		owner = nullptr;
@@ -1095,8 +1098,7 @@ void Mutex::Release() {
 }
 
 void Mutex::AssertLocked() {
-	CPULocalStorage *local = ProcessorGetLocalStorage();
-	Thread *currentThread = local ? local->currentThread : nullptr;
+	Thread *currentThread = GetCurrentThread();
 
 	if (!currentThread) {
 		currentThread = (Thread *) 1;
@@ -1104,8 +1106,9 @@ void Mutex::AssertLocked() {
 
 	if (owner != currentThread) {
 		KernelPanic("Mutex::AssertLocked - Mutex not correctly acquired\n"
-				"currentThread = %x, owner = %x\nthis = %x\nReturn %x/%x\nLast acquired at %x\n", 
-				currentThread, owner, this, __builtin_return_address(0), __builtin_return_address(1), acquireAddress);
+				"currentThread = %x, owner = %x\nthis = %x\nReturn %x/%x\nLast used from %x->%x\n", 
+				currentThread, owner, this, __builtin_return_address(0), __builtin_return_address(1), 
+				acquireAddress, releaseAddress);
 	}
 }
 

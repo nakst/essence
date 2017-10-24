@@ -10,7 +10,7 @@ stack: resb stack_size
 %define idt_size 4096
 idt_data: resb idt_size
 
-%define cpu_local_storage_size 4096
+%define cpu_local_storage_size 8192
 ; Array of pointers to the CPU local states
 [global cpu_local_storage]
 cpu_local_storage: resb cpu_local_storage_size
@@ -327,7 +327,7 @@ SetupCPULocalStorage:
 	shr	rdx,32
 	mov	rdi,cpu_local_storage_index
 	add	rax,[rdi]
-	add	qword [rdi],16 ; Space for 2 8-byte values at fs:0 - fs:15
+	add	qword [rdi],32 ; Space for 4 8-byte values at fs:0 - fs:31
 	wrmsr
 
 LoadIDTR:
@@ -502,9 +502,14 @@ ProcessorIdle:
 	hlt
 	jmp	ProcessorIdle
 
-[global ProcessorGetLocalStorage]
-ProcessorGetLocalStorage:
+[global GetLocalStorage]
+GetLocalStorage:
 	mov	rax,[fs:0]
+	ret
+
+[global GetCurrentThread]
+GetCurrentThread:
+	mov	rax,[fs:16]
 	ret
 
 [global ProcessorSetLocalStorage]
@@ -679,6 +684,7 @@ ProcessorGetAddressSpace:
 [global DoContextSwitch]
 DoContextSwitch:
 	cli
+	mov	[fs:16],rcx
 	mov	[fs:8],rdx
 	mov	rax,cr3
 	cmp	rax,rsi

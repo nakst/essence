@@ -162,10 +162,11 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 }
 
 #ifdef KERNEL
-void OSHeapFree(void *address, size_t expectedSize = 0);
+void OSHeapFree(void *address, size_t expectedSize = 0) {
+#else
+void OSHeapFree(void *address) {
+	size_t expectedSize = 0;
 #endif
-
-void OSHeapFree(void *address, size_t expectedSize) {
 	if (!address) return;
 
 	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);

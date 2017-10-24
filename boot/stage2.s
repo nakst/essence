@@ -36,6 +36,7 @@ check_pci:
 	jnz	error
 
 enable_video_mode:
+	; Uncomment to disable video mode setting.
 	; jmp	check_cpuid
 
 	; TODO Proper video mode checking/selection.

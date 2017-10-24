@@ -68,13 +68,15 @@ extern "C" void ProcessorInvalidatePage(uintptr_t virtualAddress);
 extern "C" void ProcessorAPStartup();
 extern "C" void ProcessorMagicBreakpoint(...);
 extern "C" void ProcessorBreakpointHelper(...);
-extern "C" struct CPULocalStorage *ProcessorGetLocalStorage();
+extern "C" struct CPULocalStorage *GetLocalStorage();
+extern "C" struct Thread *GetCurrentThread();
 extern "C" void ProcessorSetLocalStorage(struct CPULocalStorage *cls);
 extern "C" void ProcessorSendIPI(uintptr_t interrupt, bool nmi = false);
 extern "C" void ProcessorDebugOutputByte(uint8_t byte);
 extern "C" void ProcessorFakeTimerInterrupt();
 extern "C" uint64_t ProcessorReadTimeStamp();
-extern "C" void DoContextSwitch(struct InterruptContext *context, uintptr_t virtualAddressSpace, uintptr_t threadKernelStack);
+extern "C" void DoContextSwitch(struct InterruptContext *context, 
+		uintptr_t virtualAddressSpace, uintptr_t threadKernelStack, struct Thread *newThread);
 extern "C" void ProcessorSetAddressSpace(uintptr_t virtualAddressSpaceIdentifier);
 extern "C" uintptr_t ProcessorGetAddressSpace();
 

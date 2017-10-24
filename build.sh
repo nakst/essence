@@ -34,6 +34,10 @@ echo "Creating the bootfsid file..."
 # Create a bootfsid file
 echo -n 1234 > bin/os/bootfsid
 
+echo "Removing temporary files..."
+rm bin/mbr
+rm bin/stage1
+
 echo "Copying the files to the drive..."
 # Copy the bin directory to the mount
 cp -r bin/* mount/

@@ -61,7 +61,7 @@ typedef struct {
 #endif
 
 uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
-	Process *thisProcess = ProcessorGetLocalStorage()->currentThread->process;
+	Process *thisProcess = GetCurrentThread()->process;
 
 	File *file = vfs.OpenFile(imageName, imageNameLength);
 

@@ -31,12 +31,12 @@ struct Surface {
 	// if it is not, the pixel will not be drawn, otherwise the depth will be updated and the pixel will be drawn.
 #define SURFACE_COPY_WITHOUT_DEPTH_CHECKING 0xFFFF
 	void Copy(Surface &source, OSPoint destinationPoint, OSRectangle sourceRegion,
-			bool avoidUnmodifiedRegions, uint16_t depth = SURFACE_COPY_WITHOUT_DEPTH_CHECKING); 
+			bool avoidUnmodifiedRegions, uint16_t depth = SURFACE_COPY_WITHOUT_DEPTH_CHECKING, bool alreadyLocked = false); 
 
 	// Alpha blend the contents of the source region from the source surface to the destination region on this surface.
 	// The draw mode determines how the border is used.
 	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
-			OSRectangle borderDimensions, OSDrawMode mode);
+			OSRectangle borderDimensions, OSDrawMode mode, bool alreadyLocked = false);
 
 	// Fill a region of this surface with the specified color.
 	void FillRectangle(OSRectangle region, OSColor color);
@@ -150,9 +150,6 @@ Graphics graphics;
 #else
 
 void Graphics::UpdateScreen_VIDEO_COLOR_24_RGB() {
-	frameBuffer.mutex.Acquire();
-	Defer(frameBuffer.mutex.Release());
-
 	volatile uint8_t *pixel = (volatile uint8_t *) linearBuffer;
 	volatile uint8_t *source = (volatile uint8_t *) frameBuffer.linearBuffer;
 
@@ -217,17 +214,19 @@ void Graphics::UpdateScreen() {
 	updateScreenMutex.Acquire();
 	Defer(updateScreenMutex.Release());
 
+	frameBuffer.mutex.Acquire();
+	Defer(frameBuffer.mutex.Release());
+
 	int cursorX = windowManager.cursorX, cursorY = windowManager.cursorY;
 
 	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
 								cursorY, cursorY + CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
-	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
-			OSRectangle borderDimensions, OSDrawMode mode);
+
 	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + 12,
 						     cursorY, cursorY + 19),
 					 OSRectangle(125, 125 + 12, 96, 96 + 19),
-					 OSRectangle(125 + 2, 125 + 3, 96 + 2, 96 + 3), OS_DRAW_MODE_REPEAT_FIRST);
+					 OSRectangle(125 + 2, 125 + 3, 96 + 2, 96 + 3), OS_DRAW_MODE_REPEAT_FIRST, true);
 		
 	switch (colorMode) {
 		case VIDEO_COLOR_24_RGB: {
@@ -241,7 +240,7 @@ void Graphics::UpdateScreen() {
 
 	frameBuffer.Copy(cursorSwap, OSPoint(cursorX, cursorY), 
 			OSRectangle(0, CURSOR_SWAP_SIZE, 0, CURSOR_SWAP_SIZE),
-			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
+			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
 }
 
 void Graphics::Initialise() {
@@ -348,7 +347,8 @@ void Surface::InvalidateRectangle(OSRectangle rectangle) {
 	}
 }
 
-void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle sourceRegion, bool avoidUnmodifiedRegions, uint16_t depth) {
+void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle sourceRegion, bool avoidUnmodifiedRegions, uint16_t depth,
+		bool alreadyLocked) {
 	if (depth != SURFACE_COPY_WITHOUT_DEPTH_CHECKING) {
 		if (!depthBuffer) {
 			KernelPanic("Surface::Copy - Attempt to use depth checking on surface without depth buffer.\n");
@@ -389,8 +389,8 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 						    destinationPoint.y,
 						    destinationPoint.y + sourceRegion.bottom - sourceRegion.top);
 
-	mutex.Acquire();
-	Defer(mutex.Release());
+	if (!alreadyLocked) mutex.Acquire();
+	Defer(if (!alreadyLocked) mutex.Release());
 
 	uint8_t *destinationPixel = linearBuffer + destinationRegion.top * stride + destinationRegion.left * 4;
 	uint8_t *sourcePixel = source.linearBuffer + sourceRegion.top * source.stride + sourceRegion.left * 4;
@@ -510,7 +510,7 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 }
 
 void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
-		OSRectangle borderDimensions, OSDrawMode mode) {
+		OSRectangle borderDimensions, OSDrawMode mode, bool alreadyLocked) {
 	if (destinationRegion.left >= destinationRegion.right 
 			|| destinationRegion.top >= destinationRegion.bottom
 			|| destinationRegion.right < 0
@@ -525,8 +525,8 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 		return;
 	}
 
-	mutex.Acquire();
-	Defer(mutex.Release());
+	if (!alreadyLocked) mutex.Acquire();
+	Defer(if (!alreadyLocked) mutex.Release());
 
 	intptr_t rightBorderStart = destinationRegion.right - (sourceRegion.right - borderDimensions.right);
 	intptr_t bottomBorderStart = destinationRegion.bottom - (sourceRegion.bottom - borderDimensions.bottom);

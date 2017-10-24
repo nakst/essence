@@ -218,7 +218,7 @@ bool ATAIRQHandler(uintptr_t interruptIndex) {
 		event->Set();
 
 		if (event->blockedThreads.count) {
-			ProcessorGetLocalStorage()->irqSwitchThread = true; 
+			GetLocalStorage()->irqSwitchThread = true; 
 		}
 	}
 

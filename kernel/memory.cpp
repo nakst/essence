@@ -271,8 +271,8 @@ void VMM::Initialise() {
 
 void ValidateCurrentVMM(VMM *target) {
 	if (target != &kernelVMM 
-			&& target != ProcessorGetLocalStorage()->currentThread->process->vmm 
-			&& &target->virtualAddressSpace != ProcessorGetLocalStorage()->currentThread->asyncTempAddressSpace) {
+			&& target != GetCurrentThread()->process->vmm 
+			&& &target->virtualAddressSpace != GetCurrentThread()->asyncTempAddressSpace) {
 		KernelPanic("ValidateCurrentVMM - Attempt to modify a VMM with different VMM active.\n");
 	}
 }
@@ -454,6 +454,7 @@ void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uin
 	if (!success) return nullptr;
 	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1)));
 
+	KernelLog(LOG_VERBOSE, "Allocated %x -> %x (%d bytes)\n", baseAddress, baseAddress + size, size);
 	return address;
 }
 
@@ -713,7 +714,7 @@ void VMM::UnlockRegion(VMMRegion *region) {
 	Defer(lock.Release());
 
 	if (!region->lock) {
-		KernelPanic("VMM::UnlockedRegion - Region not locked.\n");
+		KernelPanic("VMM::UnlockRegion - Region not locked.\n");
 	}
 
 	region->lock--;
@@ -761,7 +762,7 @@ bool HandlePageFault(uintptr_t page) {
 		VirtualAddressSpace *virtualAddressSpace;
 
 		if (page < 0x0000800000000000) {
-			virtualAddressSpace = &ProcessorGetLocalStorage()->currentThread->process->vmm->virtualAddressSpace;
+			virtualAddressSpace = &GetCurrentThread()->process->vmm->virtualAddressSpace;
 		} else {
 			virtualAddressSpace = &kernelVMM.virtualAddressSpace;
 		}
@@ -782,7 +783,7 @@ bool HandlePageFault(uintptr_t page) {
 		ZeroMemory((void *) (page & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 		return true;
 	} else if (page >= 0xFFFF900000000000 && page < 0xFFFFF00000000000) {
-		if (ProcessorGetLocalStorage()->spinlockCount)
+		if (GetLocalStorage()->spinlockCount)
 			KernelPanic("HandlePageFault - Page fault occurred in critical section.\n");
 
 		ProcessorEnableInterrupts();
@@ -801,10 +802,10 @@ bool HandlePageFault(uintptr_t page) {
 		kernelVMM.virtualAddressSpace.Map(page - 0xFFFFFF0000000000, page, 0 /* we use this for MMIO, so don't do caching! */);
 		return true;
 	} else if (page < 0x0000800000000000) {
-		Process *currentProcess = ProcessorGetLocalStorage()->currentThread->process;
+		Process *currentProcess = GetCurrentThread()->process;
 		VMM *vmm = currentProcess->vmm;
 
-		if (ProcessorGetLocalStorage()->spinlockCount)
+		if (GetLocalStorage()->spinlockCount)
 			KernelPanic("HandlePageFault - Page fault occurred in critical section.\n");
 
 		ProcessorEnableInterrupts();

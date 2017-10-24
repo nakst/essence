@@ -54,10 +54,12 @@ static void TerminalCallback(int character, void *data) {
 		}
 	}
 
-	ProcessorDebugOutputByte((uint8_t) character);
+	if (printToSerialOutput) {
+		ProcessorDebugOutputByte((uint8_t) character);
 
-	if (character == '\n') {
-		ProcessorDebugOutputByte((uint8_t) 13);
+		if (character == '\n') {
+			ProcessorDebugOutputByte((uint8_t) 13);
+		}
 	}
 }
 
@@ -313,6 +315,7 @@ void DebuggerVFS() {
 }
 
 void EnterDebugger() {
+	printToSerialOutput = false;
 	while (ReadScancode() != SCANCODE_ENTER);
 
 	debuggerSelection = 0;
@@ -355,7 +358,6 @@ void KernelPanic(const char *format, ...) {
 	scheduler.panic = true;
 	ProcessorSendIPI(KERNEL_PANIC_IPI, true);
 
-	printToSerialOutput = false;
 	printToTerminal = true;
 
 	Print("\n--- KERNEL PANIC ---\n[ERR ] ");
@@ -365,6 +367,8 @@ void KernelPanic(const char *format, ...) {
 	_FormatString(TerminalCallback, (void *) 0x4F00, format, arguments);
 	va_end(arguments);
 
+	Print("Current thread = %x\n", GetCurrentThread());
+	Print("Trace: %x\n", __builtin_return_address(1));
 	Print("Press <ENTER> to enter the kernel debugger...\n");
 
 	for (int i = 0; i < 80 * 25; i++) {
