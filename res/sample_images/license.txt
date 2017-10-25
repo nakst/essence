@@ -1,0 +1,74 @@
+﻿Licensing information for the standard wallpapers:
+
+(If you are the author of any of these images and would like them removed, please contact me)
+
+I've adjusted all of the images to be in the 1920x1080 resolution (sorry 4K folks!)
+I also removed all metadata from the images, and renamed them.
+
+https://commons.wikimedia.org/wiki/File:Dune_de_sable_au_parc_Culturel_De_l%27Ahaggar_crop.jpg
+Author	Original: Hamza-sia
+Derivative work including rotation, conversion to sRGB, crop, minor adjustments, removal of hotpixel: Julian Herzog
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
+https://creativecommons.org/licenses/by-sa/3.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:%D0%9D%D0%B5%D0%B6%D0%B8%D0%BB%D0%BE%D0%B2%D0%B8_%D0%A1%D1%82%D0%B5%D0%BD%D0%B8_%D0%B4%D0%BE%D1%86%D0%BD%D0%B0_%D0%BD%D0%B0%D0%B5%D1%81%D0%B5%D0%BD.JPG
+Author	Petrovnik
+This file is licensed under the Creative Commons Attribution-Share Alike 4.0 International license.	
+https://creativecommons.org/licenses/by-sa/4.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Sunset_in_the_Himalayas.jpg
+Author	Sergey Pesterev
+Attribution
+(required by the license)	© Sergey Pesterev / Wikimedia Commons / CC BY-SA 4.0
+This file is licensed under the Creative Commons Attribution-Share Alike 4.0 International license.	
+https://creativecommons.org/licenses/by-sa/4.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Oksneset_and_Ersfjorden_from_Tungeneset_in_low_sunlight,_Senja,_2012_October.jpg
+Author	Ximonic (Simo Räsänen)
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
+https://creativecommons.org/licenses/by-sa/3.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Dolina_Baryczy_1.jpg
+Author	Bartosz Dworski
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Poland license.	
+https://creativecommons.org/licenses/by-sa/3.0/pl/deed.en
+
+https://commons.wikimedia.org/wiki/File:Kamienny-falochron_Sarbinowo.jpg
+Author	Łukasz Śmigasiewicz
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Poland license.	
+https://creativecommons.org/licenses/by-sa/3.0/pl/deed.en
+
+https://commons.wikimedia.org/wiki/File:%D0%AF%D0%BD%D0%B2%D0%B0%D1%80%D1%81%D0%BA%D0%BE%D0%B5_%D0%BF%D0%BE%D0%B1%D0%B5%D1%80%D0%B5%D0%B6%D1%8C%D0%B5.jpg
+Author	Андрей Кровлин
+This file is licensed under the Creative Commons Attribution-Share Alike 4.0 International license.	
+https://creativecommons.org/licenses/by-sa/4.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Panorama_Bled_01.jpg
+Author	Mihael Grmek
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
+https://creativecommons.org/licenses/by-sa/3.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Marmolada_Sunset.jpg
+Author	Dmitry A. Mottl
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
+https://creativecommons.org/licenses/by-sa/3.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Laudtee_Meenikunnos.jpg
+Author	Külli Kolina
+This file is licensed under the Creative Commons Attribution-Share Alike 4.0 International license.	
+https://creativecommons.org/licenses/by-sa/4.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Laanemaa_j%C3%A4rv_Orkj%C3%A4rve_looduskaitsealal.jpg
+Author	Heino Ruiso
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
+https://creativecommons.org/licenses/by-sa/3.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Bergtocht_van_Gimillan_(1805m.)_naar_Colle_Tsa_S%C3%A8tse_in_Cogne_Valley_(Itali%C3%AB)._Zicht_op_de_omringende_alpentoppen_van_Gran_Paradiso_01.jpg
+Author	Dominicus Johannes Bergsma
+This file is licensed under the Creative Commons Attribution-Share Alike 4.0 International license.	
+https://creativecommons.org/licenses/by-sa/4.0/deed.en
+
+https://commons.wikimedia.org/wiki/File:Friendly_Beaches_1.jpg
+Author	JJ Harrison (jjharrison89@facebook.com)
+This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
+https://creativecommons.org/licenses/by-sa/3.0/deed.en
