@@ -4,13 +4,10 @@
 // 	-> subdirectories
 // 	-> write bootloader
 // 	-> port to kernel
-// 	-> better testing of things
-// 	-> code cleanup!!
 // 	(future)
 // 	-> sparse files
 // 	-> hard/symbolic links
 // 	-> journal
-// 	-> directory indexing
 // 	-> anything else?
 
 #include <stdio.h>
@@ -259,6 +256,10 @@ uint64_t ParseSizeString(char *string) {
 void ReadBlock(uintptr_t block, uintptr_t count, void *buffer) {
 	fseek(drive, block * blockSize, SEEK_SET);
 	fread(buffer, 1, blockSize * count, drive);
+
+#if 0
+	printf("Read %d block%s from index %d.\n", count, count == 1 ? "" : "s", block);
+#endif
 }
 
 void WriteBlock(uintptr_t block, uintptr_t count, void *buffer) {
@@ -269,8 +270,8 @@ void WriteBlock(uintptr_t block, uintptr_t count, void *buffer) {
 		exit(1);
 	}
 
-	printf("Wrote %d block%s to index %d.\n", count, count == 1 ? "" : "s", block);
 #if 0
+	printf("Wrote %d block%s to index %d.\n", count, count == 1 ? "" : "s", block);
 	for (uintptr_t i = 0; i < count * blockSize / 32; i++) {
 		for (uintptr_t j = 0; j < 32; j++) {
 			printf("%.2X ", ((uint8_t *) buffer)[i * 32 + j]);
@@ -308,6 +309,12 @@ void UnmountVolume() {
 	superblock->mounted = 0;
 	WriteBlock(1, 1, &superblockP); 
 	free(groupDescriptorTable);
+}
+
+void LoadRootDirectory(FileEntry *fileEntry) {
+	ReadBlock(superblock->rootDirectoryFileEntry.offset,
+			superblock->rootDirectoryFileEntry.count,
+			fileEntry);
 }
 
 uint64_t BlocksNeededToStore(uint64_t size) {
@@ -491,6 +498,10 @@ AttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList) {
 		}
 	}
 
+	if (attribute == ATTRIBUTE_LIST_END) {
+		return header;
+	}
+
 	return nullptr; // The list did not have the desired attribute
 }
 
@@ -499,6 +510,8 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	// 	- Reduce number of extents.
 	// 	- Maximise data locality.
 	// 	- Cache extent tables.
+
+	// TODO Empty groups.
 
 	uint64_t groupsSearched = 0;
 
@@ -564,6 +577,8 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 }
 
 void ResizeDataStream(AttributeFileData *data, uint64_t newSize) {
+	// TODO Clear grown region of files.
+
 	uint64_t oldSize = data->size;
 	data->size = newSize;
 
@@ -639,7 +654,23 @@ void ResizeDataStream(AttributeFileData *data, uint64_t newSize) {
 
 void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write) {
 	if (data->indirection == DATA_DIRECT) {
-		memcpy(data->direct + offset, _buffer, size);
+		if (write) {
+			memcpy(data->direct + offset, _buffer, size);
+		} else {
+			memcpy(_buffer, data->direct + offset, size);
+		}
+
+		return;
+	}
+	
+	if (data->indirection == DATA_NONE) {
+		if (write) {
+			printf("Error: Writing to DATA_NONE streams not supported.\n");
+			exit(1);
+		} else {
+			memset(_buffer, 0, size);
+		}
+
 		return;
 	}
 
@@ -709,6 +740,8 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 
 		uint8_t blockBuffer[blockSize];
 
+		printf("stream access: block %d, %d in file, with write = %d, offset %d, transfer %d\n", globalBlock, blockInStream, write, offsetIntoBlock, dataToTransfer);
+
 		if (write) {
 			if (offsetIntoBlock || dataToTransfer != blockSize) ReadBlock(globalBlock, 1, blockBuffer);
 			memcpy(blockBuffer + offsetIntoBlock, buffer, dataToTransfer);
@@ -730,11 +763,8 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 void Tree() {
 	printf("--> /\n");
 
-	// Load the root directory.
 	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	ReadBlock(superblock->rootDirectoryFileEntry.offset,
-			superblock->rootDirectoryFileEntry.count,
-			fileEntry);
+	LoadRootDirectory(fileEntry);
 
 	AttributeFileDirectory *directory = (AttributeFileDirectory *) FindAttribute(ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
 	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
@@ -832,12 +862,95 @@ void Tree() {
 	free(fileEntry);
 }
 
-void AddFile(char *path, char *name, uint64_t size) {
-	if (strcmp(path, "/")) {
-		printf("Error: The root directory is currently only supported.\n");
+bool SearchDirectory(FileEntry *fileEntry, char *searchName, size_t nameLength) {
+	AttributeFileDirectory *directory = (AttributeFileDirectory *) FindAttribute(ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+
+	if (!directory) {
+		printf("Error: Directory did not have a directory attribute.\n");
 		exit(1);
 	}
 
+	if (!data) {
+		printf("Error: Directory did not have a data attribute.\n");
+		exit(1);
+	}
+
+	uint8_t *directoryBuffer = (uint8_t *) malloc(data->size);
+	uint8_t *directoryBufferPosition = directoryBuffer;
+	AccessStream(data, 0, data->size, directoryBuffer, false);
+
+	size_t fileEntryLength;
+	FileEntry *returnValue = nullptr;
+
+	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
+		DirectoryEntry *entry = (DirectoryEntry *) directoryBufferPosition;
+
+		if (memcmp(entry->signature, DIRECTORY_ENTRY_SIGNATURE, strlen(DIRECTORY_ENTRY_SIGNATURE))) {
+			printf("Error: Directory entry had invalid signature.\n");
+			exit(1);
+		}
+
+		AttributeDirectoryName *name = (AttributeDirectoryName *) FindAttribute(ATTRIBUTE_DIRECTORY_NAME, entry + 1);
+		if (!name) goto nextFile;
+		if (name->nameLength != nameLength) goto nextFile;
+		if (memcmp(name + 1, searchName, nameLength)) goto nextFile;
+
+		{
+			AttributeDirectoryFile *file = (AttributeDirectoryFile *) FindAttribute(ATTRIBUTE_DIRECTORY_FILE, entry + 1);
+
+			if (file) {
+				returnValue = (FileEntry *) (file + 1);
+				fileEntryLength = file->header.size - sizeof(AttributeDirectoryFile);
+			} else {
+				// There isn't a file associated with this directory entry.
+			}
+
+			break;
+		}
+
+		nextFile:
+		AttributeHeader *end = FindAttribute(ATTRIBUTE_LIST_END, entry + 1);
+		directoryBufferPosition += end->size + (uintptr_t) end - (uintptr_t) entry;
+	}
+
+	if (returnValue) {
+		memcpy(fileEntry, returnValue, fileEntryLength);
+		free(directoryBuffer);
+		return true;
+	} else {
+		free(directoryBuffer);
+		return false;
+	}
+}
+
+void GetEntryForPath(char *path, FileEntry *directory) {
+	LoadRootDirectory(directory);
+
+	if (path[0] != '/') {
+		printf("Error: Path must start with '/'.\n");
+		exit(1);
+	}
+
+	if (!path[1]) {
+		return;
+	}
+
+	while (path[0]) {
+		path++;
+		size_t nameLength = 0;
+		while (path[nameLength] && path[nameLength] != '/') nameLength++;
+
+		if (!SearchDirectory(directory, path, nameLength)) {
+			printf("Error: Could not resolve path.\n");
+			exit(1);
+		}
+
+		path += nameLength;
+	}
+}
+
+void AddFile(char *path, char *name, uint64_t size) {
 	if (strlen(name) >= 256) {
 		printf("Error: The filename is too long. It can be at maximum 255 bytes.\n");
 		exit(1);
@@ -857,10 +970,11 @@ void AddFile(char *path, char *name, uint64_t size) {
 
 		AttributeFileData *data = (AttributeFileData *) (entryBuffer + entryBufferPosition);
 		data->header.type = ATTRIBUTE_FILE_DATA;
-		data->header.size = sizeof(AttributeFileData) + 0 /*Empty file*/;
+		data->header.size = sizeof(AttributeFileData);
 		data->stream = STREAM_DEFAULT;
 		data->indirection = DATA_NONE;
-		data->size = size;
+		data->size = 0;
+		ResizeDataStream(data, size);
 		entryBufferPosition += data->header.size;
 
 		AttributeHeader *end = (AttributeHeader *) (entryBuffer + entryBufferPosition);
@@ -907,9 +1021,7 @@ void AddFile(char *path, char *name, uint64_t size) {
 	}
 
 	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	ReadBlock(superblock->rootDirectoryFileEntry.offset,
-			superblock->rootDirectoryFileEntry.count,
-			fileEntry);
+	GetEntryForPath(path, fileEntry);
 	
 	AttributeFileDirectory *directory = (AttributeFileDirectory *) FindAttribute(ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
 	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
@@ -948,6 +1060,86 @@ void AddFile(char *path, char *name, uint64_t size) {
 			fileEntry);
 
 	free(fileEntry);
+}
+
+void ReadFile(char *path) {
+	FileEntry *file = (FileEntry *) malloc(blockSize);
+	GetEntryForPath(path, file);
+	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, file + 1);
+
+	if (data) {
+		uint8_t *buffer = (uint8_t *) malloc(data->size);
+		AccessStream(data, 0, data->size, buffer, false);
+
+		printf("data->size = %d\n", data->size);
+
+		for (int i = 0; i < (data->size / 16) + 1; i++) {
+			for (int j = 0; j < 16; j++) {
+				if (data->size > j + i * 16) {
+					printf("%.2X ", buffer[j + i * 16]);
+				} else {
+					printf("   ");
+				}
+			}
+
+#if 1
+			printf("    ");
+
+			for (int j = 0; j < 16; j++) {
+				if (data->size > j + i * 16) {
+					char c = buffer[j + i * 16];
+					if (c < 32 || c > 127) {
+						printf(".");
+					} else {
+						printf("%c", c);
+					}
+				}
+			}
+#endif
+
+			printf("\n");
+		}
+
+		free(buffer);
+	} else {
+		printf("Error: File did not have a data stream.\n");
+		exit(1);
+	}
+
+	free(file);
+}
+
+void WriteFile(char *path, void *bufferData, uint64_t dataLength) {
+	FileEntry *file = (FileEntry *) malloc(blockSize);
+	GetEntryForPath(path, file);
+	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, file + 1);
+
+	if (data) {
+		if (data->size != dataLength) {
+			printf("Error: File was not the correct length (%d vs %d).\n", data->size, dataLength);
+			exit(1);
+		}
+
+		AccessStream(data, 0, data->size, bufferData, true);
+
+		// TODO Update the file modified time.
+		// TODO Write the updated file entry.
+	} else {
+		printf("Error: File did not have a data stream.\n");
+		exit(1);
+	}
+
+	free(file);
+}
+
+void AvailableExtents(uint64_t group) {
+	GroupDescriptor *descriptor = &groupDescriptorTable[group].d;
+	ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(LocalExtent)), entryBuffer3);
+	LocalExtent *extentTable = (LocalExtent *) entryBuffer3;
+
+	for (uint16_t i = 0; i < descriptor->extentCount; i++) {
+		printf("local extent: offset %d (global %d), count = %d\n", extentTable[i].offset, extentTable[i].offset + group * superblock->blocksPerGroup, extentTable[i].count);
+	}
 }
 
 int main(int argc, char **argv) {
@@ -1002,12 +1194,45 @@ int main(int argc, char **argv) {
 		MountVolume();
 		Tree();
 		UnmountVolume();
-	} else if (IS_COMMAND("add-file")) {
-		CHECK_ARGS(3, "add-file <path> <name> <size>");
+	} else if (IS_COMMAND("available-extents")) {
+		CHECK_ARGS(1, "available-extents <group>");
+
+		MountVolume();
+		AvailableExtents(ParseSizeString(argv[0]));
+		UnmountVolume();
+	} else if (IS_COMMAND("create")) {
+		CHECK_ARGS(3, "create <path> <name> <size>");
 
 		MountVolume();
 		AddFile(argv[0], argv[1], ParseSizeString(argv[2]));
 		UnmountVolume();
+	} else if (IS_COMMAND("read")) {
+		CHECK_ARGS(1, "read <path>");
+
+		MountVolume();
+		ReadFile(argv[0]);
+		UnmountVolume();
+	} else if (IS_COMMAND("write")) {
+		CHECK_ARGS(2, "write <path> <input_file>");
+
+		FILE *input = fopen(argv[1], "rb");
+
+		if (!input) {
+			printf("Error: Could not open input file.\n");
+			exit(1);
+		}
+
+		fseek(input, 0, SEEK_END);
+		uint64_t fileLength = ftell(input);
+		fseek(input, 0, SEEK_SET);
+		void *data = malloc(fileLength);
+		fread(data, 1, fileLength, input);
+
+		MountVolume();
+		WriteFile(argv[0], data, fileLength);
+		UnmountVolume();
+
+		free(data);
 	} else {
 		printf("Unrecognised command '%s'.\n", command);
 		exit(1);
