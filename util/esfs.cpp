@@ -1,10 +1,9 @@
 // TODO list:
-// 	-> error handling
 // 	-> write bootloader
 // 	-> port to kernel 
+// 	(future)
 // 	-> delete files/directories
 // 	-> data stream shrinking
-// 	(future)
 // 	-> sparse files
 // 	-> hard/symbolic links
 // 	-> journal
@@ -20,6 +19,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 // Volume format:
 // 	- Boot block (always 8KiB)		) Core data
@@ -226,6 +227,7 @@ FILE *randomFile;
 FILE *drive;
 
 uint64_t blockSize;
+uint64_t partitionOffset;
 SuperblockP superblockP;
 Superblock *superblock = &superblockP.d;
 GroupDescriptorP *groupDescriptorTable;
@@ -263,7 +265,7 @@ uint64_t ParseSizeString(char *string) {
 }
 
 void ReadBlock(uint64_t block, uint64_t count, void *buffer) {
-	fseek(drive, block * blockSize, SEEK_SET);
+	fseek(drive, block * blockSize + partitionOffset * 512, SEEK_SET);
 	fread(buffer, 1, blockSize * count, drive);
 
 #if 0
@@ -272,7 +274,7 @@ void ReadBlock(uint64_t block, uint64_t count, void *buffer) {
 }
 
 void WriteBlock(uint64_t block, uint64_t count, void *buffer) {
-	fseek(drive, block * blockSize, SEEK_SET);
+	fseek(drive, block * blockSize + partitionOffset * 512, SEEK_SET);
 
 	if (fwrite(buffer, 1, blockSize * count, drive) != blockSize * count) {
 		printf("Error: Could not write to blocks %d->%d of drive.\n", block, block + count);
@@ -292,7 +294,7 @@ void WriteBlock(uint64_t block, uint64_t count, void *buffer) {
 }
 
 void MountVolume() {
-	printf("Mounting volume...\n");
+	// printf("Mounting volume...\n");
 
 	// Read the superblock.
 	blockSize = BOOT_SUPER_BLOCK_SIZE;
@@ -316,8 +318,8 @@ void MountVolume() {
 		exit(1);
 	}
 
-	printf("Volume ID: ");
-	for (int i = 0; i < 16; i++) printf("%.2X%c", superblock->identifier.d[i], i == 15 ? '\n' : '-');
+	// printf("Volume ID: ");
+	// for (int i = 0; i < 16; i++) printf("%.2X%c", superblock->identifier.d[i], i == 15 ? '\n' : '-');
 
 	// Read the group descriptor table.
 	groupDescriptorTable = (GroupDescriptorP *) malloc(superblock->gdt.count * blockSize);
@@ -325,7 +327,7 @@ void MountVolume() {
 }
 
 void UnmountVolume() {
-	printf("Unmounting volume...\n");
+	// printf("Unmounting volume...\n");
 	WriteBlock(superblock->gdt.offset, superblock->gdt.count, groupDescriptorTable);
 	blockSize = BOOT_SUPER_BLOCK_SIZE;
 	superblock->mounted = 0;
@@ -403,7 +405,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	uint64_t blocksInGDT = BlocksNeededToStore(superblock->groupCount * sizeof(GroupDescriptorP));
 	superblock->gdt.count = blocksInGDT;
 
-	printf("Blocks in BGDT: %d\n", blocksInGDT);
+	// printf("Blocks in BGDT: %d\n", blocksInGDT);
 
 	uint64_t bootSuperBlocks = (2 * BOOT_SUPER_BLOCK_SIZE) / blockSize;
 	superblock->gdt.offset = bootSuperBlocks;
@@ -413,12 +415,12 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 				   + 1			// Metadata files - currently only the root directory.
 				   + superblock->blocksPerGroupExtentTable; // First group extent table.
 
-	printf("Blocks used: %d\n", initialBlockUsage);
+	// printf("Blocks used: %d\n", initialBlockUsage);
 
 	// Subtract the number of blocks in the superblock again so that those blocks at the end of the last group are not used.
 	// This is because they are needed to store a backup of the super block.
 	superblock->blockCount -= bootSuperBlocks / 2;
-	printf("Block count: %d\n", superblock->blockCount);
+	// printf("Block count: %d\n", superblock->blockCount);
 
 	superblock->blocksUsed = initialBlockUsage; 
 
@@ -436,7 +438,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	firstGroup->extentCount = 1;			// 1 extent containing all the unused blocks in the group.
 	firstGroup->blocksUsed = initialBlockUsage;
 
-	printf("First group extent table: %d\n", firstGroup->extentTable);
+	// printf("First group extent table: %d\n", firstGroup->extentTable);
 
 	// The extent table for the first group.
 	uint8_t _extent[blockSize] = {}; // TODO Stack overflow?
@@ -444,8 +446,8 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	extent->offset = initialBlockUsage;
 	extent->count = superblock->blocksPerGroup - initialBlockUsage;
 
-	printf("First unused extent offset: %d\n", extent->offset);
-	printf("First unused extent count: %d\n", extent->count);
+	// printf("First unused extent offset: %d\n", extent->offset);
+	// printf("First unused extent count: %d\n", extent->count);
 
 	GenerateUniqueIdentifier(superblock->identifier);
 
@@ -551,7 +553,7 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 
 	uint64_t groupsSearched = 0;
 
-	printf("Allocating extent for %d blocks....\n", desiredBlocks);
+	// printf("Allocating extent for %d blocks....\n", desiredBlocks);
 
 	for (uint64_t blockGroup = localGroup; groupsSearched < superblock->groupCount; blockGroup = (blockGroup + 1) % superblock->groupCount, groupsSearched++) {
 		GroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
@@ -620,7 +622,7 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 
 		WriteBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(LocalExtent)), extentTableBuffer);
 
-		printf("Allocated extent: %d -> %d\n", extent.offset, extent.offset + extent.count - 1);
+		// printf("Allocated extent: %d -> %d\n", extent.offset, extent.offset + extent.count - 1);
 
 		return extent;
 	}
@@ -1088,7 +1090,7 @@ void AddFile(char *path, char *name, uint16_t type) {
 		exit(1);
 	}
 
-	printf("spaceAvailableInLastBlock = %d, entryBufferPosition = %d\n", directory->spaceAvailableInLastBlock, entryBufferPosition);
+	// printf("spaceAvailableInLastBlock = %d, entryBufferPosition = %d\n", directory->spaceAvailableInLastBlock, entryBufferPosition);
 
 	{
 		// Step 3: Store the directory entry.
@@ -1267,10 +1269,11 @@ void Tree(char *path, int indent) {
 					AttributeDirectoryName *name = (AttributeDirectoryName *) attribute;
 					printf("    %.*s ", name->nameLength, name + 1);
 					for (int i = 0; i < 28 - name->nameLength - indent; i++) printf(" ");
-					fullPath = (char *) malloc(name->nameLength + strlen(path) + 1);
+					fullPath = (char *) malloc(name->nameLength + strlen(path) + 2);
 					fullPath[name->nameLength + strlen(path)] = 0;
-					strcpy(fullPath, path);
-					memcpy(fullPath + strlen(path), name + 1, name->nameLength);
+					int a = sprintf(fullPath, "%s%s", path, path[1] ? "/" : "");
+					memcpy(fullPath + strlen(fullPath), name + 1, name->nameLength);
+					fullPath[name->nameLength + a] = 0;
 				} break;
 
 				case ATTRIBUTE_DIRECTORY_FILE: {
@@ -1290,9 +1293,9 @@ void Tree(char *path, int indent) {
 								(entry->fileType == FILE_TYPE_SYMBOLIC_LINK ? "s-link" : "unrecognised")));
 					printf("  ");
 
-					printf("%d  ", entry->modificationTime);
+					// printf("%d  ", entry->modificationTime);
 
-					{
+					if (entry->fileType != FILE_TYPE_DIRECTORY) {
 						uint8_t *attributePosition = (uint8_t *) (entry + 1);
 						AttributeHeader *attribute = (AttributeHeader *) attributePosition;
 
@@ -1340,19 +1343,67 @@ void Tree(char *path, int indent) {
 	free(originalFileEntry);
 }
 
+void Import(char *target, char *source) {
+	DIR *d = opendir(source);
+	struct dirent *dir;
+	char nameBuffer1[256];
+	char nameBuffer2[256];
+
+	if (d) {
+		while ((dir = readdir(d))) {
+			if (dir->d_name[0] != '.') {
+				sprintf(nameBuffer1, "%s%s", target, dir->d_name);
+				sprintf(nameBuffer2, "%s%s", source, dir->d_name);
+
+				struct stat s = {};
+				stat(nameBuffer2, &s);
+				if (S_ISDIR(s.st_mode)) {
+					AddFile(target, dir->d_name, FILE_TYPE_DIRECTORY);
+					strcat(nameBuffer1, "/");
+					strcat(nameBuffer2, "/");
+					Import(nameBuffer1, nameBuffer2);
+				} else {
+					// printf("Importing %s at %s...\n", nameBuffer2, nameBuffer1);
+
+					FILE *input = fopen(nameBuffer2, "rb");
+					if (!input) printf("Warning: Could not open file!\n");
+					else {
+						fseek(input, 0, SEEK_END);
+						uint64_t fileLength = ftell(input);
+						fseek(input, 0, SEEK_SET);
+						void *data = malloc(fileLength);
+						fread(data, 1, fileLength, input);
+						fclose(input);
+
+						AddFile(target, dir->d_name, FILE_TYPE_FILE);
+						ResizeFile(nameBuffer1, fileLength);
+						WriteFile(nameBuffer1, data, fileLength);
+
+						free(data);
+					}
+				}
+			}
+		}
+
+		closedir(d);
+	}
+
+}
+
 int main(int argc, char **argv) {
 	randomFile = fopen("/dev/urandom", "rb");
 
-	if (argc < 3) {
-		printf("Usage: <drive> <command> <options>\n");
+	if (argc < 4) {
+		printf("Usage: <drive> <partition_offset> <command> <options>\n");
 		exit(1);
 	}
 
 	char *driveFilename = argv[1];
-	char *command = argv[2];
+	partitionOffset = ParseSizeString(argv[2]);
+	char *command = argv[3];
 
-	argc -= 3;
-	argv += 3;
+	argc -= 4;
+	argv += 4;
 
 	drive = fopen(driveFilename, "a+b");
 	if (drive) fclose(drive);
@@ -1450,42 +1501,8 @@ int main(int argc, char **argv) {
 	} else if (IS_COMMAND("import")) {
 		CHECK_ARGS(2, "import <target_path> <folder>");
 
-		DIR *d = opendir(argv[1]);
-		struct dirent *dir;
-		char nameBuffer1[4096];
-		char nameBuffer2[4096];
-
 		MountVolume();
-
-		if (d) {
-			while ((dir = readdir(d))) {
-				if (dir->d_name[0] != '.') {
-					sprintf(nameBuffer1, "%s%s", argv[0], dir->d_name);
-					sprintf(nameBuffer2, "%s%s", argv[1], dir->d_name);
-					printf("Importing %s at %s...\n", nameBuffer2, nameBuffer1);
-
-					FILE *input = fopen(nameBuffer2, "rb");
-					if (!input) printf("Warning: Could not open file!\n");
-					else {
-						fseek(input, 0, SEEK_END);
-						uint64_t fileLength = ftell(input);
-						fseek(input, 0, SEEK_SET);
-						void *data = malloc(fileLength);
-						fread(data, 1, fileLength, input);
-						fclose(input);
-
-						AddFile(argv[0], dir->d_name, FILE_TYPE_FILE);
-						ResizeFile(nameBuffer1, fileLength);
-						WriteFile(nameBuffer1, data, fileLength);
-
-						free(data);
-					}
-				}
-			}
-
-			closedir(d);
-		}
-
+		Import(argv[0], argv[1]);
 		UnmountVolume();
 	} else {
 		printf("Unrecognised command '%s'.\n", command);

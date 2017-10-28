@@ -2,6 +2,7 @@
 *.swo
 *.o
 drive
+drive2
 mount/
 bx_enh_dbg.ini
 vbox.vdi
@@ -9,3 +10,4 @@ bin/
 bochs-config
 drive.7z
 log.txt
+esfs
