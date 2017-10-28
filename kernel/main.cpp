@@ -37,7 +37,7 @@ extern "C" void KernelMain() {
 	pmm.Initialise();
 	scheduler.Initialise();
 	acpi.Initialise(); // Initialises CPULocalStorage.
-	scheduler.SpawnThread((uintptr_t) KernelInitilisation, 0, kernelProcess, false);
+	// scheduler.SpawnThread((uintptr_t) KernelInitilisation, 0, kernelProcess, false);
 	KernelLog(LOG_VERBOSE, "Starting preemption...\n");
 	scheduler.Start();
 

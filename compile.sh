@@ -1,8 +1,8 @@
 ColorBlue='\033[0;36m'
 ColorNormal='\033[0m'
 
-Optimise="-O3"
-OptimiseKernel="-O3"
+Optimise=""
+OptimiseKernel=""
 
 BuildFlags="-ffreestanding -Wall -Wextra -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address"
 LinkFlags="-T linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi"

@@ -68,27 +68,28 @@ GlobalExtent tempExtents[MAX_TEMP_EXTENTS];		// A temporary list of the extents 
 struct Superblock {
 	// Version 1
 
-	char signature[SIGNATURE_STRING_LENGTH];	// The filesystem signature; should be SIGNATURE_STRING.
-	char volumeName[MAXIMUM_VOLUME_NAME_LENGTH];	// The name of the volume.
-
-	uint16_t requiredReadVersion;			// If this is greater than the driver's version, then the filesystem cannot be read.
-	uint16_t requiredWriteVersion;			// If this is greater than the driver's version, then the filesystem cannot be written.
-
-	uint8_t mounted;				// Non-zero to indicate that the volume is mounted, or was not properly unmounted.
-
-	uint64_t blockSize;				// The size of a block on the volume.
-	uint64_t blockCount;				// The number of blocks on the volume.
-	uint64_t blocksUsed;				// The number of blocks that are in use.
-
-	uint16_t blocksPerGroup;			// The number of blocks in a group.
-	uint64_t groupCount;				// The number of groups on the volume.
-	uint64_t blocksPerGroupExtentTable;		// The number of blocks used to a store a group's extent table.
-
-	LocalExtent gdt;				// The group descriptor table's location.
-	LocalExtent rootDirectoryFileEntry;		// The file entry for the root directory.
-
-	UniqueIdentifier identifier;			// The unique identifier for the volume.
-	UniqueIdentifier osInstallation;		// The unique identifier of the Essence installation this volume was made for.
+/*0*/	char signature[SIGNATURE_STRING_LENGTH];	// The filesystem signature; should be SIGNATURE_STRING.
+/*16*/	char volumeName[MAXIMUM_VOLUME_NAME_LENGTH];	// The name of the volume.
+/**/	
+/*48*/	uint16_t requiredReadVersion;			// If this is greater than the driver's version, then the filesystem cannot be read.
+/*50*/	uint16_t requiredWriteVersion;			// If this is greater than the driver's version, then the filesystem cannot be written.
+/**/	
+/*52*/	uint8_t mounted;				// Non-zero to indicate that the volume is mounted, or was not properly unmounted.
+/**/	
+/*56*/	uint64_t blockSize;				// The size of a block on the volume.
+/*64*/	uint64_t blockCount;				// The number of blocks on the volume.
+/*72*/	uint64_t blocksUsed;				// The number of blocks that are in use.
+/**/	
+/*80*/	uint16_t blocksPerGroup;			// The number of blocks in a group.
+/*88*/	uint64_t groupCount;				// The number of groups on the volume.
+/*96*/	uint64_t blocksPerGroupExtentTable;		// The number of blocks used to a store a group's extent table.
+/**/	
+/*104*/	LocalExtent gdt;				// The group descriptor table's location.
+/*108*/	LocalExtent rootDirectoryFileEntry;		// The file entry for the root directory.
+/*112*/	LocalExtent kernelFileEntry;			// The file entry for the kernel.
+/**/	
+/*116*/	UniqueIdentifier identifier;			// The unique identifier for the volume.
+/*132*/	UniqueIdentifier osInstallation;		// The unique identifier of the Essence installation this volume was made for.
 							// If this is zero, then the volume is not an Essence installation volume.
 };
 
@@ -133,22 +134,22 @@ struct AttributeFileSecurity {
 };
 
 struct AttributeFileData {
-	AttributeHeader header;
+/*0*/	AttributeHeader header;
 
 #define STREAM_DEFAULT  (0) // The normal data stream for a file.
-	uint8_t stream;					// The stream this data describes.
+/*4*/	uint8_t stream;					// The stream this data describes.
 
 #define DATA_INDIRECT   (1)
 #define DATA_INDIRECT_2 (2) 
 #define DATA_INDIRECT_3 (3)
 #define DATA_DIRECT     (4)
-	uint8_t indirection;				// The level of indirection needed to read the data.
+/*5*/	uint8_t indirection;				// The level of indirection needed to read the data.
 
-	uint16_t extentCount;				// The number of extents describing the file.
+/*6*/	uint16_t extentCount;				// The number of extents describing the file.
 
-	uint64_t size;					// The size of the data in the stream in bytes.
+/*8*/	uint64_t size;					// The size of the data in the stream in bytes.
 
-	union {
+/*16*/	union {
 		// TODO Change the size of this depending on the block size?
 
 #define INDIRECT_EXTENTS (4)
@@ -183,19 +184,19 @@ struct FileEntry {
 	// File entries may not span over a block boundary.
 
 #define FILE_ENTRY_SIGNATURE "FileEsFS"
-	char signature[8];				// Must be FILE_ENTRY_SIGNATURE.
+/*0*/	char signature[8];				// Must be FILE_ENTRY_SIGNATURE.
 
-	UniqueIdentifier identifier;
+/*8*/	UniqueIdentifier identifier;
 
 #define FILE_TYPE_FILE (1)
 #define FILE_TYPE_DIRECTORY (2)
 #define FILE_TYPE_SYMBOLIC_LINK (3)
-	uint8_t fileType;
+/*24*/	uint8_t fileType;
 
-	uint64_t creationTime;				// TODO Decide the format for times?
-	uint64_t modificationTime;
+/*32*/	uint64_t creationTime;				// TODO Decide the format for times?
+/*40*/	uint64_t modificationTime;
 
-	// Attributes follow.
+/*48*/	// Attributes follow.
 };
 
 struct AttributeDirectoryFile {
@@ -412,7 +413,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 
 	uint64_t initialBlockUsage = bootSuperBlocks	// Boot block and superblock.
 				   + blocksInGDT 	// Block group descriptor table.
-				   + 1			// Metadata files - currently only the root directory.
+				   + 2			// Metadata files - currently: the root directory and the kernel.
 				   + superblock->blocksPerGroupExtentTable; // First group extent table.
 
 	// printf("Blocks used: %d\n", initialBlockUsage);
@@ -434,7 +435,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	memset(descriptorTable, 0, blocksInGDT * blockSize);
 
 	GroupDescriptor *firstGroup = &descriptorTable[0].d;
-	firstGroup->extentTable = initialBlockUsage - 1; // Use the first block after the core data for the extent table of the first group.
+	firstGroup->extentTable = initialBlockUsage - superblock->blocksPerGroupExtentTable; // Use the few block after the core data for the extent table of the first group.
 	firstGroup->extentCount = 1;			// 1 extent containing all the unused blocks in the group.
 	firstGroup->blocksUsed = initialBlockUsage;
 
@@ -457,6 +458,8 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	// Metadata files.
 	superblock->rootDirectoryFileEntry.offset = bootSuperBlocks + blocksInGDT;
 	superblock->rootDirectoryFileEntry.count = 1;
+	superblock->kernelFileEntry.offset = bootSuperBlocks + blocksInGDT + 1;
+	superblock->kernelFileEntry.count = 1;
 
 	// Don't overwrite the boot block.
 	WriteBlock(bootSuperBlocks / 2, bootSuperBlocks / 2, superblock);
@@ -467,7 +470,10 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	free(descriptorTable);
 }
 
-void FormatVolume(size_t driveSize, char *volumeName) {
+void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBlocks, LoadInformation *dataLoadInformation);
+void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
+
+void FormatVolume(size_t driveSize, char *volumeName, void *kernelData, uint64_t kernelDataLength) {
 	// Setup the superblock, group table and the first group.
 	PrepareCoreData(driveSize, volumeName);
 
@@ -491,7 +497,7 @@ void FormatVolume(size_t driveSize, char *volumeName) {
 
 		AttributeFileData *data = (AttributeFileData *) (entryBuffer + entryBufferPosition);
 		data->header.type = ATTRIBUTE_FILE_DATA;
-		data->header.size = sizeof(AttributeFileData) + 0 /*Directory is empty*/;
+		data->header.size = sizeof(AttributeFileData);
 		data->stream = STREAM_DEFAULT;
 		data->indirection = DATA_DIRECT;
 		entryBufferPosition += data->header.size;
@@ -514,6 +520,41 @@ void FormatVolume(size_t driveSize, char *volumeName) {
 		}
 
 		WriteBlock(superblock->rootDirectoryFileEntry.offset, 1, entryBuffer);
+	}
+
+	// Create the file entry for the kernel.
+	{
+		EntryBufferReset();
+
+		FileEntry *entry = (FileEntry *) (entryBuffer + entryBufferPosition);
+		GenerateUniqueIdentifier(entry->identifier);
+		entry->fileType = FILE_TYPE_DIRECTORY;
+		memcpy(&entry->signature, FILE_ENTRY_SIGNATURE, strlen(FILE_ENTRY_SIGNATURE));
+		entryBufferPosition += sizeof(FileEntry);
+
+		AttributeFileData *data = (AttributeFileData *) (entryBuffer + entryBufferPosition);
+		data->header.type = ATTRIBUTE_FILE_DATA;
+		data->header.size = sizeof(AttributeFileData);
+		data->stream = STREAM_DEFAULT;
+		data->indirection = DATA_DIRECT;
+		entryBufferPosition += data->header.size;
+		LoadInformation dataLoadInformation;
+		dataLoadInformation.containerBlock = superblock->kernelFileEntry.offset;
+		dataLoadInformation.positionInBlock = 0;
+
+		AttributeHeader *end = (AttributeHeader *) (entryBuffer + entryBufferPosition);
+		end->type = ATTRIBUTE_LIST_END;
+		end->size = sizeof(AttributeHeader);
+		entryBufferPosition += end->size;
+
+		if (entryBufferPosition > 512) {
+			printf("Error: File entry for kernel exceeds 512 bytes.\n");
+			exit(1);
+		}
+
+		ResizeDataStream(data, kernelDataLength, true, &dataLoadInformation);
+		AccessStream(data, 0, kernelDataLength, kernelData, true);
+		WriteBlock(superblock->kernelFileEntry.offset, 1, entryBuffer);
 	}
 
 	// Unmount the volume.
@@ -632,7 +673,7 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	exit(1);
 }
 
-void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr) {
+void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
 	// TODO Access multiple blocks at a time.
 	// TODO Optimise how the extents are calculated.
 	// TODO Check that we're in valid stream bounds.
@@ -1420,7 +1461,7 @@ int main(int argc, char **argv) {
 #define CHECK_ARGS(_n, _u) if (argc != _n) { printf("Usage: <drive> %s\n", _u); exit(1); }
 
 	if (IS_COMMAND("format")) {
-		CHECK_ARGS(2, "format <size> <name>");
+		CHECK_ARGS(3, "format <size> <name> <kernel>");
 		uint64_t driveSize = ParseSizeString(argv[0]);
 
 		if (driveSize < DRIVE_MINIMUM_SIZE) {
@@ -1438,7 +1479,23 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 
-		FormatVolume(driveSize, argv[1]);
+		FILE *input = fopen(argv[2], "rb");
+
+		if (!input) {
+			printf("Error: Could not open input file.\n");
+			exit(1);
+		}
+
+		fseek(input, 0, SEEK_END);
+		uint64_t fileLength = ftell(input);
+		fseek(input, 0, SEEK_SET);
+		void *data = malloc(fileLength);
+		fread(data, 1, fileLength, input);
+		fclose(input);
+
+		FormatVolume(driveSize, argv[1], data, fileLength);
+
+		free(data);
 	} else if (IS_COMMAND("tree")) {
 		CHECK_ARGS(1, "tree <path>");
 
