@@ -106,13 +106,14 @@ struct Ext2DirectoryEntry {
 
 // Stored the in the driverData field in a File.
 struct Ext2File {
+	uint32_t inode;
 	Ext2InodeData data;
 };
 
 struct Ext2FS {
 	bool AccessBlock(uint64_t block, uint8_t *buffer, int operation = DRIVE_ACCESS_READ, size_t count = 1);
 	bool AccessFile(File *file, uint64_t offsetBytes, uint64_t sizeBytes, int operation, uint8_t *buffer, bool lockAlreadyAcquired = false);
-	bool OpenFile(uint64_t inode, File *file);
+	File *OpenFile(uint64_t inode);
 	File *Initialise(Device *drive); // Returns root directory.
 
 	// 'name' is a UTF-8 string; '..' is the parent directory and '.' is the current directory
@@ -140,7 +141,7 @@ bool Ext2FS::AccessFile(File *file, uint64_t offsetBytes, uint64_t sizeBytes, in
 	if (!file) return false;
 	if (offsetBytes + sizeBytes > file->fileSize) return false;
 
-	Ext2InodeData *data = (Ext2InodeData *) file->driverData;
+	Ext2InodeData *data = (Ext2InodeData *) (file + 1);
 	uint32_t blocksInBuffers[] = {0, 0, 0};
 	uint32_t bytesRemaining = sizeBytes;
 	uint32_t blocksPerBlock = bytesPerBlock / 4;
@@ -296,9 +297,9 @@ uint64_t Ext2FS::ScanDirectory(char *name, size_t nameLength, File *directory) {
 	return 0;
 }
 
-bool Ext2FS::OpenFile(uint64_t inode, File *file) {
+File *Ext2FS::OpenFile(uint64_t inode) {
 	// Check that the inode is within a valid range.
-	if (inode < EXT2_FIRST_INODE || inode >= superblock.totalInodes) return false;
+	if (inode < EXT2_FIRST_INODE || inode >= superblock.totalInodes) return nullptr;
 
 	lock.Acquire();
 	Defer(lock.Release());
@@ -307,29 +308,25 @@ bool Ext2FS::OpenFile(uint64_t inode, File *file) {
 	uint64_t blockGroup = (inode - EXT2_FIRST_INODE) / superblock.inodesPerBlockGroup;
 	uint64_t bgdBlock = blockGroup * sizeof(Ext2BlockGroupDescriptor) / bytesPerBlock;
 	uint64_t bgdBlockIndex = (blockGroup * sizeof(Ext2BlockGroupDescriptor) % bytesPerBlock) / sizeof(Ext2BlockGroupDescriptor);
-	if (!AccessBlock((superblock.blockSize ? 1 : 2) + bgdBlock, buffer)) return false;
+	if (!AccessBlock((superblock.blockSize ? 1 : 2) + bgdBlock, buffer)) return nullptr;
 	Ext2BlockGroupDescriptor *blockGroupDescriptor = (Ext2BlockGroupDescriptor *) buffer + bgdBlockIndex;
 
 	// Load the inode data.
 	uint64_t inodeIndex = (inode - EXT2_FIRST_INODE) % superblock.inodesPerBlockGroup;
 	uint64_t inodeTableBlock = inodeIndex * superblock.inodeStructureSize / bytesPerBlock;
 	uint64_t inodeTableBlockIndex = (inodeIndex * superblock.inodeStructureSize % bytesPerBlock) / superblock.inodeStructureSize;
-	if (!AccessBlock(blockGroupDescriptor->inodeTableBlock + inodeTableBlock, buffer)) return false;
+	if (!AccessBlock(blockGroupDescriptor->inodeTableBlock + inodeTableBlock, buffer)) return nullptr;
 	Ext2InodeData *inodeData = (Ext2InodeData *) buffer + inodeTableBlockIndex;
 
-	// Check that the data we need to store can fit in the File struct.
-	if (sizeof(Ext2File) > FILE_DRIVER_DATA) {
-		KernelPanic("Ext2FS::OpenFile - sizeof(Ext2File) is greater than FILE_DRIVER_DATA\n");
-	}
-
 	// Store the file information.
-	ZeroMemory(file, sizeof(File));
-	Ext2File *driverData = (Ext2File *) &file->driverData;
+	File *file = vfs.OpenFile(OSHeapAllocate(sizeof(File) + sizeof(Ext2File), true));
+	Ext2File *driverData = (Ext2File *) (file + 1);
 	CopyMemory(&driverData->data, inodeData, sizeof(Ext2InodeData));
-	file->inode = inode;
+	driverData->inode = inode;
+	for (int i = 0; i < 4; i++) ((uint32_t *) file->identifier.d)[i] = inode;
 	file->fileSize = (uint64_t) inodeData->sizeLow + ((inodeData->typeAndPermissions & 0x4000) ? 0 : ((uint64_t) inodeData->sizeHigh << 32));
 
-	return true;
+	return file;
 }
 
 File *Ext2FS::Initialise(Device *_drive) {
@@ -347,15 +344,17 @@ File *Ext2FS::Initialise(Device *_drive) {
 	if (superblock.versionMajor < 1) return nullptr;
 	if (superblock.requiredFeatures & ~2) return nullptr;
 
-	File *root = (File *) vfs.filePool.Add();
-	return OpenFile(EXT2_ROOT_DIRECTORY_INODE, root) ? root : nullptr;
+	return OpenFile(EXT2_ROOT_DIRECTORY_INODE);
 }
 
-inline bool Ext2FSScan(char *name, size_t nameLength, File *file, Filesystem *filesystem) {
+inline bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem) {
 	Ext2FS *fs = (Ext2FS *) filesystem->data;
-	uintptr_t inode = fs->ScanDirectory(name, nameLength, file);
-	if (inode) return fs->OpenFile(inode, file);
-	else return false; 
+	uintptr_t inode = fs->ScanDirectory(name, nameLength, *file);
+
+	if (inode) {
+		*file = fs->OpenFile(inode);
+		return *file;
+	} else return false; 
 }
 
 inline bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {

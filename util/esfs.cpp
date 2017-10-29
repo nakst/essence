@@ -1,7 +1,4 @@
 // TODO list:
-// 	-> write bootloader
-// 	-> port to kernel 
-// 	(future)
 // 	-> delete files/directories
 // 	-> data stream shrinking
 // 	-> sparse files
@@ -11,7 +8,9 @@
 //	-> directory indexing
 //	-> check program
 //	-> indirect 3
+//	-> block error handling
 
+#ifndef KERNEL
 #include <stdio.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -22,6 +21,17 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#define ESFS_HEADER
+#define ESFS_IMPLEMENTATION
+#define ESFS_UTITILES
+
+struct UniqueIdentifier {
+	uint8_t d[16];
+};
+#endif
+
+#ifdef ESFS_HEADER
+
 // Volume format:
 // 	- Boot block (always 8KiB)		) Core data
 // 	- Superblock (always 8Kib)		)
@@ -30,46 +40,34 @@
 // 	- Block groups (block usage extents, data blocks)
 // 	- Superblock backup
 
-struct UniqueIdentifier {
-	uint8_t d[16];
-};
-
-#define MAX_BLOCK_SIZE (16384)
-
-uint8_t entryBuffer[MAX_BLOCK_SIZE];			// Temporary buffers.
-size_t entryBufferPosition;
-uint8_t extentTableBuffer[MAX_BLOCK_SIZE];
+#define ESFS_MAX_BLOCK_SIZE (16384)
 
 // The boot block and superblock are EACH 8KiB.
-#define BOOT_SUPER_BLOCK_SIZE (8192)
+#define ESFS_BOOT_SUPER_BLOCK_SIZE (8192)
 
-#define DRIVER_VERSION (2)
-#define DRIVE_MINIMUM_SIZE (1048576)
+#define ESFS_DRIVER_VERSION (2)
+#define ESFS_DRIVE_MINIMUM_SIZE (1048576)
 
-#define MAXIMUM_VOLUME_NAME_LENGTH (32)
+#define ESFS_MAXIMUM_VOLUME_NAME_LENGTH (32)
 
-#define SIGNATURE_STRING        ("EssenceFS!     \0")
-#define SIGNATURE_STRING_LENGTH (16)
+#define ESFS_SIGNATURE_STRING        ("EssenceFS!     \0")
+#define ESFS_SIGNATURE_STRING_LENGTH (16)
 
-struct LocalExtent {
+struct EsFSLocalExtent {
 	uint16_t offset;				// The offset in blocks from the first block in the group.
 	uint16_t count;					// The number of blocks described by the extent.
 };
 
-struct GlobalExtent {
+struct EsFSGlobalExtent {
 	uint64_t offset;				// The offset in blocks from the first block in the volume.
 	uint64_t count;					// The number of blocks described by the extent.
 };
 
-#define MAX_TEMP_EXTENTS (16384)
-GlobalExtent tempExtents[MAX_TEMP_EXTENTS];		// A temporary list of the extents in a file as they are allocated.
-							// This is needed because we don't know how many extents are needed until we've allocated them.
-
-struct Superblock {
+struct EsFSSuperblock {
 	// Version 1
 
-/*0*/	char signature[SIGNATURE_STRING_LENGTH];	// The filesystem signature; should be SIGNATURE_STRING.
-/*16*/	char volumeName[MAXIMUM_VOLUME_NAME_LENGTH];	// The name of the volume.
+/*0*/	char signature[ESFS_SIGNATURE_STRING_LENGTH];	// The filesystem signature; should be ESFS_SIGNATURE_STRING.
+/*16*/	char volumeName[ESFS_MAXIMUM_VOLUME_NAME_LENGTH]; // The name of the volume.
 /**/	
 /*48*/	uint16_t requiredReadVersion;			// If this is greater than the driver's version, then the filesystem cannot be read.
 /*50*/	uint16_t requiredWriteVersion;			// If this is greater than the driver's version, then the filesystem cannot be written.
@@ -84,16 +82,16 @@ struct Superblock {
 /*88*/	uint64_t groupCount;				// The number of groups on the volume.
 /*96*/	uint64_t blocksPerGroupExtentTable;		// The number of blocks used to a store a group's extent table.
 /**/	
-/*104*/	LocalExtent gdt;				// The group descriptor table's location.
-/*108*/	LocalExtent rootDirectoryFileEntry;		// The file entry for the root directory.
-/*112*/	LocalExtent kernelFileEntry;			// The file entry for the kernel.
+/*104*/	EsFSLocalExtent gdt;				// The group descriptor table's location.
+/*108*/	EsFSLocalExtent rootDirectoryFileEntry;		// The file entry for the root directory.
+/*112*/	EsFSLocalExtent kernelFileEntry;		// The file entry for the kernel.
 /**/	
 /*116*/	UniqueIdentifier identifier;			// The unique identifier for the volume.
 /*132*/	UniqueIdentifier osInstallation;		// The unique identifier of the Essence installation this volume was made for.
 							// If this is zero, then the volume is not an Essence installation volume.
 };
 
-struct GroupDescriptor {
+struct EsFSGroupDescriptor {
 	uint64_t extentTable;				// The first block containing the extent table.
 							// This is usually at the start of the group.
 							// If this is 0 then there is no extent table, and no blocks in the group are used.
@@ -108,41 +106,41 @@ struct GroupDescriptor {
 	// TODO Maybe store the size of the largest extent in the group here?
 };
 
-struct AttributeHeader {
-#define ATTRIBUTE_LIST_END (0xFFFF)			// Used to mark the end of an attribute list.
+struct EsFSAttributeHeader {
+#define ESFS_ATTRIBUTE_LIST_END (0xFFFF)		// Used to mark the end of an attribute list.
 
-#define ATTRIBUTE_FILE_SECURITY (1)			// Contains the security information relating to the item.
-#define ATTRIBUTE_FILE_DATA (2)				// Contains a data stream of the file.
-#define ATTRIBUTE_FILE_DIRECTORY (3)			// Contains information about a directory file.
+#define ESFS_ATTRIBUTE_FILE_SECURITY (1)		// Contains the security information relating to the item.
+#define ESFS_ATTRIBUTE_FILE_DATA (2)			// Contains a data stream of the file.
+#define ESFS_ATTRIBUTE_FILE_DIRECTORY (3)		// Contains information about a directory file.
 
-#define ATTRIBUTE_DIRECTORY_NAME (1)			// Contains the name of the file in the directory.
-#define ATTRIBUTE_DIRECTORY_FILE (2)			// Contains the file entry embedded in the directory.
+#define ESFS_ATTRIBUTE_DIRECTORY_NAME (1)		// Contains the name of the file in the directory.
+#define ESFS_ATTRIBUTE_DIRECTORY_FILE (2)		// Contains the file entry embedded in the directory.
 							// TODO Hard links.
 
 	uint16_t type;
 	uint16_t size;
 };
 
-struct AttributeFileSecurity {
+struct EsFSAttributeFileSecurity {
 	// If this attribute does not exist, the file inherits its permissions from its parent.
 
-	AttributeHeader header;
+	EsFSAttributeHeader header;
 
 	UniqueIdentifier owner;				// The identifier of the account/program that owns this file/directory.
 							// The identifier is only valid if this drive is running on the specified installation.
 							// If this field is 0, then there is no assigned owner.
 };
 
-struct AttributeFileData {
-/*0*/	AttributeHeader header;
+struct EsFSAttributeFileData {
+/*0*/	EsFSAttributeHeader header;
 
-#define STREAM_DEFAULT  (0) // The normal data stream for a file.
+#define ESFS_STREAM_DEFAULT  (0) // The normal data stream for a file.
 /*4*/	uint8_t stream;					// The stream this data describes.
 
-#define DATA_INDIRECT   (1)
-#define DATA_INDIRECT_2 (2) 
-#define DATA_INDIRECT_3 (3)
-#define DATA_DIRECT     (4)
+#define ESFS_DATA_INDIRECT   (1)
+#define ESFS_DATA_INDIRECT_2 (2) 
+#define ESFS_DATA_INDIRECT_3 (3)
+#define ESFS_DATA_DIRECT     (4)
 /*5*/	uint8_t indirection;				// The level of indirection needed to read the data.
 
 /*6*/	uint16_t extentCount;				// The number of extents describing the file.
@@ -152,19 +150,19 @@ struct AttributeFileData {
 /*16*/	union {
 		// TODO Change the size of this depending on the block size?
 
-#define INDIRECT_EXTENTS (4)
-		GlobalExtent indirect[INDIRECT_EXTENTS]; // Extents that contain the stream's data.
+#define ESFS_INDIRECT_EXTENTS (4)
+		EsFSGlobalExtent indirect[ESFS_INDIRECT_EXTENTS]; // Extents that contain the stream's data.
 	
-#define INDIRECT_2_EXTENTS (8)
-		uint64_t indirect2[INDIRECT_2_EXTENTS];	// Blocks that contain lists of extents that contain the stream's data.
+#define ESFS_INDIRECT_2_EXTENTS (8)
+		uint64_t indirect2[ESFS_INDIRECT_2_EXTENTS];	// Blocks that contain lists of extents that contain the stream's data.
 
-#define DIRECT_BYTES (64)
-		uint8_t direct[DIRECT_BYTES];		// The actual file data, inline.
+#define ESFS_DIRECT_BYTES (64)
+		uint8_t direct[ESFS_DIRECT_BYTES];		// The actual file data, inline.
 	};
 };
 
-struct AttributeFileDirectory {
-	AttributeHeader header;
+struct EsFSAttributeFileDirectory {
+	EsFSAttributeHeader header;
 
 	uint64_t itemsInDirectory;			// The number of items that the directory currently holds.
 	uint16_t spaceAvailableInLastBlock;		// Since directory entries must not span over a block boundary,
@@ -172,55 +170,64 @@ struct AttributeFileDirectory {
 							// to insert a new directory entry.
 };
 
-struct AttributeDirectoryName {
-	AttributeHeader header;
+struct EsFSAttributeDirectoryName {
+	EsFSAttributeHeader header;
 
 	uint8_t nameLength;
 	// Name follows.
 };
 
-struct FileEntry {
+struct EsFSFileEntry {
 	// The size of a file entry must be less than the size of a block.
 	// File entries may not span over a block boundary.
 
-#define FILE_ENTRY_SIGNATURE "FileEsFS"
-/*0*/	char signature[8];				// Must be FILE_ENTRY_SIGNATURE.
+#define ESFS_FILE_ENTRY_SIGNATURE "FileEsFS"
+/*0*/	char signature[8];				// Must be ESFS_FILE_ENTRY_SIGNATURE.
 
 /*8*/	UniqueIdentifier identifier;
 
-#define FILE_TYPE_FILE (1)
-#define FILE_TYPE_DIRECTORY (2)
-#define FILE_TYPE_SYMBOLIC_LINK (3)
+#define ESFS_FILE_TYPE_FILE (1)
+#define ESFS_FILE_TYPE_DIRECTORY (2)
+#define ESFS_FILE_TYPE_SYMBOLIC_LINK (3)
 /*24*/	uint8_t fileType;
 
 /*32*/	uint64_t creationTime;				// TODO Decide the format for times?
 /*40*/	uint64_t modificationTime;
 
-/*48*/	// Attributes follow.
+/*48*/	// EsFSAttributes follow.
 };
 
-struct AttributeDirectoryFile {
-	AttributeHeader header;
+struct EsFSAttributeDirectoryFile {
+	EsFSAttributeHeader header;
 	
 	// FileEntry follows.
 };
 
-struct DirectoryEntry {
-#define DIRECTORY_ENTRY_SIGNATURE "DirEntry"
-	char signature[8];				// Must be DIRECTORY_ENTRY_SIGNATURE.
+struct EsFSDirectoryEntry {
+#define ESFS_DIRECTORY_ENTRY_SIGNATURE "DirEntry"
+	char signature[8];				// Must be ESFS_DIRECTORY_ENTRY_SIGNATURE.
 
-	// Attributes follow.
+	// EsFSAttributes follow.
 };
 
-struct SuperblockP {
-	Superblock d;
-	char p[BOOT_SUPER_BLOCK_SIZE - sizeof(Superblock)];	// The P means padding.
+struct EsFSSuperblockP {
+	EsFSSuperblock d;
+	char p[ESFS_BOOT_SUPER_BLOCK_SIZE - sizeof(EsFSSuperblock)];	// The P means padding.
 };
 
-struct GroupDescriptorP {
-	GroupDescriptor d;
-	char p[32 - sizeof(GroupDescriptor)];
+struct EsFSGroupDescriptorP {
+	EsFSGroupDescriptor d;
+	char p[32 - sizeof(EsFSGroupDescriptor)];
 };
+
+struct EsFSLoadInformation {
+	uint64_t containerBlock;
+	uint64_t positionInBlock;
+};
+
+#endif 
+
+#ifdef ESFS_IMPLEMENTATION
 
 // GLOBAL VARIABLES
 
@@ -229,9 +236,17 @@ FILE *drive;
 
 uint64_t blockSize;
 uint64_t partitionOffset;
-SuperblockP superblockP;
-Superblock *superblock = &superblockP.d;
-GroupDescriptorP *groupDescriptorTable;
+EsFSSuperblockP superblockP;
+EsFSSuperblock *superblock = &superblockP.d;
+EsFSGroupDescriptorP *groupDescriptorTable;
+
+uint8_t entryBuffer[ESFS_MAX_BLOCK_SIZE];			// Temporary buffers.
+size_t entryBufferPosition;
+uint8_t extentTableBuffer[ESFS_MAX_BLOCK_SIZE];
+
+#define ESFS_MAX_TEMP_EXTENTS (16384)
+EsFSGlobalExtent tempExtents[ESFS_MAX_TEMP_EXTENTS];		// A temporary list of the extents in a file as they are allocated.
+							// This is needed because we don't know how many extents are needed until we've allocated them.
 
 // FUNCTIONS
 
@@ -298,23 +313,23 @@ void MountVolume() {
 	// printf("Mounting volume...\n");
 
 	// Read the superblock.
-	blockSize = BOOT_SUPER_BLOCK_SIZE;
+	blockSize = ESFS_BOOT_SUPER_BLOCK_SIZE;
 	ReadBlock(1, 1, &superblockP);
 	superblock->mounted = 1;
 	WriteBlock(1, 1, &superblockP); // Save that we've mounted the volume.
 	blockSize = superblock->blockSize;
 
-	if (memcmp(superblock->signature, SIGNATURE_STRING, SIGNATURE_STRING_LENGTH)) {
+	if (memcmp(superblock->signature, ESFS_SIGNATURE_STRING, ESFS_SIGNATURE_STRING_LENGTH)) {
 		printf("Error: Superblock contained invalid signature.\n");
 		exit(1);
 	}
 
-	if (superblock->requiredReadVersion > DRIVER_VERSION) {
+	if (superblock->requiredReadVersion > ESFS_DRIVER_VERSION) {
 		printf("Error: Volume requires later driver version (%d) to read.\n", superblock->requiredReadVersion);
 		exit(1);
 	}
 
-	if (superblock->requiredWriteVersion > DRIVER_VERSION) {
+	if (superblock->requiredWriteVersion > ESFS_DRIVER_VERSION) {
 		printf("Error: Volume requires later driver version (%d) to write.\n", superblock->requiredWriteVersion);
 		exit(1);
 	}
@@ -323,25 +338,20 @@ void MountVolume() {
 	// for (int i = 0; i < 16; i++) printf("%.2X%c", superblock->identifier.d[i], i == 15 ? '\n' : '-');
 
 	// Read the group descriptor table.
-	groupDescriptorTable = (GroupDescriptorP *) malloc(superblock->gdt.count * blockSize);
+	groupDescriptorTable = (EsFSGroupDescriptorP *) malloc(superblock->gdt.count * blockSize);
 	ReadBlock(superblock->gdt.offset, superblock->gdt.count, groupDescriptorTable);
 }
 
 void UnmountVolume() {
 	// printf("Unmounting volume...\n");
 	WriteBlock(superblock->gdt.offset, superblock->gdt.count, groupDescriptorTable);
-	blockSize = BOOT_SUPER_BLOCK_SIZE;
+	blockSize = ESFS_BOOT_SUPER_BLOCK_SIZE;
 	superblock->mounted = 0;
 	WriteBlock(1, 1, &superblockP); 
 	free(groupDescriptorTable);
 }
 
-struct LoadInformation {
-	uint64_t containerBlock;
-	uint64_t positionInBlock;
-};
-
-void LoadRootDirectory(FileEntry *fileEntry, LoadInformation *loadInformation) {
+void LoadRootDirectory(EsFSFileEntry *fileEntry, EsFSLoadInformation *loadInformation) {
 	loadInformation->containerBlock = superblock->rootDirectoryFileEntry.offset;
 	loadInformation->positionInBlock = 0;
 
@@ -373,18 +383,18 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	} else if (driveSize < 256l * 1024 * 1024 * 1024 * 1024) {
 		blockSize = 8192;
 	} else {
-		blockSize = MAX_BLOCK_SIZE;
+		blockSize = ESFS_MAX_BLOCK_SIZE;
 	}
 
-	SuperblockP superblockP = {};
-	Superblock *superblock = &superblockP.d;
+	EsFSSuperblockP superblockP = {};
+	EsFSSuperblock *superblock = &superblockP.d;
 
-	memcpy(superblock->signature, SIGNATURE_STRING, SIGNATURE_STRING_LENGTH);
+	memcpy(superblock->signature, ESFS_SIGNATURE_STRING, ESFS_SIGNATURE_STRING_LENGTH);
 	memcpy(superblock->volumeName, volumeName, strlen(volumeName));
 
 	// This is the first version!
-	superblock->requiredWriteVersion = DRIVER_VERSION;
-	superblock->requiredReadVersion = DRIVER_VERSION;
+	superblock->requiredWriteVersion = ESFS_DRIVER_VERSION;
+	superblock->requiredReadVersion = ESFS_DRIVER_VERSION;
 
 	superblock->blockSize = blockSize;
 	superblock->blockCount = driveSize / superblock->blockSize;
@@ -403,12 +413,12 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 
 	superblock->blocksPerGroupExtentTable = BlocksNeededToStore(superblock->blocksPerGroup);
 
-	uint64_t blocksInGDT = BlocksNeededToStore(superblock->groupCount * sizeof(GroupDescriptorP));
+	uint64_t blocksInGDT = BlocksNeededToStore(superblock->groupCount * sizeof(EsFSGroupDescriptorP));
 	superblock->gdt.count = blocksInGDT;
 
 	// printf("Blocks in BGDT: %d\n", blocksInGDT);
 
-	uint64_t bootSuperBlocks = (2 * BOOT_SUPER_BLOCK_SIZE) / blockSize;
+	uint64_t bootSuperBlocks = (2 * ESFS_BOOT_SUPER_BLOCK_SIZE) / blockSize;
 	superblock->gdt.offset = bootSuperBlocks;
 
 	uint64_t initialBlockUsage = bootSuperBlocks	// Boot block and superblock.
@@ -431,10 +441,10 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 		exit(1);
 	}
 
-	GroupDescriptorP *descriptorTable = (GroupDescriptorP *) malloc(blocksInGDT * blockSize);
+	EsFSGroupDescriptorP *descriptorTable = (EsFSGroupDescriptorP *) malloc(blocksInGDT * blockSize);
 	memset(descriptorTable, 0, blocksInGDT * blockSize);
 
-	GroupDescriptor *firstGroup = &descriptorTable[0].d;
+	EsFSGroupDescriptor *firstGroup = &descriptorTable[0].d;
 	firstGroup->extentTable = initialBlockUsage - superblock->blocksPerGroupExtentTable; // Use the few block after the core data for the extent table of the first group.
 	firstGroup->extentCount = 1;			// 1 extent containing all the unused blocks in the group.
 	firstGroup->blocksUsed = initialBlockUsage;
@@ -443,7 +453,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 
 	// The extent table for the first group.
 	uint8_t _extent[blockSize] = {}; // TODO Stack overflow?
-	LocalExtent *extent = (LocalExtent *) &_extent;
+	EsFSLocalExtent *extent = (EsFSLocalExtent *) &_extent;
 	extent->offset = initialBlockUsage;
 	extent->count = superblock->blocksPerGroup - initialBlockUsage;
 
@@ -470,8 +480,8 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	free(descriptorTable);
 }
 
-void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBlocks, LoadInformation *dataLoadInformation);
-void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
+void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, EsFSLoadInformation *dataLoadInformation);
+void AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
 
 void FormatVolume(size_t driveSize, char *volumeName, void *kernelData, uint64_t kernelDataLength) {
 	// Setup the superblock, group table and the first group.
@@ -484,34 +494,34 @@ void FormatVolume(size_t driveSize, char *volumeName, void *kernelData, uint64_t
 	{
 		EntryBufferReset();
 
-		FileEntry *entry = (FileEntry *) (entryBuffer + entryBufferPosition);
+		EsFSFileEntry *entry = (EsFSFileEntry *) (entryBuffer + entryBufferPosition);
 		GenerateUniqueIdentifier(entry->identifier);
-		entry->fileType = FILE_TYPE_DIRECTORY;
-		memcpy(&entry->signature, FILE_ENTRY_SIGNATURE, strlen(FILE_ENTRY_SIGNATURE));
-		entryBufferPosition += sizeof(FileEntry);
+		entry->fileType = ESFS_FILE_TYPE_DIRECTORY;
+		memcpy(&entry->signature, ESFS_FILE_ENTRY_SIGNATURE, strlen(ESFS_FILE_ENTRY_SIGNATURE));
+		entryBufferPosition += sizeof(EsFSFileEntry);
 
-		AttributeFileSecurity *security = (AttributeFileSecurity *) (entryBuffer + entryBufferPosition);
-		security->header.type = ATTRIBUTE_FILE_SECURITY;
-		security->header.size = sizeof(AttributeFileSecurity);
+		EsFSAttributeFileSecurity *security = (EsFSAttributeFileSecurity *) (entryBuffer + entryBufferPosition);
+		security->header.type = ESFS_ATTRIBUTE_FILE_SECURITY;
+		security->header.size = sizeof(EsFSAttributeFileSecurity);
 		entryBufferPosition += security->header.size;
 
-		AttributeFileData *data = (AttributeFileData *) (entryBuffer + entryBufferPosition);
-		data->header.type = ATTRIBUTE_FILE_DATA;
-		data->header.size = sizeof(AttributeFileData);
-		data->stream = STREAM_DEFAULT;
-		data->indirection = DATA_DIRECT;
+		EsFSAttributeFileData *data = (EsFSAttributeFileData *) (entryBuffer + entryBufferPosition);
+		data->header.type = ESFS_ATTRIBUTE_FILE_DATA;
+		data->header.size = sizeof(EsFSAttributeFileData);
+		data->stream = ESFS_STREAM_DEFAULT;
+		data->indirection = ESFS_DATA_DIRECT;
 		entryBufferPosition += data->header.size;
 
-		AttributeFileDirectory *directory = (AttributeFileDirectory *) (entryBuffer + entryBufferPosition);
-		directory->header.type = ATTRIBUTE_FILE_DIRECTORY;
-		directory->header.size = sizeof(AttributeFileDirectory);
+		EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) (entryBuffer + entryBufferPosition);
+		directory->header.type = ESFS_ATTRIBUTE_FILE_DIRECTORY;
+		directory->header.size = sizeof(EsFSAttributeFileDirectory);
 		directory->itemsInDirectory = 0;
 		directory->spaceAvailableInLastBlock = 0;
 		entryBufferPosition += directory->header.size;
 
-		AttributeHeader *end = (AttributeHeader *) (entryBuffer + entryBufferPosition);
-		end->type = ATTRIBUTE_LIST_END;
-		end->size = sizeof(AttributeHeader);
+		EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
+		end->type = ESFS_ATTRIBUTE_LIST_END;
+		end->size = sizeof(EsFSAttributeHeader);
 		entryBufferPosition += end->size;
 
 		if (entryBufferPosition > blockSize) {
@@ -526,25 +536,25 @@ void FormatVolume(size_t driveSize, char *volumeName, void *kernelData, uint64_t
 	{
 		EntryBufferReset();
 
-		FileEntry *entry = (FileEntry *) (entryBuffer + entryBufferPosition);
+		EsFSFileEntry *entry = (EsFSFileEntry *) (entryBuffer + entryBufferPosition);
 		GenerateUniqueIdentifier(entry->identifier);
-		entry->fileType = FILE_TYPE_DIRECTORY;
-		memcpy(&entry->signature, FILE_ENTRY_SIGNATURE, strlen(FILE_ENTRY_SIGNATURE));
-		entryBufferPosition += sizeof(FileEntry);
+		entry->fileType = ESFS_FILE_TYPE_DIRECTORY;
+		memcpy(&entry->signature, ESFS_FILE_ENTRY_SIGNATURE, strlen(ESFS_FILE_ENTRY_SIGNATURE));
+		entryBufferPosition += sizeof(EsFSFileEntry);
 
-		AttributeFileData *data = (AttributeFileData *) (entryBuffer + entryBufferPosition);
-		data->header.type = ATTRIBUTE_FILE_DATA;
-		data->header.size = sizeof(AttributeFileData);
-		data->stream = STREAM_DEFAULT;
-		data->indirection = DATA_DIRECT;
+		EsFSAttributeFileData *data = (EsFSAttributeFileData *) (entryBuffer + entryBufferPosition);
+		data->header.type = ESFS_ATTRIBUTE_FILE_DATA;
+		data->header.size = sizeof(EsFSAttributeFileData);
+		data->stream = ESFS_STREAM_DEFAULT;
+		data->indirection = ESFS_DATA_DIRECT;
 		entryBufferPosition += data->header.size;
-		LoadInformation dataLoadInformation;
+		EsFSLoadInformation dataLoadInformation;
 		dataLoadInformation.containerBlock = superblock->kernelFileEntry.offset;
 		dataLoadInformation.positionInBlock = 0;
 
-		AttributeHeader *end = (AttributeHeader *) (entryBuffer + entryBufferPosition);
-		end->type = ATTRIBUTE_LIST_END;
-		end->size = sizeof(AttributeHeader);
+		EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
+		end->type = ESFS_ATTRIBUTE_LIST_END;
+		end->size = sizeof(EsFSAttributeHeader);
 		entryBufferPosition += end->size;
 
 		if (entryBufferPosition > 512) {
@@ -561,19 +571,19 @@ void FormatVolume(size_t driveSize, char *volumeName, void *kernelData, uint64_t
 	UnmountVolume();
 }
 
-AttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList) {
+EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList) {
 	uint8_t *attributeList = (uint8_t *) _attributeList;
-	AttributeHeader *header = (AttributeHeader *) attributeList;
+	EsFSAttributeHeader *header = (EsFSAttributeHeader *) attributeList;
 
-	while (header->type != ATTRIBUTE_LIST_END) {
+	while (header->type != ESFS_ATTRIBUTE_LIST_END) {
 		if (header->type == attribute) {
 			return header;
 		} else {
-			header = (AttributeHeader *) (attributeList += header->size);
+			header = (EsFSAttributeHeader *) (attributeList += header->size);
 		}
 	}
 
-	if (attribute == ATTRIBUTE_LIST_END) {
+	if (attribute == ESFS_ATTRIBUTE_LIST_END) {
 		return header;
 	}
 
@@ -588,7 +598,7 @@ uint16_t GetBlocksInGroup(uint64_t group) {
 	}
 }
 
-GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
+EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	// TODO Optimise this function.
 	// 	- Cache extent tables.
 
@@ -597,14 +607,14 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	// printf("Allocating extent for %d blocks....\n", desiredBlocks);
 
 	for (uint64_t blockGroup = localGroup; groupsSearched < superblock->groupCount; blockGroup = (blockGroup + 1) % superblock->groupCount, groupsSearched++) {
-		GroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
+		EsFSGroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
 
 		if (descriptor->blocksUsed == GetBlocksInGroup(blockGroup)) {
 			continue;
 		} 
 
-		if (descriptor->extentCount * sizeof(LocalExtent) > MAX_BLOCK_SIZE) {
-			// This shouldn't happen as long as the number of blocks in a group does not exceed MAX_BLOCK_SIZE.
+		if (descriptor->extentCount * sizeof(EsFSLocalExtent) > ESFS_MAX_BLOCK_SIZE) {
+			// This shouldn't happen as long as the number of blocks in a group does not exceed ESFS_MAX_BLOCK_SIZE.
 			printf("Error: Extent table larger than expected.\n");
 			exit(1);
 		}
@@ -615,18 +625,18 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 			descriptor->extentCount = 1;
 			descriptor->blocksUsed = superblock->blocksPerGroupExtentTable;
 
-			LocalExtent *extent = (LocalExtent *) extentTableBuffer;
+			EsFSLocalExtent *extent = (EsFSLocalExtent *) extentTableBuffer;
 			extent->offset = superblock->blocksPerGroupExtentTable; 
 			extent->count = GetBlocksInGroup(blockGroup) - superblock->blocksPerGroupExtentTable;
 
 			// The table is saved at the end of the function.
 		} else {
-			ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(LocalExtent)), extentTableBuffer);
+			ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
 		}
 
 		uint16_t largestSeenIndex = 0;
-		LocalExtent *extentTable = (LocalExtent *) extentTableBuffer;
-		GlobalExtent extent;
+		EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
+		EsFSGlobalExtent extent;
 
 		// First, look for an extent with enough size for the whole allocation.
 		for (uint16_t i = 0; i < descriptor->extentCount; i++) {
@@ -661,7 +671,7 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 		descriptor->blocksUsed += extent.count;
 		superblock->blocksUsed += extent.count;
 
-		WriteBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(LocalExtent)), extentTableBuffer);
+		WriteBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
 
 		// printf("Allocated extent: %d -> %d\n", extent.offset, extent.offset + extent.count - 1);
 
@@ -673,7 +683,7 @@ GlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	exit(1);
 }
 
-void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
+void AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
 	// TODO Access multiple blocks at a time.
 	// TODO Optimise how the extents are calculated.
 	// TODO Check that we're in valid stream bounds.
@@ -681,7 +691,7 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 	
 	if (!size) return;
 
-	if (data->indirection == DATA_DIRECT) {
+	if (data->indirection == ESFS_DATA_DIRECT) {
 		if (write) {
 			memcpy(data->direct + offset, _buffer, size);
 		} else {
@@ -696,14 +706,14 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 
 	uint8_t *buffer = (uint8_t *) _buffer;
 
-	GlobalExtent *i2ExtentList = nullptr;
+	EsFSGlobalExtent *i2ExtentList = nullptr;
 
-	if (data->indirection == DATA_INDIRECT_2) {
-		i2ExtentList = (GlobalExtent *) malloc(BlocksNeededToStore(data->extentCount * sizeof(GlobalExtent)) * blockSize);
+	if (data->indirection == ESFS_DATA_INDIRECT_2) {
+		i2ExtentList = (EsFSGlobalExtent *) malloc(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * blockSize);
 
-		for (int i = 0; i < INDIRECT_2_EXTENTS; i++) {
+		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
 			if (data->indirect2[i]) {
-				ReadBlock(data->indirect2[i], 1, i2ExtentList + i * (blockSize / sizeof(GlobalExtent)));
+				ReadBlock(data->indirect2[i], 1, i2ExtentList + i * (blockSize / sizeof(EsFSGlobalExtent)));
 			}
 		}
 	}
@@ -715,7 +725,7 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 		uint64_t globalBlock = 0;
 
 		switch (data->indirection) {
-			case DATA_INDIRECT: {
+			case ESFS_DATA_INDIRECT: {
 				uint64_t p = 0;
 
 				for (int i = 0; i < data->extentCount; i++) {
@@ -728,7 +738,7 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 				}
 			} break;	
 
-			case DATA_INDIRECT_2: {
+			case ESFS_DATA_INDIRECT_2: {
 				uint64_t p = 0;
 
 				for (int i = 0; i < data->extentCount; i++) {
@@ -786,7 +796,7 @@ void AccessStream(AttributeFileData *data, uint64_t offset, uint64_t size, void 
 	free(i2ExtentList);
 }
 
-void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBlocks, LoadInformation *dataLoadInformation) {
+void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, EsFSLoadInformation *dataLoadInformation) {
 	uint64_t oldSize = data->size;
 	data->size = newSize;
 
@@ -807,27 +817,27 @@ void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBl
 	}
 
 	uint8_t wasDirect = false;
-	uint8_t directTemporary[DIRECT_BYTES];
+	uint8_t directTemporary[ESFS_DIRECT_BYTES];
 
-	if (newSize > DIRECT_BYTES && data->indirection == DATA_DIRECT) {
+	if (newSize > ESFS_DIRECT_BYTES && data->indirection == ESFS_DATA_DIRECT) {
 		// Change from direct to indirect.
-		data->indirection = DATA_INDIRECT;
+		data->indirection = ESFS_DATA_INDIRECT;
 		memcpy(directTemporary, data->direct, oldSize);
 		wasDirect = true;
 		oldBlocks = 0;
-	} else if (data->indirection == DATA_DIRECT) {
+	} else if (data->indirection == ESFS_DATA_DIRECT) {
 		return;
 	}
 
 	uint64_t increaseSize = newSize - oldSize;
 	uint64_t increaseBlocks = newBlocks - oldBlocks;
 
-	GlobalExtent *newExtentList = nullptr;
-	uint64_t extentListMaxSize = INDIRECT_2_EXTENTS * (blockSize / sizeof(GlobalExtent));
+	EsFSGlobalExtent *newExtentList = nullptr;
+	uint64_t extentListMaxSize = ESFS_INDIRECT_2_EXTENTS * (blockSize / sizeof(EsFSGlobalExtent));
 	uint64_t firstModifiedExtentListBlock = 0;
 
 	while (increaseBlocks) {
-		GlobalExtent newExtent = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, increaseBlocks);
+		EsFSGlobalExtent newExtent = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, increaseBlocks);
 
 		if (clearNewBlocks) {
 			void *zeroData = malloc(blockSize * newExtent.count);
@@ -839,27 +849,27 @@ void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBl
 		increaseBlocks -= newExtent.count;
 
 		switch (data->indirection) {
-			case DATA_INDIRECT: {
-				if (data->extentCount != INDIRECT_EXTENTS) {
+			case ESFS_DATA_INDIRECT: {
+				if (data->extentCount != ESFS_INDIRECT_EXTENTS) {
 				        data->indirect[data->extentCount] = newExtent;
 				        data->extentCount++;
 				} else {
-					// We need to convert this to DATA_INDIRECT_2.
-					data->indirection = DATA_INDIRECT_2;
+					// We need to convert this to ESFS_DATA_INDIRECT_2.
+					data->indirection = ESFS_DATA_INDIRECT_2;
 					data->extentCount = 4;
-					newExtentList = (GlobalExtent *) malloc(extentListMaxSize * sizeof(GlobalExtent));
-					memcpy(newExtentList, data->indirect, INDIRECT_EXTENTS * sizeof(GlobalExtent));
+					newExtentList = (EsFSGlobalExtent *) malloc(extentListMaxSize * sizeof(EsFSGlobalExtent));
+					memcpy(newExtentList, data->indirect, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
 					newExtentList[data->extentCount++] = newExtent;
-					memset(data->indirect, 0, INDIRECT_EXTENTS * sizeof(GlobalExtent));
+					memset(data->indirect, 0, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
 				}
 			} break;
 
-			case DATA_INDIRECT_2: {
+			case ESFS_DATA_INDIRECT_2: {
 				if (!newExtentList) {
-					newExtentList = (GlobalExtent *) malloc(extentListMaxSize * sizeof(GlobalExtent));
+					newExtentList = (EsFSGlobalExtent *) malloc(extentListMaxSize * sizeof(EsFSGlobalExtent));
 
-					firstModifiedExtentListBlock = BlocksNeededToStore(data->extentCount * sizeof(GlobalExtent)) - 1;
-					ReadBlock(data->indirect2[firstModifiedExtentListBlock], 1, newExtentList + firstModifiedExtentListBlock * (blockSize / sizeof(GlobalExtent)));
+					firstModifiedExtentListBlock = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) - 1;
+					ReadBlock(data->indirect2[firstModifiedExtentListBlock], 1, newExtentList + firstModifiedExtentListBlock * (blockSize / sizeof(EsFSGlobalExtent)));
 				}
 
 				newExtentList[data->extentCount++] = newExtent;
@@ -873,14 +883,14 @@ void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBl
 	}
 
 	if (newExtentList) {
-		uint64_t blocksNeeded = BlocksNeededToStore(data->extentCount * sizeof(GlobalExtent));
+		uint64_t blocksNeeded = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent));
 
 		for (int i = firstModifiedExtentListBlock; i < blocksNeeded; i++) {
 			if (!data->indirect2[i]) {
 				data->indirect2[i] = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, 1).offset;
 			}
 
-			WriteBlock(data->indirect2[i], 1, newExtentList + i * (blockSize / sizeof(GlobalExtent)));
+			WriteBlock(data->indirect2[i], 1, newExtentList + i * (blockSize / sizeof(EsFSGlobalExtent)));
 		}
 
 		free(newExtentList);
@@ -892,9 +902,9 @@ void ResizeDataStream(AttributeFileData *data, uint64_t newSize, bool clearNewBl
 	}
 }
 
-bool SearchDirectory(FileEntry *fileEntry, FileEntry *output, char *searchName, size_t nameLength, LoadInformation *loadInformation) {
-	AttributeFileDirectory *directory = (AttributeFileDirectory *) FindAttribute(ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
-	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+bool SearchDirectory(EsFSFileEntry *fileEntry, EsFSFileEntry *output, char *searchName, size_t nameLength, EsFSLoadInformation *loadInformation) {
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (!directory) {
 		printf("Error: Directory did not have a directory attribute.\n");
@@ -920,7 +930,7 @@ bool SearchDirectory(FileEntry *fileEntry, FileEntry *output, char *searchName, 
 	AccessStream(data, blockIndex, blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 
 	size_t fileEntryLength;
-	FileEntry *returnValue = nullptr;
+	EsFSFileEntry *returnValue = nullptr;
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
 		if (blockPosition == blockSize || !directoryBuffer[blockPosition]) {
@@ -931,25 +941,25 @@ bool SearchDirectory(FileEntry *fileEntry, FileEntry *output, char *searchName, 
 			AccessStream(data, blockIndex * blockSize, blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 		}
 
-		DirectoryEntry *entry = (DirectoryEntry *) (directoryBuffer + blockPosition);
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
 
-		if (memcmp(entry->signature, DIRECTORY_ENTRY_SIGNATURE, strlen(DIRECTORY_ENTRY_SIGNATURE))) {
+		if (memcmp(entry->signature, ESFS_DIRECTORY_ENTRY_SIGNATURE, strlen(ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
 			printf("Error: Directory entry had invalid signature.\n");
 			exit(1);
 		}
 
-		AttributeDirectoryName *name = (AttributeDirectoryName *) FindAttribute(ATTRIBUTE_DIRECTORY_NAME, entry + 1);
+		EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_NAME, entry + 1);
 		if (!name) goto nextFile;
 		if (name->nameLength != nameLength) goto nextFile;
 		if (memcmp(name + 1, searchName, nameLength)) goto nextFile;
 
 		{
-			AttributeDirectoryFile *file = (AttributeDirectoryFile *) FindAttribute(ATTRIBUTE_DIRECTORY_FILE, entry + 1);
+			EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, entry + 1);
 
 			if (file) {
-				returnValue = (FileEntry *) (file + 1);
+				returnValue = (EsFSFileEntry *) (file + 1);
 				loadInformation->positionInBlock = (uint64_t) returnValue - (uint64_t) directoryBuffer;
-				fileEntryLength = file->header.size - sizeof(AttributeDirectoryFile);
+				fileEntryLength = file->header.size - sizeof(EsFSAttributeDirectoryFile);
 			} else {
 				// There isn't a file associated with this directory entry.
 			}
@@ -958,7 +968,7 @@ bool SearchDirectory(FileEntry *fileEntry, FileEntry *output, char *searchName, 
 		}
 
 		nextFile:
-		AttributeHeader *end = FindAttribute(ATTRIBUTE_LIST_END, entry + 1);
+		EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
 		blockPosition += end->size + (uintptr_t) end - (uintptr_t) entry;
 	}
 
@@ -977,7 +987,7 @@ bool SearchDirectory(FileEntry *fileEntry, FileEntry *output, char *searchName, 
 	}
 }
 
-void GetEntryForPath(char *path, FileEntry *directory, LoadInformation *loadInformation) {
+void GetEntryForPath(char *path, EsFSFileEntry *directory, EsFSLoadInformation *loadInformation) {
 	LoadRootDirectory(directory, loadInformation);
 
 	if (path[0] != '/') {
@@ -997,7 +1007,7 @@ void GetEntryForPath(char *path, FileEntry *directory, LoadInformation *loadInfo
 		while (path[nameLength] && path[nameLength] != '/') nameLength++;
 		if (!nameLength) break;
 
-		if (!SearchDirectory(repositionDirectory ? (FileEntry *) ((uint8_t *) directory + loadInformation->positionInBlock) : directory, directory, path, nameLength, loadInformation)) {
+		if (!SearchDirectory(repositionDirectory ? (EsFSFileEntry *) ((uint8_t *) directory + loadInformation->positionInBlock) : directory, directory, path, nameLength, loadInformation)) {
 			printf("Error: Could not resolve path.\n");
 			exit(1);
 		}
@@ -1008,14 +1018,18 @@ void GetEntryForPath(char *path, FileEntry *directory, LoadInformation *loadInfo
 	}
 }
 
-void ResizeFile(char *path, uint64_t size) {
-	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	FileEntry *originalFileEntry = fileEntry;
-	LoadInformation information;
-	GetEntryForPath(path, fileEntry, &information);
-	fileEntry = (FileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
+#endif 
 
-	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+#ifdef ESFS_UTITILES
+
+void ResizeFile(char *path, uint64_t size) {
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) malloc(blockSize);
+	EsFSFileEntry *originalFileEntry = fileEntry;
+	EsFSLoadInformation information;
+	GetEntryForPath(path, fileEntry, &information);
+	fileEntry = (EsFSFileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
+
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (data) {
 		ResizeDataStream(data, size, true, &information);
@@ -1039,14 +1053,14 @@ void AddFile(char *path, char *name, uint16_t type) {
 		exit(1);
 	}
 
-	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	FileEntry *originalFileEntry = fileEntry;
-	LoadInformation loadInformation;
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) malloc(blockSize);
+	EsFSFileEntry *originalFileEntry = fileEntry;
+	EsFSLoadInformation loadInformation;
 	GetEntryForPath(path, fileEntry, &loadInformation);
-	fileEntry = (FileEntry *) ((uint8_t *) fileEntry + loadInformation.positionInBlock);
+	fileEntry = (EsFSFileEntry *) ((uint8_t *) fileEntry + loadInformation.positionInBlock);
 
 	{
-		LoadInformation temp;
+		EsFSLoadInformation temp;
 		if (SearchDirectory(fileEntry, nullptr, name, strlen(name), &temp)) {
 			printf("Error: File already exists in the directory.\n");
 			exit(1);
@@ -1057,59 +1071,59 @@ void AddFile(char *path, char *name, uint16_t type) {
 		EntryBufferReset();
 
 		// Step 1: Make the new directory entry.
-		DirectoryEntry *entry = (DirectoryEntry *) (entryBuffer + entryBufferPosition);
-		memcpy(entry->signature, DIRECTORY_ENTRY_SIGNATURE, strlen(DIRECTORY_ENTRY_SIGNATURE));
-		entryBufferPosition += sizeof(DirectoryEntry);
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (entryBuffer + entryBufferPosition);
+		memcpy(entry->signature, ESFS_DIRECTORY_ENTRY_SIGNATURE, strlen(ESFS_DIRECTORY_ENTRY_SIGNATURE));
+		entryBufferPosition += sizeof(EsFSDirectoryEntry);
 
 		char *_n = name;
-		AttributeDirectoryName *name = (AttributeDirectoryName *) (entryBuffer + entryBufferPosition);
-		name->header.type = ATTRIBUTE_DIRECTORY_NAME;
-		name->header.size = strlen(_n) + sizeof(AttributeDirectoryName);
+		EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) (entryBuffer + entryBufferPosition);
+		name->header.type = ESFS_ATTRIBUTE_DIRECTORY_NAME;
+		name->header.size = strlen(_n) + sizeof(EsFSAttributeDirectoryName);
 		name->nameLength = strlen(_n);
 		memcpy(name + 1, _n, strlen(_n));
 		entryBufferPosition += name->header.size;
 
-		AttributeDirectoryFile *file = (AttributeDirectoryFile *) (entryBuffer + entryBufferPosition);
-		file->header.type = ATTRIBUTE_DIRECTORY_FILE;
-		entryBufferPosition += sizeof(AttributeDirectoryFile);
+		EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) (entryBuffer + entryBufferPosition);
+		file->header.type = ESFS_ATTRIBUTE_DIRECTORY_FILE;
+		entryBufferPosition += sizeof(EsFSAttributeDirectoryFile);
 		uint64_t temp = entryBufferPosition;
 
 		{
 			// Step 2: Make the new file entry.
 
-			FileEntry *entry = (FileEntry *) (entryBuffer + entryBufferPosition);
+			EsFSFileEntry *entry = (EsFSFileEntry *) (entryBuffer + entryBufferPosition);
 			GenerateUniqueIdentifier(entry->identifier);
 			entry->fileType = type;
-			memcpy(&entry->signature, FILE_ENTRY_SIGNATURE, strlen(FILE_ENTRY_SIGNATURE));
-			entryBufferPosition += sizeof(FileEntry);
+			memcpy(&entry->signature, ESFS_FILE_ENTRY_SIGNATURE, strlen(ESFS_FILE_ENTRY_SIGNATURE));
+			entryBufferPosition += sizeof(EsFSFileEntry);
 
-			AttributeFileData *data = (AttributeFileData *) (entryBuffer + entryBufferPosition);
-			data->header.type = ATTRIBUTE_FILE_DATA;
-			data->header.size = sizeof(AttributeFileData);
-			data->stream = STREAM_DEFAULT;
-			data->indirection = DATA_DIRECT;
+			EsFSAttributeFileData *data = (EsFSAttributeFileData *) (entryBuffer + entryBufferPosition);
+			data->header.type = ESFS_ATTRIBUTE_FILE_DATA;
+			data->header.size = sizeof(EsFSAttributeFileData);
+			data->stream = ESFS_STREAM_DEFAULT;
+			data->indirection = ESFS_DATA_DIRECT;
 			entryBufferPosition += data->header.size;
 
-			if (type == FILE_TYPE_DIRECTORY) {
-				AttributeFileDirectory *directory = (AttributeFileDirectory *) (entryBuffer + entryBufferPosition);
-				directory->header.type = ATTRIBUTE_FILE_DIRECTORY;
-				directory->header.size = sizeof(AttributeFileDirectory);
+			if (type == ESFS_FILE_TYPE_DIRECTORY) {
+				EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) (entryBuffer + entryBufferPosition);
+				directory->header.type = ESFS_ATTRIBUTE_FILE_DIRECTORY;
+				directory->header.size = sizeof(EsFSAttributeFileDirectory);
 				directory->itemsInDirectory = 0;
 				directory->spaceAvailableInLastBlock = 0;
 				entryBufferPosition += directory->header.size;
 			}
 
-			AttributeHeader *end = (AttributeHeader *) (entryBuffer + entryBufferPosition);
-			end->type = ATTRIBUTE_LIST_END;
-			end->size = sizeof(AttributeHeader);
+			EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
+			end->type = ESFS_ATTRIBUTE_LIST_END;
+			end->size = sizeof(EsFSAttributeHeader);
 			entryBufferPosition += end->size;
 		}
 
-		file->header.size = sizeof(AttributeDirectoryFile) + entryBufferPosition - temp;
+		file->header.size = sizeof(EsFSAttributeDirectoryFile) + entryBufferPosition - temp;
 
-		AttributeHeader *end = (AttributeHeader *) (entryBuffer + entryBufferPosition);
-		end->type = ATTRIBUTE_LIST_END;
-		end->size = sizeof(AttributeHeader);
+		EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
+		end->type = ESFS_ATTRIBUTE_LIST_END;
+		end->size = sizeof(EsFSAttributeHeader);
 		entryBufferPosition += end->size;
 
 		if (entryBufferPosition > blockSize) {
@@ -1118,8 +1132,8 @@ void AddFile(char *path, char *name, uint16_t type) {
 		}
 	}
 
-	AttributeFileDirectory *directory = (AttributeFileDirectory *) FindAttribute(ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
-	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (!directory) {
 		printf("Error: Directory did not have a directory attribute.\n");
@@ -1155,13 +1169,13 @@ void AddFile(char *path, char *name, uint16_t type) {
 }
 
 void ReadFile(char *path, FILE *output) {
-	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	FileEntry *originalFileEntry = fileEntry;
-	LoadInformation information;
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) malloc(blockSize);
+	EsFSFileEntry *originalFileEntry = fileEntry;
+	EsFSLoadInformation information;
 	GetEntryForPath(path, fileEntry, &information);
-	fileEntry = (FileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
+	fileEntry = (EsFSFileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
 
-	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (data) {
 		uint8_t *buffer = (uint8_t *) malloc(data->size);
@@ -1210,13 +1224,13 @@ void ReadFile(char *path, FILE *output) {
 }
 
 void WriteFile(char *path, void *bufferData, uint64_t dataLength) {
-	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	FileEntry *originalFileEntry = fileEntry;
-	LoadInformation information;
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) malloc(blockSize);
+	EsFSFileEntry *originalFileEntry = fileEntry;
+	EsFSLoadInformation information;
 	GetEntryForPath(path, fileEntry, &information);
-	fileEntry = (FileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
+	fileEntry = (EsFSFileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
 
-	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (data) {
 		if (data->size != dataLength) {
@@ -1241,7 +1255,7 @@ void AvailableExtents(uint64_t group) {
 		exit(1);
 	}
 
-	GroupDescriptor *descriptor = &groupDescriptorTable[group].d;
+	EsFSGroupDescriptor *descriptor = &groupDescriptorTable[group].d;
 	
 	if (!descriptor->extentTable) {
 		printf("(group not yet initialised)\n");
@@ -1249,8 +1263,8 @@ void AvailableExtents(uint64_t group) {
 		return;
 	}
 
-	ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(LocalExtent)), extentTableBuffer);
-	LocalExtent *extentTable = (LocalExtent *) extentTableBuffer;
+	ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
+	EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
 
 	for (uint16_t i = 0; i < descriptor->extentCount; i++) {
 		printf("local extent: offset %d (global %d), count = %d\n", extentTable[i].offset, extentTable[i].offset + group * superblock->blocksPerGroup, extentTable[i].count);
@@ -1261,14 +1275,14 @@ void Tree(char *path, int indent) {
 	for (int i = 0; i < indent; i++) printf(" ");
 	printf("--> %s\n", path);
 
-	FileEntry *fileEntry = (FileEntry *) malloc(blockSize);
-	FileEntry *originalFileEntry = fileEntry;
-	LoadInformation information;
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) malloc(blockSize);
+	EsFSFileEntry *originalFileEntry = fileEntry;
+	EsFSLoadInformation information;
 	GetEntryForPath(path, fileEntry, &information);
-	fileEntry = (FileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
+	fileEntry = (EsFSFileEntry *) ((uint8_t *) fileEntry + information.positionInBlock);
 
-	AttributeFileDirectory *directory = (AttributeFileDirectory *) FindAttribute(ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
-	AttributeFileData *data = (AttributeFileData *) FindAttribute(ATTRIBUTE_FILE_DATA, fileEntry + 1);
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (!directory) {
 		printf("Error: Directory did not have a directory attribute.\n");
@@ -1289,25 +1303,25 @@ void Tree(char *path, int indent) {
 			directoryBufferPosition++;
 		}
 
-		DirectoryEntry *entry = (DirectoryEntry *) directoryBufferPosition;
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) directoryBufferPosition;
 
-		if (memcmp(entry->signature, DIRECTORY_ENTRY_SIGNATURE, strlen(DIRECTORY_ENTRY_SIGNATURE))) {
+		if (memcmp(entry->signature, ESFS_DIRECTORY_ENTRY_SIGNATURE, strlen(ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
 			printf("Error: Directory entry had invalid signature.\n");
 			exit(1);
 		}
 
-		directoryBufferPosition += sizeof(DirectoryEntry);
+		directoryBufferPosition += sizeof(EsFSDirectoryEntry);
 		for (int i = 0; i < indent; i++) printf(" ");
 
 		char *fullPath;
 
-		AttributeHeader *attribute = (AttributeHeader *) directoryBufferPosition;
-		while (attribute->type != ATTRIBUTE_LIST_END) {
-			attribute = (AttributeHeader *) directoryBufferPosition;
+		EsFSAttributeHeader *attribute = (EsFSAttributeHeader *) directoryBufferPosition;
+		while (attribute->type != ESFS_ATTRIBUTE_LIST_END) {
+			attribute = (EsFSAttributeHeader *) directoryBufferPosition;
 
 			switch (attribute->type) {
-				case ATTRIBUTE_DIRECTORY_NAME: {
-					AttributeDirectoryName *name = (AttributeDirectoryName *) attribute;
+				case ESFS_ATTRIBUTE_DIRECTORY_NAME: {
+					EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) attribute;
 					printf("    %.*s ", name->nameLength, name + 1);
 					for (int i = 0; i < 28 - name->nameLength - indent; i++) printf(" ");
 					fullPath = (char *) malloc(name->nameLength + strlen(path) + 2);
@@ -1317,11 +1331,11 @@ void Tree(char *path, int indent) {
 					fullPath[name->nameLength + a] = 0;
 				} break;
 
-				case ATTRIBUTE_DIRECTORY_FILE: {
-					AttributeDirectoryFile *file = (AttributeDirectoryFile *) attribute;
-					FileEntry *entry = (FileEntry *) (file + 1);
+				case ESFS_ATTRIBUTE_DIRECTORY_FILE: {
+					EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) attribute;
+					EsFSFileEntry *entry = (EsFSFileEntry *) (file + 1);
 
-					if (memcmp(entry->signature, FILE_ENTRY_SIGNATURE, strlen(FILE_ENTRY_SIGNATURE))) {
+					if (memcmp(entry->signature, ESFS_FILE_ENTRY_SIGNATURE, strlen(ESFS_FILE_ENTRY_SIGNATURE))) {
 						printf("Error: File entry had invalid signature.\n");
 						exit(1);
 					}
@@ -1329,23 +1343,23 @@ void Tree(char *path, int indent) {
 					for (int i = 0; i < 16; i++) printf("%.2X%c", entry->identifier.d[i], i == 15 ? ' ' : '-');
 					printf("  ");
 
-					printf("%s ", entry->fileType == FILE_TYPE_FILE ? "file  " : 
-							(entry->fileType == FILE_TYPE_DIRECTORY ? "dir   " : 
-								(entry->fileType == FILE_TYPE_SYMBOLIC_LINK ? "s-link" : "unrecognised")));
+					printf("%s ", entry->fileType == ESFS_FILE_TYPE_FILE ? "file  " : 
+							(entry->fileType == ESFS_FILE_TYPE_DIRECTORY ? "dir   " : 
+								(entry->fileType == ESFS_FILE_TYPE_SYMBOLIC_LINK ? "s-link" : "unrecognised")));
 					printf("  ");
 
 					// printf("%d  ", entry->modificationTime);
 
-					if (entry->fileType != FILE_TYPE_DIRECTORY) {
+					if (entry->fileType != ESFS_FILE_TYPE_DIRECTORY) {
 						uint8_t *attributePosition = (uint8_t *) (entry + 1);
-						AttributeHeader *attribute = (AttributeHeader *) attributePosition;
+						EsFSAttributeHeader *attribute = (EsFSAttributeHeader *) attributePosition;
 
-						while (attribute->type != ATTRIBUTE_LIST_END) {
-							attribute = (AttributeHeader *) attributePosition;
+						while (attribute->type != ESFS_ATTRIBUTE_LIST_END) {
+							attribute = (EsFSAttributeHeader *) attributePosition;
 
 							switch (attribute->type) {
-								case ATTRIBUTE_FILE_DATA: {
-									printf("%d bytes", ((AttributeFileData *) attribute)->size);
+								case ESFS_ATTRIBUTE_FILE_DATA: {
+									printf("%d bytes", ((EsFSAttributeFileData *) attribute)->size);
 								} break;
 							}
 
@@ -1355,12 +1369,12 @@ void Tree(char *path, int indent) {
 
 					printf("\n");
 
-					if (entry->fileType == FILE_TYPE_DIRECTORY) {
+					if (entry->fileType == ESFS_FILE_TYPE_DIRECTORY) {
 						Tree(fullPath, indent + 4);
 					}
 				} break;
 
-				case ATTRIBUTE_LIST_END: break;
+				case ESFS_ATTRIBUTE_LIST_END: break;
 
 				default: {
 					// Unrecognised attribute.
@@ -1399,7 +1413,7 @@ void Import(char *target, char *source) {
 				struct stat s = {};
 				stat(nameBuffer2, &s);
 				if (S_ISDIR(s.st_mode)) {
-					AddFile(target, dir->d_name, FILE_TYPE_DIRECTORY);
+					AddFile(target, dir->d_name, ESFS_FILE_TYPE_DIRECTORY);
 					strcat(nameBuffer1, "/");
 					strcat(nameBuffer2, "/");
 					Import(nameBuffer1, nameBuffer2);
@@ -1416,7 +1430,7 @@ void Import(char *target, char *source) {
 						fread(data, 1, fileLength, input);
 						fclose(input);
 
-						AddFile(target, dir->d_name, FILE_TYPE_FILE);
+						AddFile(target, dir->d_name, ESFS_FILE_TYPE_FILE);
 						ResizeFile(nameBuffer1, fileLength);
 						WriteFile(nameBuffer1, data, fileLength);
 
@@ -1464,7 +1478,7 @@ int main(int argc, char **argv) {
 		CHECK_ARGS(3, "format <size> <name> <kernel>");
 		uint64_t driveSize = ParseSizeString(argv[0]);
 
-		if (driveSize < DRIVE_MINIMUM_SIZE) {
+		if (driveSize < ESFS_DRIVE_MINIMUM_SIZE) {
 			printf("Error: Cannot create a drive of %d bytes (too small).\n", driveSize);
 			exit(1);
 		}
@@ -1474,8 +1488,8 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 
-		if (strlen(argv[1]) > MAXIMUM_VOLUME_NAME_LENGTH) {
-			printf("Error: Volume name '%s' is too long; must be <= %d bytes.\n", argv[1], MAXIMUM_VOLUME_NAME_LENGTH);
+		if (strlen(argv[1]) > ESFS_MAXIMUM_VOLUME_NAME_LENGTH) {
+			printf("Error: Volume name '%s' is too long; must be <= %d bytes.\n", argv[1], ESFS_MAXIMUM_VOLUME_NAME_LENGTH);
 			exit(1);
 		}
 
@@ -1512,7 +1526,7 @@ int main(int argc, char **argv) {
 		CHECK_ARGS(3, "create <path> <name> <file/directory>");
 
 		MountVolume();
-		AddFile(argv[0], argv[1], argv[2][0] == 'f' ? FILE_TYPE_FILE : (argv[2][0] == 'd' ? FILE_TYPE_DIRECTORY : 0));
+		AddFile(argv[0], argv[1], argv[2][0] == 'f' ? ESFS_FILE_TYPE_FILE : (argv[2][0] == 'd' ? ESFS_FILE_TYPE_DIRECTORY : 0));
 		UnmountVolume();
 	} else if (IS_COMMAND("resize")) {
 		CHECK_ARGS(2, "resize <path> <size>");
@@ -1568,3 +1582,5 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
+
+#endif 

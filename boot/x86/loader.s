@@ -37,7 +37,7 @@ check_pci:
 
 enable_video_mode:
 	; Uncomment to disable video mode setting.
-	jmp	check_cpuid
+	; jmp	check_cpuid
 
 	; TODO Proper video mode checking/selection.
 	mov	ax,vesa_info >> 4

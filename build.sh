@@ -47,7 +47,7 @@ echo "Formatting drive..."
 if [ "ext2" == "$TARGET_FS" ]; then
 	cp drive2 drive
 else
-	./esfs $DRIVE_RAW $PARTITION_OFFSET format $((512 * $PARTITION_SIZE)) MyVolume bin/os/kernel
+	./esfs $DRIVE_RAW $PARTITION_OFFSET format $((512 * $PARTITION_SIZE)) "Essence HD" bin/os/kernel
 fi
 
 if [ "ext2" == "$TARGET_FS" ]; then

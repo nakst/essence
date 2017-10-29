@@ -417,10 +417,10 @@ void KernelLog(LogLevel level, const char *format, ...) {
 
 	printToTerminal = level >= MINIMUM_PRINT_LEVEL;
 
-	_KernelLog("[%z] ", 	level == LOG_INFO ? 	"INFO"
-			      : level == LOG_WARNING ? 	"WARN"
-			      : level == LOG_ERROR ? 	"ERR "
-			      : level == LOG_VERBOSE ? 	"VERB" : "");
+	_KernelLog("[%z] ", 	level == LOG_INFO ? 	" Info  "
+			      : level == LOG_WARNING ? 	"Warning"
+			      : level == LOG_ERROR ? 	" Error "
+			      : level == LOG_VERBOSE ? 	"Verbose" : "");
 
 	va_list arguments;
 	va_start(arguments, format);

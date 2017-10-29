@@ -338,6 +338,7 @@ extern "C" uint8_t OSSumBytes(uint8_t *data, size_t bytes);
 extern "C" void OSPrint(const char *format, ...);
 extern "C" size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
 extern "C" void OSHelloWorld();
+extern "C" uint8_t OSGetRandomByte();
 
 extern "C" void *memset(void *s, int c, size_t n);
 extern "C" void *memcpy(void *dest, const void *src, size_t n);
@@ -359,4 +360,6 @@ extern "C" void OSAssertionFailure();
 #define STBI_ONLY_PNG
 #define STBI_NO_LINEAR
 #include "stb_image.h"
+
+extern "C" uint64_t osRandomByteSeed;
 #endif

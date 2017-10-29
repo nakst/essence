@@ -79,6 +79,25 @@ void DeviceManager::Initialise() {
 	devicePool.Initialise(sizeof(Device));
 
 #ifdef ARCH_X86_64
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 0);
+	osRandomByteSeed += ProcessorIn8(0x71) << 0;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 2);
+	osRandomByteSeed += ProcessorIn8(0x71) << 1;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 4);
+	osRandomByteSeed += ProcessorIn8(0x71) << 2;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 6);
+	osRandomByteSeed += ProcessorIn8(0x71) << 3;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 7);
+	osRandomByteSeed += ProcessorIn8(0x71) << 4;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 8);
+	osRandomByteSeed += ProcessorIn8(0x71) << 5;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 9);
+	osRandomByteSeed += ProcessorIn8(0x71) << 6;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 10);
+	osRandomByteSeed += ProcessorIn8(0x71) << 7;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 11);
+	osRandomByteSeed += ProcessorIn8(0x71) << 8;
+
 	pci.Enumerate();
 	ps2.Initialise();
 #endif
@@ -100,12 +119,12 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 	lock.Release();
 
 	if (device->type == DEVICE_TYPE_BLOCK) {
-		uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 4, false);
+		uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 32, false);
 		Defer(OSHeapFree(information));
 
-		// Load the first 4 sectors of the drive to identify its filesystem.
+		// Load the first 32 sectors of the drive to identify its filesystem.
 		// Why don't we do this in vfs.cpp? Because C++ headers are driving me insane!!
-		bool success = device->block.Access(0, 4, DRIVE_ACCESS_READ, information);
+		bool success = device->block.Access(0, 32, DRIVE_ACCESS_READ, information);
 
 		if (!success) {
 			// We could not access the block device.
@@ -120,6 +139,15 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 			} else {
 				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid ext2 filesystem.\n", device->id);
 				OSHeapFree(filesystem);
+			}
+		} else if (((uint32_t *) information)[2048] == 0x65737345) {
+			EsFSVolume *volume = (EsFSVolume *) OSHeapAllocate(sizeof(EsFSVolume), true);
+			File *root = volume->Initialise(device);
+			if (root) {
+				vfs.RegisterFilesystem(root, FILESYSTEM_ESFS, volume);
+			} else {
+				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid EssenceFS volume.\n", device->id);
+				OSHeapFree(volume);
 			}
 		} else if (information[510] == 0x55 && information[511] == 0xAA && !device->block.sectorOffset /*Must be at start of drive*/) {
 			// Check each partition in the table.

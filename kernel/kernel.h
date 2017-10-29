@@ -162,6 +162,11 @@ struct CPULocalStorage {
 	struct InterruptContext *interruptContexts[16];
 };
 
+struct UniqueIdentifier {
+	// Don't mess with this structure, it's used in filesystems.
+	uint8_t d[16];
+};
+
 #endif
 
 #include "memory.cpp"
@@ -183,6 +188,7 @@ struct CPULocalStorage {
 
 #include "vfs.cpp"
 #include "ext2.cpp"
+#include "esfs.cpp"
 #include "ps2.cpp"
 #include "devices.cpp"
 #include "elf.cpp"

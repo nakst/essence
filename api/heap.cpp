@@ -225,3 +225,22 @@ void OSHeapFree(void *address) {
 	OSHeapAddFreeRegion(region);
 	OS_HEAP_RELEASE_MUTEX();
 }
+
+#if 0
+void *OSHeapDuplicate(void *address) {
+	if (!address) return nullptr;
+
+	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);
+	if (region->used != 0xABCD) OS_HEAP_PANIC();
+
+	if (!region->size) {
+		// The region was allocated by itself.
+		// TODO Implement this.
+		OS_HEAP_PANIC();
+	}
+
+	void *duplicate = OSHeapAllocate(region->size, false);
+	CF(CopyMemory)(duplicate, address, region->size);
+	return duplicate;
+}
+#endif

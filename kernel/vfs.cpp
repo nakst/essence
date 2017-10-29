@@ -5,18 +5,17 @@
 
 enum FilesystemType {
 	FILESYSTEM_EXT2,
+	FILESYSTEM_ESFS,
 };
 
 struct File {
 	bool Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
 
-	// Filesystem-specific data stored by the driver retained between calls.
-#define FILE_DRIVER_DATA 200
-	uint8_t driverData[FILE_DRIVER_DATA];
+	Mutex mutex;
 	uint64_t fileSize;
-	uint64_t inode; // A unique identifier of the file.
-
+	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
+	volatile size_t handles;
 };
 
 struct Filesystem {
@@ -41,9 +40,10 @@ struct VFS {
 	void Initialise();
 	void RegisterFilesystem(File *root, FilesystemType type, void *data);
 	File *OpenFile(char *name, size_t nameLength);
+	File *OpenFile(void *existingFile);
 	void CloseFile(File *file);
 
-	Pool filePool, filesystemPool, mountpointPool;
+	Pool filesystemPool, mountpointPool;
 	LinkedList filesystems, mountpoints;
 
 	bool foundBootFilesystem;
@@ -53,16 +53,21 @@ struct VFS {
 
 VFS vfs;
 
-bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
-
 #endif
 
 #ifdef IMPLEMENTATION
+
+bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
+bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 
 bool File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	switch (filesystem->type) {
 		case FILESYSTEM_EXT2: {
 			return Ext2Read(offsetBytes, sizeBytes, buffer, this);
+		} break;
+
+		case FILESYSTEM_ESFS: {
+			return EsFSRead(offsetBytes, sizeBytes, buffer, this);
 		} break;
 
 		default: {
@@ -73,16 +78,22 @@ bool File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 }
 
 void VFS::Initialise() {
-	filePool.Initialise(sizeof(File));
 	filesystemPool.Initialise(sizeof(Filesystem));
 	mountpointPool.Initialise(sizeof(Mountpoint));
 }
 
-bool Ext2FSScan(char *name, size_t nameLength, File *file, Filesystem *filesystem);
+bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem);
+bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem);
 
 void VFS::CloseFile(File *file) {
-	KernelLog(LOG_VERBOSE, "Closing file: %x\n", file);
-	vfs.filePool.Remove(file);
+	file->mutex.Acquire();
+	file->handles--;
+	bool noHandles = file->handles == 0;
+	file->mutex.Release();
+
+	if (noHandles) {
+		OSHeapFree(file);
+	}
 }
 
 File *VFS::OpenFile(char *name, size_t nameLength) {
@@ -116,9 +127,8 @@ File *VFS::OpenFile(char *name, size_t nameLength) {
 	name += mountpoint->pathLength;
 	nameLength -= mountpoint->pathLength;
 
-	File directory;
 	Filesystem *filesystem = mountpoint->filesystem;
-	CopyMemory(&directory, mountpoint->root, sizeof(File));
+	File *directory = vfs.OpenFile(mountpoint->root);
 
 	while (nameLength) {
 		char *entry = name;
@@ -142,6 +152,10 @@ File *VFS::OpenFile(char *name, size_t nameLength) {
 				result = Ext2FSScan(entry, entryLength, &directory, filesystem);
 			} break;
 
+			case FILESYSTEM_ESFS: {
+				result = EsFSScan(entry, entryLength, &directory, filesystem);
+			} break;
+
 			default: {
 				KernelPanic("VFS::OpenFile - Unimplemented filesystem type %d\n", filesystem->type);
 			} break;
@@ -152,11 +166,19 @@ File *VFS::OpenFile(char *name, size_t nameLength) {
 		} 
 	}
 
-	File *file = (File *) vfs.filePool.Add();
-	KernelLog(LOG_VERBOSE, "Allocated file, %x -> %x\n", file, 1 + file);
-	CopyMemory(file, &directory, sizeof(File));
+	File *file = directory;
 	file->filesystem = filesystem;
 	return file;
+}
+
+File *VFS::OpenFile(void *_existingFile) {
+	File *existingFile = (File *) _existingFile;
+
+	existingFile->mutex.Acquire();
+	existingFile->handles++;
+	existingFile->mutex.Release();
+
+	return existingFile;
 }
 
 void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data) {

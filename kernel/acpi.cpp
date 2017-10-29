@@ -413,6 +413,7 @@ void ACPI::Initialise() {
 		acpi.lapic.WriteRegister(0x380 >> 2, (uint32_t) -1); 
 		for (int i = 0; i < 8; i++) Delay1MS(); // Average over 8ms
 		acpi.lapic.ticksPerMs = ((uint32_t) -1 - acpi.lapic.ReadRegister(0x390 >> 2)) >> 4;
+		osRandomByteSeed ^= acpi.lapic.ReadRegister(0x390 >> 2);
 		ProcessorEnableInterrupts();
 	}
 #endif

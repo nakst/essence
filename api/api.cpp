@@ -24,6 +24,8 @@ void Panic() {
 extern "C" void ProgramEntry();
 
 extern "C" void _start() {
+	// TODO Seed random number generator.
+
 	void OSFPInitialise();
 	OSFPInitialise();
 

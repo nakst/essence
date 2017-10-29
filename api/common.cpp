@@ -268,6 +268,13 @@ size_t CF(FormatString)(char *buffer, size_t bufferLength, const char *format, .
 	return bufferLength - fsi.bytesRemaining;
 }
 
+uint64_t osRandomByteSeed;
+
+uint8_t CF(GetRandomByte)() {
+	osRandomByteSeed = osRandomByteSeed * 214013 + 2531011;
+	return (uint8_t) (osRandomByteSeed >> 16);
+}
+
 // Basic C functions.
 
 #ifndef KERNEL
