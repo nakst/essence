@@ -13,6 +13,7 @@ struct Window {
 	uintptr_t z;
 	Process *owner;
 	OSWindow *apiWindow;
+	bool keyboardFocus;
 };
 
 struct WindowManager {
@@ -20,6 +21,7 @@ struct WindowManager {
 	Window *CreateWindow(Process *process, size_t width, size_t height);
 	void MoveCursor(int xMovement, int yMovement);
 	void ClickCursor(unsigned buttons);
+	void PressKey(unsigned scancode);
 
 	Pool windowPool;
 
@@ -37,16 +39,42 @@ Surface uiSheetSurface;
 
 #else
 
+void WindowManager::PressKey(unsigned scancode) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	// Send the message to the last window on which we clicked.
+	for (uintptr_t i = 0; i < windowsCount; i++) {
+		Window *window = windows[i];
+		if (window->keyboardFocus) {
+			OSMessage message = {};
+			message.type = OS_MESSAGE_KEYBOARD;
+			message.targetWindow = window->apiWindow;
+			message.keyboard.scancode = scancode;
+			window->owner->SendMessage(message);
+		}
+	}
+}
+
 void WindowManager::ClickCursor(unsigned buttons) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	for (uintptr_t i = 0; i < windowsCount; i++) {
+		windows[i]->keyboardFocus = false;
+	}
+
 	unsigned delta = lastButtons ^ buttons;
 
 	if (delta & LEFT_BUTTON) {
 		// TODO Send mouse released messages to the window the cursor was over when the mouse was pressed.
 		// 	And do the same thing for mouse movement messages.
+
 		// Send a mouse pressed message to the window the cursor is over.
 		uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
 		if (index) {
 			Window *window = windows[index - 1];
+			window->keyboardFocus = true;
 
 			OSMessage message = {};
 			message.type = (buttons & LEFT_BUTTON) ? OS_MESSAGE_MOUSE_LEFT_PRESSED : OS_MESSAGE_MOUSE_LEFT_RELEASED;
@@ -63,6 +91,9 @@ void WindowManager::ClickCursor(unsigned buttons) {
 }
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
 	int oldCursorX = cursorX;
 	int oldCursorY = cursorY;
 	int _cursorX = oldCursorX + xMovement;

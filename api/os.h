@@ -3,7 +3,146 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-// ----- SYSTEM CALL DEFINITIONS
+#define OS_SCANCODE_KEY_RELEASED (1 << 15)
+#define OS_SCANCODE_KEY_PRESSED  (0 << 15)
+
+#define OS_SCANCODE_A (0x1C)
+#define OS_SCANCODE_B (0x32)
+#define OS_SCANCODE_C (0x21)
+#define OS_SCANCODE_D (0x23)
+#define OS_SCANCODE_E (0x24)
+#define OS_SCANCODE_F (0x2B)
+#define OS_SCANCODE_G (0x34)
+#define OS_SCANCODE_H (0x33)
+#define OS_SCANCODE_I (0x43)
+#define OS_SCANCODE_J (0x3B)
+#define OS_SCANCODE_K (0x42)
+#define OS_SCANCODE_L (0x4B)
+#define OS_SCANCODE_M (0x3A)
+#define OS_SCANCODE_N (0x31)
+#define OS_SCANCODE_O (0x44)
+#define OS_SCANCODE_P (0x4D)
+#define OS_SCANCODE_Q (0x15)
+#define OS_SCANCODE_R (0x2D)
+#define OS_SCANCODE_S (0x1B)
+#define OS_SCANCODE_T (0x2C)
+#define OS_SCANCODE_U (0x3C)
+#define OS_SCANCODE_V (0x2A)
+#define OS_SCANCODE_W (0x1D)
+#define OS_SCANCODE_X (0x22)
+#define OS_SCANCODE_Y (0x35)
+#define OS_SCANCODE_Z (0x1A)
+
+#define OS_SCANCODE_0 (0x45)
+#define OS_SCANCODE_1 (0x16)
+#define OS_SCANCODE_2 (0x1E)
+#define OS_SCANCODE_3 (0x26)
+#define OS_SCANCODE_4 (0x25)
+#define OS_SCANCODE_5 (0x2E)
+#define OS_SCANCODE_6 (0x36)
+#define OS_SCANCODE_7 (0x3D)
+#define OS_SCANCODE_8 (0x3E)
+#define OS_SCANCODE_9 (0x46)
+
+#define OS_SCANCODE_CAPS_LOCK	(0x58)
+#define OS_SCANCODE_SCROLL_LOCK	(0x7E)
+#define OS_SCANCODE_NUM_LOCK	(0x77) // Also sent by the pause key.
+#define OS_SCANCODE_LEFT_SHIFT	(0x12)
+#define OS_SCANCODE_LEFT_CTRL	(0x14)
+#define OS_SCANCODE_LEFT_ALT	(0x11)
+#define OS_SCANCODE_LEFT_FLAG	(0x11F)
+#define OS_SCANCODE_RIGHT_SHIFT	(0x59)
+#define OS_SCANCODE_RIGHT_CTRL	(0x114)
+#define OS_SCANCODE_RIGHT_ALT	(0x111)
+#define OS_SCANCODE_RIGHT_FLAG	(0x127)
+#define OS_SCANCODE_PAUSE	(0xE1)
+#define OS_SCANCODE_CONTEXT_MENU (0x127)
+
+#define OS_SCANCODE_BACKSPACE	(0x66)
+#define OS_SCANCODE_ESCAPE	(0x76)
+#define OS_SCANCODE_INSERT	(0x170)
+#define OS_SCANCODE_HOME	(0x16C)
+#define OS_SCANCODE_PAGE_UP	(0x17D)
+#define OS_SCANCODE_DELETE	(0x171)
+#define OS_SCANCODE_END		(0x169)
+#define OS_SCANCODE_PAGE_DOWN	(0x17A)
+#define OS_SCANCODE_UP_ARROW	(0x175)
+#define OS_SCANCODE_LEFT_ARROW	(0x16B)
+#define OS_SCANCODE_DOWN_ARROW	(0x172)
+#define OS_SCANCODE_RIGHT_ARROW	(0x174)
+
+#define OS_SCANCODE_SPACE	(0x29)
+#define OS_SCANCODE_TAB		(0x0D)
+#define OS_SCANCODE_ENTER	(0x5A)
+
+#define OS_SCANCODE_SLASH	(0x4A)
+#define OS_SCANCODE_BACKSLASH	(0x5D)
+#define OS_SCANCODE_LEFT_BRACE	(0x54)
+#define OS_SCANCODE_RIGHT_BRACE	(0x5B)
+#define OS_SCANCODE_EQUALS	(0x55)
+#define OS_SCANCODE_BACKTICK	(0x0E)
+#define OS_SCANCODE_HYPHEN	(0x4E)
+#define OS_SCANCODE_SEMICOLON	(0x4C)
+#define OS_SCANCODE_QUOTE	(0x52)
+#define OS_SCANCODE_COMMA	(0x41)
+#define OS_SCANCODE_PERIOD	(0x49)
+
+#define OS_SCANCODE_NUM_DIVIDE 	 (0x14A)
+#define OS_SCANCODE_NUM_MULTIPLY (0x7C)
+#define OS_SCANCODE_NUM_SUBTRACT (0x7B)
+#define OS_SCANCODE_NUM_ADD	 (0x79)
+#define OS_SCANCODE_NUM_ENTER	 (0x15A)
+#define OS_SCANCODE_NUM_POINT	 (0x71)
+#define OS_SCANCODE_NUM_0	 (0x70)
+#define OS_SCANCODE_NUM_1	 (0x69)
+#define OS_SCANCODE_NUM_2	 (0x72)
+#define OS_SCANCODE_NUM_3	 (0x7A)
+#define OS_SCANCODE_NUM_4	 (0x6B)
+#define OS_SCANCODE_NUM_5	 (0x73)
+#define OS_SCANCODE_NUM_6	 (0x74)
+#define OS_SCANCODE_NUM_7	 (0x6C)
+#define OS_SCANCODE_NUM_8	 (0x75)
+#define OS_SCANCODE_NUM_9	 (0x7D)
+
+#define OS_SCANCODE_PRINT_SCREEN_1 (0x112) // Both are sent when print screen is pressed.
+#define OS_SCANCODE_PRINT_SCREEN_2 (0x17C)
+
+#define OS_SCANCODE_F1  (0x05)
+#define OS_SCANCODE_F2  (0x06)
+#define OS_SCANCODE_F3  (0x04)
+#define OS_SCANCODE_F4  (0x0C)
+#define OS_SCANCODE_F5  (0x03)
+#define OS_SCANCODE_F6  (0x0B)
+#define OS_SCANCODE_F7  (0x83)
+#define OS_SCANCODE_F8  (0x0A)
+#define OS_SCANCODE_F9  (0x01)
+#define OS_SCANCODE_F10 (0x09)
+#define OS_SCANCODE_F11 (0x78)
+#define OS_SCANCODE_F12 (0x07)
+
+#define OS_SCANCODE_ACPI_POWER 	(0x137)
+#define OS_SCANCODE_ACPI_SLEEP 	(0x13F)
+#define OS_SCANCODE_ACPI_WAKE  	(0x15E)
+
+#define OS_SCANCODE_MM_NEXT	(0x14D)
+#define OS_SCANCODE_MM_PREVIOUS	(0x115)
+#define OS_SCANCODE_MM_STOP	(0x13B)
+#define OS_SCANCODE_MM_PAUSE	(0x134)
+#define OS_SCANCODE_MM_MUTE	(0x123)
+#define OS_SCANCODE_MM_QUIETER	(0x121)
+#define OS_SCANCODE_MM_LOUDER	(0x132)
+#define OS_SCANCODE_MM_SELECT	(0x150)
+#define OS_SCANCODE_MM_EMAIL	(0x148)
+#define OS_SCANCODE_MM_CALC	(0x12B)
+#define OS_SCANCODE_MM_FILES	(0x140)
+
+#define OS_SCANCODE_WWW_SEARCH	(0x110)
+#define OS_SCANCODE_WWW_HOME	(0x13A)
+#define OS_SCANCODE_WWW_BACK	(0x138)
+#define OS_SCANCODE_WWW_FORWARD	(0x130)
+#define OS_SCANCODE_WWW_STOP	(0x128)
+#define OS_SCANCODE_WWW_REFRESH	(0x120)
+#define OS_SCANCODE_WWW_STARRED	(0x118)
 
 extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 			        uintptr_t unused,    uintptr_t argument3, uintptr_t argument4);
@@ -227,6 +366,8 @@ enum OSMessageType {
 	OS_MESSAGE_MOUSE_MOVED = 0x1000,
 	OS_MESSAGE_MOUSE_LEFT_PRESSED = 0x1001,
 	OS_MESSAGE_MOUSE_LEFT_RELEASED = 0x1002,
+
+	OS_MESSAGE_KEYBOARD = 0x1400,
 	
 	OS_MESSAGE_WINDOW_CREATED = 0x2000,
 };
@@ -249,6 +390,10 @@ struct OSMessage {
 			int positionX;
 			int positionY;
 		} mousePressed;
+
+		struct {
+			unsigned scancode; // Check for OS_SCANCODE_KEY_RELEASED.
+		} keyboard;
 	};
 };
 

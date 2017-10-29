@@ -45,6 +45,23 @@ extern "C" void ProgramEntry() {
 		if (OSGetMessage(&message) == OS_SUCCESS) {
 			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
 				continue;
+			} else if (message.type == OS_MESSAGE_KEYBOARD) {
+				if (!(message.keyboard.scancode & OS_SCANCODE_KEY_RELEASED)) {
+					switch (message.keyboard.scancode) {
+						case OS_SCANCODE_0: NumberButtonPressed(nullptr, (void *) 0, nullptr); break;
+						case OS_SCANCODE_1: NumberButtonPressed(nullptr, (void *) 1, nullptr); break;
+						case OS_SCANCODE_2: NumberButtonPressed(nullptr, (void *) 2, nullptr); break;
+						case OS_SCANCODE_3: NumberButtonPressed(nullptr, (void *) 3, nullptr); break;
+						case OS_SCANCODE_4: NumberButtonPressed(nullptr, (void *) 4, nullptr); break;
+						case OS_SCANCODE_5: NumberButtonPressed(nullptr, (void *) 5, nullptr); break;
+						case OS_SCANCODE_6: NumberButtonPressed(nullptr, (void *) 6, nullptr); break;
+						case OS_SCANCODE_7: NumberButtonPressed(nullptr, (void *) 7, nullptr); break;
+						case OS_SCANCODE_8: NumberButtonPressed(nullptr, (void *) 8, nullptr); break;
+						case OS_SCANCODE_9: NumberButtonPressed(nullptr, (void *) 9, nullptr); break;
+					}
+
+					OSUpdateWindow(window);
+				}
 			}
 
 			// The message was not handled by the GUI.
