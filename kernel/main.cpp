@@ -11,9 +11,9 @@ void KernelInitilisation() {
 	vfs.Initialise();
 	deviceManager.Initialise();
 
-	KernelLog(LOG_INFO, "KernelInitilisation - Starting the shell...\n");
-	char *shellExecutable = (char *) "/os/shell";
-	scheduler.SpawnProcess(shellExecutable, CStringLength(shellExecutable));
+	KernelLog(LOG_INFO, "KernelInitilisation - Starting the executive...\n");
+	char *executive = (char *) "/os/executive";
+	scheduler.SpawnProcess(executive, CStringLength(executive));
 
 	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
 	scheduler.TerminateThread(GetCurrentThread());

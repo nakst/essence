@@ -33,6 +33,7 @@ extern "C" void ProgramEntry() {
 
 	{
 		// Load the GUI font.
+		// TODO Remove this when we have a proper file cache.
 
 		char *fontFile = (char *) "/os/source_sans/regular.ttf";
 		size_t fileSize;
@@ -48,35 +49,13 @@ extern "C" void ProgramEntry() {
 		OSFree(loadedFile);
 	}
 
-#if 1
 	{
-		// Start the test program.
-		const char *testProgram = "/os/test";
-		OSProcessInformation testProcess;
-		OSCreateProcess(testProgram, OSCStringLength((char *) testProgram), &testProcess, nullptr);
-		OSCloseHandle(testProcess.handle);
-		OSCloseHandle(testProcess.mainThread.handle);
-	}
-#endif
+		// Start the calculator test program.
 
-#if 1
-	{
-		// ...and the other test program.
-		const char *testProgram = "/os/OdinHello";
-		OSProcessInformation testProcess;
-		OSCreateProcess(testProgram, OSCStringLength((char *) testProgram), &testProcess, nullptr);
-		OSCloseHandle(testProcess.handle);
-	}
-#endif
-
-#if 1
-	{
-		// Start the calculator.
 		const char *path = "/os/calculator";
 		OSProcessInformation process;
 		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 	}
-#endif
 
 	OSTerminateThread(OS_CURRENT_THREAD);
 }

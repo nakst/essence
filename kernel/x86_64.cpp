@@ -267,7 +267,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			ThreadTerminatableState previousTerminatableState;
 			previousTerminatableState = GetCurrentThread()->terminatableState;
 			GetCurrentThread()->terminatableState = THREAD_IN_SYSCALL;
-			KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt) was %d\n", GetCurrentThread(), previousTerminatableState);
+			// KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt) was %d\n", GetCurrentThread(), previousTerminatableState);
 
 			if (interrupt == 14) {
 				if (local && local->spinlockCount) {
@@ -291,7 +291,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 			if (GetCurrentThread()->terminatableState != THREAD_IN_SYSCALL) KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
 			GetCurrentThread()->terminatableState = previousTerminatableState;
-			KernelLog(LOG_VERBOSE, "Thread %x terminatable now %d (interrupt done)\n", GetCurrentThread(), previousTerminatableState);
+			// KernelLog(LOG_VERBOSE, "Thread %x terminatable now %d (interrupt done)\n", GetCurrentThread(), previousTerminatableState);
 		} else {
 			if (context->cs != 0x48) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
@@ -385,7 +385,7 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 	*local->acpiProcessor->kernelStack = kernelStack;
 
 	if (local->currentThread->timeSlices == 1) {
-		KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
+		// KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
 	}
 
 	acpi.lapic.EndOfInterrupt();

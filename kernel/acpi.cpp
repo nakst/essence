@@ -351,7 +351,7 @@ void ACPI::Initialise() {
 				void *stack = (void *) ((uintptr_t) kernelVMM.Allocate(0x4000) + 0x4000);
 				CopyMemory((void *) (LOW_MEMORY_MAP_START + AP_TRAMPOLINE + 0xFD0),
 						&stack, sizeof(void *));
-				KernelLog(LOG_VERBOSE, "Trampoline stack: %x->%x\n", stack, (uintptr_t) stack + 0x4000);
+				// KernelLog(LOG_VERBOSE, "Trampoline stack: %x->%x\n", stack, (uintptr_t) stack + 0x4000);
 
 				// Send an INIT IPI.
 				lapic.WriteRegister(0x310 >> 2, processor->apicID << 24);

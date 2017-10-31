@@ -328,7 +328,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 	thread->processItem.thisItem = thread;
 	owner->threads.InsertEnd(&thread->processItem);
 
-	KernelLog(LOG_VERBOSE, "Create thread ID %d, type %d, owner process %d\n", thread->id, thread->type, owner->id);
+	// KernelLog(LOG_VERBOSE, "Create thread ID %d, type %d, owner process %d\n", thread->id, thread->type, owner->id);
 
 	for (uintptr_t i = 0; i < MAX_BLOCKING_EVENTS; i++) {
 		thread->item[i].thisItem = thread;
@@ -348,7 +348,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 
 Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveThreads) {
 	Thread *thread = (Thread *) threadPool.Add();
-	KernelLog(LOG_VERBOSE, "Created thread, %x -> %x\n", thread, thread + 1);
+	// KernelLog(LOG_VERBOSE, "Created thread, %x -> %x\n", thread, thread + 1);
 	thread->isKernelThread = !userland;
 
 	// 2 handles to the thread:
@@ -367,13 +367,13 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 		stack = kernelStack;
 	}
 
-	KernelLog(LOG_VERBOSE, "Spawning thread with stacks (k,u): %x->%x, %x->%x\n", kernelStack, kernelStack + kernelStackSize, stack, stack + userStackSize);
+	// KernelLog(LOG_VERBOSE, "Spawning thread with stacks (k,u): %x->%x, %x->%x\n", kernelStack, kernelStack + kernelStackSize, stack, stack + userStackSize);
 
 	thread->kernelStackBase = kernelStack;
 	thread->userStackBase = userland ? stack : 0;
 
 	thread->terminatableState = userland ? THREAD_TERMINATABLE : THREAD_IN_SYSCALL;
-	KernelLog(LOG_VERBOSE, "Thread %x terminatable = %d (creation)\n", thread, thread->terminatableState);
+	// KernelLog(LOG_VERBOSE, "Thread %x terminatable = %d (creation)\n", thread, thread->terminatableState);
 
 #ifdef ARCH_X86_64
 	InterruptContext *context = ((InterruptContext *) (kernelStack + kernelStackSize - 8)) - 1;
@@ -397,7 +397,7 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	context->rdi = argument;
 #endif
 
-	KernelLog(LOG_VERBOSE, "Starting off new thread %x at %x\n", thread, startAddress);
+	// KernelLog(LOG_VERBOSE, "Starting off new thread %x at %x\n", thread, startAddress);
 
 	InsertNewThread(thread, addToActiveThreads, process);
 
@@ -443,7 +443,7 @@ void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
 
 	if (thread == GetCurrentThread()) {
 		thread->terminatableState = THREAD_TERMINATABLE;
-		KernelLog(LOG_VERBOSE, "Terminating current thread %x, so making THREAD_TERMINATABLE\n", thread);
+		// KernelLog(LOG_VERBOSE, "Terminating current thread %x, so making THREAD_TERMINATABLE\n", thread);
 		scheduler.lock.Release();
 
 		// We cannot return to the previous function as it expects to be killed.
@@ -500,7 +500,7 @@ void Scheduler::Start() {
 
 void NewProcess() {
 	Process *thisProcess = GetCurrentThread()->process;
-	KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
+	// KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	// TODO Shared memory with executables.
 	uintptr_t processStartAddress = LoadELF(thisProcess->executablePath, thisProcess->executablePathLength);
@@ -520,7 +520,7 @@ void NewProcess() {
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
 	// Process initilisation.
 	Process *process = (Process *) processPool.Add();
-	KernelLog(LOG_VERBOSE, "Created process, %x -> %x\n", process, process + 1);
+	// KernelLog(LOG_VERBOSE, "Created process, %x -> %x\n", process, process + 1);
 	process->allItem.thisItem = process;
 	process->vmm = &process->_vmm;
 	process->handles = 1;
@@ -664,7 +664,7 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 }
 
 void Scheduler::RemoveProcess(Process *process) {
-	KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
+	// KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
 	// At this point, no pointers to the process (should) remain (I think).
 
@@ -703,7 +703,7 @@ void CloseHandleToProcess(void *_process) {
 
 	bool deallocate = !process->handles;
 
-	KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
+	// KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
 
 	scheduler.lock.Release();
 
@@ -724,7 +724,7 @@ void CloseHandleToThread(void *_thread) {
 	}
 	thread->handles--;
 	bool removeThread = thread->handles == 0;
-	KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
+	// KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
 	scheduler.lock.Release();
 
 	if (removeThread) {
@@ -739,10 +739,10 @@ void KillThread(void *_thread) {
 	scheduler.allThreads.Remove(&thread->allItem);
 	thread->process->threads.Remove(&thread->processItem);
 
-	KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
+	// KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
 
 	if (thread->process->threads.count == 0) {
-		KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
+		// KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
 
 		// Make sure that the process cannot be opened.
 		scheduler.allProcesses.Remove(&thread->process->allItem);
@@ -800,7 +800,7 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	if (killThread) {
 		local->currentThread->state = THREAD_TERMINATED;
-		KernelLog(LOG_VERBOSE, "terminated yielded thread %x\n", local->currentThread);
+		// KernelLog(LOG_VERBOSE, "terminated yielded thread %x\n", local->currentThread);
 		RegisterAsyncTask(KillThread, local->currentThread, local->currentThread->process);
 	}
 
@@ -973,8 +973,6 @@ uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
 
 void Scheduler::UnblockThread(Thread *unblockedThread) {
 	lock.AssertLocked();
-
-	KernelLog(LOG_VERBOSE, "Unblocking thread %x\n", unblockedThread);
 
 	if (unblockedThread->state != THREAD_WAITING_MUTEX && unblockedThread->state != THREAD_WAITING_EVENT) {
 		KernelPanic("Scheduler::UnblockedThread - Blocked thread in invalid state %d.\n", 

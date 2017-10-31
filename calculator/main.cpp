@@ -62,11 +62,11 @@ extern "C" void ProgramEntry() {
 
 					OSUpdateWindow(window);
 				}
+			} else {
+				// The message was not handled by the GUI.
+				// We should do something with it.
+				OSPrint("Calculator received unhandled message of type %d\n", message.type);
 			}
-
-			// The message was not handled by the GUI.
-			// We should do something with it.
-			OSPrint("Calculator received unhandled message of type %d\n", message.type);
 		}
 	}
 }

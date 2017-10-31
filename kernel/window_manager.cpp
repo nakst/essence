@@ -60,13 +60,13 @@ void WindowManager::ClickCursor(unsigned buttons) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	for (uintptr_t i = 0; i < windowsCount; i++) {
-		windows[i]->keyboardFocus = false;
-	}
-
 	unsigned delta = lastButtons ^ buttons;
 
 	if (delta & LEFT_BUTTON) {
+		for (uintptr_t i = 0; i < windowsCount; i++) {
+			windows[i]->keyboardFocus = false;
+		}
+
 		// TODO Send mouse released messages to the window the cursor was over when the mouse was pressed.
 		// 	And do the same thing for mouse movement messages.
 

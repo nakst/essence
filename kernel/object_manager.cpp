@@ -300,7 +300,7 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 void HandleTable::Destroy() {
 	HandleTableL1 *l1 = &l1r;
 
-	KernelLog(LOG_VERBOSE, "Destroying handle table...\n");
+	// KernelLog(LOG_VERBOSE, "Destroying handle table...\n");
 
 	for (uintptr_t i = 1; i < HANDLE_TABLE_L1_ENTRIES; i++) {
 		if (l1->u[i]) {
@@ -319,7 +319,7 @@ void HandleTable::Destroy() {
 							}
 
 							if (handle->type & CLOSABLE_OBJECT_TYPES) {
-								KernelLog(LOG_VERBOSE, "Destroying handle to object %x of type %d...\n", handle->object, handle->type);
+								// KernelLog(LOG_VERBOSE, "Destroying handle to object %x of type %d...\n", handle->object, handle->type);
 								CloseHandleToObject(handle->object, handle->type);
 							}
 						}

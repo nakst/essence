@@ -260,7 +260,7 @@ void VMM::Initialise() {
 		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
-		KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
+		// KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
 		pageTable = (uint64_t *) kernelVMM.Allocate(PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
 		CopyMemory(pageTable + 0x100, (uint64_t *) (PAGE_TABLE_L4 + 0x100), PAGE_SIZE / 2);
@@ -280,8 +280,8 @@ void ValidateCurrentVMM(VMM *target) {
 #ifdef ARCH_X86_64
 void CleanupVirtualAddressSpace(void *argument) {
 	pmm.lock.Acquire();
-	KernelLog(LOG_INFO, "Removing virtual address space page %x...\n", argument);
-	KernelLog(LOG_INFO, "Current CR3 is %x\n", ProcessorGetAddressSpace());
+	// KernelLog(LOG_INFO, "Removing virtual address space page %x...\n", argument);
+	// KernelLog(LOG_INFO, "Current CR3 is %x\n", ProcessorGetAddressSpace());
 	pmm.FreePage((uintptr_t) argument);
 	pmm.lock.Release();
 }
@@ -297,20 +297,20 @@ void VMM::Destroy() {
 
 			if (region->type != vmmRegionFree) {
 				regionsFreed++;
-				KernelLog(LOG_VERBOSE, "Freeing VMM region at %x...\n", region->baseAddress);
+				// KernelLog(LOG_VERBOSE, "Freeing VMM region at %x...\n", region->baseAddress);
 				Free((void *) region->baseAddress);
 			}
 		}
 		if (!regionsFreed) break;
 	}
 
-	KernelLog(LOG_VERBOSE, "Freeing region arrays...\n");
+	// KernelLog(LOG_VERBOSE, "Freeing region arrays...\n");
 
 	if (regions) kernelVMM.Free(regions);
 	if (lookupRegions) kernelVMM.Free(lookupRegions);
 
 #ifdef ARCH_X86_64
-	KernelLog(LOG_VERBOSE, "Freeing virtual address space...\n");
+	// KernelLog(LOG_VERBOSE, "Freeing virtual address space...\n");
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < 256; i++) {
 		if (PAGE_TABLE_L4[i]) {
@@ -341,7 +341,7 @@ void VMM::Destroy() {
 	scheduler.lock.Release();
 #endif
 
-	KernelLog(LOG_VERBOSE, "VMM destroyed,\n");
+	// KernelLog(LOG_VERBOSE, "VMM destroyed,\n");
 }
 
 uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated) {
@@ -454,7 +454,7 @@ void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uin
 	if (!success) return nullptr;
 	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1)));
 
-	KernelLog(LOG_VERBOSE, "Allocated %x -> %x (%d bytes)\n", baseAddress, baseAddress + size, size);
+	// KernelLog(LOG_VERBOSE, "Allocated %x -> %x (%d bytes)\n", baseAddress, baseAddress + size, size);
 	return address;
 }
 
@@ -1299,7 +1299,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 	uintptr_t *addresses = (uintptr_t *) (region + 1);
 
-	KernelLog(LOG_VERBOSE, "Freeing shared memory region....\n");
+	// KernelLog(LOG_VERBOSE, "Freeing shared memory region....\n");
 
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < pages; i++) {
