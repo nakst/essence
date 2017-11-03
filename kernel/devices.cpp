@@ -4,6 +4,7 @@ enum DeviceType {
 	DEVICE_TYPE_INVALID,
 	DEVICE_TYPE_BLOCK,
 	DEVICE_TYPE_ATA_CONTROLLER,
+	DEVICE_TYPE_AHCI_CONTROLLER,
 };
 
 typedef bool (*DriveAccessFunction)(uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *buffer); // Returns true on success.
@@ -11,6 +12,7 @@ typedef bool (*DriveAccessFunction)(uintptr_t drive, uint64_t sector, size_t cou
 enum BlockDeviceDriver {
 	BLOCK_DEVICE_DRIVER_INVALID,
 	BLOCK_DEVICE_DRIVER_ATA,
+	BLOCK_DEVICE_DRIVER_AHCI,
 };
 
 struct BlockDevice {
@@ -49,6 +51,7 @@ struct DeviceManager {
 
 extern DeviceManager deviceManager;
 void ATARegisterController(struct PCIDevice *device);
+void AHCIRegisterController(struct PCIDevice *device);
 
 #endif
 
@@ -57,7 +60,7 @@ void ATARegisterController(struct PCIDevice *device);
 DeviceManager deviceManager;
 
 bool BlockDevice::Access(uint64_t sector, size_t count, int operation, uint8_t *buffer) {
-	if (sector > sectorCount || (sector + count) > sectorCount) {
+	if (sector > sectorCount || (sector + count) > sectorCount || count > maxAccessSectorCount) {
 		KernelPanic("BlockDevice::Access - Sector %d/%d out of bounds on drive %d with count %d.\n", sector, sectorCount, driveID, count);
 	}
 
@@ -66,6 +69,10 @@ bool BlockDevice::Access(uint64_t sector, size_t count, int operation, uint8_t *
 	switch (driver) {
 		case BLOCK_DEVICE_DRIVER_ATA: {
 			return ata.Access(driveID, sector, count, operation, buffer);
+		} break;
+
+		case BLOCK_DEVICE_DRIVER_AHCI: {
+			return ahci.Access(driveID, sector, count, operation, buffer);
 		} break;
 
 		default: {

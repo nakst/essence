@@ -252,6 +252,13 @@ void PCI::Enumerate() {
 				ATARegisterController(device);
 			} break;
 
+			case PCI_DEVICE_TYPE_AHCI: {
+				// Enable busmastering DMA and interrupts.
+				uint32_t previousCommand = ReadConfig(device->bus, device->device, device->function, 4);
+				WriteConfig(device->bus, device->device, device->function, 4, ((1 << 2) | previousCommand) & ~(1 << 10));
+				AHCIRegisterController(device);
+			} break;
+
 			default: {
 			} break;
 		}

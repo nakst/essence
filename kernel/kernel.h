@@ -18,6 +18,7 @@
 
 #define DRIVE_ACCESS_READ (0)
 #define DRIVE_ACCESS_WRITE (1)
+#define DRIVE_ACCESS_IMPLEMENTATION (2)
 
 #ifdef ARCH_X86_64
 #define TIMER_INTERRUPT (0x40)
@@ -182,9 +183,11 @@ struct UniqueIdentifier {
 
 #ifdef ARCH_X86_64
 #include "x86_64.cpp"
+#endif
+
 #include "pci.cpp"
 #include "ata.cpp"
-#endif
+#include "ahci.cpp"
 
 #include "vfs.cpp"
 #include "ext2.cpp"

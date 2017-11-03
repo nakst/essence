@@ -215,7 +215,12 @@ bool ATAIRQHandler(uintptr_t interruptIndex) {
 		return false;
 	} else {
 		Event *event = ata.irqs + bus;
-		event->Set();
+
+		if (!event->state) {
+			event->Set();
+		} else {
+			KernelLog(LOG_WARNING, "ATAIRQHandler - Received more interrupts than expected.\n");
+		}
 
 		if (event->blockedThreads.count) {
 			GetLocalStorage()->irqSwitchThread = true; 
@@ -234,6 +239,8 @@ void ATADriver::Initialise() {
 		device.parent = DEVICE_PARENT_ROOT;
 		controller = deviceManager.Register(&device);
 	}
+
+	KernelLog(LOG_VERBOSE, "ATADriver::Initialise - Found an ATA controller.\n");
 	
 	for (uintptr_t bus = 0; bus < ATA_BUSES; bus++) {
 		// If the status is 0xFF, then the bus does not exist.
@@ -348,6 +355,7 @@ void ATADriver::Initialise() {
 		for (uintptr_t slave = 0; slave < 2; slave++) {
 			// Test if DMA works.
 			if (sectorCount[slave + bus * 2] && useDMA[slave + bus * 2] && !Access(slave + bus * 2, 0, 1, DRIVE_ACCESS_READ, nullptr)) {
+				KernelLog(LOG_WARNING, "ATADriver::Initialise - DMA failed for drive %d on bus %d, forcing PIO...\n", slave, bus);
 				useDMA[slave + bus * 2] = false;
 			}
 		}

@@ -34,6 +34,7 @@ extern "C" void ProcessorInstallTSS(uint32_t *gdt, uint32_t *tss);
 
 struct PMM {
 	uintptr_t AllocatePage();
+	uintptr_t AllocateContiguous64KB();
 	uintptr_t AllocateContiguous128KB();
 	void FreePage(uintptr_t address, bool bypassStack = false);
 	void Initialise();
@@ -68,7 +69,8 @@ enum VMMMapPolicy {
 	vmmMapAll, // These are not stored in the region lookup array
 };
 
-#define VMM_REGION_FLAG_CACHABLE 1
+#define VMM_REGION_FLAG_NOT_CACHABLE (0)
+#define VMM_REGION_FLAG_CACHABLE (1)
 
 struct VMMRegion {
 	uintptr_t baseAddress;
@@ -823,13 +825,37 @@ bool HandlePageFault(uintptr_t page) {
 }
 #endif
 
+uintptr_t PMM::AllocateContiguous64KB() {
+	lock.Acquire();
+	Defer(lock.Release());
+
+	for (uintptr_t i = 0; i < bitsetGroups; i++) {
+		if (bitsetGroupUsage[i] >= 16) {
+			for (uintptr_t j = 0; j < BITSET_GROUP_PAGES; j += 16) {
+				uintptr_t page = i * BITSET_GROUP_PAGES + j;
+
+				if (((uint16_t *) bitsetPageUsage)[page >> 4] == (uint16_t) (-1)) {
+					uintptr_t address = page << PAGE_BITS;
+
+					((uint16_t *) bitsetPageUsage)[page >> 4] = 0;
+					bitsetGroupUsage[i] -= 16;
+
+					return address;
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
 uintptr_t PMM::AllocateContiguous128KB() {
 	lock.Acquire();
 	Defer(lock.Release());
 
 	for (uintptr_t i = 0; i < bitsetGroups; i++) {
 		if (bitsetGroupUsage[i] >= 32) {
-			for (uintptr_t j = 0; j < BITSET_GROUP_PAGES && pageStackIndex != PMM_PAGE_STACK_SIZE; j += 32) {
+			for (uintptr_t j = 0; j < BITSET_GROUP_PAGES; j += 32) {
 				uintptr_t page = i * BITSET_GROUP_PAGES + j;
 
 				if (bitsetPageUsage[page >> 5] == (uint32_t) (-1)) {

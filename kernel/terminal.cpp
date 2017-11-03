@@ -360,7 +360,7 @@ void KernelPanic(const char *format, ...) {
 
 	printToTerminal = true;
 
-	Print("\n--- KERNEL PANIC ---\n[ERR ] ");
+	Print("\n--- KERNEL PANIC ---\n[Fatal] ");
 
 	va_list arguments;
 	va_start(arguments, format);
@@ -417,9 +417,9 @@ void KernelLog(LogLevel level, const char *format, ...) {
 
 	printToTerminal = level >= MINIMUM_PRINT_LEVEL;
 
-	_KernelLog("[%z] ", 	level == LOG_INFO ? 	" Info  "
+	_KernelLog("[%z] ", 	level == LOG_INFO ? 	"Info"
 			      : level == LOG_WARNING ? 	"Warning"
-			      : level == LOG_ERROR ? 	" Error "
+			      : level == LOG_ERROR ? 	"Error"
 			      : level == LOG_VERBOSE ? 	"Verbose" : "");
 
 	va_list arguments;

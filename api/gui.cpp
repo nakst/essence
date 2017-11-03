@@ -296,7 +296,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 				OSDrawControl(window, previousPressedControl);
 
-				if (window->hoverControl == previousPressedControl) {
+				if (window->hoverControl == previousPressedControl) { // TODO Still trigger the control if the mouse only just left its bounds?
 					OSEvent event = {};
 					event.type = OS_EVENT_ACTION;
 					SendCallback(previousPressedControl, previousPressedControl->action, event);

@@ -293,6 +293,8 @@ void PS2::Initialise() {
 	timeout.Set(100, false);
 	Defer(timeout.Remove());
 
+	FlushOutputBuffer();
+
 	RegisterIRQHandler(PS2_FIRST_IRQ, PS2IRQHandler);
 	RegisterIRQHandler(PS2_SECOND_IRQ, PS2IRQHandler);
 

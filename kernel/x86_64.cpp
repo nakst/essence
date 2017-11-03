@@ -22,6 +22,8 @@ bool RegisterIRQHandler(uintptr_t interrupt, IRQHandler handler) {
 	scheduler.lock.Acquire();
 	Defer(scheduler.lock.Release());
 
+	KernelLog(LOG_VERBOSE, "Registering IRQ handler for vector %d...\n", interrupt);
+
 	// Work out which interrupt the IoApic will sent to the processor.
 	// TODO Use the upper 4 bits for IRQ priority.
 	uintptr_t thisProcessorIRQ = interrupt + IRQ_BASE;
@@ -352,7 +354,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			bool rejectedByAll = !handledInterrupt;
 			if (rejectedByAll) {
 				// TODO Now what?
-				Print("InterruptHandler - Unhandled IRQ %d, rejected by %d overloads\n", interrupt, overloads);
+				KernelLog(LOG_WARNING, "InterruptHandler - Unhandled IRQ %d, rejected by %d overloads\n", interrupt, overloads);
 			}
 		}
 

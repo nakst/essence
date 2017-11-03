@@ -6,7 +6,7 @@
 #include "kernel.h"
 
 void KernelInitilisation() {
-	graphics.Initialise();
+	graphics.Initialise(); // TODO Should we initialise the device manager first? It will need more continuous physical memory.
 	windowManager.Initialise();
 	vfs.Initialise();
 	deviceManager.Initialise();
