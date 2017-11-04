@@ -234,6 +234,7 @@ struct AHCIPresentDrive {
 	struct Device *device;
 	uint64_t sectorCount;
 	Event completeCommands[AHCI_COMMAND_COUNT];
+	Timer timeout;
 };
 
 struct AHCIDriver {
@@ -257,9 +258,6 @@ AHCIDriver ahci;
 #define AHCI_DRIVER_IDENTFIY (2)
 
 bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int operation, uint8_t *_buffer) {
-	// TODO Write support.
-	(void) operation;
-
 	AHCIPresentDrive *drive = drives + _drive;
 	volatile AHCIPort *port = r->ports + drive->port;
 
@@ -289,14 +287,19 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 	AHCICommandHeader *header = drive->commandList + commandIndex;
 	AHCICommandTable *table = drive->commandTable + commandIndex;
 
-	size_t prdtEntries = ((count - 1) >> 4) + 1; // TODO The max PRD length is actually 4MB.
+	size_t prdtEntries = ((count - 1) >> 13) + 1; 
 
 	header->commandLength = sizeof(AHCIPacketDeviceToHost) / sizeof(uint32_t);
-	header->write = false;
+	header->write = operation == DRIVE_ACCESS_WRITE;
 	header->prdEntryCount = prdtEntries;
 
 	uintptr_t physicalBuffer = pmm.AllocateContiguous64KB();
-	void *buffer = kernelVMM.Allocate(65536, vmmMapLazy, vmmRegionPhysical, physicalBuffer, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+	void *buffer = kernelVMM.Allocate(65536, vmmMapAll, vmmRegionPhysical, physicalBuffer, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+
+	// Copy to the input buffer.
+	if (operation == DRIVE_ACCESS_WRITE) {
+		CopyMemory(buffer, _buffer, count * AHCI_SECTOR_SIZE);
+	}
 
 	// Configure the PRDT.
 
@@ -305,15 +308,15 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 		uintptr_t countRemaining = count;
 
 		for (i = 0; i < (size_t) (header->prdEntryCount - 1); i++) {
-			table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 8192) >> 0);
-			table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 8192) >> 32);
-			table->prdtEntries[i].byteCount = 8192 - 1;
+			table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 4194304) >> 0);
+			table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 4194304) >> 32);
+			table->prdtEntries[i].byteCount = 4194304 - 1;
 			table->prdtEntries[i].interruptOnCompletion = false; // Only interrupt on the last descriptor.
-			countRemaining -= 16;
+			countRemaining -= 8192;
 		}
 
-		table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 8192) >> 0);
-		table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 8192) >> 32);
+		table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 4194304) >> 0);
+		table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 4194304) >> 32);
 		table->prdtEntries[i].byteCount = countRemaining * 512 - 1;
 		table->prdtEntries[i].interruptOnCompletion = true;
 	}
@@ -321,8 +324,21 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 	AHCIPacketHostToDevice *packet = (AHCIPacketHostToDevice *) table->commandPacket;
 	packet->packetType = AHCI_PACKET_TYPE_HOST_TO_DEVICE;
 	packet->controlOrCommand = 1;
-	packet->command = operation == AHCI_DRIVER_IDENTFIY ? ATA_IDENTIFY : ATA_READ_DMA_48;
 	packet->device = 1 << 6;
+
+	switch (operation) {
+		case AHCI_DRIVER_IDENTFIY: {
+			packet->command = ATA_IDENTIFY;
+		} break;
+
+		case DRIVE_ACCESS_READ: {
+			packet->command = ATA_READ_DMA_48;
+		} break;
+
+		case DRIVE_ACCESS_WRITE: {
+			packet->command = ATA_WRITE_DMA_48;
+		} break;
+	}
 
 	packet->countLow = (uint8_t) (count >> 0);
 	packet->countHigh = (uint8_t) (count >> 8);
@@ -334,9 +350,16 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 	packet->lba4 = (uint8_t) (sector >> 32);
 	packet->lba5 = (uint8_t) (sector >> 40);
 
-	// TODO Timeouts.
+	{
+		Timer *timeout = &drive->timeout;
+		timeout->Set(AHCI_TIMEOUT, false);
+		Defer(timeout->Remove());
 
-	while (port->taskFileData & ((1 << 7) | (1 << 3)));
+		while (port->taskFileData & ((1 << 7) | (1 << 3)) && !timeout->event.Poll());
+		if (timeout->event.Poll()) return false;
+	}
+
+	// Issue the command.
 	port->commandIssue = 1 << commandIndex; 
 	drive->mutex.Release();
 
@@ -361,7 +384,10 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 		return false;
 	}
 
-	CopyMemory(_buffer, buffer, count * AHCI_SECTOR_SIZE);
+	// Copy to the output buffer.
+	if (operation != DRIVE_ACCESS_WRITE) {
+		CopyMemory(_buffer, buffer, count * AHCI_SECTOR_SIZE);
+	}
 
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < 65536 / PAGE_SIZE; i++) pmm.FreePage(physicalBuffer + i * PAGE_SIZE);
@@ -388,6 +414,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 			port->interruptStatus = interruptStatus;
 
 			if (interruptStatus & 1) {
+				// Find the drive this interrupt is for.
 				for (uintptr_t i = 0; i < ahci.driveCount; i++) {
 					AHCIPresentDrive *drive = ahci.drives + i;
 
@@ -395,6 +422,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 						uint16_t commandsFinished = drive->commandsInUse ^ port->commandIssue;
 
 						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
+							// Is the command finished?
 							if (commandsFinished & (1 << i)) {
 								if (drive->completeCommands[i].state) {
 									KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected.\n");
@@ -410,8 +438,17 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 					}
 				}
 			} else {
-				// TODO Handle errors.
-				KernelLog(LOG_VERBOSE, "AHCIIRQHandler - Error!\n");
+				for (uintptr_t i = 0; i < ahci.driveCount; i++) {
+					AHCIPresentDrive *drive = ahci.drives + i;
+
+					if (drive->port == portIndex) {
+						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
+							if (drive->receivedPacket[i].deviceToHost.status & 1) {
+								KernelLog(LOG_WARNING, "AHCIIRQHandler - Detected error for port %d, command %d.\n", portIndex, i);
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -424,8 +461,6 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 }
 
 void AHCIDriver::Initialise() {
-	// TODO Initilisation timeout.
-
 	Device *controller;
 
 	{
@@ -503,45 +538,54 @@ void AHCIDriver::Initialise() {
 
 		AHCIPresentDrive *drive = drives + i;
 
-		uintptr_t commandTablePage = pmm.AllocatePage();
-		drive->commandTable = (AHCICommandTable *) kernelVMM.Allocate(sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, commandTablePage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
-		ZeroMemory(drive->commandTable, PAGE_SIZE);
+		{
+			// Start a timeout.
+			Timer *timeout = &drive->timeout;
+			timeout->Set(AHCI_TIMEOUT, false);
+			Defer(timeout->Remove());
 
-		volatile AHCIPort *port = r->ports + drives[i].port;
-		port->command &= ~0x11; // Stop the command engine.
-		while (port->status & 0xC000); // Wait for it to stop...
+			uintptr_t commandTablePage = pmm.AllocatePage();
+			drive->commandTable = (AHCICommandTable *) kernelVMM.Allocate(sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, commandTablePage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+			ZeroMemory(drive->commandTable, PAGE_SIZE);
 
-		port->commandListBaseAddressLow = (uint32_t) (commandListPage >> 0);
-		port->commandListBaseAddressHigh = (uint32_t) (commandListPage >> 32);
-		drives[i].commandList = (AHCICommandHeader *) commandListPageVirtual;
+			volatile AHCIPort *port = r->ports + drives[i].port;
+			port->command &= ~0x11; // Stop the command engine.
+			while (port->status & 0xC000 && !timeout->event.Poll()); // Wait for it to stop...
+			if (timeout->event.Poll()) continue;
 
-		port->fisBaseAddressLow = (uint32_t) (commandListPage >> 0);
-		port->fisBaseAddressHigh = (uint32_t) (commandListPage >> 32);
-		drives[i].receivedPacket = (AHCIReceivedPacket *) receivedPacketPageVirtual;
+			port->commandListBaseAddressLow = (uint32_t) (commandListPage >> 0);
+			port->commandListBaseAddressHigh = (uint32_t) (commandListPage >> 32);
+			drives[i].commandList = (AHCICommandHeader *) commandListPageVirtual;
 
-		for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
-			AHCICommandHeader *command = drive->commandList + i;
-			command->commandTableDescriptorLow = (uint32_t) ((commandTablePage + 256 * i) >> 0); 
-			command->commandTableDescriptorHigh = (uint32_t) ((commandTablePage + 256 * i) >> 32);
-			command->prdEntryCount = 8; // (256 - sizeof(AHCICommandTable)) / sizeof(AHCIPRDTEntry)
+			port->fisBaseAddressLow = (uint32_t) (commandListPage >> 0);
+			port->fisBaseAddressHigh = (uint32_t) (commandListPage >> 32);
+			drives[i].receivedPacket = (AHCIReceivedPacket *) receivedPacketPageVirtual;
+
+			for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
+				AHCICommandHeader *command = drive->commandList + i;
+				command->commandTableDescriptorLow = (uint32_t) ((commandTablePage + 256 * i) >> 0); 
+				command->commandTableDescriptorHigh = (uint32_t) ((commandTablePage + 256 * i) >> 32);
+				command->prdEntryCount = 8; // (256 - sizeof(AHCICommandTable)) / sizeof(AHCIPRDTEntry)
+			}
+
+			commandListPage += 1024;
+			receivedPacketPage += 256;
+			commandTablePage += 256;
+			commandListPageVirtual += 1024;
+			receivedPacketPageVirtual += 256;
+
+			// Restart the command engine.
+			while (port->status & 0x8000 && !timeout->event.Poll());
+			if (timeout->event.Poll()) continue;
+			port->command |= 0x11;
+
+			port->interruptStatus = port->interruptStatus; // Clear any remaining interrupts.
+			port->interruptEnable |= 0xFD800001; // Set the interrupts we want (all errors, and transfer processed).
+
+			drive->commandAvailable.autoReset = true;
 		}
 
-		commandListPage += 1024;
-		receivedPacketPage += 256;
-		commandTablePage += 256;
-		commandListPageVirtual += 1024;
-		receivedPacketPageVirtual += 256;
-
-		// Restart the command engine.
-		while (port->status & 0x8000);
-		port->command |= 0x11;
-
-		port->interruptStatus = port->interruptStatus; // Clear any remaining interrupts.
-		port->interruptEnable |= 0xFD800001; // Set the interrupts we want (all errors, and transfer processed).
-		// TODO Interrupt on error.
-
-		drive->commandAvailable.autoReset = true;
-
+		// Get the identify data!
 		uint16_t identifyData[256];
 		bool success = Access(i, 0, 1, AHCI_DRIVER_IDENTFIY, (uint8_t *) identifyData);
 
@@ -571,7 +615,7 @@ void AHCIDriver::Initialise() {
 			device.block.sectorSize = AHCI_SECTOR_SIZE;
 			device.block.sectorCount = drive->sectorCount;
 			device.block.driver = BLOCK_DEVICE_DRIVER_AHCI;
-			device.block.maxAccessSectorCount = 128; // (8KB * 8) / 512
+			device.block.maxAccessSectorCount = 128; // 64KB buffer / 512
 			drive->device = deviceManager.Register(&device);
 		}
 	}

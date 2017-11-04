@@ -91,6 +91,8 @@ void WindowManager::ClickCursor(unsigned buttons) {
 }
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
+	// TODO Don't move cursor on packets where a button was pressed/released?
+
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -142,11 +144,12 @@ void WindowManager::Initialise() {
 	windowPool.Initialise(sizeof(Window));
 	uiSheetSurface.Initialise(kernelProcess->vmm, 256, 256, false);
 
-	// Draw the background.
-	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
-
 	cursorX = graphics.resX / 2;
 	cursorY = graphics.resY / 2;
+
+	// Draw the background.
+	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
+	graphics.UpdateScreen();
 }
 
 Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height) {

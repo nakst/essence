@@ -8,8 +8,8 @@
 %define page_directory_length 0x20000
 %define memory_map 0x60000
 %define indirect_block_buffer 0x64000
-%define magic_breakpoint xchg bx,bx
-; %define magic_breakpoint
+; %define magic_breakpoint xchg bx,bx
+%define magic_breakpoint
 
 start:
 	cmp	dword [page_table_allocation_location],0x2000

@@ -892,7 +892,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	newThread->timeSlices++;
 
 	// Prepare the next timer interrupt.
-	uint64_t time = 20;
+	uint64_t time = 10;
 	NextTimer(time);
 
 	if (!local->processorID) {

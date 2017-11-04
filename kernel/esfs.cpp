@@ -105,12 +105,13 @@ File *EsFSVolume::LoadRootDirectory() {
 File *EsFSVolume::Initialise(Device *_drive) {
 	drive = _drive;
 	
+	// Load the superblock.
 	EsFSSuperblockP *superblockP = (EsFSSuperblockP *) OSHeapAllocate(sizeof(EsFSSuperblockP), false);
-	drive->block.Access(8192 / drive->block.sectorSize,
+	if (!drive->block.Access(8192 / drive->block.sectorSize,
 			8192 / drive->block.sectorSize,
-			DRIVE_ACCESS_READ, (uint8_t *) superblockP);
+			DRIVE_ACCESS_READ, (uint8_t *) superblockP)) return nullptr;
 	CopyMemory(&superblock, &superblockP->d, sizeof(EsFSSuperblock));
-	OSHeapFree(superblockP);
+	Defer(OSHeapFree(superblockP));
 
 	if (CompareBytes(superblock.signature, (void *) ESFS_SIGNATURE_STRING, ESFS_SIGNATURE_STRING_LENGTH)) {
 		// The signature in the superblock was invalid.
@@ -129,8 +130,18 @@ File *EsFSVolume::Initialise(Device *_drive) {
 
 	if (superblock.mounted) {
 		// The drive is already mounted.
+		KernelLog(LOG_WARNING, "Trying to mount an EssenceFS volume that was not unmounted correctly.\n");
 		return nullptr;
 	}
+
+	// TODO Enable this when we have a proper shutdown/unmount facility.
+#if 0
+	// Save the mounted superblock.
+	superblockP->d.mounted = true;
+	if (!drive->block.Access(8192 / drive->block.sectorSize,
+			8192 / drive->block.sectorSize,
+			DRIVE_ACCESS_WRITE, (uint8_t *) superblockP)) return nullptr;
+#endif
 
 	sectorsPerBlock = superblock.blockSize / drive->block.sectorSize;
 
