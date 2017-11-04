@@ -19,6 +19,16 @@ load_kernel:
 	mov	si,ErrorBadFilesystem
 	jne	error
 
+	; Save the OS installation identifier.
+	mov	eax,[fs:132]
+	mov	[os_installation_identifier + 0],eax
+	mov	eax,[fs:136]
+	mov	[os_installation_identifier + 4],eax
+	mov	eax,[fs:140]
+	mov	[os_installation_identifier + 8],eax
+	mov	eax,[fs:144]
+	mov	[os_installation_identifier + 12],eax
+
 	; Load the kernel's file entry.
 	xor	eax,eax
 	mov	ax,[fs:112]

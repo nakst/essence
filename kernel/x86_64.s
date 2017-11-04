@@ -76,6 +76,14 @@ _start:
 	mov	fs,ax
 	mov	gs,ax
 
+	; Load the installation ID.
+[extern installationID]
+	mov	rbx,installationID
+	mov	rax,[0x7FF0]
+	mov	[rbx],rax
+	mov	rax,[0x7FF8]
+	mov	[rbx + 8],rax
+
 	; Unmap the identity paging the bootloader used
 	mov	rax,0xFFFFFFFFFFFFF000
 	mov	qword [rax],0

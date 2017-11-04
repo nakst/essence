@@ -38,7 +38,7 @@ struct Mountpoint {
 
 struct VFS {
 	void Initialise();
-	void RegisterFilesystem(File *root, FilesystemType type, void *data);
+	void RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier installationID);
 	File *OpenFile(char *name, size_t nameLength);
 	File *OpenFile(void *existingFile);
 	void CloseFile(File *file);
@@ -181,7 +181,7 @@ File *VFS::OpenFile(void *_existingFile) {
 	return existingFile;
 }
 
-void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data) {
+void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier fsInstallationID) {
 	lock.Acquire();
 
 	uintptr_t filesystemID = filesystems.count;
@@ -196,7 +196,7 @@ void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data) {
 	Mountpoint *mountpoint = (Mountpoint *) mountpointPool.Add();
 	mountpoint->root = root;
 	mountpoint->filesystem = filesystem;
-	mountpoint->pathLength = FormatString(mountpoint->path, MAX_PATH, OS_FOLDER "/fs%d/", filesystemID);
+	mountpoint->pathLength = FormatString(mountpoint->path, MAX_PATH, OS_FOLDER "/Volume%d/", filesystemID);
 	mountpoint->allMountpointsItem.thisItem = mountpoint;
 	mountpoint->filesystemMountpointsItem.thisItem = mountpoint;
 	mountpoints.InsertEnd(&mountpoint->allMountpointsItem);
@@ -205,9 +205,43 @@ void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data) {
 	lock.Release();
 
 	if (!foundBootFilesystem) {
+		// We currently only support booting on EssenceFS volumes.
+		if (type != FILESYSTEM_ESFS) {
+			return;
+		}
+
+		// Is this even a boot volume?
+		bool allZero = true;
+		for (uintptr_t i = 0; i < sizeof(UniqueIdentifier); i++) {
+			if (fsInstallationID.d[i]) {
+				allZero = false;
+				break;
+			}
+		}
+		if (allZero) return;
+
+		// This wasn't the boot volume.
+		if (CompareBytes(&fsInstallationID, &installationID, sizeof(UniqueIdentifier))) {
+			return;
+		}
+
+		// Mount the volume at root.
+		foundBootFilesystem = true;
+		lock.Acquire();
+		Mountpoint *mountpoint = (Mountpoint *) mountpointPool.Add();
+		mountpoint->root = root;
+		mountpoint->filesystem = filesystem;
+		mountpoint->pathLength = FormatString(mountpoint->path, MAX_PATH, "/");
+		mountpoint->allMountpointsItem.thisItem = mountpoint;
+		mountpoint->filesystemMountpointsItem.thisItem = mountpoint;
+		mountpoints.InsertEnd(&mountpoint->allMountpointsItem);
+		filesystem->mountpoints.InsertEnd(&mountpoint->filesystemMountpointsItem);
+		lock.Release();
+
+#if 0
 		const size_t bufferSize = 32;
 		char buffer[bufferSize];
-		File *file = OpenFile(buffer, FormatString(buffer, bufferSize, OS_FOLDER "/fs%d" OS_FOLDER "/bootfsid", filesystemID));
+		File *file = OpenFile(buffer, FormatString(buffer, bufferSize, OS_FOLDER "/Volume%d" OS_FOLDER "/bootfsid", filesystemID));
 
 		if (file && file->fileSize <= bufferSize) {
 			file->Read(0, file->fileSize, (uint8_t *) buffer);
@@ -234,6 +268,7 @@ void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data) {
 
 			CloseFile(file);
 		}
+#endif
 	}
 }
 

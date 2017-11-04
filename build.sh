@@ -1,6 +1,9 @@
 clear
 echo "Build started..."
 
+# TODO: Work out how to randomise this.
+INSTALLATION_IDENTIFIER="00-11-22-33-44-55-66-77-88-99-AA-BB-CC-DD-EE-FF"
+
 # TARGET_FS="ext2"
 TARGET_FS="esfs"
 DRIVE_RAW=drive
@@ -48,6 +51,7 @@ if [ "ext2" == "$TARGET_FS" ]; then
 	cp drive2 drive
 else
 	./esfs $DRIVE_RAW $PARTITION_OFFSET format $((512 * $PARTITION_SIZE)) "Essence HD" bin/os/kernel
+	./esfs $DRIVE_RAW $PARTITION_OFFSET set-installation $INSTALLATION_IDENTIFIER
 fi
 
 if [ "ext2" == "$TARGET_FS" ]; then

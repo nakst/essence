@@ -168,6 +168,8 @@ struct UniqueIdentifier {
 	uint8_t d[16];
 };
 
+UniqueIdentifier installationID; // The identifier of this OS installation, given to us by the bootloader.
+
 #endif
 
 #include "memory.cpp"

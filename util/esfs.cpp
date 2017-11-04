@@ -1442,7 +1442,10 @@ void Import(char *target, char *source) {
 
 		closedir(d);
 	}
+}
 
+void SetInstallation(UniqueIdentifier identifier) {
+	superblock->osInstallation = identifier;
 }
 
 int main(int argc, char **argv) {
@@ -1515,6 +1518,23 @@ int main(int argc, char **argv) {
 
 		MountVolume();
 		Tree(argv[0], 0);
+		UnmountVolume();
+	} else if (IS_COMMAND("set-installation")) {
+		CHECK_ARGS(1, "set-installation <uid>");
+
+		if (strlen(argv[0]) != 47) {
+			printf("Error: Invalid UniqueIdentifier.\n");
+			exit(1);
+		}
+
+		UniqueIdentifier identifier;
+
+		for (int i = 0; i < 16; i++) {
+			identifier.d[i] = argv[0][i * 3 + 0] - '0' + ((argv[0][i * 3 + 1] - '0') << 4);
+		}
+
+		MountVolume();
+		SetInstallation(identifier);
 		UnmountVolume();
 	} else if (IS_COMMAND("available-extents")) {
 		CHECK_ARGS(1, "available-extents <group>");

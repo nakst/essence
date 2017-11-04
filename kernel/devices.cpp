@@ -139,10 +139,11 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 		}
 
 		if (information[1080] == 0x53 && information[1081] == 0xEF) {
+			UniqueIdentifier installationID = {}; // You can't boot from a Ext2 filesystem.
 			Ext2FS *filesystem = (Ext2FS *) OSHeapAllocate(sizeof(Ext2FS), true);
 			File *root = filesystem->Initialise(device);
 			if (root) {
-				vfs.RegisterFilesystem(root, FILESYSTEM_EXT2, filesystem);
+				vfs.RegisterFilesystem(root, FILESYSTEM_EXT2, filesystem, installationID);
 			} else {
 				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid ext2 filesystem.\n", device->id);
 				OSHeapFree(filesystem);
@@ -151,7 +152,7 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 			EsFSVolume *volume = (EsFSVolume *) OSHeapAllocate(sizeof(EsFSVolume), true);
 			File *root = volume->Initialise(device);
 			if (root) {
-				vfs.RegisterFilesystem(root, FILESYSTEM_ESFS, volume);
+				vfs.RegisterFilesystem(root, FILESYSTEM_ESFS, volume, volume->superblock.osInstallation);
 			} else {
 				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid EssenceFS volume.\n", device->id);
 				OSHeapFree(volume);

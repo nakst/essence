@@ -3,6 +3,7 @@
 
 ; This is missing any filesystem specific macros.
 %define vesa_info 0x7000
+%define os_installation_identifier 0x7FF0
 %define temporary_load_buffer 0x9000
 %define page_directory 0x40000 
 %define page_directory_length 0x20000
