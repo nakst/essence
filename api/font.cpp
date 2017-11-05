@@ -1,10 +1,20 @@
-// TODO Clipping at right hand side? Not invalidating properly?
+// TODO Thread safety.
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
 static stbtt_fontinfo guiRegularFont;
 static bool fontRendererInitialised;
+
+struct FontCacheEntry {
+	uint8_t *data;
+	int character;
+	int width, height, xoff, yoff;
+};
+
+#define FONT_CACHE_SIZE 256
+static FontCacheEntry fontCache[FONT_CACHE_SIZE];
+static uintptr_t fontCachePosition;
 
 static void OSFontRendererInitialise() {
 	if (fontRendererInitialised) {
@@ -127,7 +137,7 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		advanceWidth    *= scale;
 		leftSideBearing *= scale;
 
-		uint8_t *output;
+		uint8_t *output = nullptr;
 
 		if (outputPosition.x + advanceWidth < region.left) {
 			goto skipCharacter;
@@ -139,10 +149,35 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		stbtt_GetCodepointBitmapBox(&guiRegularFont, character, scale, scale, &ix0, &iy0, &ix1, &iy1);
 
 		int width, height, xoff, yoff;
-		output = stbtt_GetCodepointBitmap(&guiRegularFont, scale, scale, character, &width, &height, &xoff, &yoff);
+
+		for (uintptr_t i = 0; i < FONT_CACHE_SIZE; i++) {
+			if (fontCache[i].character == character) {
+				FontCacheEntry *entry = fontCache + i;
+				output = entry->data;
+				width = entry->width;
+				height = entry->height;
+				xoff = entry->xoff;
+				yoff = entry->yoff;
+				break;
+			}
+		}
 
 		if (!output) {
-			goto skipCharacter;
+			output = stbtt_GetCodepointBitmap(&guiRegularFont, scale, scale, character, &width, &height, &xoff, &yoff);
+
+			if (output) {
+				FontCacheEntry *entry = fontCache + fontCachePosition;
+				if (entry->data) OSHeapFree(entry->data);
+				entry->data = output;
+				entry->character = character;
+				entry->width = width;
+				entry->height = height;
+				entry->xoff = xoff;
+				entry->yoff = yoff;
+				fontCachePosition = (fontCachePosition + 1) % FONT_CACHE_SIZE;
+			} else {
+				goto skipCharacter;
+			}
 		}
 
 		for (int y = 0; y < height; y++) {
@@ -199,8 +234,6 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 				}
 			}
 		}
-
-		OSHeapFree(output);
 
 		skipCharacter:
 		outputPosition.x += advanceWidth;
