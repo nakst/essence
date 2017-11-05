@@ -769,6 +769,7 @@ void AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, v
 
 		if (i == 0){
 			offsetIntoBlock = offset - offsetBlockAligned;
+			dataToTransfer -= offsetIntoBlock;
 		} 
 		
 		if (i == sizeBlocks - 1) {

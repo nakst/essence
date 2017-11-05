@@ -80,6 +80,18 @@ bool File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 void VFS::Initialise() {
 	filesystemPool.Initialise(sizeof(Filesystem));
 	mountpointPool.Initialise(sizeof(Mountpoint));
+
+	bool bootedFromEsFS = false;
+	for (uintptr_t i = 0; i < 16; i++) {
+		if (installationID.d[i]) {
+			bootedFromEsFS = true;
+			break;
+		}
+	}
+
+	if (!bootedFromEsFS) {
+		KernelPanic("VFS::Initialise - The operating system was not booted from an EssenceFS volume.\n");
+	}
 }
 
 bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem);

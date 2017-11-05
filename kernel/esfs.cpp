@@ -11,9 +11,7 @@ struct EsFSVolume {
 	File *LoadRootDirectory();
 	File *SearchDirectory(char *name, size_t nameLength, File *directory);
 
-	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer);
-	bool AccessExtent(EsFSGlobalExtent extent, int operation, void *buffer);
-	bool AccessExtent(EsFSLocalExtent extent, int operation, void *buffer);
+	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
 
@@ -23,8 +21,6 @@ struct EsFSVolume {
 	size_t sectorsPerBlock;
 
 	Mutex mutex;
-
-	uint8_t blockBuffer[ESFS_MAX_BLOCK_SIZE]; 
 };
 
 struct EsFSFile {
@@ -42,19 +38,9 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 	return blocks;
 }
 
-bool EsFSVolume::AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer) {
+bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
 	mutex.AssertLocked();
-	return drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize, count * sectorsPerBlock * drive->block.sectorSize, operation, (uint8_t *) buffer);
-}
-
-bool EsFSVolume::AccessExtent(EsFSGlobalExtent extent, int operation, void *buffer) {
-	mutex.AssertLocked();
-	return drive->block.Access(extent.offset * sectorsPerBlock * drive->block.sectorSize, extent.count * sectorsPerBlock * drive->block.sectorSize, operation, (uint8_t *) buffer);
-}
-
-bool EsFSVolume::AccessExtent(EsFSLocalExtent extent, int operation, void *buffer) {
-	mutex.AssertLocked();
-	return drive->block.Access(extent.offset * sectorsPerBlock * drive->block.sectorSize, extent.count * sectorsPerBlock * drive->block.sectorSize, operation, (uint8_t *) buffer);
+	return drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
 }
 
 EsFSAttributeHeader *EsFSVolume::FindAttribute(uint16_t attribute, void *_attributeList) {
@@ -83,7 +69,7 @@ File *EsFSVolume::LoadRootDirectory() {
 	void *root = OSHeapAllocate(superblock.blockSize * superblock.rootDirectoryFileEntry.count, false);
 	Defer(OSHeapFree(root));
 
-	if (!AccessExtent(superblock.rootDirectoryFileEntry, DRIVE_ACCESS_READ, root)) {
+	if (!AccessBlock(superblock.rootDirectoryFileEntry.offset, superblock.blockSize, DRIVE_ACCESS_READ, root, 0)) {
 		return nullptr;
 	}
 
@@ -175,7 +161,7 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 
 		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
 			if (data->indirect2[i]) {
-				if (!AccessBlock(data->indirect2[i], 1, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)))) {
+				if (!AccessBlock(data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 					return false;
 				}
 			}
@@ -231,6 +217,7 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 
 		if (i == 0){
 			offsetIntoBlock = offset - offsetBlockAligned;
+			dataToTransfer -= offsetIntoBlock;
 		} 
 		
 		if (i == sizeBlocks - 1) {
@@ -239,34 +226,8 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 
 		if (lastAccessedActualBlock) *lastAccessedActualBlock = globalBlock;
 
-		if (write) {
-			if (offsetIntoBlock || dataToTransfer != superblock.blockSize) {
-				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, blockBuffer)) {
-					return false;
-				}
-
-				CopyMemory(blockBuffer + offsetIntoBlock, buffer, dataToTransfer);
-
-				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_WRITE, blockBuffer)) {
-					return false;
-				}
-			} else {
-				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_WRITE, buffer)) {
-					return false;
-				}
-			}
-		} else {
-			if (offsetIntoBlock || dataToTransfer != superblock.blockSize) {
-				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, blockBuffer)) {
-					return false;
-				}
-
-				CopyMemory(buffer, blockBuffer + offsetIntoBlock, dataToTransfer);
-			} else {
-				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, buffer)) {
-					return false;
-				}
-			}
+		if (!AccessBlock(globalBlock, dataToTransfer, write ? DRIVE_ACCESS_WRITE : DRIVE_ACCESS_READ, buffer, offsetIntoBlock)) {
+			return false; // Drive error.
 		}
 
 		buffer += dataToTransfer;

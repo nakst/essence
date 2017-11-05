@@ -1219,6 +1219,7 @@ void Pool::Initialise(size_t _elementSize) {
 }
 
 void *Pool::Add() {
+	if (!elementSize) KernelPanic("Pool::Add - Pool uninitialised.\n");
 	void *address = OSHeapAllocate(elementSize, true);
 	return address;
 }

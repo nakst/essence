@@ -321,7 +321,7 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 
 		table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 4194304) >> 0);
 		table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 4194304) >> 32);
-		table->prdtEntries[i].byteCount = countRemaining - 1;
+		table->prdtEntries[i].byteCount = ((countRemaining + 511) & ~0x1FF) - 1;
 		table->prdtEntries[i].interruptOnCompletion = true;
 	}
 
