@@ -260,7 +260,7 @@ AHCIDriver ahci;
 bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
-	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector) / 512;
+	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
 
 	AHCIPresentDrive *drive = drives + _drive;
 	volatile AHCIPort *port = r->ports + drive->port;

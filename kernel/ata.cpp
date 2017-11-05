@@ -76,7 +76,7 @@ bool ATAAccessDrive(uintptr_t drive, uint64_t sector, size_t count, int operatio
 bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
-	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector) / 512;
+	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
 
 	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
 	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);

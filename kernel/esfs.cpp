@@ -167,43 +167,65 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 			}
 		}
 	}
-	
-	for (uint64_t i = 0; i < sizeBlocks; i++) {
-		// Work out which block contains this data.
 
-		uint64_t blockInStream = offsetBlockAligned / superblock.blockSize + i;
+	uint64_t blockInStream = offsetBlockAligned / superblock.blockSize;
+#if 1
+	uint64_t maxBlocksToFind = drive->block.maxAccessSectorCount * drive->block.sectorSize / superblock.blockSize;
+#else
+	uint64_t maxBlocksToFind = 1;
+#endif
+	uint64_t i = 0;
+
+	while (sizeBlocks) {
 		uint64_t globalBlock = 0;
+		uint64_t blocksFound = 0;
 
-		switch (data->indirection) {
-			case ESFS_DATA_INDIRECT: {
-				uint64_t p = 0;
+		while (blocksFound < maxBlocksToFind && sizeBlocks) {
+			uint64_t nextGlobalBlock = 0;
 
-				for (int i = 0; i < data->extentCount; i++) {
-					if (blockInStream < p + data->indirect[i].count) {
-						globalBlock = data->indirect[i].offset + blockInStream - p;
-						break;
-					} else {
-						p += data->indirect[i].count;
+			switch (data->indirection) {
+				case ESFS_DATA_INDIRECT: {
+					uint64_t p = 0;
+
+					for (int i = 0; i < data->extentCount; i++) {
+						if (blockInStream < p + data->indirect[i].count) {
+							nextGlobalBlock = data->indirect[i].offset + blockInStream - p;
+							break;
+						} else {
+							p += data->indirect[i].count;
+						}
 					}
-				}
-			} break;	
+				} break;	
 
-			case ESFS_DATA_INDIRECT_2: {
-				uint64_t p = 0;
+				case ESFS_DATA_INDIRECT_2: {
+					uint64_t p = 0;
 
-				for (int i = 0; i < data->extentCount; i++) {
-					if (blockInStream < p + i2ExtentList[i].count) {
-						globalBlock = i2ExtentList[i].offset + blockInStream - p;
-						break;
-					} else {
-						p += i2ExtentList[i].count;
+					for (int i = 0; i < data->extentCount; i++) {
+						if (blockInStream < p + i2ExtentList[i].count) {
+							nextGlobalBlock = i2ExtentList[i].offset + blockInStream - p;
+							break;
+						} else {
+							p += i2ExtentList[i].count;
+						}
 					}
-				}
-			} break;
+				} break;
 
-			default: {
-				KernelPanic("EsFSVolume::AccessStream - Unsupported indirection format %d.\n", data->indirection);
-			} break;
+				default: {
+					KernelPanic("EsFSVolume::AccessStream - Unsupported indirection format %d.\n", data->indirection);
+				} break;
+			}
+
+			if (!globalBlock) {
+				globalBlock = nextGlobalBlock;
+			} else if (nextGlobalBlock == globalBlock + blocksFound) {
+				// Continue.
+			} else {
+				break;
+			}
+
+			blockInStream++;
+			blocksFound++;
+			sizeBlocks--;
 		}
 
 		if (!globalBlock) {
@@ -213,15 +235,15 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 		// Access the modified data.
 
 		uint64_t offsetIntoBlock = 0;
-		uint64_t dataToTransfer = superblock.blockSize;
+		uint64_t dataToTransfer = superblock.blockSize * blocksFound;
 
-		if (i == 0){
+		if (!i) {
 			offsetIntoBlock = offset - offsetBlockAligned;
 			dataToTransfer -= offsetIntoBlock;
 		} 
 		
-		if (i == sizeBlocks - 1) {
-			dataToTransfer = size;
+		if (!sizeBlocks) {
+			dataToTransfer = size; // Only transfer the remaining bytes.
 		}
 
 		if (lastAccessedActualBlock) *lastAccessedActualBlock = globalBlock;
@@ -232,8 +254,9 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 
 		buffer += dataToTransfer;
 		size -= dataToTransfer;
+		i++;
 	}
-
+	
 	return true;
 }
 
