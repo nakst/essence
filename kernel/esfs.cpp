@@ -44,17 +44,17 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 
 bool EsFSVolume::AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer) {
 	mutex.AssertLocked();
-	return drive->block.Access(block * sectorsPerBlock, count * sectorsPerBlock, operation, (uint8_t *) buffer);
+	return drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize, count * sectorsPerBlock * drive->block.sectorSize, operation, (uint8_t *) buffer);
 }
 
 bool EsFSVolume::AccessExtent(EsFSGlobalExtent extent, int operation, void *buffer) {
 	mutex.AssertLocked();
-	return drive->block.Access(extent.offset * sectorsPerBlock, extent.count * sectorsPerBlock, operation, (uint8_t *) buffer);
+	return drive->block.Access(extent.offset * sectorsPerBlock * drive->block.sectorSize, extent.count * sectorsPerBlock * drive->block.sectorSize, operation, (uint8_t *) buffer);
 }
 
 bool EsFSVolume::AccessExtent(EsFSLocalExtent extent, int operation, void *buffer) {
 	mutex.AssertLocked();
-	return drive->block.Access(extent.offset * sectorsPerBlock, extent.count * sectorsPerBlock, operation, (uint8_t *) buffer);
+	return drive->block.Access(extent.offset * sectorsPerBlock * drive->block.sectorSize, extent.count * sectorsPerBlock * drive->block.sectorSize, operation, (uint8_t *) buffer);
 }
 
 EsFSAttributeHeader *EsFSVolume::FindAttribute(uint16_t attribute, void *_attributeList) {
@@ -107,9 +107,7 @@ File *EsFSVolume::Initialise(Device *_drive) {
 	
 	// Load the superblock.
 	EsFSSuperblockP *superblockP = (EsFSSuperblockP *) OSHeapAllocate(sizeof(EsFSSuperblockP), false);
-	if (!drive->block.Access(8192 / drive->block.sectorSize,
-			8192 / drive->block.sectorSize,
-			DRIVE_ACCESS_READ, (uint8_t *) superblockP)) return nullptr;
+	if (!drive->block.Access(8192, 8192, DRIVE_ACCESS_READ, (uint8_t *) superblockP)) return nullptr;
 	CopyMemory(&superblock, &superblockP->d, sizeof(EsFSSuperblock));
 	Defer(OSHeapFree(superblockP));
 
@@ -246,19 +244,29 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, blockBuffer)) {
 					return false;
 				}
-			}
 
-			CopyMemory(blockBuffer + offsetIntoBlock, buffer, dataToTransfer);
+				CopyMemory(blockBuffer + offsetIntoBlock, buffer, dataToTransfer);
 
-			if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_WRITE, blockBuffer)) {
-				return false;
+				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_WRITE, blockBuffer)) {
+					return false;
+				}
+			} else {
+				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_WRITE, buffer)) {
+					return false;
+				}
 			}
 		} else {
-			if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, blockBuffer)) {
-				return false;
-			}
+			if (offsetIntoBlock || dataToTransfer != superblock.blockSize) {
+				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, blockBuffer)) {
+					return false;
+				}
 
-			CopyMemory(buffer, blockBuffer + offsetIntoBlock, dataToTransfer);
+				CopyMemory(buffer, blockBuffer + offsetIntoBlock, dataToTransfer);
+			} else {
+				if (!AccessBlock(globalBlock, 1, DRIVE_ACCESS_READ, buffer)) {
+					return false;
+				}
+			}
 		}
 
 		buffer += dataToTransfer;

@@ -46,7 +46,6 @@ struct ATADriver {
 	bool foundController;
 
 	uint64_t sectorCount[ATA_DRIVES];
-	bool useDMA[ATA_DRIVES];
 	bool isATAPI[ATA_DRIVES];
 	Device *devmanDevices[ATA_DRIVES];
 
@@ -74,12 +73,16 @@ bool ATAAccessDrive(uintptr_t drive, uint64_t sector, size_t count, int operatio
 	return ata.Access(drive, sector, count, operation, buffer);
 }
 
-bool ATADriver::Access(uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *_buffer) {
+bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
+	uint64_t sector = offset / 512;
+	uint64_t offsetIntoSector = offset % 512;
+	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector) / 512;
+
 	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
 	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);
 	if (!sectorCount[drive]) KernelPanic("ATADriver::Access - Drive %d is invalid.\n", drive);
-	if (sector > sectorCount[drive] || (sector + count) > sectorCount[drive]) KernelPanic("ATADriver::Access - Attempt to access sector %d when drive only has %d sectors.\n", sector, sectorCount[drive]);
-	if (count > 64) KernelPanic("ATADriver::Access - Attempt to read more than 64 consecutive sectors in 1 function call.\n");
+	if (sector > sectorCount[drive] || (sector + sectorsNeededToLoad) > sectorCount[drive]) KernelPanic("ATADriver::Access - Attempt to access sector %d when drive only has %d sectors.\n", sector, sectorCount[drive]);
+	if (sectorsNeededToLoad > 64) KernelPanic("ATADriver::Access - Attempt to read more than 64 consecutive sectors in 1 function call.\n");
 
 	uintptr_t bus = drive >> 1;
 	uintptr_t slave = drive & 1;
@@ -106,7 +109,7 @@ bool ATADriver::Access(uintptr_t drive, uint64_t sector, size_t count, int opera
 		SetDrive(bus, slave, 0x40);
 
 		ProcessorOut8(ATA_REGISTER(bus, ATA_SECTOR_COUNT), 0);
-		ProcessorOut8(ATA_REGISTER(bus, ATA_SECTOR_COUNT), count);
+		ProcessorOut8(ATA_REGISTER(bus, ATA_SECTOR_COUNT), sectorsNeededToLoad);
 
 		// Set the sector to access.
 		// The drive will keep track of the previous and current values of these registers,
@@ -119,60 +122,61 @@ bool ATADriver::Access(uintptr_t drive, uint64_t sector, size_t count, int opera
 		ProcessorOut8(ATA_REGISTER(bus, ATA_LBA1), sector >>  0);
 	} else {
 		SetDrive(bus, slave, 0x40 | (sector >> 24));
-		ProcessorOut8(ATA_REGISTER(bus, ATA_SECTOR_COUNT), count);
+		ProcessorOut8(ATA_REGISTER(bus, ATA_SECTOR_COUNT), sectorsNeededToLoad);
 		ProcessorOut8(ATA_REGISTER(bus, ATA_LBA3), sector >> 16);
 		ProcessorOut8(ATA_REGISTER(bus, ATA_LBA2), sector >>  8);
 		ProcessorOut8(ATA_REGISTER(bus, ATA_LBA1), sector >>  0);
 	}
 
-	if (useDMA[drive]) {
-		Event *event = irqs + bus;
-		event->autoReset = false;
-		event->Reset();
+	Event *event = irqs + bus;
+	event->autoReset = false;
+	event->Reset();
 
-		// Prepare the PRDT and buffer
-		prdts[bus]->size = count * ATA_SECTOR_SIZE;
-		if (operation == DRIVE_ACCESS_WRITE) CopyMemory(buffers[bus], buffer, count * ATA_SECTOR_SIZE);
+	// Prepare the PRDT and buffer
+	prdts[bus]->size = sectorsNeededToLoad * ATA_SECTOR_SIZE;
+	if (operation == DRIVE_ACCESS_WRITE) CopyMemory((uint8_t *) buffers[bus] + offsetIntoSector, buffer, countBytes);
 
-		// Set the mode.
-		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 0 : 8);
-		device->WriteBAR8(DMA_REGISTER(bus, DMA_STATUS), 6);
+	// Set the mode.
+	device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 0 : 8);
+	device->WriteBAR8(DMA_REGISTER(bus, DMA_STATUS), 6);
 
-		// Wait for the RDY bit to set.
-		while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 6)) && !timeout->event.Poll());
-		if (timeout->event.Poll()) return false;
+	// Wait for the RDY bit to set.
+	while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 6)) && !timeout->event.Poll());
+	if (timeout->event.Poll()) return false;
 
-		// Issue the command.
-		if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA_48 : ATA_WRITE_DMA_48);
-		else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA :    ATA_WRITE_DMA   );
+	// Issue the command.
+	if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA_48 : ATA_WRITE_DMA_48);
+	else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA :    ATA_WRITE_DMA   );
 
-		// Wait for the DRQ bit to set.
-		while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 3)) && !timeout->event.Poll());
-		if (timeout->event.Poll()) return false;
+	// Wait for the DRQ bit to set.
+	while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 3)) && !timeout->event.Poll());
+	if (timeout->event.Poll()) return false;
 
-		// Start the transfer.
-		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 1 : 9);
-		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
-		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+	// Start the transfer.
+	device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 1 : 9);
+	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
+	if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
 
-		// Wait for the command to complete.
-		event->Wait(ATA_TIMEOUT);
+	// Wait for the command to complete.
+	event->Wait(ATA_TIMEOUT);
 
-		// Check if the command has completed.
-		if (!event->Poll())
-			return false;
+	// Check if the command has completed.
+	if (!event->Poll())
+		return false;
 
-		// Check for error.
-		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
-		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
+	// Check for error.
+	if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
 
-		// Stop the transfer.
-		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), 0);
-		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 3) return false;
+	// Stop the transfer.
+	device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), 0);
+	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 3) return false;
 
-		// Copy the data that we read.
-		if (operation == DRIVE_ACCESS_READ && buffer) CopyMemory(buffer, buffers[bus], count * ATA_SECTOR_SIZE);
-	} else {
+	// Copy the data that we read.
+	if (operation == DRIVE_ACCESS_READ && buffer) CopyMemory(buffer, (uint8_t *) buffers[bus] + offsetIntoSector, countBytes);
+	
+#if 0
+	else {
 		Event *event = irqs + bus;
 		event->autoReset = true;
 		event->Reset();
@@ -198,6 +202,7 @@ bool ATADriver::Access(uintptr_t drive, uint64_t sector, size_t count, int opera
 			}
 		}
 	}
+#endif
 
 	accessCount++;
 
@@ -306,7 +311,8 @@ void ATADriver::Initialise() {
 
 			// Check if the device supports LBA/DMA.
 			if (!(identifyData[49] & 0x200)) continue;
-			dmaDrivesOnBus |= ((useDMA[slave + bus * 2] = (identifyData[49] & 0x100)));
+			if (!(identifyData[49] & 0x100)) continue;
+			dmaDrivesOnBus |= 1;
 			drivesOnBus |= 1;
 
 			// Work out the number of sectors in the drive.
@@ -318,15 +324,16 @@ void ATADriver::Initialise() {
 			sectorCount[slave + bus * 2] = sectors;
 
 			KernelLog(LOG_INFO, "ATADriver::Initialise - Found ATA%z drive: %d/%d\n", isATAPI[slave + bus * 2] ? "PI" : "" ,bus, slave);
-			KernelLog(LOG_INFO, "ATADriver::Initialise - Sectors: %x; DMA = %d\n", sectors, useDMA[slave + bus * 2]);
+			KernelLog(LOG_INFO, "ATADriver::Initialise - Sectors: %x\n", sectors);
 		}
 
 		if (dmaDrivesOnBus) {
 			uintptr_t dataPhysical = pmm.AllocateContiguous128KB();
 
 			if (!dataPhysical) {
-				KernelLog(LOG_WARNING, "ATADriver::Initialise - Could not allocate memory for DMA, forcing PIO on bus %d.\n", bus);
-				useDMA[bus * 2 + 0] = useDMA[bus * 2 + 1] = false;
+				KernelLog(LOG_WARNING, "ATADriver::Initialise - Could not allocate memory for DMA on bus %d.\n", bus);
+				sectorCount[bus * 2 + 0] = sectorCount[bus * 2 + 1] = 0;
+				drivesOnBus = 0;
 			} else {
 				uintptr_t dataVirtual = (uintptr_t) kernelVMM.Allocate(131072, vmmMapAll, vmmRegionPhysical, dataPhysical, 0 /*do not cache reads/writes*/);
 
@@ -349,14 +356,6 @@ void ATADriver::Initialise() {
 				// Disable the drives on this bus.
 				sectorCount[bus * 2 + 0] = 0;
 				sectorCount[bus * 2 + 1] = 0;
-			}
-		}
-
-		for (uintptr_t slave = 0; slave < 2; slave++) {
-			// Test if DMA works.
-			if (sectorCount[slave + bus * 2] && useDMA[slave + bus * 2] && !Access(slave + bus * 2, 0, 1, DRIVE_ACCESS_READ, nullptr)) {
-				KernelLog(LOG_WARNING, "ATADriver::Initialise - DMA failed for drive %d on bus %d, forcing PIO...\n", slave, bus);
-				useDMA[slave + bus * 2] = false;
 			}
 		}
 	}

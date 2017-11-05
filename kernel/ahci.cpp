@@ -257,7 +257,11 @@ AHCIDriver ahci;
 
 #define AHCI_DRIVER_IDENTFIY (2)
 
-bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int operation, uint8_t *_buffer) {
+bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
+	uint64_t sector = offset / 512;
+	uint64_t offsetIntoSector = offset % 512;
+	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector) / 512;
+
 	AHCIPresentDrive *drive = drives + _drive;
 	volatile AHCIPort *port = r->ports + drive->port;
 
@@ -287,7 +291,7 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 	AHCICommandHeader *header = drive->commandList + commandIndex;
 	AHCICommandTable *table = drive->commandTable + commandIndex;
 
-	size_t prdtEntries = ((count - 1) >> 13) + 1; 
+	size_t prdtEntries = ((countBytes - 1) >> 22) + 1; 
 
 	header->commandLength = sizeof(AHCIPacketDeviceToHost) / sizeof(uint32_t);
 	header->write = operation == DRIVE_ACCESS_WRITE;
@@ -298,26 +302,26 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 
 	// Copy to the input buffer.
 	if (operation == DRIVE_ACCESS_WRITE) {
-		CopyMemory(buffer, _buffer, count * AHCI_SECTOR_SIZE);
+		CopyMemory((uint8_t *) buffer + offsetIntoSector, _buffer, countBytes);
 	}
 
 	// Configure the PRDT.
 
 	{
 		uintptr_t i;
-		uintptr_t countRemaining = count;
+		uintptr_t countRemaining = countBytes + offsetIntoSector;
 
 		for (i = 0; i < (size_t) (header->prdEntryCount - 1); i++) {
 			table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 4194304) >> 0);
 			table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 4194304) >> 32);
 			table->prdtEntries[i].byteCount = 4194304 - 1;
 			table->prdtEntries[i].interruptOnCompletion = false; // Only interrupt on the last descriptor.
-			countRemaining -= 8192;
+			countRemaining -= 4194304;
 		}
 
 		table->prdtEntries[i].targetAddressLow = (uint32_t) ((physicalBuffer + i * 4194304) >> 0);
 		table->prdtEntries[i].targetAddressHigh = (uint32_t) ((physicalBuffer + i * 4194304) >> 32);
-		table->prdtEntries[i].byteCount = countRemaining * 512 - 1;
+		table->prdtEntries[i].byteCount = countRemaining - 1;
 		table->prdtEntries[i].interruptOnCompletion = true;
 	}
 
@@ -340,8 +344,8 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 		} break;
 	}
 
-	packet->countLow = (uint8_t) (count >> 0);
-	packet->countHigh = (uint8_t) (count >> 8);
+	packet->countLow = (uint8_t) (sectorsNeededToLoad >> 0);
+	packet->countHigh = (uint8_t) (sectorsNeededToLoad >> 8);
 
 	packet->lba0 = (uint8_t) (sector >> 0);
 	packet->lba1 = (uint8_t) (sector >> 8);
@@ -386,7 +390,7 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t sector, size_t count, int ope
 
 	// Copy to the output buffer.
 	if (operation != DRIVE_ACCESS_WRITE) {
-		CopyMemory(_buffer, buffer, count * AHCI_SECTOR_SIZE);
+		CopyMemory(_buffer, (uint8_t *) buffer + offsetIntoSector, countBytes);
 	}
 
 	pmm.lock.Acquire();
@@ -587,7 +591,7 @@ void AHCIDriver::Initialise() {
 
 		// Get the identify data!
 		uint16_t identifyData[256];
-		bool success = Access(i, 0, 1, AHCI_DRIVER_IDENTFIY, (uint8_t *) identifyData);
+		bool success = Access(i, 0, 512, AHCI_DRIVER_IDENTFIY, (uint8_t *) identifyData);
 
 		if (!success) {
 			continue;

@@ -7,7 +7,7 @@ enum DeviceType {
 	DEVICE_TYPE_AHCI_CONTROLLER,
 };
 
-typedef bool (*DriveAccessFunction)(uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *buffer); // Returns true on success.
+typedef bool (*DriveAccessFunction)(uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *buffer); // Returns true on success.
 
 enum BlockDeviceDriver {
 	BLOCK_DEVICE_DRIVER_INVALID,
@@ -59,20 +59,22 @@ void AHCIRegisterController(struct PCIDevice *device);
 
 DeviceManager deviceManager;
 
-bool BlockDevice::Access(uint64_t sector, size_t count, int operation, uint8_t *buffer) {
-	if (sector > sectorCount || (sector + count) > sectorCount || count > maxAccessSectorCount) {
-		KernelPanic("BlockDevice::Access - Sector %d/%d out of bounds on drive %d with count %d.\n", sector, sectorCount, driveID, count);
+bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint8_t *buffer) {
+	// TODO Partial sector writing.
+
+	if (offset / sectorSize > sectorCount || (offset + countBytes) / sectorSize > sectorCount || countBytes / sectorSize > maxAccessSectorCount) {
+		KernelPanic("BlockDevice::Access - Access out of bounds on drive %d.\n", driveID);
 	}
 
-	sector += sectorOffset;
+	offset += sectorOffset * sectorSize;
 
 	switch (driver) {
 		case BLOCK_DEVICE_DRIVER_ATA: {
-			return ata.Access(driveID, sector, count, operation, buffer);
+			return ata.Access(driveID, offset, countBytes, operation, buffer);
 		} break;
 
 		case BLOCK_DEVICE_DRIVER_AHCI: {
-			return ahci.Access(driveID, sector, count, operation, buffer);
+			return ahci.Access(driveID, offset, countBytes, operation, buffer);
 		} break;
 
 		default: {
@@ -129,9 +131,9 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 		uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 32, false);
 		Defer(OSHeapFree(information));
 
-		// Load the first 32 sectors of the drive to identify its filesystem.
+		// Load the first 16KB of the drive to identify its filesystem.
 		// Why don't we do this in vfs.cpp? Because C++ headers are driving me insane!!
-		bool success = device->block.Access(0, 32, DRIVE_ACCESS_READ, information);
+		bool success = device->block.Access(0, 16384, DRIVE_ACCESS_READ, information);
 
 		if (!success) {
 			// We could not access the block device.

@@ -134,7 +134,7 @@ struct Ext2FS {
 
 bool Ext2FS::AccessBlock(uint64_t block, uint8_t *buffer, int operation, size_t count) {
 	lock.AssertLocked();
-	return drive->block.Access(block * sectorsPerBlock, sectorsPerBlock * count, operation, buffer);
+	return drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize, sectorsPerBlock * count * drive->block.sectorSize, operation, buffer);
 }
 
 bool Ext2FS::AccessFile(File *file, uint64_t offsetBytes, uint64_t sizeBytes, int operation, uint8_t *_buffer, bool lockAlreadyAcquired) {
@@ -332,7 +332,7 @@ File *Ext2FS::OpenFile(uint64_t inode) {
 File *Ext2FS::Initialise(Device *_drive) {
 	// Load the superblock and calculate basic filesystem information.
 	drive = _drive;
-	drive->block.Access(1024 / drive->block.sectorSize, 1024 / drive->block.sectorSize, DRIVE_ACCESS_READ, (uint8_t *) &superblock);
+	drive->block.Access(1024, 1024, DRIVE_ACCESS_READ, (uint8_t *) &superblock);
 	bytesPerBlock = 1024 << superblock.blockSize;
 	sectorsPerBlock = bytesPerBlock / drive->block.sectorSize;
 	maxDeviceAccessBlocks = drive->block.maxAccessSectorCount / sectorsPerBlock;
