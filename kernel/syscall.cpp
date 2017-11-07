@@ -459,38 +459,6 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 		} break;
 
-#if 0
-		case OS_SYSCALL_READ_ENTIRE_FILE: {
-			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
-			Defer(currentVMM->UnlockRegion(region1));
-
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(size_t *));
-			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
-			Defer(currentVMM->UnlockRegion(region2));
-
-			File *file = vfs.OpenFile((char *) argument0, argument1);
-
-			if (!file) SYSCALL_RETURN(0);
-			if (!file->fileSize) SYSCALL_RETURN(0);
-
-			size_t fileSize = file->fileSize;
-			uint8_t *buffer = (uint8_t *) currentVMM->Allocate(fileSize);
-			if (!buffer) SYSCALL_RETURN(0);
-			bool success = file->Read(0, fileSize, buffer);
-
-			vfs.CloseFile(file);
-
-			if (!success) {
-				currentVMM->Free(buffer);
-				SYSCALL_RETURN(0);
-			} else {
-				*((size_t *) argument2) = fileSize;
-				SYSCALL_RETURN((uintptr_t) buffer);
-			}
-		} break;
-#endif
-
 		case OS_SYSCALL_CREATE_SHARED_MEMORY: {
 			if (argument0 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
 				SYSCALL_RETURN(OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE);
@@ -574,6 +542,10 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region));
 
+			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument3, sizeof(OSFileInformation));
+			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region2));
+
 			char *path = (char *) argument0;
 			size_t pathLength = (size_t) argument1;
 			uint64_t flags = (uint64_t) argument2;
@@ -581,6 +553,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			File *file = vfs.OpenFile(path, pathLength, flags);
 
 			if (!file) {
+				// TODO Improve the error reporting in the file I/O API.
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 			}
 
@@ -588,7 +561,32 @@ uintptr_t DoSyscall(uintptr_t index,
 			handle.type = KERNEL_OBJECT_FILE;
 			handle.object = file;
 			handle.flags = flags;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+
+			OSFileInformation *information = (OSFileInformation *) argument3;
+			information->handle = currentProcess->handleTable.OpenHandle(handle);
+			information->size = file->fileSize;
+			CopyMemory(&information->identifier, &file->identifier, sizeof(UniqueIdentifier));
+
+			SYSCALL_RETURN(OS_SUCCESS);
+		} break;
+
+		case OS_SYSCALL_READ_FILE_SYNC: {
+			KernelObjectType type = KERNEL_OBJECT_FILE;
+			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
+			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region));
+
+			bool result = file->Read(argument1, argument2, (uint8_t *) argument3);
+
+			if (result) {
+				SYSCALL_RETURN(OS_SUCCESS);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			}
 		} break;
 	}
 

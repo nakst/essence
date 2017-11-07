@@ -308,8 +308,6 @@ void DebuggerVFS() {
 	while (true) {
 		if (DebuggerStart()) break;
 
-		Print("MUTEX\n"); if (DebuggerOption()) DebuggerMutex(&vfs.lock);
-
 		DebuggerFinish();
 	}
 }

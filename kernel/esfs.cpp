@@ -16,6 +16,7 @@ struct EsFSVolume {
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
 
 	Device *drive;
+	Filesystem *filesystem;
 
 	EsFSSuperblock superblock;
 	size_t sectorsPerBlock;
@@ -76,7 +77,7 @@ File *EsFSVolume::LoadRootDirectory() {
 	uint8_t *rootEnd = (uint8_t *) FindAttribute(ESFS_ATTRIBUTE_LIST_END, (EsFSFileEntry *) root + 1);
 	size_t fileEntryLength = rootEnd - (uint8_t *) root;
 
-	File *file = vfs.OpenFile(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true));
+	File *file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true));
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
@@ -341,7 +342,14 @@ File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_di
 		EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, returnValue + 1);
 		if (!data) return nullptr;
 
-		File *file = vfs.OpenFile(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true));
+		File *file;
+
+		// If the file is already open, return that file.
+		if ((file = vfs.FindFile(returnValue->identifier, filesystem))) {
+			return vfs.OpenFileHandle(file);
+		}
+
+		file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true));
 		EsFSFile *eFile = (EsFSFile *) (file + 1);
 		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 

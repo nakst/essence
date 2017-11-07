@@ -13,6 +13,9 @@ struct File {
 	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
 	volatile size_t handles;
+
+	struct File *nextFileInHashTableSlot;
+	struct File **pointerToThisFileInHashTableSlot;
 };
 
 struct Filesystem {
@@ -35,17 +38,22 @@ struct Mountpoint {
 
 struct VFS {
 	void Initialise();
-	void RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier installationID);
+	Filesystem *RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier installationID);
 	File *OpenFile(char *name, size_t nameLength, uint64_t flags);
-	File *OpenFile(void *existingFile);
 	void CloseFile(File *file);
+
+	File *OpenFileHandle(void *existingFile);
+	File *FindFile(UniqueIdentifier identifier, Filesystem *filesystem);
 
 	Pool filesystemPool, mountpointPool;
 	LinkedList filesystems, mountpoints;
+	Mutex filesystemsMutex, mountpointsMutex;
 
 	bool foundBootFilesystem;
 
-	Mutex lock;
+#define FILE_HASH_TABLE_BITS (12)
+	File *fileHashTable[1 << FILE_HASH_TABLE_BITS];
+	Mutex fileHashTableMutex;
 };
 
 VFS vfs;
@@ -101,6 +109,10 @@ void VFS::CloseFile(File *file) {
 	file->mutex.Release();
 
 	if (noHandles) {
+		fileHashTableMutex.Acquire();
+		*file->pointerToThisFileInHashTableSlot = file->nextFileInHashTableSlot;
+		fileHashTableMutex.Release();
+
 		OSHeapFree(file);
 	}
 }
@@ -109,8 +121,7 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 	(void) flags;
 	KernelLog(LOG_VERBOSE, "Opening file: %s\n", nameLength, name);
 
-	lock.Acquire();
-	Defer(lock.Release());
+	mountpointsMutex.Acquire();
 
 	LinkedItem *_mountpoint = mountpoints.firstItem;
 	Mountpoint *longestMatch = nullptr;
@@ -128,6 +139,8 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 		_mountpoint = _mountpoint->nextItem;
 	}
 
+	mountpointsMutex.Release();
+
 	if (!longestMatch) {
 		// The requested file was not on any mounted filesystem.
 		return nullptr;
@@ -138,7 +151,7 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 	nameLength -= mountpoint->pathLength;
 
 	Filesystem *filesystem = mountpoint->filesystem;
-	File *directory = vfs.OpenFile(mountpoint->root);
+	File *directory = vfs.OpenFileHandle(mountpoint->root);
 
 	while (nameLength) {
 		char *entry = name;
@@ -181,18 +194,52 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 	return file;
 }
 
-File *VFS::OpenFile(void *_existingFile) {
+File *VFS::OpenFileHandle(void *_existingFile) {
 	File *existingFile = (File *) _existingFile;
 
 	existingFile->mutex.Acquire();
-	existingFile->handles++;
+
+	if (!existingFile->handles) {
+		fileHashTableMutex.Acquire();
+		uint16_t slot = ((uint16_t) existingFile->identifier.d[0] + ((uint16_t) existingFile->identifier.d[1] << 8)) & 0xFFF;
+		existingFile->nextFileInHashTableSlot = fileHashTable[slot];
+		if (fileHashTable[slot]) fileHashTable[slot]->pointerToThisFileInHashTableSlot = &existingFile->nextFileInHashTableSlot;
+		fileHashTable[slot] = existingFile;
+		existingFile->pointerToThisFileInHashTableSlot = fileHashTable + slot;
+		fileHashTableMutex.Release();
+	} else {
+		existingFile->handles++;
+	}
+
 	existingFile->mutex.Release();
 
 	return existingFile;
 }
 
-void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier fsInstallationID) {
-	lock.Acquire();
+File *VFS::FindFile(UniqueIdentifier identifier, Filesystem *filesystem) {
+	fileHashTableMutex.Acquire();
+	Defer(fileHashTableMutex.Release());
+
+	uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
+
+	File *file = fileHashTable[slot];
+
+	while (file) {
+		if (file->filesystem == filesystem 
+				&& !CompareBytes(&file->identifier, &identifier, sizeof(UniqueIdentifier))
+				&& file->handles) {
+			return file;
+		}
+
+		file = file->nextFileInHashTableSlot;
+	}
+
+	return nullptr; // The file has not been opened.
+}
+
+Filesystem *VFS::RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier fsInstallationID) {
+	filesystemsMutex.Acquire();
+	mountpointsMutex.Acquire();
 
 	uintptr_t filesystemID = filesystems.count;
 
@@ -212,22 +259,26 @@ void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data, Unique
 	mountpoints.InsertEnd(&mountpoint->allMountpointsItem);
 	filesystem->mountpoints.InsertEnd(&mountpoint->filesystemMountpointsItem);
 
-	lock.Release();
+	filesystemsMutex.Release();
+	mountpointsMutex.Release();
 
 	if (!foundBootFilesystem) {
 		// We currently only support booting on EssenceFS volumes.
 		if (type != FILESYSTEM_ESFS) {
-			return;
+			goto end;
 		}
 
 		// This wasn't the boot volume.
 		if (CompareBytes(&fsInstallationID, &installationID, sizeof(UniqueIdentifier))) {
-			return;
+			goto end;
 		}
 
-		// Mount the volume at root.
 		foundBootFilesystem = true;
-		lock.Acquire();
+
+		filesystemsMutex.Acquire();
+		mountpointsMutex.Acquire();
+
+		// Mount the volume at root.
 		Mountpoint *mountpoint = (Mountpoint *) mountpointPool.Add();
 		mountpoint->root = root;
 		mountpoint->filesystem = filesystem;
@@ -236,8 +287,13 @@ void VFS::RegisterFilesystem(File *root, FilesystemType type, void *data, Unique
 		mountpoint->filesystemMountpointsItem.thisItem = mountpoint;
 		mountpoints.InsertEnd(&mountpoint->allMountpointsItem);
 		filesystem->mountpoints.InsertEnd(&mountpoint->filesystemMountpointsItem);
-		lock.Release();
+
+		filesystemsMutex.Release();
+		mountpointsMutex.Release();
 	}
+
+	end:;
+	return filesystem;
 }
 
 #endif

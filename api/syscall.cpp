@@ -112,6 +112,23 @@ OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation 
 }
 
 void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize) {
+	OSFileInformation information;
+
+	if (OS_SUCCESS != OSOpenFile((char *) filePath, filePathLength, OS_OPEN_FILE_ACCESS_READ, &information)) {
+		return nullptr;
+	}
+
+	*fileSize = information.size;
+	void *buffer = OSHeapAllocate(information.size, false);
+
+	if (OS_SUCCESS != OSReadFileSync(information.handle, 0, information.size, buffer)) {
+		OSHeapFree(buffer);
+		return nullptr;
+	}
+
+	return buffer;
+
+#if 0
 	intptr_t result = OSSyscall(OS_SYSCALL_READ_ENTIRE_FILE, (uintptr_t) filePath, filePathLength, (uintptr_t) fileSize, 0);
 
 	if (result >= 0) {
@@ -119,6 +136,7 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 	} else {
 		return nullptr;
 	}
+#endif
 }
 
 OSHandle OSOpenNamedSharedMemory(char *name, size_t nameLength) {
@@ -143,13 +161,12 @@ void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t si
 	}
 }
 
-OSHandle OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSError *error) {
-	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_FILE, (uintptr_t) path, pathLength, flags, 0);
+OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformation *information) {
+	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_FILE, (uintptr_t) path, pathLength, flags, (uintptr_t) information);
+	return result;
+}
 
-	if (result >= 0) {
-		return (OSHandle) result;
-	} else {
-		if (*error) *error = (OSError) result;
-		return OS_INVALID_HANDLE;
-	}
+OSError OSReadFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
+	intptr_t result = OSSyscall(OS_SYSCALL_READ_FILE_SYNC, handle, offset, size, (uintptr_t) buffer);
+	return result;
 }

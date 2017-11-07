@@ -195,13 +195,13 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_CLOSE_HANDLE			(23)
 #define OS_SYSCALL_TERMINATE_THREAD		(24)
 #define OS_SYSCALL_CREATE_THREAD		(25)
-#define OS_SYSCALL_READ_ENTIRE_FILE		(26)
 #define OS_SYSCALL_CREATE_SHARED_MEMORY		(27)
 #define OS_SYSCALL_SHARE_MEMORY			(28)
 #define OS_SYSCALL_MAP_SHARED_MEMORY		(29)
 #define OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY	(30)
 #define OS_SYSCALL_TERMINATE_PROCESS		(31)
 #define OS_SYSCALL_OPEN_FILE			(32)
+#define OS_SYSCALL_READ_FILE_SYNC		(33)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -221,6 +221,16 @@ struct OSProcessInformation {
 	OSHandle handle;
 	uintptr_t pid;
 	OSThreadInformation mainThread;
+};
+
+struct OSUniqueIdentifier {
+	uint8_t d[16];
+};
+
+struct OSFileInformation {
+	OSHandle handle;
+	OSUniqueIdentifier identifier;
+	uint64_t size;
 };
 
 struct OSPoint {
@@ -445,8 +455,9 @@ extern "C" OSHandle OSCreateMutex();
 
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
-extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); // TODO Temporary. Replace with a proper file I/O API.
-extern "C" OSHandle OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSError *error);
+extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 
+extern "C" OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformation *information);
+extern "C" OSError OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);

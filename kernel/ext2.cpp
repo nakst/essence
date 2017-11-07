@@ -121,6 +121,7 @@ struct Ext2FS {
 
 	Ext2Superblock superblock; // Read at mount, written at unmount
 	Device *drive;
+	Filesystem *filesystem;
 	uint64_t sectorsPerBlock;
 	uint64_t maxDeviceAccessBlocks;
 	size_t bytesPerBlock;
@@ -318,12 +319,20 @@ File *Ext2FS::OpenFile(uint64_t inode) {
 	if (!AccessBlock(blockGroupDescriptor->inodeTableBlock + inodeTableBlock, buffer)) return nullptr;
 	Ext2InodeData *inodeData = (Ext2InodeData *) buffer + inodeTableBlockIndex;
 
+	// If the file is already open, use that instead.
+	UniqueIdentifier identifier;
+	for (int i = 0; i < 4; i++) ((uint32_t *) identifier.d)[i] = inode;
+	File *file;
+	if ((file = vfs.FindFile(identifier, filesystem))) {
+		return vfs.OpenFileHandle(file);
+	}
+
 	// Store the file information.
-	File *file = vfs.OpenFile(OSHeapAllocate(sizeof(File) + sizeof(Ext2File), true));
+	file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(Ext2File), true));
 	Ext2File *driverData = (Ext2File *) (file + 1);
 	CopyMemory(&driverData->data, inodeData, sizeof(Ext2InodeData));
 	driverData->inode = inode;
-	for (int i = 0; i < 4; i++) ((uint32_t *) file->identifier.d)[i] = inode;
+	file->identifier = identifier;
 	file->fileSize = (uint64_t) inodeData->sizeLow + ((inodeData->typeAndPermissions & 0x4000) ? 0 : ((uint64_t) inodeData->sizeHigh << 32));
 
 	return file;

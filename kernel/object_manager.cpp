@@ -1,6 +1,8 @@
 #ifndef IMPLEMENTATION
 
-#define CLOSABLE_OBJECT_TYPES ((KernelObjectType) (KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD | KERNEL_OBJECT_SHMEM))
+#define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
+		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
+		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_FILE))
 
 enum KernelObjectType {
 	KERNEL_OBJECT_PROCESS 	= 0x00000001,
@@ -107,6 +109,10 @@ void CloseHandleToObject(void *object, KernelObjectType type) {
 			if (destroy) {
 				sharedMemoryManager.DestroySharedMemory(region);
 			}
+		} break;
+
+		case KERNEL_OBJECT_FILE: {
+			vfs.CloseFile((File *) object);
 		} break;
 
 		default: {
