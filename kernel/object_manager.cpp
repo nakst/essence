@@ -9,11 +9,14 @@ enum KernelObjectType {
 	KERNEL_OBJECT_WINDOW	= 0x00000008,
 	KERNEL_OBJECT_MUTEX	= 0x00000010,
 	KERNEL_OBJECT_SHMEM	= 0x00000020,
+	KERNEL_OBJECT_FILE	= 0x00000040,
 };
 
 struct Handle {
 	KernelObjectType type;
 	void *object;
+	uint64_t flags;
+
 	volatile unsigned lock; // Must be 0 to close the handle.
 			        // Incremented when the handle is used in a system call.
 	volatile unsigned closing;

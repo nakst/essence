@@ -1,8 +1,5 @@
 #ifndef IMPLEMENTATION
 
-// TODO How are locks going to work?
-// 	What about exclusive file access during write/append?
-
 enum FilesystemType {
 	FILESYSTEM_EXT2,
 	FILESYSTEM_ESFS,
@@ -39,7 +36,7 @@ struct Mountpoint {
 struct VFS {
 	void Initialise();
 	void RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier installationID);
-	File *OpenFile(char *name, size_t nameLength);
+	File *OpenFile(char *name, size_t nameLength, uint64_t flags);
 	File *OpenFile(void *existingFile);
 	void CloseFile(File *file);
 
@@ -108,7 +105,8 @@ void VFS::CloseFile(File *file) {
 	}
 }
 
-File *VFS::OpenFile(char *name, size_t nameLength) {
+File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
+	(void) flags;
 	KernelLog(LOG_VERBOSE, "Opening file: %s\n", nameLength, name);
 
 	lock.Acquire();

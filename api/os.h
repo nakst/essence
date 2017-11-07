@@ -201,6 +201,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_MAP_SHARED_MEMORY		(29)
 #define OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY	(30)
 #define OS_SYSCALL_TERMINATE_PROCESS		(31)
+#define OS_SYSCALL_OPEN_FILE			(32)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -422,6 +423,20 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_DRAW_STRING_VALIGN_BOTTOM 	(8)
 #define OS_DRAW_STRING_VALIGN_CENTER 	(OS_DRAW_STRING_VALIGN_TOP | OS_DRAW_STRING_VALIGN_BOTTOM)
 
+#define OS_OPEN_FILE_ACCESS_READ	(0x1)
+#define OS_OPEN_FILE_ACCESS_WRITE	(0x2)
+#define OS_OPEN_FILE_ACCESS_RESIZE	(0x4)
+#define OS_OPEN_FILE_ACCESS_DELETE	(0x8)
+
+#define OS_OPEN_FILE_EXCLUSIVE_READ	(0x10)
+#define OS_OPEN_FILE_EXCLUSIVE_WRITE	(0x20)
+#define OS_OPEN_FILE_EXCLUSIVE_RESIZE	(0x40)
+#define OS_OPEN_FILE_EXCLUSIVE_DELETE	(0x80)
+
+#define OS_OPEN_FILE_TRUNCATE_IF_FOUND	(0x100)
+#define OS_OPEN_FILE_FAIL_IF_FOUND	(0x200)
+#define OS_OPEN_FILE_FAIL_IF_NOT_FOUND	(0x400)
+
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
@@ -431,6 +446,7 @@ extern "C" OSHandle OSCreateMutex();
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
 extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); // TODO Temporary. Replace with a proper file I/O API.
+extern "C" OSHandle OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSError *error);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);

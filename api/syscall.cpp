@@ -142,3 +142,14 @@ void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t si
 		return nullptr;
 	}
 }
+
+OSHandle OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSError *error) {
+	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_FILE, (uintptr_t) path, pathLength, flags, 0);
+
+	if (result >= 0) {
+		return (OSHandle) result;
+	} else {
+		if (*error) *error = (OSError) result;
+		return OS_INVALID_HANDLE;
+	}
+}

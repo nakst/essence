@@ -459,6 +459,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 		} break;
 
+#if 0
 		case OS_SYSCALL_READ_ENTIRE_FILE: {
 			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
 			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
@@ -488,6 +489,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				SYSCALL_RETURN((uintptr_t) buffer);
 			}
 		} break;
+#endif
 
 		case OS_SYSCALL_CREATE_SHARED_MEMORY: {
 			if (argument0 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
@@ -564,6 +566,28 @@ uintptr_t DoSyscall(uintptr_t index,
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+		} break;
+
+		case OS_SYSCALL_OPEN_FILE: {
+			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1);
+			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region));
+
+			char *path = (char *) argument0;
+			size_t pathLength = (size_t) argument1;
+			uint64_t flags = (uint64_t) argument2;
+
+			File *file = vfs.OpenFile(path, pathLength, flags);
+
+			if (!file) {
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			}
+
+			Handle handle = {};
+			handle.type = KERNEL_OBJECT_FILE;
+			handle.object = file;
+			handle.flags = flags;
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
 		} break;
 	}

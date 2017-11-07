@@ -228,7 +228,7 @@ struct AHCIPresentDrive {
 	AHCICommandHeader *commandList;
 	AHCIReceivedPacket *receivedPacket;
 	AHCICommandTable *commandTable;
-	uint16_t commandsInUse; // Bitset.
+	volatile uint16_t commandsInUse; // Bitset.
 	Mutex mutex, mutexStart, mutexEnd;
 	Event commandAvailable;
 	struct Device *device;
@@ -380,8 +380,10 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 	// Notify any waiting threads that the drive now has commands available.
 	if (!drive->commandAvailable.state)
 		drive->commandAvailable.Set();
-	drive->commandsInUse &= ~(1 << commandIndex);
 	drive->mutexEnd.Release();
+	drive->mutexStart.Acquire();
+	drive->commandsInUse &= ~(1 << commandIndex);
+	drive->mutexStart.Release();
 
 	if (port->interruptStatus & (1 << 30)) {
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive %d (2).\n", _drive);
