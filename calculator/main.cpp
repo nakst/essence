@@ -1,5 +1,26 @@
 #include "../api/os.h"
 
+void RunTests() {
+	OSFileInformation file1;
+	OSError file1Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ | OS_OPEN_FILE_EXCLUSIVE_READ, &file1);
+
+	OSPrint("file1.size = %d, file1Error = %d\n", file1.size, file1Error);
+
+	uint8_t buffer[32];
+	size_t bytesRead = OSReadFileSync(file1.handle, 0, 32, buffer);
+
+	OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
+
+	OSCloseHandle(file1.handle);
+
+	OSFileInformation file2;
+	OSError file2Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ, &file2);
+
+	OSPrint("file2.size = %d, file2Error = %d\n", file2.size, file2Error);
+
+	OSCloseHandle(file2.handle);
+}
+
 intptr_t entryValue = 0;
 OSControl *textOutput;
 char textOutputBuffer[1024];
@@ -16,6 +37,8 @@ void NumberButtonPressed(OSControl *generator, void *argument, OSEvent *event) {
 }
 
 extern "C" void ProgramEntry() {
+	RunTests();
+
 	OSWindow *window = OSCreateWindow(200, 150);
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1, false);
 	textOutput->bounds.right = 200 - 32;

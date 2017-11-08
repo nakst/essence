@@ -121,11 +121,13 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 	*fileSize = information.size;
 	void *buffer = OSHeapAllocate(information.size, false);
 
-	if (OS_SUCCESS != OSReadFileSync(information.handle, 0, information.size, buffer)) {
+	if (information.size != OSReadFileSync(information.handle, 0, information.size, buffer)) {
 		OSHeapFree(buffer);
+		OSCloseHandle(information.handle);
 		return nullptr;
 	}
 
+	OSCloseHandle(information.handle);
 	return buffer;
 
 #if 0
@@ -166,7 +168,7 @@ OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformat
 	return result;
 }
 
-OSError OSReadFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
+size_t OSReadFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
 	intptr_t result = OSSyscall(OS_SYSCALL_READ_FILE_SYNC, handle, offset, size, (uintptr_t) buffer);
 	return result;
 }

@@ -63,19 +63,19 @@ typedef struct {
 uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	Process *thisProcess = GetCurrentThread()->process;
 
-	File *file = vfs.OpenFile(imageName, imageNameLength, 
-			OS_OPEN_FILE_ACCESS_READ
-			| OS_OPEN_FILE_EXCLUSIVE_WRITE
-			| OS_OPEN_FILE_EXCLUSIVE_RESIZE
-			| OS_OPEN_FILE_EXCLUSIVE_DELETE
-			| OS_OPEN_FILE_FAIL_IF_NOT_FOUND);
+	uint64_t fileFlags = OS_OPEN_FILE_ACCESS_READ
+		| OS_OPEN_FILE_EXCLUSIVE_WRITE
+		| OS_OPEN_FILE_EXCLUSIVE_RESIZE
+		| OS_OPEN_FILE_EXCLUSIVE_DELETE
+		| OS_OPEN_FILE_FAIL_IF_NOT_FOUND;
+	File *file = vfs.OpenFile(imageName, imageNameLength, fileFlags);
 
 	if (!file) {
 		// We couldn't open the executable.
 		return 0;
 	}
 
-	Defer(vfs.CloseFile(file));
+	Defer(vfs.CloseFile(file, fileFlags));
 
 	bool s;
 

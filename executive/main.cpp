@@ -4,20 +4,6 @@
 // 	- Ideally, the kernel would still allow us to use system calls.
 
 extern "C" void ProgramEntry() {
-	OSError error;
-	OSFileInformation information;
-	(void) error;
-
-	char *path = (char *) "/os/source_sans/license.txt";
-
-	error = OSOpenFile(path, OSCStringLength(path), OS_OPEN_FILE_ACCESS_READ, &information);
-	OSPrint("file size = %x\n", information.size);
-
-	uint8_t buffer[10];
-	error = OSReadFileSync(information.handle, 5, 10, buffer);
-	OSPrint("file data = %s\n", 10, buffer);
-
-#if 1
 	{
 		// Load the UI theme.
 
@@ -78,7 +64,6 @@ extern "C" void ProgramEntry() {
 		OSProcessInformation process;
 		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 	}
-#endif
 
 	OSTerminateThread(OS_CURRENT_THREAD);
 }

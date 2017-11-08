@@ -113,7 +113,7 @@ struct Ext2File {
 struct Ext2FS {
 	bool AccessBlock(uint64_t block, uint8_t *buffer, int operation = DRIVE_ACCESS_READ, size_t count = 1);
 	bool AccessFile(File *file, uint64_t offsetBytes, uint64_t sizeBytes, int operation, uint8_t *buffer, bool lockAlreadyAcquired = false);
-	File *OpenFile(uint64_t inode);
+	File *OpenFile(uint64_t inode, uint64_t &flags);
 	File *Initialise(Device *drive); // Returns root directory.
 
 	// 'name' is a UTF-8 string; '..' is the parent directory and '.' is the current directory
@@ -298,7 +298,7 @@ uint64_t Ext2FS::ScanDirectory(char *name, size_t nameLength, File *directory) {
 	return 0;
 }
 
-File *Ext2FS::OpenFile(uint64_t inode) {
+File *Ext2FS::OpenFile(uint64_t inode, uint64_t &flags) {
 	// Check that the inode is within a valid range.
 	if (inode < EXT2_FIRST_INODE || inode >= superblock.totalInodes) return nullptr;
 
@@ -324,11 +324,11 @@ File *Ext2FS::OpenFile(uint64_t inode) {
 	for (int i = 0; i < 4; i++) ((uint32_t *) identifier.d)[i] = inode;
 	File *file;
 	if ((file = vfs.FindFile(identifier, filesystem))) {
-		return vfs.OpenFileHandle(file);
+		return vfs.OpenFileHandle(file, flags, identifier);
 	}
 
 	// Store the file information.
-	file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(Ext2File), true));
+	file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(Ext2File), true), flags, identifier);
 	Ext2File *driverData = (Ext2File *) (file + 1);
 	CopyMemory(&driverData->data, inodeData, sizeof(Ext2InodeData));
 	driverData->inode = inode;
@@ -353,15 +353,16 @@ File *Ext2FS::Initialise(Device *_drive) {
 	if (superblock.versionMajor < 1) return nullptr;
 	if (superblock.requiredFeatures & ~2) return nullptr;
 
-	return OpenFile(EXT2_ROOT_DIRECTORY_INODE);
+	uint64_t temp = 0;
+	return OpenFile(EXT2_ROOT_DIRECTORY_INODE, temp);
 }
 
-inline bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem) {
+inline bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags) {
 	Ext2FS *fs = (Ext2FS *) filesystem->data;
 	uintptr_t inode = fs->ScanDirectory(name, nameLength, *file);
 
 	if (inode) {
-		*file = fs->OpenFile(inode);
+		*file = fs->OpenFile(inode, flags);
 		return *file;
 	} else return false; 
 }

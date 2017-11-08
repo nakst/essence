@@ -572,7 +572,8 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_READ_FILE_SYNC: {
 			KernelObjectType type = KERNEL_OBJECT_FILE;
-			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			Handle *handleData;
+			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
 			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
@@ -580,13 +581,13 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region));
 
-			bool result = file->Read(argument1, argument2, (uint8_t *) argument3);
-
-			if (result) {
-				SYSCALL_RETURN(OS_SUCCESS);
+			if (handleData->flags & OS_OPEN_FILE_ACCESS_READ) {
+				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3);
+				SYSCALL_RETURN(bytesRead);
 			} else {
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
 			}
+
 		} break;
 	}
 

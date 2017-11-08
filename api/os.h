@@ -148,25 +148,37 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 			        uintptr_t unused,    uintptr_t argument3, uintptr_t argument4);
 #define OSSyscall(a, b, c, d, e) _OSSyscall((a), (b), (c), 0, (d), (e))
 
+#define OS_CHECK_ERROR(x) (((intptr_t) (x)) < (OS_SUCCESS))
+
 #define OS_SUCCESS 				(-1)
-#define OS_ERROR_INVALID_BUFFER 		(-2)
-#define OS_ERROR_UNKNOWN_SYSCALL 		(-3)
-#define OS_ERROR_INVALID_MEMORY_REGION 		(-4)
-#define OS_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL (-5)
-#define OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT 	(-6)
+
+#define OS_ERROR_INVALID_BUFFER 		(-2)	// Always crash?
+#define OS_ERROR_UNKNOWN_SYSCALL 		(-3)	// Always crash?
+#define OS_ERROR_INVALID_MEMORY_REGION 		(-4)	// Always crash?
+#define OS_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL (-5)	// Always crash?
+#define OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT 	(-6)	// Always crash?
 #define OS_ERROR_UNKNOWN_OPERATION_FAILURE 	(-7)
-#define OS_ERROR_INVALID_HANDLE			(-8)
+#define OS_ERROR_INVALID_HANDLE			(-8)	// Always crash?
 #define OS_ERROR_NO_MESSAGES_AVAILABLE		(-9)
 #define OS_ERROR_MESSAGE_QUEUE_FULL		(-10)
-#define OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD	(-11)
-#define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)
-#define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)
+#define OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD	(-11)	// Always crash?
+#define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)	// Always crash?
+#define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)	// Always crash?
 #define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
-#define OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE	(-14)
-#define OS_ERROR_SHARED_MEMORY_STILL_MAPPED	(-15)
-#define OS_ERROR_COULD_NOT_LOAD_FONT		(-16)
-#define OS_ERROR_COULD_NOT_DRAW_FONT		(-17)
-#define OS_ERROR_COULD_NOT_ALLOCATE_MEMORY	(-18)
+#define OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE	(-14)	// Always crash?
+#define OS_ERROR_SHARED_MEMORY_STILL_MAPPED	(-15)	// Always crash?
+#define OS_ERROR_COULD_NOT_LOAD_FONT		(-16)	// Always crash?
+#define OS_ERROR_COULD_NOT_DRAW_FONT		(-17)	// Always crash?
+#define OS_ERROR_COULD_NOT_ALLOCATE_MEMORY	(-18)	// Always crash?
+#define OS_ERROR_FILE_ALREADY_EXISTS		(-19)
+#define OS_ERROR_FILE_DOES_NOT_EXIST		(-20)
+#define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21)
+#define OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS	(-22)
+#define OS_ERROR_FILE_PERMISSION_NOT_GRANTED	(-23)
+#define OS_ERROR_FILE_IN_EXCLUSIVE_USE		(-24)
+#define OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE	(-25)
+#define OS_ERROR_INCORRECT_FILE_ACCESS		(-26)
+
 typedef intptr_t OSError;
 
 #define OS_SYSCALL_PRINT			(0)
@@ -373,6 +385,13 @@ struct OSWindow {
 	bool dirty;
 };
 
+// TODO Implement separate message queues.
+#define OS_MESSAGE_QUEUE_WINDOW_MANAGER (0x01)
+#define OS_MESSAGE_QUEUE_DEBUGGER	(0x02)
+#define OS_MESSAGE_QUEUE_FILE_IO	(0x04)
+#define OS_MESSAGE_QUEUE_SYSTEM_EVENT	(0x08)
+#define OS_MESSAGE_QUEUE_IPC		(0x10)
+
 enum OSMessageType {
 	OS_MESSAGE_MOUSE_MOVED = 0x1000,
 	OS_MESSAGE_MOUSE_LEFT_PRESSED = 0x1001,
@@ -443,9 +462,8 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_OPEN_FILE_EXCLUSIVE_RESIZE	(0x40)
 #define OS_OPEN_FILE_EXCLUSIVE_DELETE	(0x80)
 
-#define OS_OPEN_FILE_TRUNCATE_IF_FOUND	(0x100)
-#define OS_OPEN_FILE_FAIL_IF_FOUND	(0x200)
-#define OS_OPEN_FILE_FAIL_IF_NOT_FOUND	(0x400)
+#define OS_OPEN_FILE_FAIL_IF_FOUND	(0x100)
+#define OS_OPEN_FILE_FAIL_IF_NOT_FOUND	(0x200)
 
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
@@ -457,7 +475,7 @@ extern "C" OSError OSCloseHandle(OSHandle handle);
 
 extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 
 extern "C" OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformation *information);
-extern "C" OSError OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer);
+extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);

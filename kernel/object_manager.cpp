@@ -26,7 +26,7 @@ struct Handle {
 	bool readOnly;
 };
 
-void CloseHandleToObject(void *object, KernelObjectType type);
+void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags = 0);
 
 enum ResolveHandleReason {
 	RESOLVE_HANDLE_TO_USE,
@@ -70,7 +70,7 @@ struct HandleTable {
 
 #ifdef IMPLEMENTATION
 
-void CloseHandleToObject(void *object, KernelObjectType type) {
+void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 	switch (type) {
 		case KERNEL_OBJECT_MUTEX: {
 			scheduler.lock.Acquire();
@@ -112,7 +112,7 @@ void CloseHandleToObject(void *object, KernelObjectType type) {
 		} break;
 
 		case KERNEL_OBJECT_FILE: {
-			vfs.CloseFile((File *) object);
+			vfs.CloseFile((File *) object, flags);
 		} break;
 
 		default: {
@@ -134,6 +134,7 @@ void HandleTable::CloseHandle(OSHandle handle) {
 
 	Handle *_handle = l3->t + l3Index;
 	KernelObjectType type = _handle->type;
+	uint64_t flags = _handle->flags;
 	void *object = _handle->object;
 
 	ZeroMemory(_handle, sizeof(Handle));
@@ -143,7 +144,7 @@ void HandleTable::CloseHandle(OSHandle handle) {
 
 	lock.Release();
 
-	CloseHandleToObject(object, type);
+	CloseHandleToObject(object, type, flags);
 }
 
 void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason, Handle **handleData) {

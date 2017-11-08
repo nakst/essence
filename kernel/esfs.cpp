@@ -9,7 +9,7 @@ struct EsFSVolume {
 	uint64_t BlocksNeededToStore(uint64_t size);
 
 	File *LoadRootDirectory();
-	File *SearchDirectory(char *name, size_t nameLength, File *directory);
+	File *SearchDirectory(char *name, size_t nameLength, File *directory, uint64_t &flags);
 
 	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
@@ -41,7 +41,18 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 
 bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
 	mutex.AssertLocked();
-	return drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
+
+	bool result = drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
+
+	if (!result) {
+		// TODO Bad block handling.
+		// 	- Propagate "damaged file" error to program.
+		// 	- Mark blocks as bad.
+		// 	- Mark file as damaged?
+		KernelPanic("EsFSVolume::AccessBlock - Could not access block %d (bytes = %d).\n", block, countBytes);
+	}
+
+	return true;
 }
 
 EsFSAttributeHeader *EsFSVolume::FindAttribute(uint16_t attribute, void *_attributeList) {
@@ -77,7 +88,8 @@ File *EsFSVolume::LoadRootDirectory() {
 	uint8_t *rootEnd = (uint8_t *) FindAttribute(ESFS_ATTRIBUTE_LIST_END, (EsFSFileEntry *) root + 1);
 	size_t fileEntryLength = rootEnd - (uint8_t *) root;
 
-	File *file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true));
+	uint64_t temp = 0;
+	File *file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true), temp, ((EsFSFileEntry *) root)->identifier);
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
@@ -261,7 +273,7 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 	return true;
 }
 
-File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_directory) {
+File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_directory, uint64_t &flags) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -346,10 +358,10 @@ File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_di
 
 		// If the file is already open, return that file.
 		if ((file = vfs.FindFile(returnValue->identifier, filesystem))) {
-			return vfs.OpenFileHandle(file);
+			return vfs.OpenFileHandle(file, flags, returnValue->identifier);
 		}
 
-		file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true));
+		file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true), flags, returnValue->identifier);
 		EsFSFile *eFile = (EsFSFile *) (file + 1);
 		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
@@ -363,18 +375,15 @@ File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_di
 	}
 }
 
-inline bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem) {
+inline bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags) {
 	EsFSVolume *fs = (EsFSVolume *) filesystem->data;
-	File *_file = fs->SearchDirectory(name, nameLength, *file);
+	File *_file = fs->SearchDirectory(name, nameLength, *file, flags);
 	if (!_file) return false;
 	*file = _file;
 	return true;
 }
 
 inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {
-	file->mutex.Acquire();
-	Defer(file->mutex.Release());
-
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	fs->mutex.Acquire();
 	Defer(fs->mutex.Release());

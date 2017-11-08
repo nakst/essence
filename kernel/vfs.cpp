@@ -6,7 +6,10 @@ enum FilesystemType {
 };
 
 struct File {
-	bool Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
+	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
+
+	size_t countRead, countWrite, countResize, countDelete;
+	bool exclusiveRead, exclusiveWrite, exclusiveResize, exclusiveDelete;
 
 	Mutex mutex;
 	uint64_t fileSize;
@@ -40,9 +43,9 @@ struct VFS {
 	void Initialise();
 	Filesystem *RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier installationID);
 	File *OpenFile(char *name, size_t nameLength, uint64_t flags);
-	void CloseFile(File *file);
+	void CloseFile(File *file, uint64_t flags);
 
-	File *OpenFileHandle(void *existingFile);
+	File *OpenFileHandle(void *existingFile, uint64_t &flags, UniqueIdentifier identifier);
 	File *FindFile(UniqueIdentifier identifier, Filesystem *filesystem);
 
 	Pool filesystemPool, mountpointPool;
@@ -65,21 +68,39 @@ VFS vfs;
 bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 
-bool File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+size_t File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (offsetBytes > fileSize) {
+		return 0;
+	}
+
+	if (offsetBytes + sizeBytes > fileSize) {
+		sizeBytes = fileSize - offsetBytes;
+	}
+
+	if (sizeBytes > fileSize) {
+		return 0;
+	}
+
 	switch (filesystem->type) {
 		case FILESYSTEM_EXT2: {
-			return Ext2Read(offsetBytes, sizeBytes, buffer, this);
+			bool fail = Ext2Read(offsetBytes, sizeBytes, buffer, this);
+			if (!fail) return 0;
 		} break;
 
 		case FILESYSTEM_ESFS: {
-			return EsFSRead(offsetBytes, sizeBytes, buffer, this);
+			bool fail = EsFSRead(offsetBytes, sizeBytes, buffer, this);
+			if (!fail) return 0;
 		} break;
 
 		default: {
 			KernelPanic("File::Read - Unsupported filesystem.\n");
-			return false;
 		} break;
 	}
+
+	return sizeBytes;
 }
 
 void VFS::Initialise() {
@@ -99,13 +120,26 @@ void VFS::Initialise() {
 	}
 }
 
-bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem);
-bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem);
+bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
+bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
 
-void VFS::CloseFile(File *file) {
+void VFS::CloseFile(File *file, uint64_t flags) {
 	file->mutex.Acquire();
 	file->handles--;
 	bool noHandles = file->handles == 0;
+
+	if (flags & OS_OPEN_FILE_ACCESS_READ)      file->countRead--;
+	if (flags & OS_OPEN_FILE_ACCESS_WRITE)     file->countWrite--;
+	if (flags & OS_OPEN_FILE_ACCESS_RESIZE)    file->countResize--;
+	if (flags & OS_OPEN_FILE_ACCESS_DELETE)    file->countDelete--;
+
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_READ)   file->exclusiveRead = false;
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_WRITE)  file->exclusiveWrite = false;
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) file->exclusiveResize = false;
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_DELETE) file->exclusiveDelete = false;
+
+	// TODO Notify anyone waiting for the file to be accessible.
+
 	file->mutex.Release();
 
 	if (noHandles) {
@@ -118,7 +152,6 @@ void VFS::CloseFile(File *file) {
 }
 
 File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
-	(void) flags;
 	KernelLog(LOG_VERBOSE, "Opening file: %s\n", nameLength, name);
 
 	mountpointsMutex.Acquire();
@@ -151,7 +184,10 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 	nameLength -= mountpoint->pathLength;
 
 	Filesystem *filesystem = mountpoint->filesystem;
-	File *directory = vfs.OpenFileHandle(mountpoint->root);
+	uint64_t temp = 0;
+	File *directory = vfs.OpenFileHandle(mountpoint->root, temp, mountpoint->root->identifier);
+
+	uint64_t desiredFlags = flags;
 
 	while (nameLength) {
 		char *entry = name;
@@ -168,15 +204,17 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 			entryLength++;
 		}
 
+		bool isActualFile = !nameLength;
 		bool result;
+		uint64_t temp = 0;
 
 		switch (filesystem->type) {
 			case FILESYSTEM_EXT2: {
-				result = Ext2FSScan(entry, entryLength, &directory, filesystem);
+				result = Ext2FSScan(entry, entryLength, &directory, filesystem, isActualFile ? flags : temp);
 			} break;
 
 			case FILESYSTEM_ESFS: {
-				result = EsFSScan(entry, entryLength, &directory, filesystem);
+				result = EsFSScan(entry, entryLength, &directory, filesystem, isActualFile ? flags : temp);
 			} break;
 
 			default: {
@@ -185,8 +223,20 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 		}
 
 		if (!result) {
+			if (desiredFlags != flags) {
+				// We couldn't only the file with the desired access flags.
+				return nullptr;
+			}
+
+			// TODO If the flag OS_OPEN_FILE_FAIL_IF_NOT_FOUND is clear, 
+			// 	then create the file.
+
 			return nullptr;
 		} 
+	}
+
+	if (directory && (flags & OS_OPEN_FILE_FAIL_IF_FOUND)) {
+		CloseFile(directory, 0);
 	}
 
 	File *file = directory;
@@ -194,24 +244,73 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 	return file;
 }
 
-File *VFS::OpenFileHandle(void *_existingFile) {
+File *VFS::OpenFileHandle(void *_existingFile, uint64_t &flags, UniqueIdentifier identifier) {
 	File *existingFile = (File *) _existingFile;
 
 	existingFile->mutex.Acquire();
+	Defer(existingFile->mutex.Release());
+
+	if ((flags & OS_OPEN_FILE_ACCESS_READ) && existingFile->exclusiveRead) {
+		flags &= ~(OS_OPEN_FILE_ACCESS_READ);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_ACCESS_WRITE) && existingFile->exclusiveWrite) {
+		flags &= ~(OS_OPEN_FILE_ACCESS_WRITE);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_ACCESS_RESIZE) && existingFile->exclusiveResize) {
+		flags &= ~(OS_OPEN_FILE_ACCESS_RESIZE);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_ACCESS_DELETE) && existingFile->exclusiveDelete) {
+		flags &= ~(OS_OPEN_FILE_ACCESS_DELETE);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_EXCLUSIVE_READ) && existingFile->countRead) {
+		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_READ);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_EXCLUSIVE_WRITE) && existingFile->countWrite) {
+		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_WRITE);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) && existingFile->countResize) {
+		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_RESIZE);
+		return nullptr;
+	}
+
+	if ((flags & OS_OPEN_FILE_EXCLUSIVE_DELETE) && existingFile->countDelete) {
+		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_DELETE);
+		return nullptr;
+	}
+
+	if (flags & OS_OPEN_FILE_ACCESS_READ)      existingFile->countRead++;
+	if (flags & OS_OPEN_FILE_ACCESS_WRITE)     existingFile->countWrite++;
+	if (flags & OS_OPEN_FILE_ACCESS_RESIZE)    existingFile->countResize++;
+	if (flags & OS_OPEN_FILE_ACCESS_DELETE)    existingFile->countDelete++;
+
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_READ)   existingFile->exclusiveRead = true;
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_WRITE)  existingFile->exclusiveWrite = true;
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) existingFile->exclusiveResize = true;
+	if (flags & OS_OPEN_FILE_EXCLUSIVE_DELETE) existingFile->exclusiveDelete = true;
 
 	if (!existingFile->handles) {
 		fileHashTableMutex.Acquire();
-		uint16_t slot = ((uint16_t) existingFile->identifier.d[0] + ((uint16_t) existingFile->identifier.d[1] << 8)) & 0xFFF;
+		uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
 		existingFile->nextFileInHashTableSlot = fileHashTable[slot];
 		if (fileHashTable[slot]) fileHashTable[slot]->pointerToThisFileInHashTableSlot = &existingFile->nextFileInHashTableSlot;
 		fileHashTable[slot] = existingFile;
 		existingFile->pointerToThisFileInHashTableSlot = fileHashTable + slot;
 		fileHashTableMutex.Release();
-	} else {
-		existingFile->handles++;
 	}
 
-	existingFile->mutex.Release();
+	existingFile->handles++;
 
 	return existingFile;
 }
