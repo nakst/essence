@@ -129,16 +129,6 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 
 	OSCloseHandle(information.handle);
 	return buffer;
-
-#if 0
-	intptr_t result = OSSyscall(OS_SYSCALL_READ_ENTIRE_FILE, (uintptr_t) filePath, filePathLength, (uintptr_t) fileSize, 0);
-
-	if (result >= 0) {
-		return (void *) result;
-	} else {
-		return nullptr;
-	}
-#endif
 }
 
 OSHandle OSOpenNamedSharedMemory(char *name, size_t nameLength) {
@@ -170,5 +160,10 @@ OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformat
 
 size_t OSReadFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
 	intptr_t result = OSSyscall(OS_SYSCALL_READ_FILE_SYNC, handle, offset, size, (uintptr_t) buffer);
+	return result;
+}
+
+size_t OSWriteFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
+	intptr_t result = OSSyscall(OS_SYSCALL_WRITE_FILE_SYNC, handle, offset, size, (uintptr_t) buffer);
 	return result;
 }

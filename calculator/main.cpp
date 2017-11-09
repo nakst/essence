@@ -14,11 +14,22 @@ void RunTests() {
 	OSCloseHandle(file1.handle);
 
 	OSFileInformation file2;
-	OSError file2Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ, &file2);
+	OSError file2Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ | OS_OPEN_FILE_ACCESS_WRITE, &file2);
 
 	OSPrint("file2.size = %d, file2Error = %d\n", file2.size, file2Error);
 
+	buffer[0] = 'M';
+	size_t bytesWritten = OSWriteFileSync(file2.handle, 0, 1, buffer);
 	OSCloseHandle(file2.handle);
+
+	OSPrint("bytesWritten = %d\n", bytesWritten);
+
+	OSZeroMemory(buffer, 32);
+
+	OSFileInformation file3;
+	OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ, &file3);
+	bytesRead = OSReadFileSync(file3.handle, 0, 32, buffer);
+	OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
 }
 
 intptr_t entryValue = 0;

@@ -7,6 +7,7 @@ enum FilesystemType {
 
 struct File {
 	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
+	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
 
 	size_t countRead, countWrite, countResize, countDelete;
 	bool exclusiveRead, exclusiveWrite, exclusiveResize, exclusiveDelete;
@@ -67,6 +68,38 @@ VFS vfs;
 
 bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
+bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
+
+size_t File::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (offsetBytes > fileSize) {
+		return 0;
+	}
+
+	if (offsetBytes + sizeBytes > fileSize) {
+		sizeBytes = fileSize - offsetBytes;
+	}
+
+	if (sizeBytes > fileSize) {
+		return 0;
+	}
+
+	switch (filesystem->type) {
+		case FILESYSTEM_ESFS: {
+			bool fail = EsFSWrite(offsetBytes, sizeBytes, buffer, this);
+			if (!fail) return 0;
+		} break;
+
+		default: {
+			// The filesystem driver is read-only.
+			return 0;
+		} break;
+	}
+
+	return sizeBytes;
+}
 
 size_t File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	mutex.Acquire();
@@ -124,6 +157,8 @@ bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesyst
 bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
 
 void VFS::CloseFile(File *file, uint64_t flags) {
+	// TODO Sync any file information with the drive.
+
 	file->mutex.Acquire();
 	file->handles--;
 	bool noHandles = file->handles == 0;

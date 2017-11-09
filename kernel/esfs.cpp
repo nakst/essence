@@ -394,4 +394,15 @@ inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Fi
 	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, false);
 }
 
+inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {
+	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+
+	EsFSFile *eFile = (EsFSFile *) (file + 1);
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
+	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, true);
+}
+
 #endif

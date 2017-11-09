@@ -587,7 +587,25 @@ uintptr_t DoSyscall(uintptr_t index,
 			} else {
 				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
 			}
+		} break;
 
+		case OS_SYSCALL_WRITE_FILE_SYNC: {
+			KernelObjectType type = KERNEL_OBJECT_FILE;
+			Handle *handleData;
+			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
+			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region));
+
+			if (handleData->flags & OS_OPEN_FILE_ACCESS_WRITE) {
+				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3);
+				SYSCALL_RETURN(bytesWritten);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
+			}
 		} break;
 	}
 
