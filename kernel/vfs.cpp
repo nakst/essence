@@ -8,6 +8,7 @@ enum FilesystemType {
 struct File {
 	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
 	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
+	void Sync();
 
 	size_t countRead, countWrite, countResize, countDelete;
 	bool exclusiveRead, exclusiveWrite, exclusiveResize, exclusiveDelete;
@@ -17,6 +18,7 @@ struct File {
 	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
 	volatile size_t handles;
+	bool modifiedSinceLastSync;
 
 	struct File *nextFileInHashTableSlot;
 	struct File **pointerToThisFileInHashTableSlot;
@@ -69,6 +71,28 @@ VFS vfs;
 bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
+void EsFSSync(File *file);
+
+void File::Sync() {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (!modifiedSinceLastSync) {
+		return;
+	}
+
+	modifiedSinceLastSync = false;
+
+	switch (filesystem->type) {
+		case FILESYSTEM_ESFS: {
+			EsFSSync(this);
+		} break;
+
+		default: {
+			// The filesystem does not need to the do anything.
+		} break;
+	}
+}
 
 size_t File::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	mutex.Acquire();
@@ -85,6 +109,8 @@ size_t File::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	if (sizeBytes > fileSize) {
 		return 0;
 	}
+
+	modifiedSinceLastSync = true;
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
@@ -157,8 +183,6 @@ bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesyst
 bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
 
 void VFS::CloseFile(File *file, uint64_t flags) {
-	// TODO Sync any file information with the drive.
-
 	file->mutex.Acquire();
 	file->handles--;
 	bool noHandles = file->handles == 0;
@@ -178,6 +202,8 @@ void VFS::CloseFile(File *file, uint64_t flags) {
 	file->mutex.Release();
 
 	if (noHandles) {
+		file->Sync();
+
 		fileHashTableMutex.Acquire();
 		*file->pointerToThisFileInHashTableSlot = file->nextFileInHashTableSlot;
 		fileHashTableMutex.Release();

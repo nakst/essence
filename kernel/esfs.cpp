@@ -1,3 +1,5 @@
+// TODO Think more about locking.
+
 #ifdef IMPLEMENTATION
 
 #define ESFS_HEADER
@@ -25,7 +27,11 @@ struct EsFSVolume {
 };
 
 struct EsFSFile {
+	uint64_t containerBlock;
+	uint64_t offsetIntoBlock;
+
 	size_t fileEntryLength;
+
 	// Followed by the file entry itself.
 };
 
@@ -40,8 +46,6 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 }
 
 bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
-	mutex.AssertLocked();
-
 	bool result = drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
 
 	if (!result) {
@@ -147,8 +151,6 @@ File *EsFSVolume::Initialise(Device *_drive) {
 }
 
 bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
-	mutex.AssertLocked();
-
 	if (!size) return true;
 
 	if (data->indirection == ESFS_DATA_DIRECT) {
@@ -371,12 +373,17 @@ File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_di
 		file->fileSize = data->size;
 		CopyMemory(&file->identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
 
+		eFile->containerBlock = lastAccessedActualBlock;
+		eFile->offsetIntoBlock = (uintptr_t) returnValue - (uintptr_t) directoryBuffer;
+
 		return file;
 	}
 }
 
 inline bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags) {
 	EsFSVolume *fs = (EsFSVolume *) filesystem->data;
+
+	// Mutex is acquired in SearchDirectory.
 	File *_file = fs->SearchDirectory(name, nameLength, *file, flags);
 	if (!_file) return false;
 	*file = _file;
@@ -385,8 +392,10 @@ inline bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *fil
 
 inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+#if 0
 	fs->mutex.Acquire();
 	Defer(fs->mutex.Release());
+#endif
 
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
@@ -396,13 +405,28 @@ inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Fi
 
 inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+#if 0
 	fs->mutex.Acquire();
 	Defer(fs->mutex.Release());
+#endif
 
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, true);
+}
+
+inline void EsFSSync(File *file) {
+	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+
+	// We should acquire the lock because we'll be updating metadata files.
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+
+	EsFSFile *eFile = (EsFSFile *) (file + 1);
+	fs->AccessBlock(eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
+
+	Print("%d, %d, %d\n", eFile->containerBlock, eFile->fileEntryLength, eFile->offsetIntoBlock);
 }
 
 #endif
