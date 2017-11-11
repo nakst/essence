@@ -177,7 +177,10 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_FILE_PERMISSION_NOT_GRANTED	(-23)
 #define OS_ERROR_FILE_IN_EXCLUSIVE_USE		(-24)
 #define OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE	(-25)
-#define OS_ERROR_INCORRECT_FILE_ACCESS		(-26)
+#define OS_ERROR_INCORRECT_FILE_ACCESS		(-26)	// Always crash?
+#define OS_ERROR_EVENT_NOT_SET			(-27)
+#define OS_ERROR_TOO_MANY_WAIT_OBJECTS		(-28)   // Always crash?
+#define OS_ERROR_TIMEOUT_REACHED		(-29)
 
 typedef intptr_t OSError;
 
@@ -207,6 +210,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_CLOSE_HANDLE			(23)
 #define OS_SYSCALL_TERMINATE_THREAD		(24)
 #define OS_SYSCALL_CREATE_THREAD		(25)
+#define OS_SYSCALL_WAIT				(26)
 #define OS_SYSCALL_CREATE_SHARED_MEMORY		(27)
 #define OS_SYSCALL_SHARE_MEMORY			(28)
 #define OS_SYSCALL_MAP_SHARED_MEMORY		(29)
@@ -216,6 +220,10 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_READ_FILE_SYNC		(33)
 #define OS_SYSCALL_WRITE_FILE_SYNC		(34)
 #define OS_SYSCALL_RESIZE_FILE			(35)
+#define OS_SYSCALL_CREATE_EVENT			(36)
+#define OS_SYSCALL_SET_EVENT			(37)
+#define OS_SYSCALL_RESET_EVENT			(38)
+#define OS_SYSCALL_POLL_EVENT			(39)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -223,6 +231,9 @@ typedef intptr_t OSError;
 #define OS_SURFACE_UI_SHEET		((OSHandle) (0x2000))
 
 #define OS_WAIT_NO_TIMEOUT (-1)
+
+// Note: If you're using a timeout, then 
+#define OS_MAX_WAIT_COUNT 		(16)
 
 typedef uintptr_t OSHandle;
 
@@ -308,14 +319,14 @@ struct _OSDrawSurfaceArguments {
 	OSRectangle source, destination, border;
 };
 
-enum OSEventType {
-	OS_EVENT_INVALID,
-	OS_EVENT_ACTION,
-	OS_EVENT_GET_LABEL,
+enum OSCallbackType {
+	OS_CALLBACK_INVALID,
+	OS_CALLBACK_ACTION,
+	OS_CALLBACK_GET_LABEL,
 };
 
-struct OSEvent {
-	OSEventType type;
+struct OSCallbackData {
+	OSCallbackType type;
 
 	union {
 		struct {
@@ -326,10 +337,10 @@ struct OSEvent {
 	};
 };
 
-typedef void (*_OSEventCallback)(struct OSControl *generator, void *argument, OSEvent *event);
+typedef void (*_OSCallback)(struct OSControl *generator, void *argument, OSCallbackData *data);
 
-struct OSEventCallback {
-	_OSEventCallback callback;
+struct OSCallback {
+	_OSCallback callback;
 	void *argument;
 };
 
@@ -355,8 +366,8 @@ struct OSControl {
 	bool disabled;
 	struct OSWindow *parent;
 
-	OSEventCallback action;
-	OSEventCallback getLabel;
+	OSCallback action;
+	OSCallback getLabel;
 
 	char *label;
 	size_t labelLength;
@@ -472,6 +483,7 @@ extern "C" OSError OSCreateProcess(const char *executablePath, size_t executable
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
 extern "C" OSHandle OSCreateSurface(size_t width, size_t height);
 extern "C" OSHandle OSCreateMutex();
+extern "C" OSHandle OSCreateEvent(bool autoReset);
 
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
@@ -486,6 +498,12 @@ extern "C" OSError OSTerminateProcess(OSHandle thread);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);
+
+extern "C" OSError OSSetEvent(OSHandle event);
+extern "C" OSError OSResetEvent(OSHandle event);
+extern "C" OSError OSPollEvent(OSHandle event);
+
+extern "C" uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t timeoutMs);
 
 extern "C" OSHandle OSCreateSharedMemory(size_t size, char *name, size_t nameLength);
 extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);

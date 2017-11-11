@@ -1,6 +1,13 @@
 #include "../api/os.h"
 
 void RunTests() {
+	{
+		OSHandle event = OSCreateEvent(false);
+		OSError error = OSSetEvent(event);
+		uintptr_t result = OSWait(&event, 1, 100);
+		OSPrint("%d/%d, wait result = %d\n", event, error, result);
+	}
+		
 	OSFileInformation file1;
 	OSError file1Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ | OS_OPEN_FILE_EXCLUSIVE_READ, &file1);
 
@@ -41,9 +48,9 @@ intptr_t entryValue = 0;
 OSControl *textOutput;
 char textOutputBuffer[1024];
 
-void NumberButtonPressed(OSControl *generator, void *argument, OSEvent *event) {
+void NumberButtonPressed(OSControl *generator, void *argument, OSCallbackData *data) {
 	(void) generator;
-	(void) event;
+	(void) data;
 
 	intptr_t buttonValue = (intptr_t) argument;
 	entryValue = entryValue * 10 + buttonValue;

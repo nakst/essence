@@ -87,6 +87,22 @@ OSHandle OSCreateMutex() {
 	return OSSyscall(OS_SYSCALL_CREATE_MUTEX, 0, 0, 0, 0);
 }
 
+OSHandle OSCreateEvent(bool autoReset) {
+	return OSSyscall(OS_SYSCALL_CREATE_EVENT, autoReset, 0, 0, 0);
+}
+
+OSError OSSetEvent(OSHandle handle) {
+	return OSSyscall(OS_SYSCALL_SET_EVENT, handle, 0, 0, 0);
+}
+
+OSError OSResetEvent(OSHandle handle) {
+	return OSSyscall(OS_SYSCALL_RESET_EVENT, handle, 0, 0, 0);
+}
+
+OSError OSPollEvent(OSHandle handle) {
+	return OSSyscall(OS_SYSCALL_POLL_EVENT, handle, 0, 0, 0);
+}
+
 OSError OSAcquireMutex(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_ACQUIRE_MUTEX, handle, 0, 0, 0);
 }
@@ -170,4 +186,8 @@ size_t OSWriteFileSync(OSHandle handle, uint64_t offset, size_t size, void *buff
 
 OSError OSResizeFile(OSHandle handle, uint64_t newSize) {
 	return OSSyscall(OS_SYSCALL_RESIZE_FILE, handle, newSize, 0, 0);
+}
+
+uintptr_t OSWait(OSHandle *handles, size_t count, uintptr_t timeoutMs) {
+	return OSSyscall(OS_SYSCALL_WAIT, (uintptr_t) handles, count, timeoutMs, 0);
 }

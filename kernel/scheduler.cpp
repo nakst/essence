@@ -21,6 +21,7 @@ struct Event {
 			// so that the type of Event can be easily declared with {autoReset}.
 
 	volatile uintptr_t state;
+	volatile size_t handles;
 
 	LinkedList blockedThreads;
 };
@@ -71,8 +72,7 @@ enum ThreadTerminatableState {
 struct Thread {
 	void *temporary;
 
-#define MAX_BLOCKING_EVENTS 16
-	LinkedItem item[MAX_BLOCKING_EVENTS];	// Entry in activeThreads or blockedThreads list.
+	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in activeThreads or blockedThreads list.
 	LinkedItem allItem; 			// Entry in the allThreads list.
 	LinkedItem processItem; 		// Entry in the process's list of threads.
 
@@ -88,7 +88,7 @@ struct Thread {
 	int executingProcessorID;
 
 	Mutex *volatile blockingMutex;
-	Event *volatile blockingEvents[MAX_BLOCKING_EVENTS];
+	Event *volatile blockingEvents[OS_MAX_WAIT_COUNT];
 	volatile size_t blockingEventCount;
 
 	InterruptContext *interruptContext;
@@ -198,8 +198,6 @@ struct Scheduler {
 	struct CPULocalStorage *localStorage[MAX_PROCESSORS];
 
 	bool panic;
-
-	Pool globalMutexPool;
 };
 
 extern Scheduler scheduler;
@@ -330,7 +328,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 
 	// KernelLog(LOG_VERBOSE, "Create thread ID %d, type %d, owner process %d\n", thread->id, thread->type, owner->id);
 
-	for (uintptr_t i = 0; i < MAX_BLOCKING_EVENTS; i++) {
+	for (uintptr_t i = 0; i < OS_MAX_WAIT_COUNT; i++) {
 		thread->item[i].thisItem = thread;
 	}
 
@@ -554,9 +552,6 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 void Scheduler::Initialise() {
 	threadPool.Initialise(sizeof(Thread));
 	processPool.Initialise(sizeof(Process));
-
-	globalMutexPool.Initialise(sizeof(Mutex));
-
 	messagePool.Initialise(sizeof(Message));
 
 	char *kernelProcessPath = (char *) "Kernel";
@@ -931,8 +926,8 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 }
 
 uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
-	if (count > MAX_BLOCKING_EVENTS) {
-		KernelPanic("Scheduler::WaitEvents - count (%d) > MAX_BLOCKING_EVENTS (%d)\n", count, MAX_BLOCKING_EVENTS);
+	if (count > OS_MAX_WAIT_COUNT) {
+		KernelPanic("Scheduler::WaitEvents - count (%d) > OS_MAX_WAIT_COUNT (%d)\n", count, OS_MAX_WAIT_COUNT);
 	} else if (!count) {
 		KernelPanic("Scheduler::WaitEvents - Count is 0\n");
 	}
@@ -1112,7 +1107,7 @@ void Mutex::AssertLocked() {
 
 void Event::Set(bool schedulerAlreadyLocked) {
 	if (state) {
-		KernelPanic("Event::Set - Attempt to set a event that had already been set\n");
+		KernelLog(LOG_WARNING, "Event::Set - Attempt to set a event that had already been set\n");
 	}
 
 	state = true;
@@ -1124,7 +1119,7 @@ void Event::Set(bool schedulerAlreadyLocked) {
 
 void Event::Reset() {
 	if (blockedThreads.firstItem) {
-		KernelPanic("Event::Reset - Attempt to reset a event while threads are blocking on the event\n");
+		KernelLog(LOG_WARNING, "Event::Reset - Attempt to reset a event while threads are blocking on the event\n");
 	}
 
 	state = false;

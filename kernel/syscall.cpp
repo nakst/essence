@@ -370,10 +370,21 @@ uintptr_t DoSyscall(uintptr_t index,
 			SYSCALL_RETURN(OS_SUCCESS);
 		} break;
 
+		case OS_SYSCALL_CREATE_EVENT: {
+			Event *event = (Event *) OSHeapAllocate(sizeof(Event), true);
+			if (!event) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			event->handles = 1;
+			event->autoReset = argument0;
+			Handle handle = {};
+			handle.type = KERNEL_OBJECT_EVENT;
+			handle.object = event;
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+		} break;
+
 		case OS_SYSCALL_CREATE_MUTEX: {
-			Mutex *mutex = (Mutex *) scheduler.globalMutexPool.Add();
-			mutex->handles = 1;
+			Mutex *mutex = (Mutex *) OSHeapAllocate(sizeof(Mutex), true);
 			if (!mutex) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			mutex->handles = 1;
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_MUTEX;
 			handle.object = mutex;
@@ -621,6 +632,117 @@ uintptr_t DoSyscall(uintptr_t index,
 			} else {
 				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
 			}
+		} break;
+					     
+		case OS_SYSCALL_SET_EVENT: {
+			KernelObjectType type = KERNEL_OBJECT_EVENT;
+			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!event) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
+
+			event->Set();
+			SYSCALL_RETURN(OS_SUCCESS);
+		} break;
+
+		case OS_SYSCALL_RESET_EVENT: {
+			KernelObjectType type = KERNEL_OBJECT_EVENT;
+			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!event) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
+
+			event->Reset();
+			SYSCALL_RETURN(OS_SUCCESS);
+		} break;
+
+		case OS_SYSCALL_POLL_EVENT: {
+			KernelObjectType type = KERNEL_OBJECT_EVENT;
+			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!event) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
+
+			bool eventWasSet = event->Poll();
+			SYSCALL_RETURN(eventWasSet ? OS_SUCCESS : OS_ERROR_EVENT_NOT_SET);
+		} break;
+
+		case OS_SYSCALL_WAIT: {
+			if (argument1 >= OS_MAX_WAIT_COUNT) {
+				SYSCALL_RETURN(OS_ERROR_TOO_MANY_WAIT_OBJECTS);
+			}
+
+			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1 * sizeof(OSHandle));
+			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region));
+
+			OSHandle *_handles = (OSHandle *) argument0;
+			OSHandle handles[OS_MAX_WAIT_COUNT];
+			CopyMemory(handles, _handles, argument1 * sizeof(OSHandle));
+
+			Event *events[OS_MAX_WAIT_COUNT];
+			void *objects[OS_MAX_WAIT_COUNT];
+
+			KernelObjectType waitableObjectTypes = (KernelObjectType) (KERNEL_OBJECT_PROCESS
+								| KERNEL_OBJECT_THREAD
+								| KERNEL_OBJECT_EVENT);
+
+			for (uintptr_t i = 0; i < argument1; i++) {
+				KernelObjectType type = waitableObjectTypes;
+				void *object = (void *) currentProcess->handleTable.ResolveHandle(handles[i], type);
+
+				if (!object) {
+					for (uintptr_t j = 0; j < i; j++) {
+						currentProcess->handleTable.CompleteHandle(objects[j], handles[j]);
+					}
+
+					SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+				}
+
+				objects[i] = object;
+
+				switch (type) {
+					case KERNEL_OBJECT_PROCESS: {
+						events[i] = &((Process *) object)->killedEvent;
+					} break;
+
+					case KERNEL_OBJECT_THREAD: {
+						events[i] = &((Thread *) object)->killedEvent;
+					} break;
+
+					case KERNEL_OBJECT_EVENT: {
+						events[i] = (Event *) object;
+					} break;
+
+					default: {
+						KernelPanic("DoSyscall - Unexpected wait object type %d.\n", type);
+					} break;
+				}
+			}
+
+			size_t waitObjectCount = argument1;
+			Timer *timer = nullptr;
+
+			if (argument2 != (uintptr_t) OS_WAIT_NO_TIMEOUT) {
+				Timer _timer = {};
+				_timer.Set(argument2, false);
+				events[waitObjectCount++] = &_timer.event;
+				timer = &_timer;
+			}
+
+			uintptr_t waitReturnValue;
+			waitReturnValue = scheduler.WaitEvents(events, waitObjectCount);
+
+			if (waitReturnValue == argument1) {
+				waitReturnValue = OS_ERROR_TIMEOUT_REACHED;
+			}
+
+			for (uintptr_t i = 0; i < argument1; i++) {
+				currentProcess->handleTable.CompleteHandle(objects[i], handles[i]);
+			}
+
+			if (timer) {
+				timer->Remove();
+			}
+
+			SYSCALL_RETURN(waitReturnValue);
 		} break;
 	}
 

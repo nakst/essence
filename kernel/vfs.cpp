@@ -8,6 +8,7 @@
 // 	-> Keep files around even when all closed to cache
 // 	-> Directory enumeration
 // 	-> Get file information
+// 	-> Memory mapped files
 
 #ifndef IMPLEMENTATION
 

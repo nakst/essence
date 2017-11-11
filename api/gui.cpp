@@ -4,25 +4,25 @@
 #define BORDER_SIZE_X (8)
 #define BORDER_SIZE_Y (34)
 
-static void SendCallback(OSControl *from, OSEventCallback &callback, OSEvent &event) {
+static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &data) {
 	if (callback.callback) {
-		callback.callback(from, callback.argument, &event);
+		callback.callback(from, callback.argument, &data);
 	} else {
-		switch (event.type) {
-			case OS_EVENT_INVALID: {
+		switch (data.type) {
+			case OS_CALLBACK_INVALID: {
 				Panic();
 			} break;
 
-			case OS_EVENT_ACTION: {
+			case OS_CALLBACK_ACTION: {
 				// We can't really do anything if the program doesn't want to handle the action.
 			} break;
 
-			case OS_EVENT_GET_LABEL: {
+			case OS_CALLBACK_GET_LABEL: {
 				// The program wants us to store the text.
 				// Therefore, use the text we have stored in the control.
-				event.getLabel.label = from->label;
-				event.getLabel.labelLength = from->labelLength;
-				event.getLabel.freeLabel = false;
+				data.getLabel.label = from->label;
+				data.getLabel.labelLength = from->labelLength;
+				data.getLabel.freeLabel = false;
 			} break;
 		}
 	}
@@ -41,8 +41,8 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 			: ((isPressedControl || isHoverControl) ? 0 : 1)));
 	styleX = (imageWidth + 1) * styleX + control->image.left;
 
-	OSEvent labelEvent = {};
-	labelEvent.type = OS_EVENT_GET_LABEL;
+	OSCallbackData labelEvent = {};
+	labelEvent.type = OS_CALLBACK_GET_LABEL;
 	SendCallback(control, control->getLabel, labelEvent);
 
 	if (control->imageType == OS_CONTROL_IMAGE_FILL) {
@@ -297,9 +297,9 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 				OSDrawControl(window, previousPressedControl);
 
 				if (window->hoverControl == previousPressedControl) { // TODO Still trigger the control if the mouse only just left its bounds?
-					OSEvent event = {};
-					event.type = OS_EVENT_ACTION;
-					SendCallback(previousPressedControl, previousPressedControl->action, event);
+					OSCallbackData data = {};
+					data.type = OS_CALLBACK_ACTION;
+					SendCallback(previousPressedControl, previousPressedControl->action, data);
 				}
 			}
 		} break;

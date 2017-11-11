@@ -2,6 +2,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBTT_STATIC
+#define STB_IMAGE_STATIC
 #include "stb_image.h"
 
 void Panic() {

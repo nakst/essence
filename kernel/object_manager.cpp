@@ -2,7 +2,7 @@
 
 #define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
 		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
-		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_FILE))
+		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_FILE | KERNEL_OBJECT_EVENT))
 
 enum KernelObjectType {
 	KERNEL_OBJECT_PROCESS 	= 0x00000001,
@@ -12,6 +12,7 @@ enum KernelObjectType {
 	KERNEL_OBJECT_MUTEX	= 0x00000010,
 	KERNEL_OBJECT_SHMEM	= 0x00000020,
 	KERNEL_OBJECT_FILE	= 0x00000040,
+	KERNEL_OBJECT_EVENT	= 0x00000080,
 };
 
 struct Handle {
@@ -70,20 +71,38 @@ struct HandleTable {
 
 #ifdef IMPLEMENTATION
 
+// A lock used to change the handle count on mutexes and events.
+Mutex objectHandleCountChange;
+
 void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 	switch (type) {
 		case KERNEL_OBJECT_MUTEX: {
-			scheduler.lock.Acquire();
+			objectHandleCountChange.Acquire();
 
 			Mutex *mutex = (Mutex *) object;
 			mutex->handles--;
 
 			bool deallocate = !mutex->handles;
 
-			scheduler.lock.Release();
+			objectHandleCountChange.Release();
 
 			if (deallocate) {
-				scheduler.globalMutexPool.Remove(mutex);
+				OSHeapFree(mutex, sizeof(Mutex));
+			}
+		} break;
+
+		case KERNEL_OBJECT_EVENT: {
+			objectHandleCountChange.Acquire();
+
+			Event *event = (Event *) object;
+			event->handles--;
+
+			bool deallocate = !event->handles;
+
+			objectHandleCountChange.Release();
+
+			if (deallocate) {
+				OSHeapFree(event, sizeof(Event));
 			}
 		} break;
 

@@ -1,5 +1,3 @@
-// TODO Implement OSWait (thread synchronization, events).
-
 #include "kernel.h"
 #define IMPLEMENTATION
 #include "kernel.h"
