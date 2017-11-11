@@ -16,7 +16,7 @@ enum BlockDeviceDriver {
 };
 
 struct BlockDevice {
-	bool Access(uint64_t sector, size_t count, int operation, uint8_t *buffer);
+	bool Access(uint64_t sector, size_t count, int operation, uint8_t *buffer, bool alreadyInCorrectPartition = false);
 
 	uintptr_t driveID;
 	size_t sectorSize;
@@ -59,14 +59,46 @@ void AHCIRegisterController(struct PCIDevice *device);
 
 DeviceManager deviceManager;
 
-bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint8_t *buffer) {
-	// TODO Partial sector writing.
+bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, bool alreadyInCorrectPartition) {
+	if (!alreadyInCorrectPartition) {
+		if (offset / sectorSize > sectorCount || (offset + countBytes) / sectorSize > sectorCount || countBytes / sectorSize > maxAccessSectorCount) {
+			KernelPanic("BlockDevice::Access - Access out of bounds on drive %d.\n", driveID);
+		}
 
-	if (offset / sectorSize > sectorCount || (offset + countBytes) / sectorSize > sectorCount || countBytes / sectorSize > maxAccessSectorCount) {
-		KernelPanic("BlockDevice::Access - Access out of bounds on drive %d.\n", driveID);
+		offset += sectorOffset * sectorSize;
 	}
 
-	offset += sectorOffset * sectorSize;
+	if (operation == DRIVE_ACCESS_WRITE && ((offset % sectorSize) || (countBytes % sectorSize))) {
+		uint64_t currentSector = offset / sectorSize;
+		uint64_t sectorCount = (offset + countBytes) / sectorSize - currentSector;
+
+		uint8_t *temp = (uint8_t *) OSHeapAllocate(sectorSize, false);
+		Defer(OSHeapFree(temp));
+
+		if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp, true)) return false;
+		size_t size = sectorSize - (offset - currentSector * sectorSize);
+		CopyMemory(temp + (offset - currentSector * sectorSize), buffer, size > countBytes ? countBytes : size);
+		if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_WRITE, temp, true)) return false;
+		buffer += sectorSize - (offset - currentSector * sectorSize);
+		countBytes -= sectorSize - (offset - currentSector * sectorSize);
+		currentSector++;
+
+		if (sectorCount > 1) {
+			if (!Access(currentSector * sectorSize, sectorCount - 1, DRIVE_ACCESS_WRITE, buffer, true)) return false;
+			buffer += sectorSize * (sectorCount - 1);
+			currentSector += sectorCount - 1;
+			countBytes -= sectorSize * (sectorCount - 1);
+		}
+
+		if (sectorCount) {
+			if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp, true)) return false;
+			size_t size = sectorSize - (offset - currentSector * sectorSize);
+			CopyMemory(temp + (offset - currentSector * sectorSize), buffer, size > countBytes ? countBytes : size);
+			if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_WRITE, temp, true)) return false;
+		}
+
+		return true;
+	}
 
 	switch (driver) {
 		case BLOCK_DEVICE_DRIVER_ATA: {

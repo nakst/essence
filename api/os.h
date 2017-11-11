@@ -215,6 +215,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_OPEN_FILE			(32)
 #define OS_SYSCALL_READ_FILE_SYNC		(33)
 #define OS_SYSCALL_WRITE_FILE_SYNC		(34)
+#define OS_SYSCALL_RESIZE_FILE			(35)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -478,6 +479,7 @@ extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, s
 extern "C" OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformation *information);
 extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
+extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);

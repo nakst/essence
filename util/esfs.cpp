@@ -1267,6 +1267,8 @@ void AvailableExtents(uint64_t group) {
 	ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
 	EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
 
+	printf("table: %d, count: %d, used: %d\n", descriptor->extentTable, descriptor->extentCount, descriptor->blocksUsed);
+
 	for (uint16_t i = 0; i < descriptor->extentCount; i++) {
 		printf("local extent: offset %d (global %d), count = %d\n", extentTable[i].offset, extentTable[i].offset + group * superblock->blocksPerGroup, extentTable[i].count);
 	}

@@ -167,3 +167,7 @@ size_t OSWriteFileSync(OSHandle handle, uint64_t offset, size_t size, void *buff
 	intptr_t result = OSSyscall(OS_SYSCALL_WRITE_FILE_SYNC, handle, offset, size, (uintptr_t) buffer);
 	return result;
 }
+
+OSError OSResizeFile(OSHandle handle, uint64_t newSize) {
+	return OSSyscall(OS_SYSCALL_RESIZE_FILE, handle, newSize, 0, 0);
+}

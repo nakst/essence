@@ -357,7 +357,7 @@ File *Ext2FS::Initialise(Device *_drive) {
 	return OpenFile(EXT2_ROOT_DIRECTORY_INODE, temp);
 }
 
-inline bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags) {
+inline bool Ext2Scan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags) {
 	Ext2FS *fs = (Ext2FS *) filesystem->data;
 	uintptr_t inode = fs->ScanDirectory(name, nameLength, *file);
 

@@ -1,3 +1,14 @@
+// TODO
+// 	-> Creating files/directories
+// 	-> Moving files/directories
+// 	-> Deleting files/directories
+// 	-> Asynchronous file I/O (start, cancel, wait, get progress)
+// 	-> Wait for file access
+// 	-> File/block cache
+// 	-> Keep files around even when all closed to cache
+// 	-> Directory enumeration
+// 	-> Get file information
+
 #ifndef IMPLEMENTATION
 
 enum FilesystemType {
@@ -8,6 +19,7 @@ enum FilesystemType {
 struct File {
 	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
 	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
+	bool Resize(uint64_t newSize);
 	void Sync();
 
 	size_t countRead, countWrite, countResize, countDelete;
@@ -69,9 +81,30 @@ VFS vfs;
 #ifdef IMPLEMENTATION
 
 bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
+bool Ext2Scan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
+
 bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
 void EsFSSync(File *file);
+bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
+bool EsFSResize(File *file, uint64_t newSize);
+
+bool File::Resize(uint64_t newSize) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	modifiedSinceLastSync = true;
+
+	switch (filesystem->type) {
+		case FILESYSTEM_ESFS: {
+			return EsFSResize(this, newSize);
+		} break;
+
+		default: {
+			return false;
+		} break;
+	}
+}
 
 void File::Sync() {
 	mutex.Acquire();
@@ -179,9 +212,6 @@ void VFS::Initialise() {
 	}
 }
 
-bool Ext2FSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
-bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
-
 void VFS::CloseFile(File *file, uint64_t flags) {
 	file->mutex.Acquire();
 	file->handles--;
@@ -271,7 +301,7 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 
 		switch (filesystem->type) {
 			case FILESYSTEM_EXT2: {
-				result = Ext2FSScan(entry, entryLength, &directory, filesystem, isActualFile ? flags : temp);
+				result = Ext2Scan(entry, entryLength, &directory, filesystem, isActualFile ? flags : temp);
 			} break;
 
 			case FILESYSTEM_ESFS: {

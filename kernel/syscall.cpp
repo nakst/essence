@@ -607,6 +607,21 @@ uintptr_t DoSyscall(uintptr_t index,
 				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
 			}
 		} break;
+
+		case OS_SYSCALL_RESIZE_FILE: {
+			KernelObjectType type = KERNEL_OBJECT_FILE;
+			Handle *handleData;
+			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			if (handleData->flags & OS_OPEN_FILE_ACCESS_RESIZE) {
+				bool success = file->Resize(argument1);
+				SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
+			}
+		} break;
 	}
 
 	end:;

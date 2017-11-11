@@ -1,4 +1,3 @@
-// TODO File API.
 // TODO Implement OSWait (thread synchronization, events).
 
 #include "kernel.h"

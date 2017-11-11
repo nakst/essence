@@ -27,9 +27,14 @@ void RunTests() {
 	OSZeroMemory(buffer, 32);
 
 	OSFileInformation file3;
-	OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ, &file3);
+	OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ 
+			| OS_OPEN_FILE_ACCESS_RESIZE 
+			| OS_OPEN_FILE_ACCESS_WRITE, &file3);
 	bytesRead = OSReadFileSync(file3.handle, 0, 32, buffer);
 	OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
+
+	OSResizeFile(file3.handle, 10000);
+	OSCloseHandle(file3.handle);
 }
 
 intptr_t entryValue = 0;
