@@ -576,6 +576,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			OSFileInformation *information = (OSFileInformation *) argument3;
 			information->handle = currentProcess->handleTable.OpenHandle(handle);
 			information->size = file->fileSize;
+			information->isDirectory = false;
 			CopyMemory(&information->identifier, &file->identifier, sizeof(UniqueIdentifier));
 
 			SYSCALL_RETURN(OS_SUCCESS);
@@ -674,8 +675,8 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentVMM->UnlockRegion(region));
 
 			OSHandle *_handles = (OSHandle *) argument0;
-			OSHandle handles[OS_MAX_WAIT_COUNT];
-			CopyMemory(handles, _handles, argument1 * sizeof(OSHandle));
+			volatile OSHandle handles[OS_MAX_WAIT_COUNT];
+			CopyMemory((void *) handles, _handles, argument1 * sizeof(OSHandle));
 
 			Event *events[OS_MAX_WAIT_COUNT];
 			void *objects[OS_MAX_WAIT_COUNT];
@@ -744,6 +745,27 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 
 			SYSCALL_RETURN(waitReturnValue);
+		} break;
+
+		case OS_SYSCALL_REFRESH_FILE_INFORMATION: {
+			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument0, sizeof(OSFileInformation));
+			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region2));
+
+			OSFileInformation *information = (OSFileInformation *) argument0;
+
+			volatile OSHandle handle = information->handle;
+			KernelObjectType type = KERNEL_OBJECT_FILE;
+			File *file = (File *) currentProcess->handleTable.ResolveHandle(handle, type);
+			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(file, handle));
+
+			information->size = file->fileSize;
+			information->isDirectory = false;
+			CopyMemory(&information->identifier, &file->identifier, sizeof(UniqueIdentifier));
+		} break;
+
+		case OS_SYSCALL_GET_FILE_INFORMATION: {
 		} break;
 	}
 

@@ -1,13 +1,16 @@
 // TODO
-// 	-> Creating files/directories
+//
+// 	-> Creating files
+// 	-> Get file information
+// 	-> Directory enumeration
+//
+// 	-> Creating directories
 // 	-> Moving files/directories
 // 	-> Deleting files/directories
 // 	-> Asynchronous file I/O (start, cancel, wait, get progress)
 // 	-> Wait for file access
 // 	-> File/block cache
 // 	-> Keep files around even when all closed to cache
-// 	-> Directory enumeration
-// 	-> Get file information
 // 	-> Memory mapped files
 
 #ifndef IMPLEMENTATION
@@ -23,8 +26,8 @@ struct File {
 	bool Resize(uint64_t newSize);
 	void Sync();
 
-	size_t countRead, countWrite, countResize, countDelete;
-	bool exclusiveRead, exclusiveWrite, exclusiveResize, exclusiveDelete;
+	size_t countRead, countWrite, countResize;
+	bool exclusiveRead, exclusiveWrite, exclusiveResize;
 
 	Mutex mutex;
 	uint64_t fileSize;
@@ -221,12 +224,10 @@ void VFS::CloseFile(File *file, uint64_t flags) {
 	if (flags & OS_OPEN_FILE_ACCESS_READ)      file->countRead--;
 	if (flags & OS_OPEN_FILE_ACCESS_WRITE)     file->countWrite--;
 	if (flags & OS_OPEN_FILE_ACCESS_RESIZE)    file->countResize--;
-	if (flags & OS_OPEN_FILE_ACCESS_DELETE)    file->countDelete--;
 
 	if (flags & OS_OPEN_FILE_EXCLUSIVE_READ)   file->exclusiveRead = false;
 	if (flags & OS_OPEN_FILE_EXCLUSIVE_WRITE)  file->exclusiveWrite = false;
 	if (flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) file->exclusiveResize = false;
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_DELETE) file->exclusiveDelete = false;
 
 	// TODO Notify anyone waiting for the file to be accessible.
 
@@ -357,11 +358,6 @@ File *VFS::OpenFileHandle(void *_existingFile, uint64_t &flags, UniqueIdentifier
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_ACCESS_DELETE) && existingFile->exclusiveDelete) {
-		flags &= ~(OS_OPEN_FILE_ACCESS_DELETE);
-		return nullptr;
-	}
-
 	if ((flags & OS_OPEN_FILE_EXCLUSIVE_READ) && existingFile->countRead) {
 		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_READ);
 		return nullptr;
@@ -377,20 +373,13 @@ File *VFS::OpenFileHandle(void *_existingFile, uint64_t &flags, UniqueIdentifier
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_EXCLUSIVE_DELETE) && existingFile->countDelete) {
-		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_DELETE);
-		return nullptr;
-	}
-
 	if (flags & OS_OPEN_FILE_ACCESS_READ)      existingFile->countRead++;
 	if (flags & OS_OPEN_FILE_ACCESS_WRITE)     existingFile->countWrite++;
 	if (flags & OS_OPEN_FILE_ACCESS_RESIZE)    existingFile->countResize++;
-	if (flags & OS_OPEN_FILE_ACCESS_DELETE)    existingFile->countDelete++;
 
 	if (flags & OS_OPEN_FILE_EXCLUSIVE_READ)   existingFile->exclusiveRead = true;
 	if (flags & OS_OPEN_FILE_EXCLUSIVE_WRITE)  existingFile->exclusiveWrite = true;
 	if (flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) existingFile->exclusiveResize = true;
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_DELETE) existingFile->exclusiveDelete = true;
 
 	if (!existingFile->handles) {
 		fileHashTableMutex.Acquire();

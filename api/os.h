@@ -224,6 +224,8 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_SET_EVENT			(37)
 #define OS_SYSCALL_RESET_EVENT			(38)
 #define OS_SYSCALL_POLL_EVENT			(39)
+#define OS_SYSCALL_REFRESH_FILE_INFORMATION	(40)
+#define OS_SYSCALL_GET_FILE_INFORMATION		(41)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -256,6 +258,7 @@ struct OSFileInformation {
 	OSHandle handle;
 	OSUniqueIdentifier identifier;
 	uint64_t size;
+	bool isDirectory;
 };
 
 struct OSPoint {
@@ -468,12 +471,10 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_OPEN_FILE_ACCESS_READ	(0x1)
 #define OS_OPEN_FILE_ACCESS_WRITE	(0x2)
 #define OS_OPEN_FILE_ACCESS_RESIZE	(0x4)
-#define OS_OPEN_FILE_ACCESS_DELETE	(0x8)
 
 #define OS_OPEN_FILE_EXCLUSIVE_READ	(0x10)
 #define OS_OPEN_FILE_EXCLUSIVE_WRITE	(0x20)
 #define OS_OPEN_FILE_EXCLUSIVE_RESIZE	(0x40)
-#define OS_OPEN_FILE_EXCLUSIVE_DELETE	(0x80)
 
 #define OS_OPEN_FILE_FAIL_IF_FOUND	(0x100)
 #define OS_OPEN_FILE_FAIL_IF_NOT_FOUND	(0x200)
@@ -492,6 +493,9 @@ extern "C" OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSF
 extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
+
+extern "C" OSError OSRefreshFileInformation(OSFileInformation *information);
+extern "C" OSError OSGetFileInformation(char *filePath, size_t filePathLength, OSFileInformation *information);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);

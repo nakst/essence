@@ -191,3 +191,12 @@ OSError OSResizeFile(OSHandle handle, uint64_t newSize) {
 uintptr_t OSWait(OSHandle *handles, size_t count, uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT, (uintptr_t) handles, count, timeoutMs, 0);
 }
+
+OSError OSGetFileInformation(char *path, size_t pathLength, OSFileInformation *information) {
+	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_FILE, (uintptr_t) path, pathLength, (uintptr_t) information, 0);
+	return result;
+}
+
+OSError OSRefreshFileInformation(OSFileInformation *information) {
+	return OSSyscall(OS_SYSCALL_REFRESH_FILE_INFORMATION, (uintptr_t) information, 0, 0, 0);
+}
