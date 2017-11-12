@@ -26,7 +26,7 @@ Mutex heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() heapMutex.Acquire()
 #define OS_HEAP_RELEASE_MUTEX() heapMutex.Release()
 #define OS_HEAP_PANIC() KernelPanic("Heap panic.\n")
-#define OS_HEAP_ALLOCATE_CALL(x) kernelVMM.Allocate(x)
+#define OS_HEAP_ALLOCATE_CALL(x) kernelVMM.Allocate("Heap", x)
 #define OS_HEAP_FREE_CALL(x) kernelVMM.Free(x)
 #else
 static OSHandle heapMutex;

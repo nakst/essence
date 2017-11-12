@@ -357,10 +357,10 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	// Allocate the thread's stacks.
 	uintptr_t kernelStackSize = userland ? 0x4000 : 0x10000;
 	uintptr_t userStackSize = userland ? 0x100000 : 0x10000;
-	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate(kernelStackSize, vmmMapAll);;
+	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate("KernStack", kernelStackSize, vmmMapAll);;
 
 	if (userland) {
-		stack = (uintptr_t) process->vmm->Allocate(userStackSize, vmmMapLazy);
+		stack = (uintptr_t) process->vmm->Allocate("UserStack", userStackSize, vmmMapLazy);
 	} else {
 		stack = kernelStack;
 	}

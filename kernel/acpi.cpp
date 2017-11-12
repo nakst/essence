@@ -183,7 +183,7 @@ void ACPI::Initialise() {
 			sdt = (ACPIDescriptorTable *) (uintptr_t) rsdp->rsdtAddress;
 		}
 
-		sdt = (ACPIDescriptorTable *) kernelVMM.Allocate(ACPI_MAX_TABLE_LENGTH, vmmMapAll, vmmRegionPhysical, (uintptr_t) sdt);
+		sdt = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, vmmMapAll, vmmRegionPhysical, (uintptr_t) sdt);
 	} else {
 		KernelPanic("ACPI::Initialise - Could not find supported root system descriptor pointer.\nACPI support is required.\n");
 	}
@@ -207,7 +207,7 @@ void ACPI::Initialise() {
 				address = ((uint32_t *) tableListAddress)[i];
 			}
 
-			tables[i] = (ACPIDescriptorTable *) kernelVMM.Allocate(ACPI_MAX_TABLE_LENGTH, vmmMapAll, vmmRegionPhysical, address);
+			tables[i] = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, vmmMapAll, vmmRegionPhysical, address);
 
 			if (tables[i]->length > ACPI_MAX_TABLE_LENGTH || SumBytes((uint8_t *) tables[i], tables[i]->length)) {
 				KernelPanic("ACPI::Initialise - ACPI table %d with signature %s was invalid or unsupported.\n", i, 4, &tables[i]->signature);
@@ -348,7 +348,7 @@ void ACPI::Initialise() {
 				*startupFlag = 0;
 
 				// Put the stack at AP_TRAMPOLINE + 0xFD0.
-				void *stack = (void *) ((uintptr_t) kernelVMM.Allocate(0x4000) + 0x4000);
+				void *stack = (void *) ((uintptr_t) kernelVMM.Allocate("StartupStack", 0x4000) + 0x4000);
 				CopyMemory((void *) (LOW_MEMORY_MAP_START + AP_TRAMPOLINE + 0xFD0),
 						&stack, sizeof(void *));
 				// KernelLog(LOG_VERBOSE, "Trampoline stack: %x->%x\n", stack, (uintptr_t) stack + 0x4000);

@@ -155,12 +155,9 @@ struct CPULocalStorage {
 
 	struct ACPIProcessor *acpiProcessor;
 
-#define MAX_ASYNC_TASKS 1024
+#define MAX_ASYNC_TASKS (256)
 	volatile AsyncTask asyncTasks[MAX_ASYNC_TASKS];
 	volatile size_t asyncTasksCount;
-
-	size_t interruptRecurseCount;
-	struct InterruptContext *interruptContexts[16];
 };
 
 struct UniqueIdentifier {

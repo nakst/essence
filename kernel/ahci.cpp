@@ -298,7 +298,7 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 	header->prdEntryCount = prdtEntries;
 
 	uintptr_t physicalBuffer = pmm.AllocateContiguous64KB();
-	void *buffer = kernelVMM.Allocate(65536, vmmMapAll, vmmRegionPhysical, physicalBuffer, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+	void *buffer = kernelVMM.Allocate("AHCI", 65536, vmmMapAll, vmmRegionPhysical, physicalBuffer, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 
 	// Copy to the input buffer.
 	if (operation == DRIVE_ACCESS_WRITE) {
@@ -477,7 +477,7 @@ void AHCIDriver::Initialise() {
 	}
 
 	uint32_t abar = device->baseAddresses[5];
-	r = (AHCIHBA *) kernelVMM.Allocate(sizeof(AHCIHBA), vmmMapLazy, vmmRegionPhysical, abar, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+	r = (AHCIHBA *) kernelVMM.Allocate("AHCI", sizeof(AHCIHBA), vmmMapLazy, vmmRegionPhysical, abar, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 
 	if (!r) {
 		KernelLog(LOG_ERROR, "AHCIDriver::Initialise - Could not allocate memory for ABAR.\n");
@@ -532,13 +532,13 @@ void AHCIDriver::Initialise() {
 	for (uintptr_t i = 0; i < driveCount; i++) {
 		if ((i % (PAGE_SIZE / 1024)) == 0) {
 			commandListPage = pmm.AllocatePage();
-			commandListPageVirtual = (uint8_t *) kernelVMM.Allocate(sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, commandListPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+			commandListPageVirtual = (uint8_t *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, commandListPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 			ZeroMemory(commandListPageVirtual, PAGE_SIZE);
 		}
 
 		if ((i % (PAGE_SIZE / 256)) == 0) {
 			receivedPacketPage = pmm.AllocatePage();
-			receivedPacketPageVirtual = (uint8_t *) kernelVMM.Allocate(sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, receivedPacketPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+			receivedPacketPageVirtual = (uint8_t *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, receivedPacketPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 			ZeroMemory(receivedPacketPageVirtual, PAGE_SIZE);
 		}
 
@@ -551,7 +551,7 @@ void AHCIDriver::Initialise() {
 			Defer(timeout->Remove());
 
 			uintptr_t commandTablePage = pmm.AllocatePage();
-			drive->commandTable = (AHCICommandTable *) kernelVMM.Allocate(sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, commandTablePage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
+			drive->commandTable = (AHCICommandTable *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), vmmMapLazy, vmmRegionPhysical, commandTablePage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 			ZeroMemory(drive->commandTable, PAGE_SIZE);
 
 			volatile AHCIPort *port = r->ports + drives[i].port;

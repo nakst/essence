@@ -115,7 +115,7 @@ struct VMM {
 	void Initialise();
 	void Destroy(); // This MUST be called with the kernelVMM active!
 
-	void *Allocate(size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
+	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
 	bool HandlePageFault(uintptr_t address);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
@@ -263,7 +263,7 @@ void VMM::Initialise() {
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
 		// KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
-		pageTable = (uint64_t *) kernelVMM.Allocate(PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
+		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
 		CopyMemory(pageTable + 0x100, (uint64_t *) (PAGE_TABLE_L4 + 0x100), PAGE_SIZE / 2);
 		pageTable[512 - 1] = virtualAddressSpace.cr3 | 3;
@@ -354,12 +354,12 @@ uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCoun
 			if (arrayCount) {
 				arrayAllocated *= 2;
 				VMMRegion *old = array;
-				array = (VMMRegion *) kernelVMM.Allocate(arrayAllocated * sizeof(VMMRegion), vmmMapAll);
+				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), vmmMapAll);
 				CopyMemory(array, old, arrayCount * sizeof(VMMRegion));
 				kernelVMM.Free(old);
 			} else {
 				arrayAllocated = 256;
-				array = (VMMRegion *) kernelVMM.Allocate(arrayAllocated * sizeof(VMMRegion), vmmMapAll);
+				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), vmmMapAll);
 			}
 		}
 	}
@@ -422,9 +422,17 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	return true;
 }
 
-void *VMM::Allocate(size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
+void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
 	lock.Acquire();
 	Defer(lock.Release());
+
+#if 0
+	if (type == vmmRegionStandard) {
+		KernelLog(LOG_VERBOSE, "VMM::Allocate - %z, reason = %z, this = %x, size = %d\n", this == &kernelVMM ? "KERN" : "user", reason, this, size);
+	}
+#else
+	(void) reason;
+#endif
 
 	ValidateCurrentVMM(this);
 
@@ -944,7 +952,7 @@ void PMM::Initialise() {
 	bitsetPages = physicalMemoryHighest >> PAGE_BITS;
 	bitsetGroups = bitsetPages / BITSET_GROUP_PAGES + 1;
 
-	bitsetPageUsage = (uint32_t *) kernelVMM.Allocate((bitsetPages >> 3) + (bitsetGroups * 2), vmmMapAll);
+	bitsetPageUsage = (uint32_t *) kernelVMM.Allocate("PMM", (bitsetPages >> 3) + (bitsetGroups * 2), vmmMapAll);
 	bitsetGroupUsage = (uint16_t *) bitsetPageUsage + (bitsetPages >> 4);
 
 	while (physicalMemoryRegionsPagesCount) {
@@ -1238,7 +1246,7 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 		}
 		
 		void *old = *array;
-		void *replacement = kernelVMM.Allocate(itemSize * arrayAllocated);
+		void *replacement = kernelVMM.Allocate("DynArray", itemSize * arrayAllocated);
 		CopyMemory(replacement, old, arrayCount * itemSize);
 		*array = replacement;
 		kernelVMM.Free(old);

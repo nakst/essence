@@ -72,7 +72,7 @@ uintptr_t DoSyscall(uintptr_t index,
 	     	} break;
 
 		case OS_SYSCALL_ALLOCATE: {
-			uintptr_t address = (uintptr_t) currentVMM->Allocate(argument0);
+			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument0);
 			SYSCALL_RETURN(address);
 		} break;
 
@@ -503,7 +503,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				argument2 = region->sizeBytes;
 			}
 
-			uintptr_t address = (uintptr_t) currentVMM->Allocate(argument2, vmmMapLazy, vmmRegionShared, argument1, VMM_REGION_FLAG_CACHABLE, region);
+			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, vmmMapLazy, vmmRegionShared, argument1, VMM_REGION_FLAG_CACHABLE, region);
 
 			if (!address) {
 				CloseHandleToObject(region, KERNEL_OBJECT_SHMEM);
@@ -728,6 +728,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 
 			uintptr_t waitReturnValue;
+			currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 			waitReturnValue = scheduler.WaitEvents(events, waitObjectCount);
 
 			if (waitReturnValue == argument1) {

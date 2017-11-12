@@ -244,7 +244,7 @@ void Graphics::UpdateScreen() {
 }
 
 void Graphics::Initialise() {
-	linearBuffer = (uint8_t *) kernelVMM.Allocate(vesaMode->bytesPerScanlineLinear * vesaMode->heightPixels, vmmMapAll, vmmRegionPhysical, vesaMode->bufferPhysical, 0);
+	linearBuffer = (uint8_t *) kernelVMM.Allocate("ScreenBuffer", vesaMode->bytesPerScanlineLinear * vesaMode->heightPixels, vmmMapAll, vmmRegionPhysical, vesaMode->bufferPhysical, 0);
 	resX = vesaMode->widthPixels;
 	resY = vesaMode->heightPixels;
 	strideX = vesaMode->bitsPerPixel >> 3;
@@ -274,14 +274,14 @@ bool Surface::Initialise(VMM *vmm, size_t _resX, size_t _resY, bool createDepthB
 	size_t memoryNeeded;
 	if (createDepthBuffer) {
 		memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 6 + (resY + 7) / 8;
-		memory = (uint8_t *) vmm->Allocate(memoryNeeded);
+		memory = (uint8_t *) vmm->Allocate("Surface", memoryNeeded);
 		linearBuffer = memory;
 		depthBuffer = (uint16_t *) (memory + resX * resY * 4);
 		modifiedScanlines = (ModifiedScanline *) (depthBuffer + resX * resY);
 		modifiedScanlineBitset = (uint8_t *) (modifiedScanlines + resY);
 	} else {
 		memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 4 + (resY + 7) / 8;
-		memory = (uint8_t *) vmm->Allocate(memoryNeeded);
+		memory = (uint8_t *) vmm->Allocate("Surface", memoryNeeded);
 		linearBuffer = memory;
 		depthBuffer = nullptr;
 		modifiedScanlines = (ModifiedScanline *) (memory + resX * resY * 4);

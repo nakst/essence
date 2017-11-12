@@ -159,7 +159,7 @@ extern "C" void SetupProcessor2() {
 
 	// Create the processor's local storage.
 
-	CPULocalStorage *localStorage = (CPULocalStorage *) kernelVMM.Allocate(sizeof(CPULocalStorage), vmmMapAll);
+	CPULocalStorage *localStorage = (CPULocalStorage *) kernelVMM.Allocate("ProcLocal", sizeof(CPULocalStorage), vmmMapAll);
 	ProcessorSetLocalStorage(localStorage);
 
 	// Find the ACPIProcessor for the current processor.
@@ -168,7 +168,7 @@ extern "C" void SetupProcessor2() {
 	// Setup a GDT and TSS for the processor.
 	{
 		uintptr_t memoryPhysical = pmm.AllocatePage();
-		void *memory = kernelVMM.Allocate(4096, vmmMapAll, vmmRegionPhysical, memoryPhysical);
+		void *memory = kernelVMM.Allocate("ProcGDT", 4096, vmmMapAll, vmmRegionPhysical, memoryPhysical);
 
 		uintptr_t gdtPhysical = memoryPhysical +    0;
 		uintptr_t tssPhysical = memoryPhysical + 2048;
@@ -242,16 +242,6 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 
 	CPULocalStorage *local = GetLocalStorage();
 	uintptr_t interrupt = context->interruptNumber;
-
-	if (local) {
-		local->interruptContexts[local->interruptRecurseCount] = context;
-		local->interruptRecurseCount++;
-
-		if (local->interruptRecurseCount == 4) {
-			ProcessorMagicBreakpoint();
-			KernelPanic("Interrupt recurse failure on CPU %d: local->interruptContexts[0]->rip = %x.\n", local->processorID, local->interruptContexts[0]->rip);
-		}
-	}
 
 	if (interrupt < 0x20) {
 		// If we received a non-maskable interrupt, idle.
@@ -369,10 +359,6 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 	// Sanity check.
 	ContextSanityCheck(context);
 
-	if (local) {
-		local->interruptRecurseCount--;
-	}
-
 	if (ProcessorAreInterruptsEnabled()) {
 		KernelPanic("InterruptHandler - Interrupts were enabled while returning from an interrupt handler.\n");
 	}
@@ -380,8 +366,6 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 
 extern "C" void PostContextSwitch(InterruptContext *context) {
 	CPULocalStorage *local = GetLocalStorage();
-
-	local->interruptRecurseCount--;
 
 	void *kernelStack = (void *) local->currentThread->kernelStack;
 	*local->acpiProcessor->kernelStack = kernelStack;
