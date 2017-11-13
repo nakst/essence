@@ -189,7 +189,7 @@ UniqueIdentifier installationID; // The identifier of this OS installation, give
 #include "ahci.cpp"
 
 #include "vfs.cpp"
-#include "ext2.cpp"
+// #include "ext2.cpp"
 #include "esfs.cpp"
 #include "ps2.cpp"
 #include "devices.cpp"

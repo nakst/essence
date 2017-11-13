@@ -1,3 +1,7 @@
+// Deprecated in favour of EssenceFS.
+
+#if 0
+
 #ifdef IMPLEMENTATION
 
 struct Ext2Superblock {
@@ -371,5 +375,7 @@ inline bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Fi
 	Ext2FS *fs = (Ext2FS *) file->filesystem->data;
 	return fs->AccessFile(file, offsetBytes, sizeBytes, DRIVE_ACCESS_READ, buffer);
 }
+
+#endif
 
 #endif

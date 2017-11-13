@@ -128,19 +128,18 @@ OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation 
 }
 
 void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize) {
-	OSFileInformation information;
+	OSNodeInformation information;
 
-	if (OS_SUCCESS != OSOpenFile((char *) filePath, filePathLength, OS_OPEN_FILE_ACCESS_READ, &information)) {
+	if (OS_SUCCESS != OSOpenNode((char *) filePath, filePathLength, OS_OPEN_NODE_ACCESS_READ, &information)) {
 		return nullptr;
 	}
 
-	*fileSize = information.size;
-	void *buffer = OSHeapAllocate(information.size, false);
+	*fileSize = information.fileSize;
+	void *buffer = OSHeapAllocate(information.fileSize, false);
 
-	if (information.size != OSReadFileSync(information.handle, 0, information.size, buffer)) {
+	if (information.fileSize != OSReadFileSync(information.handle, 0, information.fileSize, buffer)) {
 		OSHeapFree(buffer);
-		OSCloseHandle(information.handle);
-		return nullptr;
+		buffer = nullptr;
 	}
 
 	OSCloseHandle(information.handle);
@@ -169,8 +168,8 @@ void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t si
 	}
 }
 
-OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformation *information) {
-	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_FILE, (uintptr_t) path, pathLength, flags, (uintptr_t) information);
+OSError OSOpenNode(char *path, size_t pathLength, uint64_t flags, OSNodeInformation *information) {
+	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_NODE, (uintptr_t) path, pathLength, flags, (uintptr_t) information);
 	return result;
 }
 
@@ -192,11 +191,6 @@ uintptr_t OSWait(OSHandle *handles, size_t count, uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT, (uintptr_t) handles, count, timeoutMs, 0);
 }
 
-OSError OSGetFileInformation(char *path, size_t pathLength, OSFileInformation *information) {
-	intptr_t result = OSSyscall(OS_SYSCALL_OPEN_FILE, (uintptr_t) path, pathLength, (uintptr_t) information, 0);
-	return result;
-}
-
-OSError OSRefreshFileInformation(OSFileInformation *information) {
-	return OSSyscall(OS_SYSCALL_REFRESH_FILE_INFORMATION, (uintptr_t) information, 0, 0, 0);
+OSError OSRefreshNodeInformation(OSNodeInformation *information) {
+	return OSSyscall(OS_SYSCALL_REFRESH_NODE_INFORMATION, (uintptr_t) information, 0, 0, 0);
 }

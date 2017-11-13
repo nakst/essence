@@ -1,6 +1,7 @@
 #include "../api/os.h"
 
 void RunTests() {
+#if 1
 	{
 		OSHandle event = OSCreateEvent(false);
 		OSError error = OSSetEvent(event);
@@ -8,10 +9,10 @@ void RunTests() {
 		OSPrint("%d/%d, wait result = %d\n", event, error, result);
 	}
 		
-	OSFileInformation file1;
-	OSError file1Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ | OS_OPEN_FILE_EXCLUSIVE_READ, &file1);
+	OSNodeInformation file1;
+	OSError file1Error = OSOpenNode((char *) "/os/test.txt", 12, OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_EXCLUSIVE_READ, &file1);
 
-	OSPrint("file1.size = %d, file1Error = %d\n", file1.size, file1Error);
+	OSPrint("file1.size = %d, file1Error = %d\n", file1.fileSize, file1Error);
 
 	uint8_t buffer[32];
 	size_t bytesRead = OSReadFileSync(file1.handle, 0, 32, buffer);
@@ -20,10 +21,10 @@ void RunTests() {
 
 	OSCloseHandle(file1.handle);
 
-	OSFileInformation file2;
-	OSError file2Error = OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ | OS_OPEN_FILE_ACCESS_WRITE, &file2);
+	OSNodeInformation file2;
+	OSError file2Error = OSOpenNode((char *) "/os/test.txt", 12, OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_WRITE, &file2);
 
-	OSPrint("file2.size = %d, file2Error = %d\n", file2.size, file2Error);
+	OSPrint("file2.size = %d, file2Error = %d\n", file2.fileSize, file2Error);
 
 	buffer[0] = 'M';
 	size_t bytesWritten = OSWriteFileSync(file2.handle, 0, 1, buffer);
@@ -33,15 +34,16 @@ void RunTests() {
 
 	OSZeroMemory(buffer, 32);
 
-	OSFileInformation file3;
-	OSOpenFile((char *) "/os/test.txt", 12, OS_OPEN_FILE_ACCESS_READ 
-			| OS_OPEN_FILE_ACCESS_RESIZE 
-			| OS_OPEN_FILE_ACCESS_WRITE, &file3);
+	OSNodeInformation file3;
+	OSOpenNode((char *) "/os/test.txt", 12, OS_OPEN_NODE_ACCESS_READ 
+			| OS_OPEN_NODE_ACCESS_RESIZE 
+			| OS_OPEN_NODE_ACCESS_WRITE, &file3);
 	bytesRead = OSReadFileSync(file3.handle, 0, 32, buffer);
 	OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
 
 	OSResizeFile(file3.handle, 10000);
 	OSCloseHandle(file3.handle);
+#endif
 }
 
 intptr_t entryValue = 0;

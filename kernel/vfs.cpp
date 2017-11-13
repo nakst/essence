@@ -15,43 +15,77 @@
 
 #ifndef IMPLEMENTATION
 
+#define DIRECTORY_ACCESS (OS_OPEN_NODE_DIRECTORY)
+
 enum FilesystemType {
+#if 0
 	FILESYSTEM_EXT2,
+#endif
 	FILESYSTEM_ESFS,
 };
 
+struct Directory {
+	uint64_t entryCount;
+};
+
 struct File {
+	uint64_t fileSize;
+};
+
+struct NodeData {
+	OSNodeType type;
+
+	union {
+		File file;
+		Directory directory;
+	};
+};
+
+struct Node {
+	// Files:
 	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
 	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
 	bool Resize(uint64_t newSize);
-	void Sync();
 
+	// Directories:
+	Node *OpenChild();
+	size_t EnumerateChildren(size_t count, struct NodeData *output);
+
+	void CopyInformation(OSNodeInformation *information);
+	void Sync();
+	bool modifiedSinceLastSync;
+
+	// "Read" on a directory -> enumerate/search files
+	// "Write" on a directory -> add/remove files 
 	size_t countRead, countWrite, countResize;
 	bool exclusiveRead, exclusiveWrite, exclusiveResize;
 
-	Mutex mutex;
-	uint64_t fileSize;
 	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
 	volatile size_t handles;
-	bool modifiedSinceLastSync;
 
-	struct File *nextFileInHashTableSlot;
-	struct File **pointerToThisFileInHashTableSlot;
+	struct Node *nextNodeInHashTableSlot;
+	struct Node **pointerToThisNodeInHashTableSlot;
+
+	Mutex mutex; // Lock the node during an operation.
+
+	NodeData data;
+	Node *parent;
 };
 
 struct Filesystem {
 	FilesystemType type;
-	File *root;
+	Node *root;
 	LinkedList mountpoints;
 	LinkedItem allFilesystemsItem;
 	void *data;
 };
 
 struct Mountpoint {
-	File *root;
 	char path[MAX_PATH];
 	size_t pathLength;
+
+	Node *root;
 	Filesystem *filesystem;
 
 	LinkedItem filesystemMountpointsItem;
@@ -60,22 +94,22 @@ struct Mountpoint {
 
 struct VFS {
 	void Initialise();
-	Filesystem *RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier installationID);
-	File *OpenFile(char *name, size_t nameLength, uint64_t flags);
-	void CloseFile(File *file, uint64_t flags);
+	Filesystem *RegisterFilesystem(Node *root, FilesystemType type, void *data, UniqueIdentifier installationID);
 
-	File *OpenFileHandle(void *existingFile, uint64_t &flags, UniqueIdentifier identifier);
-	File *FindFile(UniqueIdentifier identifier, Filesystem *filesystem);
+	Node *OpenNode(char *name, size_t nameLength, uint64_t flags);
+	void CloseNode(Node *node, uint64_t flags);
 
-	Pool filesystemPool, mountpointPool;
+	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type);
+	Node *FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem);
+
 	LinkedList filesystems, mountpoints;
 	Mutex filesystemsMutex, mountpointsMutex;
 
 	bool foundBootFilesystem;
 
-#define FILE_HASH_TABLE_BITS (12)
-	File *fileHashTable[1 << FILE_HASH_TABLE_BITS];
-	Mutex fileHashTableMutex;
+#define NODE_HASH_TABLE_BITS (12)
+	Node *nodeHashTable[1 << NODE_HASH_TABLE_BITS];
+	Mutex nodeHashTableMutex;
 };
 
 VFS vfs;
@@ -84,18 +118,23 @@ VFS vfs;
 
 #ifdef IMPLEMENTATION
 
-bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
-bool Ext2Scan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
+#if 0
+bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
+Node *Ext2Scan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
+#endif
 
-bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
-bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file);
-void EsFSSync(File *file);
-bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags);
-bool EsFSResize(File *file, uint64_t newSize);
+bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
+bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
+void EsFSSync(Node *node);
+Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
+bool EsFSResize(Node *file, uint64_t newSize);
 
-bool File::Resize(uint64_t newSize) {
+bool Node::Resize(uint64_t newSize) {
 	mutex.Acquire();
 	Defer(mutex.Release());
+
+	parent->mutex.Acquire();
+	Defer(parent->mutex.Release());
 
 	modifiedSinceLastSync = true;
 
@@ -110,13 +149,16 @@ bool File::Resize(uint64_t newSize) {
 	}
 }
 
-void File::Sync() {
+void Node::Sync() {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
 	if (!modifiedSinceLastSync) {
 		return;
 	}
+
+	parent->mutex.Acquire();
+	Defer(parent->mutex.Release());
 
 	modifiedSinceLastSync = false;
 
@@ -131,19 +173,34 @@ void File::Sync() {
 	}
 }
 
-size_t File::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+void Node::CopyInformation(OSNodeInformation *information) {
+	CopyMemory(&information->identifier, &identifier, sizeof(UniqueIdentifier));
+	information->type = data.type;
+
+	switch (data.type) {
+		case OS_NODE_FILE: {
+			information->fileSize = data.file.fileSize;
+		} break;
+
+		case OS_NODE_DIRECTORY: {
+			information->directoryChildren = data.directory.entryCount;
+		} break;
+	}
+}
+
+size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	if (offsetBytes > fileSize) {
+	if (offsetBytes > data.file.fileSize) {
 		return 0;
 	}
 
-	if (offsetBytes + sizeBytes > fileSize) {
-		sizeBytes = fileSize - offsetBytes;
+	if (offsetBytes + sizeBytes > data.file.fileSize) {
+		sizeBytes = data.file.fileSize - offsetBytes;
 	}
 
-	if (sizeBytes > fileSize) {
+	if (sizeBytes > data.file.fileSize) {
 		return 0;
 	}
 
@@ -164,27 +221,29 @@ size_t File::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	return sizeBytes;
 }
 
-size_t File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	if (offsetBytes > fileSize) {
+	if (offsetBytes > data.file.fileSize) {
 		return 0;
 	}
 
-	if (offsetBytes + sizeBytes > fileSize) {
-		sizeBytes = fileSize - offsetBytes;
+	if (offsetBytes + sizeBytes > data.file.fileSize) {
+		sizeBytes = data.file.fileSize - offsetBytes;
 	}
 
-	if (sizeBytes > fileSize) {
+	if (sizeBytes > data.file.fileSize) {
 		return 0;
 	}
 
 	switch (filesystem->type) {
+#if 0
 		case FILESYSTEM_EXT2: {
 			bool fail = Ext2Read(offsetBytes, sizeBytes, buffer, this);
 			if (!fail) return 0;
 		} break;
+#endif
 
 		case FILESYSTEM_ESFS: {
 			bool fail = EsFSRead(offsetBytes, sizeBytes, buffer, this);
@@ -192,7 +251,7 @@ size_t File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 		} break;
 
 		default: {
-			KernelPanic("File::Read - Unsupported filesystem.\n");
+			KernelPanic("Node::Read - Unsupported filesystem.\n");
 		} break;
 	}
 
@@ -200,9 +259,6 @@ size_t File::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 }
 
 void VFS::Initialise() {
-	filesystemPool.Initialise(sizeof(Filesystem));
-	mountpointPool.Initialise(sizeof(Mountpoint));
-
 	bool bootedFromEsFS = false;
 	for (uintptr_t i = 0; i < 16; i++) {
 		if (installationID.d[i]) {
@@ -216,36 +272,43 @@ void VFS::Initialise() {
 	}
 }
 
-void VFS::CloseFile(File *file, uint64_t flags) {
-	file->mutex.Acquire();
-	file->handles--;
-	bool noHandles = file->handles == 0;
+void VFS::CloseNode(Node *node, uint64_t flags) {
+	node->mutex.Acquire();
+	node->handles--;
 
-	if (flags & OS_OPEN_FILE_ACCESS_READ)      file->countRead--;
-	if (flags & OS_OPEN_FILE_ACCESS_WRITE)     file->countWrite--;
-	if (flags & OS_OPEN_FILE_ACCESS_RESIZE)    file->countResize--;
+	bool noHandles = node->handles == 0;
 
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_READ)   file->exclusiveRead = false;
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_WRITE)  file->exclusiveWrite = false;
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) file->exclusiveResize = false;
+	if (flags & OS_OPEN_NODE_ACCESS_READ)      node->countRead--;
+	if (flags & OS_OPEN_NODE_ACCESS_WRITE)     node->countWrite--;
+	if (flags & OS_OPEN_NODE_ACCESS_RESIZE)    node->countResize--;
+
+	if (flags & OS_OPEN_NODE_EXCLUSIVE_READ)   node->exclusiveRead = false;
+	if (flags & OS_OPEN_NODE_EXCLUSIVE_WRITE)  node->exclusiveWrite = false;
+	if (flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) node->exclusiveResize = false;
 
 	// TODO Notify anyone waiting for the file to be accessible.
 
-	file->mutex.Release();
+	node->mutex.Release();
+
+	if (node->parent) {
+		CloseNode(node->parent, DIRECTORY_ACCESS);
+	}
 
 	if (noHandles) {
-		file->Sync();
+		node->Sync();
 
-		fileHashTableMutex.Acquire();
-		*file->pointerToThisFileInHashTableSlot = file->nextFileInHashTableSlot;
-		fileHashTableMutex.Release();
+		if (node->parent) {
+			nodeHashTableMutex.Acquire();
+			*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
+			nodeHashTableMutex.Release();
+		}
 
-		OSHeapFree(file);
+		OSHeapFree(node);
 	}
 }
 
-File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
-	KernelLog(LOG_VERBOSE, "Opening file: %s\n", nameLength, name);
+Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
+	KernelLog(LOG_VERBOSE, "Opening node: %s\n", nameLength, name);
 
 	mountpointsMutex.Acquire();
 
@@ -277,8 +340,9 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 	nameLength -= mountpoint->pathLength;
 
 	Filesystem *filesystem = mountpoint->filesystem;
-	uint64_t temp = 0;
-	File *directory = vfs.OpenFileHandle(mountpoint->root, temp, mountpoint->root->identifier);
+	uint64_t directoryAccess = DIRECTORY_ACCESS;
+	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY);
+	node->filesystem = filesystem;
 
 	uint64_t desiredFlags = flags;
 
@@ -297,140 +361,172 @@ File *VFS::OpenFile(char *name, size_t nameLength, uint64_t flags) {
 			entryLength++;
 		}
 
-		bool isActualFile = !nameLength;
-		bool result;
-		uint64_t temp = 0;
+		bool isFinalNode = !nameLength;
+		Node *parent = node;
+
+		if (node->filesystem != filesystem) {
+			KernelPanic("VFS::OpenFile - Incorrect node filesystem.\n");
+		}
 
 		switch (filesystem->type) {
+#if 0
 			case FILESYSTEM_EXT2: {
-				result = Ext2Scan(entry, entryLength, &directory, filesystem, isActualFile ? flags : temp);
+				node = Ext2Scan(entry, entryLength, node, isFinalNode ? flags : directoryAccess);
 			} break;
+#endif
 
 			case FILESYSTEM_ESFS: {
-				result = EsFSScan(entry, entryLength, &directory, filesystem, isActualFile ? flags : temp);
+				node = EsFSScan(entry, entryLength, node, isFinalNode ? flags : directoryAccess);
 			} break;
 
 			default: {
-				KernelPanic("VFS::OpenFile - Unimplemented filesystem type %d\n", filesystem->type);
+				KernelPanic("VFS::OpenNode - Unimplemented filesystem type %d\n", filesystem->type);
 			} break;
 		}
 
-		if (!result) {
+		if (!node) {
+			// Close the handles we opened to the parent directories while traversing to this node.
+			CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
+
+			if (!directoryAccess) {
+				// A "directory" in the path wasn't a directory.
+				return nullptr;
+			}
+
 			if (desiredFlags != flags) {
 				// We couldn't only the file with the desired access flags.
 				return nullptr;
 			}
 
-			// TODO If the flag OS_OPEN_FILE_FAIL_IF_NOT_FOUND is clear, 
+			// TODO If the flag OS_OPEN_NODE_FAIL_IF_NOT_FOUND is clear, 
 			// 	then create the file.
 
 			return nullptr;
 		} 
 	}
 
-	if (directory && (flags & OS_OPEN_FILE_FAIL_IF_FOUND)) {
-		CloseFile(directory, 0);
+	if (node && (flags & OS_OPEN_NODE_FAIL_IF_FOUND)) {
+		CloseNode(node, flags);
 	}
 
-	File *file = directory;
-	file->filesystem = filesystem;
-	return file;
+	return node;
 }
 
-File *VFS::OpenFileHandle(void *_existingFile, uint64_t &flags, UniqueIdentifier identifier) {
-	File *existingFile = (File *) _existingFile;
+Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdentifier identifier, Node *parent, OSNodeType type) {
+	if (parent && !parent->filesystem) {
+		KernelPanic("VFS::RegisterNodeHandle - Trying to register a node without a filesystem.\n");
+	}
 
-	existingFile->mutex.Acquire();
-	Defer(existingFile->mutex.Release());
+	Node *existingNode = (Node *) _existingNode;
 
-	if ((flags & OS_OPEN_FILE_ACCESS_READ) && existingFile->exclusiveRead) {
-		flags &= ~(OS_OPEN_FILE_ACCESS_READ);
+	existingNode->mutex.Acquire();
+	Defer(existingNode->mutex.Release());
+
+	if ((flags & OS_OPEN_NODE_ACCESS_READ) && existingNode->exclusiveRead) {
+		flags &= ~(OS_OPEN_NODE_ACCESS_READ);
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_ACCESS_WRITE) && existingFile->exclusiveWrite) {
-		flags &= ~(OS_OPEN_FILE_ACCESS_WRITE);
+	if ((flags & OS_OPEN_NODE_ACCESS_WRITE) && existingNode->exclusiveWrite) {
+		flags &= ~(OS_OPEN_NODE_ACCESS_WRITE);
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_ACCESS_RESIZE) && existingFile->exclusiveResize) {
-		flags &= ~(OS_OPEN_FILE_ACCESS_RESIZE);
+	if ((flags & OS_OPEN_NODE_ACCESS_RESIZE) && existingNode->exclusiveResize) {
+		flags &= ~(OS_OPEN_NODE_ACCESS_RESIZE);
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_EXCLUSIVE_READ) && existingFile->countRead) {
-		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_READ);
+	if ((flags & OS_OPEN_NODE_EXCLUSIVE_READ) && existingNode->countRead) {
+		flags &= ~(OS_OPEN_NODE_EXCLUSIVE_READ);
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_EXCLUSIVE_WRITE) && existingFile->countWrite) {
-		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_WRITE);
+	if ((flags & OS_OPEN_NODE_EXCLUSIVE_WRITE) && existingNode->countWrite) {
+		flags &= ~(OS_OPEN_NODE_EXCLUSIVE_WRITE);
 		return nullptr;
 	}
 
-	if ((flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) && existingFile->countResize) {
-		flags &= ~(OS_OPEN_FILE_EXCLUSIVE_RESIZE);
+	if ((flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) && existingNode->countResize) {
+		flags &= ~(OS_OPEN_NODE_EXCLUSIVE_RESIZE);
 		return nullptr;
 	}
 
-	if (flags & OS_OPEN_FILE_ACCESS_READ)      existingFile->countRead++;
-	if (flags & OS_OPEN_FILE_ACCESS_WRITE)     existingFile->countWrite++;
-	if (flags & OS_OPEN_FILE_ACCESS_RESIZE)    existingFile->countResize++;
+	if ((flags & OS_OPEN_NODE_DIRECTORY) && type != OS_NODE_DIRECTORY) {
+		flags &= ~(OS_OPEN_NODE_DIRECTORY);
+		return nullptr;
+	}
 
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_READ)   existingFile->exclusiveRead = true;
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_WRITE)  existingFile->exclusiveWrite = true;
-	if (flags & OS_OPEN_FILE_EXCLUSIVE_RESIZE) existingFile->exclusiveResize = true;
+	if ((flags & !OS_OPEN_NODE_DIRECTORY) && type == OS_NODE_DIRECTORY) {
+		flags |= (OS_OPEN_NODE_DIRECTORY);
+		return nullptr;
+	}
 
-	if (!existingFile->handles) {
-		fileHashTableMutex.Acquire();
+	if (flags & OS_OPEN_NODE_ACCESS_READ)      existingNode->countRead++;
+	if (flags & OS_OPEN_NODE_ACCESS_WRITE)     existingNode->countWrite++;
+	if (flags & OS_OPEN_NODE_ACCESS_RESIZE)    existingNode->countResize++;
+
+	if (flags & OS_OPEN_NODE_EXCLUSIVE_READ)   existingNode->exclusiveRead = true;
+	if (flags & OS_OPEN_NODE_EXCLUSIVE_WRITE)  existingNode->exclusiveWrite = true;
+	if (flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) existingNode->exclusiveResize = true;
+
+	if (!existingNode->handles && parent) {
+		nodeHashTableMutex.Acquire();
 		uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
-		existingFile->nextFileInHashTableSlot = fileHashTable[slot];
-		if (fileHashTable[slot]) fileHashTable[slot]->pointerToThisFileInHashTableSlot = &existingFile->nextFileInHashTableSlot;
-		fileHashTable[slot] = existingFile;
-		existingFile->pointerToThisFileInHashTableSlot = fileHashTable + slot;
-		fileHashTableMutex.Release();
+		existingNode->nextNodeInHashTableSlot = nodeHashTable[slot];
+		if (nodeHashTable[slot]) nodeHashTable[slot]->pointerToThisNodeInHashTableSlot = &existingNode->nextNodeInHashTableSlot;
+		nodeHashTable[slot] = existingNode;
+		existingNode->pointerToThisNodeInHashTableSlot = nodeHashTable + slot;
+		nodeHashTableMutex.Release();
+
+		existingNode->filesystem = parent->filesystem;
+		existingNode->parent = parent; // The handle to the parent will be closed when the file is closed.
 	}
 
-	existingFile->handles++;
+	existingNode->handles++;
 
-	return existingFile;
+	return existingNode;
 }
 
-File *VFS::FindFile(UniqueIdentifier identifier, Filesystem *filesystem) {
-	fileHashTableMutex.Acquire();
-	Defer(fileHashTableMutex.Release());
+Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
+	nodeHashTableMutex.Acquire();
+	Defer(nodeHashTableMutex.Release());
 
 	uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
 
-	File *file = fileHashTable[slot];
+	Node *node = nodeHashTable[slot];
 
-	while (file) {
-		if (file->filesystem == filesystem 
-				&& !CompareBytes(&file->identifier, &identifier, sizeof(UniqueIdentifier))
-				&& file->handles) {
-			return file;
+	while (node) {
+		if (node->filesystem == filesystem 
+				&& !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier))
+				&& node->handles /* Make sure the node isn't about to be deallocated! */) {
+			return node;
 		}
 
-		file = file->nextFileInHashTableSlot;
+		node = node->nextNodeInHashTableSlot;
 	}
 
-	return nullptr; // The file has not been opened.
+	return nullptr; // The node is not currently open.
 }
 
-Filesystem *VFS::RegisterFilesystem(File *root, FilesystemType type, void *data, UniqueIdentifier fsInstallationID) {
+Filesystem *VFS::RegisterFilesystem(Node *root, FilesystemType type, void *data, UniqueIdentifier fsInstallationID) {
 	filesystemsMutex.Acquire();
 	mountpointsMutex.Acquire();
 
+	if (root->parent) {
+		KernelPanic("VFS::RegisterFilesystem - \"Root\" node had a parent.\n");
+	}
+
 	uintptr_t filesystemID = filesystems.count;
 
-	Filesystem *filesystem = (Filesystem *) filesystemPool.Add();
+	Filesystem *filesystem = (Filesystem *) OSHeapAllocate(sizeof(Filesystem), true);
 	filesystem->allFilesystemsItem.thisItem = filesystem;
 	filesystem->type = type;
 	filesystem->root = root;
 	filesystem->data = data;
 	filesystems.InsertEnd(&filesystem->allFilesystemsItem);
 
-	Mountpoint *mountpoint = (Mountpoint *) mountpointPool.Add();
+	Mountpoint *mountpoint = (Mountpoint *) OSHeapAllocate(sizeof(Mountpoint), true);
 	mountpoint->root = root;
 	mountpoint->filesystem = filesystem;
 	mountpoint->pathLength = FormatString(mountpoint->path, MAX_PATH, OS_FOLDER "/Volume%d/", filesystemID);
@@ -459,7 +555,7 @@ Filesystem *VFS::RegisterFilesystem(File *root, FilesystemType type, void *data,
 		mountpointsMutex.Acquire();
 
 		// Mount the volume at root.
-		Mountpoint *mountpoint = (Mountpoint *) mountpointPool.Add();
+		Mountpoint *mountpoint = (Mountpoint *) OSHeapAllocate(sizeof(Mountpoint), true);
 		mountpoint->root = root;
 		mountpoint->filesystem = filesystem;
 		mountpoint->pathLength = FormatString(mountpoint->path, MAX_PATH, "/");

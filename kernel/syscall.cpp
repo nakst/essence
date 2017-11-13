@@ -548,12 +548,12 @@ uintptr_t DoSyscall(uintptr_t index,
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
 		} break;
 
-		case OS_SYSCALL_OPEN_FILE: {
+		case OS_SYSCALL_OPEN_NODE: {
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1);
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region));
 
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument3, sizeof(OSFileInformation));
+			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument3, sizeof(OSNodeInformation));
 			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region2));
 
@@ -561,39 +561,39 @@ uintptr_t DoSyscall(uintptr_t index,
 			size_t pathLength = (size_t) argument1;
 			uint64_t flags = (uint64_t) argument2;
 
-			File *file = vfs.OpenFile(path, pathLength, flags);
+			Node *node = vfs.OpenNode(path, pathLength, flags);
 
-			if (!file) {
+			if (!node) {
 				// TODO Improve the error reporting in the file I/O API.
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 			}
 
 			Handle handle = {};
-			handle.type = KERNEL_OBJECT_FILE;
-			handle.object = file;
+			handle.type = KERNEL_OBJECT_NODE;
+			handle.object = node;
 			handle.flags = flags;
 
-			OSFileInformation *information = (OSFileInformation *) argument3;
+			OSNodeInformation *information = (OSNodeInformation *) argument3;
+			node->CopyInformation(information);
 			information->handle = currentProcess->handleTable.OpenHandle(handle);
-			information->size = file->fileSize;
-			information->isDirectory = false;
-			CopyMemory(&information->identifier, &file->identifier, sizeof(UniqueIdentifier));
 
 			SYSCALL_RETURN(OS_SUCCESS);
 		} break;
 
 		case OS_SYSCALL_READ_FILE_SYNC: {
-			KernelObjectType type = KERNEL_OBJECT_FILE;
+			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
-			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
 			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_ERROR_INCORRECT_NODE_TYPE);
 
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region));
 
-			if (handleData->flags & OS_OPEN_FILE_ACCESS_READ) {
+			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3);
 				SYSCALL_RETURN(bytesRead);
 			} else {
@@ -602,17 +602,19 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_WRITE_FILE_SYNC: {
-			KernelObjectType type = KERNEL_OBJECT_FILE;
+			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
-			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
 			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_ERROR_INCORRECT_NODE_TYPE);
 
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
 			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region));
 
-			if (handleData->flags & OS_OPEN_FILE_ACCESS_WRITE) {
+			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3);
 				SYSCALL_RETURN(bytesWritten);
 			} else {
@@ -621,13 +623,15 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_RESIZE_FILE: {
-			KernelObjectType type = KERNEL_OBJECT_FILE;
+			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
-			File *file = (File *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
 			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
-			if (handleData->flags & OS_OPEN_FILE_ACCESS_RESIZE) {
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_ERROR_INCORRECT_NODE_TYPE);
+
+			if (handleData->flags & OS_OPEN_NODE_ACCESS_RESIZE) {
 				bool success = file->Resize(argument1);
 				SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 			} else {
@@ -747,25 +751,20 @@ uintptr_t DoSyscall(uintptr_t index,
 			SYSCALL_RETURN(waitReturnValue);
 		} break;
 
-		case OS_SYSCALL_REFRESH_FILE_INFORMATION: {
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument0, sizeof(OSFileInformation));
+		case OS_SYSCALL_REFRESH_NODE_INFORMATION: {
+			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument0, sizeof(OSNodeInformation));
 			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region2));
 
-			OSFileInformation *information = (OSFileInformation *) argument0;
+			OSNodeInformation *information = (OSNodeInformation *) argument0;
 
 			volatile OSHandle handle = information->handle;
-			KernelObjectType type = KERNEL_OBJECT_FILE;
-			File *file = (File *) currentProcess->handleTable.ResolveHandle(handle, type);
-			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
-			Defer(currentProcess->handleTable.CompleteHandle(file, handle));
+			KernelObjectType type = KERNEL_OBJECT_NODE;
+			Node *node = (Node *) currentProcess->handleTable.ResolveHandle(handle, type);
+			if (!node) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(node, handle));
 
-			information->size = file->fileSize;
-			information->isDirectory = false;
-			CopyMemory(&information->identifier, &file->identifier, sizeof(UniqueIdentifier));
-		} break;
-
-		case OS_SYSCALL_GET_FILE_INFORMATION: {
+			node->CopyInformation((OSNodeInformation *) argument0);
 		} break;
 	}
 

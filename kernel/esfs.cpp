@@ -6,12 +6,12 @@
 #include "../util/esfs.cpp"
 
 struct EsFSVolume {
-	File *Initialise(Device *_drive);
+	Node *Initialise(Device *_drive);
 
 	uint64_t BlocksNeededToStore(uint64_t size);
 
-	File *LoadRootDirectory();
-	File *SearchDirectory(char *name, size_t nameLength, File *directory, uint64_t &flags);
+	Node *LoadRootDirectory();
+	Node *SearchDirectory(char *name, size_t nameLength, Node *directory, uint64_t &flags);
 
 	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
@@ -26,8 +26,6 @@ struct EsFSVolume {
 	EsFSSuperblock superblock;
 	EsFSGroupDescriptorP *groupDescriptorTable;
 	size_t sectorsPerBlock;
-
-	Mutex mutex;
 };
 
 struct EsFSFile {
@@ -50,10 +48,6 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 }
 
 bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
-	if (operation == DRIVE_ACCESS_WRITE) {
-		Print("block: %d, offsetIntoBlock: %d, countBytes: %d\n", block, offsetIntoBlock, countBytes);
-	}
-
 	bool result = drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
 
 	if (!result) {
@@ -94,10 +88,7 @@ uint16_t EsFSVolume::GetBlocksInGroup(uint64_t group) {
 	}
 }
 
-File *EsFSVolume::LoadRootDirectory() {
-	mutex.Acquire();
-	Defer(mutex.Release());
-
+Node *EsFSVolume::LoadRootDirectory() {
 	void *root = OSHeapAllocate(superblock.blockSize * superblock.rootDirectoryFileEntry.count, false);
 	Defer(OSHeapFree(root));
 
@@ -109,19 +100,23 @@ File *EsFSVolume::LoadRootDirectory() {
 	size_t fileEntryLength = rootEnd - (uint8_t *) root;
 
 	uint64_t temp = 0;
-	File *file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true), temp, ((EsFSFileEntry *) root)->identifier);
-	EsFSFile *eFile = (EsFSFile *) (file + 1);
+	Node *node = vfs.RegisterNodeHandle(OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true), temp, ((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY);
+	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
 	eFile->fileEntryLength = fileEntryLength;
 	CopyMemory(fileEntry, root, fileEntryLength);
 
-	CopyMemory(&file->identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	node->data.type = OS_NODE_DIRECTORY;
+	node->data.directory.entryCount = directory->itemsInDirectory;
 
-	return file;
+	CopyMemory(&node->identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
+
+	return node;
 }
 
-File *EsFSVolume::Initialise(Device *_drive) {
+Node *EsFSVolume::Initialise(Device *_drive) {
 	drive = _drive;
 	
 	// Load the superblock.
@@ -370,7 +365,6 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 
 		AccessBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
 
-		Print("Extent: %d, %d\n", extent.offset, extent.count);
 		return extent;
 	}
 
@@ -493,9 +487,9 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	return true;
 }
 
-File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_directory, uint64_t &flags) {
-	mutex.Acquire();
-	Defer(mutex.Release());
+Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_directory, uint64_t &flags) {
+	_directory->mutex.Acquire();
+	Defer(_directory->mutex.Release());
 
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
@@ -572,43 +566,70 @@ File *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, File *_di
 
 	{
 		EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, returnValue + 1);
-		if (!data) return nullptr;
+		EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, returnValue + 1);
+		if (!data) return nullptr; 
+		if (!directory && returnValue->fileType == ESFS_FILE_TYPE_DIRECTORY) return nullptr; 
 
-		File *file;
+		OSNodeType type;
 
-		// If the file is already open, return that file.
-		if ((file = vfs.FindFile(returnValue->identifier, filesystem))) {
-			return vfs.OpenFileHandle(file, flags, returnValue->identifier);
+		switch (returnValue->fileType) {
+			case ESFS_FILE_TYPE_FILE: type = OS_NODE_FILE; break;
+			case ESFS_FILE_TYPE_DIRECTORY: type = OS_NODE_DIRECTORY; break;
 		}
 
-		file = vfs.OpenFileHandle(OSHeapAllocate(sizeof(File) + sizeof(EsFSFile) + fileEntryLength, true), flags, returnValue->identifier);
-		EsFSFile *eFile = (EsFSFile *) (file + 1);
+		Node *node;
+
+		// If the file is already open, return that file.
+		if ((node = vfs.FindOpenNode(returnValue->identifier, _directory->filesystem))) {
+			return vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type);
+		}
+
+		void *nodeAlloc = OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true);
+		node = vfs.RegisterNodeHandle(nodeAlloc, flags, returnValue->identifier, _directory, type);
+
+		if (!node) {
+			OSHeapFree(nodeAlloc);
+			return nullptr;
+		}
+
+		EsFSFile *eFile = (EsFSFile *) (node + 1);
 		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
 		eFile->fileEntryLength = fileEntryLength;
 		CopyMemory(fileEntry, returnValue, fileEntryLength);
 
-		file->fileSize = data->size;
-		CopyMemory(&file->identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
+		node->data.type = type;
+
+		switch (fileEntry->fileType) {
+			case ESFS_FILE_TYPE_FILE: {
+				node->data.file.fileSize = data->size;
+			} break;
+
+			case ESFS_FILE_TYPE_DIRECTORY: {
+				node->data.directory.entryCount = directory->itemsInDirectory;
+			} break;
+		}
+
+		CopyMemory(&node->identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
 
 		eFile->containerBlock = lastAccessedActualBlock;
 		eFile->offsetIntoBlock = (uintptr_t) returnValue - (uintptr_t) directoryBuffer;
 
-		return file;
+		return node;
 	}
 }
 
-inline bool EsFSScan(char *name, size_t nameLength, File **file, Filesystem *filesystem, uint64_t &flags) {
-	EsFSVolume *fs = (EsFSVolume *) filesystem->data;
+inline Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags) {
+	EsFSVolume *fs = (EsFSVolume *) directory->filesystem->data;
 
 	// Mutex is acquired in SearchDirectory.
-	File *_file = fs->SearchDirectory(name, nameLength, *file, flags);
-	if (!_file) return false;
-	*file = _file;
-	return true;
+	// 	- TODO Move this out into the VFS code.
+
+	Node *node = fs->SearchDirectory(name, nameLength, directory, flags);
+	return node;
 }
 
-inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {
+inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
@@ -616,7 +637,7 @@ inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Fi
 	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, false);
 }
 
-inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, File *file) {
+inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
@@ -624,18 +645,13 @@ inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, F
 	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, true);
 }
 
-inline void EsFSSync(File *file) {
-	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
-
-	// We should acquire the lock because we'll be updating metadata files.
-	fs->mutex.Acquire();
-	Defer(fs->mutex.Release());
-
-	EsFSFile *eFile = (EsFSFile *) (file + 1);
+inline void EsFSSync(Node *node) {
+	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
+	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	fs->AccessBlock(eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
 }
 
-inline bool EsFSResize(File *file, uint64_t newSize) {
+inline bool EsFSResize(Node *file, uint64_t newSize) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);

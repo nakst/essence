@@ -2,7 +2,7 @@
 
 #define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
 		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
-		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_FILE | KERNEL_OBJECT_EVENT))
+		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE | KERNEL_OBJECT_EVENT))
 
 enum KernelObjectType {
 	KERNEL_OBJECT_PROCESS 	= 0x00000001,
@@ -11,7 +11,7 @@ enum KernelObjectType {
 	KERNEL_OBJECT_WINDOW	= 0x00000008,
 	KERNEL_OBJECT_MUTEX	= 0x00000010,
 	KERNEL_OBJECT_SHMEM	= 0x00000020,
-	KERNEL_OBJECT_FILE	= 0x00000040,
+	KERNEL_OBJECT_NODE	= 0x00000040,
 	KERNEL_OBJECT_EVENT	= 0x00000080,
 };
 
@@ -130,8 +130,8 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			}
 		} break;
 
-		case KERNEL_OBJECT_FILE: {
-			vfs.CloseFile((File *) object, flags);
+		case KERNEL_OBJECT_NODE: {
+			vfs.CloseNode((Node *) object, flags);
 		} break;
 
 		default: {

@@ -181,6 +181,7 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_EVENT_NOT_SET			(-27)
 #define OS_ERROR_TOO_MANY_WAIT_OBJECTS		(-28)   // Always crash?
 #define OS_ERROR_TIMEOUT_REACHED		(-29)
+#define OS_ERROR_INCORRECT_NODE_TYPE		(-30) 	// Always crash?
 
 typedef intptr_t OSError;
 
@@ -216,7 +217,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_MAP_SHARED_MEMORY		(29)
 #define OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY	(30)
 #define OS_SYSCALL_TERMINATE_PROCESS		(31)
-#define OS_SYSCALL_OPEN_FILE			(32)
+#define OS_SYSCALL_OPEN_NODE			(32)
 #define OS_SYSCALL_READ_FILE_SYNC		(33)
 #define OS_SYSCALL_WRITE_FILE_SYNC		(34)
 #define OS_SYSCALL_RESIZE_FILE			(35)
@@ -224,8 +225,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_SET_EVENT			(37)
 #define OS_SYSCALL_RESET_EVENT			(38)
 #define OS_SYSCALL_POLL_EVENT			(39)
-#define OS_SYSCALL_REFRESH_FILE_INFORMATION	(40)
-#define OS_SYSCALL_GET_FILE_INFORMATION		(41)
+#define OS_SYSCALL_REFRESH_NODE_INFORMATION	(40)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -254,11 +254,20 @@ struct OSUniqueIdentifier {
 	uint8_t d[16];
 };
 
-struct OSFileInformation {
+enum OSNodeType {
+	OS_NODE_FILE,
+	OS_NODE_DIRECTORY,
+};
+
+struct OSNodeInformation {
 	OSHandle handle;
 	OSUniqueIdentifier identifier;
-	uint64_t size;
-	bool isDirectory;
+	OSNodeType type;
+
+	union {
+		uint64_t fileSize;
+		uint64_t directoryChildren;
+	};
 };
 
 struct OSPoint {
@@ -468,16 +477,19 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_DRAW_STRING_VALIGN_BOTTOM 	(8)
 #define OS_DRAW_STRING_VALIGN_CENTER 	(OS_DRAW_STRING_VALIGN_TOP | OS_DRAW_STRING_VALIGN_BOTTOM)
 
-#define OS_OPEN_FILE_ACCESS_READ	(0x1)
-#define OS_OPEN_FILE_ACCESS_WRITE	(0x2)
-#define OS_OPEN_FILE_ACCESS_RESIZE	(0x4)
+#define OS_OPEN_NODE_ACCESS_READ	(0x1)
+#define OS_OPEN_NODE_ACCESS_WRITE	(0x2)
+#define OS_OPEN_NODE_ACCESS_RESIZE	(0x4)
 
-#define OS_OPEN_FILE_EXCLUSIVE_READ	(0x10)
-#define OS_OPEN_FILE_EXCLUSIVE_WRITE	(0x20)
-#define OS_OPEN_FILE_EXCLUSIVE_RESIZE	(0x40)
+#define OS_OPEN_NODE_EXCLUSIVE_READ	(0x10)
+#define OS_OPEN_NODE_EXCLUSIVE_WRITE	(0x20)
+#define OS_OPEN_NODE_EXCLUSIVE_RESIZE	(0x40)
 
-#define OS_OPEN_FILE_FAIL_IF_FOUND	(0x100)
-#define OS_OPEN_FILE_FAIL_IF_NOT_FOUND	(0x200)
+#define OS_OPEN_NODE_FAIL_IF_FOUND	(0x100)
+#define OS_OPEN_NODE_FAIL_IF_NOT_FOUND	(0x200)
+
+#define OS_OPEN_NODE_DIRECTORY		(0x2000)
+#define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x4000) // Create the directories leading to the file, if they don't already exist.
 
 #ifndef KERNEL
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
@@ -488,14 +500,11 @@ extern "C" OSHandle OSCreateEvent(bool autoReset);
 
 extern "C" OSError OSCloseHandle(OSHandle handle);
 
+extern "C" OSError OSOpenNode(char *path, size_t pathLength, uint64_t flags, OSNodeInformation *information);
 extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 
-extern "C" OSError OSOpenFile(char *path, size_t pathLength, uint64_t flags, OSFileInformation *information);
 extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
-
-extern "C" OSError OSRefreshFileInformation(OSFileInformation *information);
-extern "C" OSError OSGetFileInformation(char *filePath, size_t filePathLength, OSFileInformation *information);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
