@@ -93,6 +93,7 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 
 	ElfProgramHeader *programHeaders = (ElfProgramHeader *) OSHeapAllocate(programHeaderEntrySize * header.programHeaderEntries, false);
 	Defer(OSHeapFree(programHeaders));
+	Print("programHeaders = %x\n", programHeaders);
 
 	s = file->Read(header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders);
 	if (!s) return 0;
@@ -100,6 +101,8 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	for (uintptr_t i = 0; i < header.programHeaderEntries; i++) {
 		ElfProgramHeader *header = (ElfProgramHeader *) ((uint8_t *) programHeaders + programHeaderEntrySize * i);
 		if (header->type != 1) continue;
+
+		Print("Header!\n");
 
 		void *segment = (void *) header->virtualAddress;
 

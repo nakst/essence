@@ -65,5 +65,13 @@ extern "C" void ProgramEntry() {
 		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 	}
 
+	{
+		// Start the Odin test program.
+
+		const char *path = "/os/OdinHello";
+		OSProcessInformation process;
+		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
+	}
+
 	OSTerminateThread(OS_CURRENT_THREAD);
 }

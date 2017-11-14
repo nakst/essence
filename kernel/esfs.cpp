@@ -26,6 +26,8 @@ struct EsFSVolume {
 	EsFSSuperblock superblock;
 	EsFSGroupDescriptorP *groupDescriptorTable;
 	size_t sectorsPerBlock;
+
+	Mutex mutex;
 };
 
 struct EsFSFile {
@@ -48,6 +50,9 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 }
 
 bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
 	bool result = drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
 
 	if (!result) {
@@ -585,6 +590,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 		}
 
 		void *nodeAlloc = OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true);
+		Print("nodeAlloc = %x\n", nodeAlloc);
 		node = vfs.RegisterNodeHandle(nodeAlloc, flags, returnValue->identifier, _directory, type);
 
 		if (!node) {
@@ -621,6 +627,10 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 inline Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags) {
 	EsFSVolume *fs = (EsFSVolume *) directory->filesystem->data;
+#if 0
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+#endif
 
 	// Mutex is acquired in SearchDirectory.
 	// 	- TODO Move this out into the VFS code.
@@ -631,6 +641,11 @@ inline Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &
 
 inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+#if 0
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+#endif
+
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
@@ -639,6 +654,11 @@ inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, No
 
 inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+#if 0
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+#endif
+
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
@@ -647,12 +667,22 @@ inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, N
 
 inline void EsFSSync(Node *node) {
 	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
+#if 0
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+#endif
+
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	fs->AccessBlock(eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
 }
 
 inline bool EsFSResize(Node *file, uint64_t newSize) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+#if 0
+	fs->mutex.Acquire();
+	Defer(fs->mutex.Release());
+#endif
+
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);

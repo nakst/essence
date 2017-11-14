@@ -498,7 +498,7 @@ void Scheduler::Start() {
 
 void NewProcess() {
 	Process *thisProcess = GetCurrentThread()->process;
-	// KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
+	KernelLog(LOG_VERBOSE, "Creating process %d, %s...\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	// TODO Shared memory with executables.
 	uintptr_t processStartAddress = LoadELF(thisProcess->executablePath, thisProcess->executablePathLength);
@@ -510,6 +510,8 @@ void NewProcess() {
 		thisProcess->executableState = PROCESS_EXECUTABLE_FAILED_TO_LOAD;
 		KernelPanic("NewProcess - Could not start a new process.\n");
 	}
+
+	KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	thisProcess->executableLoadAttemptComplete.Set();
 	scheduler.TerminateThread(GetCurrentThread());
@@ -1072,6 +1074,7 @@ void Mutex::Release() {
 	AssertLocked();
 
 	Thread *currentThread = GetCurrentThread();
+
 	if (currentThread) {
 		Thread *temp;
 		if (currentThread != (temp = __sync_val_compare_and_swap(&owner, currentThread, nullptr))) {

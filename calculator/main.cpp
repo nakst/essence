@@ -1,13 +1,14 @@
 #include "../api/os.h"
 
 void RunTests() {
-#if 1
+#if 0
 	{
 		OSHandle event = OSCreateEvent(false);
 		OSError error = OSSetEvent(event);
 		uintptr_t result = OSWait(&event, 1, 100);
 		OSPrint("%d/%d, wait result = %d\n", event, error, result);
 	}
+#endif
 		
 	OSNodeInformation file1;
 	OSError file1Error = OSOpenNode((char *) "/os/test.txt", 12, OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_EXCLUSIVE_READ, &file1);
@@ -17,7 +18,7 @@ void RunTests() {
 	uint8_t buffer[32];
 	size_t bytesRead = OSReadFileSync(file1.handle, 0, 32, buffer);
 
-	OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
+	// OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
 
 	OSCloseHandle(file1.handle);
 
@@ -28,7 +29,7 @@ void RunTests() {
 
 	buffer[0] = 'M';
 	size_t bytesWritten = OSWriteFileSync(file2.handle, 0, 1, buffer);
-	OSCloseHandle(file2.handle);
+	// OSCloseHandle(file2.handle);
 
 	OSPrint("bytesWritten = %d\n", bytesWritten);
 
@@ -39,11 +40,11 @@ void RunTests() {
 			| OS_OPEN_NODE_ACCESS_RESIZE 
 			| OS_OPEN_NODE_ACCESS_WRITE, &file3);
 	bytesRead = OSReadFileSync(file3.handle, 0, 32, buffer);
-	OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
+	(void) bytesRead;
+	// OSPrint("buffer contents = %s, bytesRead = %d\n", bytesRead - 1, buffer, bytesRead);
 
-	OSResizeFile(file3.handle, 10000);
+	// OSResizeFile(file3.handle, 10000);
 	OSCloseHandle(file3.handle);
-#endif
 }
 
 intptr_t entryValue = 0;

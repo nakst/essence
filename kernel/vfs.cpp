@@ -273,8 +273,11 @@ void VFS::Initialise() {
 }
 
 void VFS::CloseNode(Node *node, uint64_t flags) {
-	node->mutex.Acquire();
+	nodeHashTableMutex.Acquire();
+
 	node->handles--;
+
+	Print("removed handle, %x, %d remain\n", node, node->handles);
 
 	bool noHandles = node->handles == 0;
 
@@ -288,27 +291,28 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	// TODO Notify anyone waiting for the file to be accessible.
 
-	node->mutex.Release();
-
-	if (node->parent) {
-		CloseNode(node->parent, DIRECTORY_ACCESS);
-	}
+	Node *parent = node->parent;
 
 	if (noHandles) {
 		node->Sync();
 
 		if (node->parent) {
-			nodeHashTableMutex.Acquire();
 			*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
-			nodeHashTableMutex.Release();
+			Print("%x -> %x\n", node->pointerToThisNodeInHashTableSlot, node->nextNodeInHashTableSlot);
 		}
 
 		OSHeapFree(node);
 	}
+
+	nodeHashTableMutex.Release();
+
+	if (parent) {
+		CloseNode(parent, DIRECTORY_ACCESS);
+	}
 }
 
 Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
-	KernelLog(LOG_VERBOSE, "Opening node: %s\n", nameLength, name);
+	Print("Opening node, %s\n", nameLength, name);
 
 	mountpointsMutex.Acquire();
 
@@ -419,8 +423,8 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 
 	Node *existingNode = (Node *) _existingNode;
 
-	existingNode->mutex.Acquire();
-	Defer(existingNode->mutex.Release());
+	nodeHashTableMutex.Acquire();
+	Defer(nodeHashTableMutex.Release());
 
 	if ((flags & OS_OPEN_NODE_ACCESS_READ) && existingNode->exclusiveRead) {
 		flags &= ~(OS_OPEN_NODE_ACCESS_READ);
@@ -470,20 +474,21 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 	if (flags & OS_OPEN_NODE_EXCLUSIVE_WRITE)  existingNode->exclusiveWrite = true;
 	if (flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) existingNode->exclusiveResize = true;
 
-	if (!existingNode->handles && parent) {
-		nodeHashTableMutex.Acquire();
+	existingNode->handles++;
+
+	if (1 == existingNode->handles && parent) {
+		existingNode->filesystem = parent->filesystem;
+		existingNode->parent = parent; // The handle to the parent will be closed when the file is closed.
+
 		uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
 		existingNode->nextNodeInHashTableSlot = nodeHashTable[slot];
+		Print("Existing: %x\n", nodeHashTable[slot]);
 		if (nodeHashTable[slot]) nodeHashTable[slot]->pointerToThisNodeInHashTableSlot = &existingNode->nextNodeInHashTableSlot;
 		nodeHashTable[slot] = existingNode;
 		existingNode->pointerToThisNodeInHashTableSlot = nodeHashTable + slot;
-		nodeHashTableMutex.Release();
-
-		existingNode->filesystem = parent->filesystem;
-		existingNode->parent = parent; // The handle to the parent will be closed when the file is closed.
 	}
 
-	existingNode->handles++;
+	Print("New handle, %x, %d, parent = %x\n", existingNode, existingNode->handles, parent);
 
 	return existingNode;
 }
@@ -497,6 +502,8 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 	Node *node = nodeHashTable[slot];
 
 	while (node) {
+		Print("node = %x\n", node);
+
 		if (node->filesystem == filesystem 
 				&& !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier))
 				&& node->handles /* Make sure the node isn't about to be deallocated! */) {

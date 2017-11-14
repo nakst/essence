@@ -59,6 +59,8 @@ void AHCIRegisterController(struct PCIDevice *device);
 
 DeviceManager deviceManager;
 
+Mutex tempMutex;
+
 bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, bool alreadyInCorrectPartition) {
 	if (!alreadyInCorrectPartition) {
 		if (offset / sectorSize > sectorCount || (offset + countBytes) / sectorSize > sectorCount || countBytes / sectorSize > maxAccessSectorCount) {
@@ -66,6 +68,10 @@ bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint
 		}
 
 		offset += sectorOffset * sectorSize;
+
+		if (operation == DRIVE_ACCESS_WRITE) {
+			Print("Write to drive.....\n");
+		}
 	}
 
 	if (operation == DRIVE_ACCESS_WRITE && ((offset % sectorSize) || (countBytes % sectorSize))) {

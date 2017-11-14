@@ -274,8 +274,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			// TODO Usermode exceptions and debugging.
-			KernelPanic("InterruptHandler - Exception (%z) in userland program.\nRIP = %x (CPU %d)\nX86_64 error codes: [err] %x, [cr2] %x\n", 
-					exceptionInformation[interrupt], context->rip, local->processorID, context->errorCode, context->cr2);
+			KernelPanic("InterruptHandler - Exception (%z) in userland program (%s).\nRIP = %x (CPU %d)\nX86_64 error codes: [err] %x, [cr2] %x\n", 
+					exceptionInformation[interrupt], 
+					GetCurrentThread()->process->executablePathLength, GetCurrentThread()->process->executablePath,
+					context->rip, local->processorID, context->errorCode, context->cr2);
 
 			resolved:;
 			if (GetCurrentThread()->isKernelThread) {
