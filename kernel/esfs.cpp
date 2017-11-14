@@ -50,9 +50,6 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 }
 
 bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
-	mutex.Acquire();
-	Defer(mutex.Release());
-
 	bool result = drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
 
 	if (!result) {
@@ -590,7 +587,6 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 		}
 
 		void *nodeAlloc = OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true);
-		Print("nodeAlloc = %x\n", nodeAlloc);
 		node = vfs.RegisterNodeHandle(nodeAlloc, flags, returnValue->identifier, _directory, type);
 
 		if (!node) {

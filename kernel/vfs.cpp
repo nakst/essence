@@ -277,8 +277,6 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	node->handles--;
 
-	Print("removed handle, %x, %d remain\n", node, node->handles);
-
 	bool noHandles = node->handles == 0;
 
 	if (flags & OS_OPEN_NODE_ACCESS_READ)      node->countRead--;
@@ -298,7 +296,6 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 		if (node->parent) {
 			*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
-			Print("%x -> %x\n", node->pointerToThisNodeInHashTableSlot, node->nextNodeInHashTableSlot);
 		}
 
 		OSHeapFree(node);
@@ -312,8 +309,6 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 }
 
 Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
-	Print("Opening node, %s\n", nameLength, name);
-
 	mountpointsMutex.Acquire();
 
 	LinkedItem *_mountpoint = mountpoints.firstItem;
@@ -482,13 +477,10 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 
 		uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
 		existingNode->nextNodeInHashTableSlot = nodeHashTable[slot];
-		Print("Existing: %x\n", nodeHashTable[slot]);
 		if (nodeHashTable[slot]) nodeHashTable[slot]->pointerToThisNodeInHashTableSlot = &existingNode->nextNodeInHashTableSlot;
 		nodeHashTable[slot] = existingNode;
 		existingNode->pointerToThisNodeInHashTableSlot = nodeHashTable + slot;
 	}
-
-	Print("New handle, %x, %d, parent = %x\n", existingNode, existingNode->handles, parent);
 
 	return existingNode;
 }
@@ -502,8 +494,6 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 	Node *node = nodeHashTable[slot];
 
 	while (node) {
-		Print("node = %x\n", node);
-
 		if (node->filesystem == filesystem 
 				&& !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier))
 				&& node->handles /* Make sure the node isn't about to be deallocated! */) {

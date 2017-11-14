@@ -249,6 +249,8 @@ struct AHCIDriver {
 	size_t driveCount;
 
 	AHCIHBA *r;
+
+	Mutex mutex;
 };
 
 AHCIDriver ahci;
@@ -258,6 +260,10 @@ AHCIDriver ahci;
 #define AHCI_DRIVER_IDENTFIY (2)
 
 bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
+	// TODO Work out why we can't do accesses in parallel?
+	mutex.Acquire();
+	Defer(mutex.Release());
+
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
 	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
