@@ -577,6 +577,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 		switch (returnValue->fileType) {
 			case ESFS_FILE_TYPE_FILE: type = OS_NODE_FILE; break;
 			case ESFS_FILE_TYPE_DIRECTORY: type = OS_NODE_DIRECTORY; break;
+			default: return nullptr;
 		}
 
 		Node *node;

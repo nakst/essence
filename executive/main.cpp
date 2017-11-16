@@ -57,6 +57,7 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
+#if 1
 	{
 		// Start the calculator test program.
 
@@ -64,7 +65,9 @@ extern "C" void ProgramEntry() {
 		OSProcessInformation process;
 		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 	}
+#endif
 
+#if 0
 	{
 		// Start the Odin test program.
 
@@ -72,6 +75,7 @@ extern "C" void ProgramEntry() {
 		OSProcessInformation process;
 		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 	}
+#endif
 
 	OSTerminateThread(OS_CURRENT_THREAD);
 }
