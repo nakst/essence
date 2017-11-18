@@ -23,6 +23,7 @@ struct WindowManager {
 	Window *CreateWindow(Process *process, size_t width, size_t height);
 	void MoveCursor(int xMovement, int yMovement);
 	void ClickCursor(unsigned buttons);
+	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
 	void PressKey(unsigned scancode);
 	void RefreshCursor(Window *window);
 
@@ -45,6 +46,18 @@ WindowManager windowManager;
 Surface uiSheetSurface;
 
 #else
+
+void WindowManager::UpdateCursor(int xMovement, int yMovement, unsigned buttons) {
+	if (xMovement || yMovement) {
+		if (xMovement * xMovement + yMovement * yMovement < 10 && buttons != lastButtons) {
+			// This seems to be movement noise generated when the buttons were pressed/released.
+		} else {
+			MoveCursor(xMovement, yMovement);
+		}
+	} 
+
+	ClickCursor(buttons);
+}
 
 void WindowManager::RefreshCursor(Window *window) {
 	OSCursorStyle style = OS_CURSOR_NORMAL;
@@ -98,9 +111,6 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			windows[i]->keyboardFocus = false;
 		}
 
-		// TODO Send mouse released messages to the window the cursor was over when the mouse was pressed.
-		// 	And do the same thing for mouse movement messages.
-
 		// Send a mouse pressed message to the window the cursor is over.
 		uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
 		Window *window;
@@ -147,8 +157,6 @@ void WindowManager::ClickCursor(unsigned buttons) {
 }
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
-	// TODO Don't move cursor on packets where a button was pressed/released?
-
 	mutex.Acquire();
 	Defer(mutex.Release());
 

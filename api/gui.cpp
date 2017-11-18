@@ -60,10 +60,11 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 					OS_DRAW_MODE_REPEAT_FIRST);
 		}
 
-		OSDrawString(window->surface, control->textBounds, 
+		DrawString(window->surface, control->textBounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 				control->textAlign,
-				control->disabled ? 0x808080 : 0x000000, -1);
+				control->disabled ? 0x808080 : 0x000000, -1,
+				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret : -1);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
@@ -272,8 +273,21 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 	return window;
 }
 
+static void FindCaret(OSControl *control, int positionX, int positionY) {
+	if (control->type == OS_CONTROL_TEXTBOX && !control->disabled) {
+		OSCallbackData labelEvent = {};
+		labelEvent.type = OS_CALLBACK_GET_LABEL;
+		SendCallback(control, control->getLabel, labelEvent);
+
+		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
+				labelEvent.getLabel.label, labelEvent.getLabel.labelLength, 
+				control->textAlign, &control->caret);
+	}
+}
+
 static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	OSControl *previousHoverControl = window->hoverControl;
+	window->previousHoverControl = previousHoverControl;
 
 	if (previousHoverControl) {
 		if (!OSControlHitTest(previousHoverControl, x, y)) {
@@ -298,6 +312,11 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	if (!window->hoverControl && !window->pressedControl) {
 		OSSetCursorStyle(window->handle, OS_CURSOR_NORMAL);
 	}
+
+	if (window->pressedControl) {
+		FindCaret(window->pressedControl, x, y);
+		OSDrawControl(window, window->pressedControl);
+	}
 }
 
 OSError OSProcessGUIMessage(OSMessage *message) {
@@ -315,12 +334,15 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
 			if (window->hoverControl) {
-				window->pressedControl = window->hoverControl;
-				OSDrawControl(window, window->pressedControl);
+				OSControl *control = window->hoverControl;
 
-				if (window->pressedControl->canHaveFocus) {
-					window->focusedControl = window->pressedControl; // TODO Lose when the window is deactivated.
+				if (control->canHaveFocus) {
+					window->focusedControl = control; // TODO Lose when the window is deactivated.
+					FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY);
 				}
+
+				window->pressedControl = control;
+				OSDrawControl(window, control);
 			}
 		} break;
 
@@ -341,7 +363,8 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 				OSDrawControl(window, previousPressedControl);
 
-				if (window->hoverControl == previousPressedControl) { // TODO Still trigger the control if the mouse only just left its bounds?
+				if (window->hoverControl == previousPressedControl
+						/* || (!window->hoverControl && window->previousHoverControl == previousPressedControl) */) { 
 					OSCallbackData data = {};
 					data.type = OS_CALLBACK_ACTION;
 					SendCallback(previousPressedControl, previousPressedControl->action, data);

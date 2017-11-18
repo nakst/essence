@@ -94,9 +94,13 @@ PS2 ps2;
 
 void PS2MouseUpdated(void *_update) {
 	PS2Update *update = (PS2Update *) _update;
+
+	windowManager.UpdateCursor(update->xMovement, update->yMovement, update->buttons);
+#if 0
 	if (update->xMovement || update->yMovement)
 		windowManager.MoveCursor(update->xMovement, update->yMovement);
 	windowManager.ClickCursor(update->buttons);
+#endif
 }
 
 void PS2KeyboardUpdated(void *_update) {

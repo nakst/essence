@@ -67,12 +67,15 @@ extern "C" void ProgramEntry() {
 
 	OSWindow *window = OSCreateWindow(200, 150);
 
+#if 1
 	OSControl *textbox = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Test", 4, false);
 	OSAddControl(window, textbox, 16, 16);
+#endif
 
 #if 0
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1, false);
 	textOutput->bounds.right = 200 - 32;
+	textOutput->textBounds.right = 200 - 32;
 	OSAddControl(window, textOutput, 16, 14);
 
 	OSControl *groupBox = OSCreateControl(OS_CONTROL_GROUP, nullptr, 0, false);
@@ -87,6 +90,7 @@ extern "C" void ProgramEntry() {
 		char label = '0' + i;
 		OSControl *button = OSCreateControl(OS_CONTROL_BUTTON, &label, 1, true);
 		button->bounds.right = 36;
+		button->textBounds.right = 36;
 		button->action.callback = NumberButtonPressed;
 		button->action.argument = (void *) (intptr_t) i;
 		OSAddControl(window, button, x, y);

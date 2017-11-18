@@ -182,6 +182,7 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_TOO_MANY_WAIT_OBJECTS		(-28)   // Always crash?
 #define OS_ERROR_TIMEOUT_REACHED		(-29)
 #define OS_ERROR_INCORRECT_NODE_TYPE		(-30) 	// Always crash?
+#define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
 
 typedef intptr_t OSError;
 
@@ -378,36 +379,41 @@ enum OSControlImageType {
 };
 
 struct OSControl {
+	OSControlType type;
+
+	// Position:
 	OSRectangle bounds;
 	OSRectangle textBounds;
 
-	OSControlType type;
-
-	OSCursorStyle cursorStyle;
-
+	// Properties:
 	bool disabled;
 	struct OSWindow *parent;
 
+	// Callbacks:
 	OSCallback action;
 	OSCallback getLabel;
 
-	char *label;
-	size_t labelLength;
-	bool freeLabel;
-	unsigned textAlign;
-
+	// Style:
 	OSRectangle image;
 	OSRectangle imageBorder;
-
+	OSCursorStyle cursorStyle;
 	OSControlImageType imageType;
 	int fillWidth;
+	unsigned textAlign;
+	bool canHaveFocus;
+
+	// State:
 
 #define OS_CONTROL_NO_CHECK (0)
 #define OS_CONTROL_CHECKED (1)
 #define OS_CONTROL_RADIO_CHECK (2)
 	int checked;
 
-	bool canHaveFocus;
+	char *label;
+	size_t labelLength;
+	bool freeLabel;
+
+	uintptr_t caret;
 };
 
 struct OSWindow {
@@ -417,7 +423,7 @@ struct OSWindow {
 	OSControl *controls[256];
 	size_t controlsCount;
 
-	OSControl *hoverControl;
+	OSControl *hoverControl, *previousHoverControl;
 	OSControl *pressedControl;
 	OSControl *focusedControl;
 
@@ -551,6 +557,7 @@ extern "C" OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint 
 extern "C" OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
 extern "C" OSError OSClearModifiedRegion(OSHandle surface);
 extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, char *string, size_t stringLength, unsigned flags, uint32_t color, int32_t backgroundColor);
+extern "C" OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, char *string, size_t stringLength, unsigned flags, uintptr_t *characterIndex);
 
 extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
