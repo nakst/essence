@@ -34,8 +34,8 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 	int imageWidth = control->image.right - control->image.left;
 	int imageHeight = control->image.bottom - control->image.top;
 
-	bool isHoverControl = control == window->hoverControl;
-	bool isPressedControl = control == window->pressedControl;
+	bool isHoverControl = (control == window->hoverControl) || (control == window->focusedControl);
+	bool isPressedControl = (control == window->pressedControl) || (control == window->focusedControl);
 	intptr_t styleX = (control->disabled ? 3
 			: ((isPressedControl && isHoverControl) ? 2 
 			: ((isPressedControl || isHoverControl) ? 0 : 1)));
@@ -62,7 +62,7 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 
 		OSDrawString(window->surface, control->bounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
-				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
+				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, -1);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
@@ -76,13 +76,13 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 				OSRectangle(control->bounds.left + control->fillWidth + 4, 
 					control->bounds.right, control->bounds.top, control->bounds.bottom), 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
-				OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	} else if (control->imageType == OS_CONTROL_IMAGE_NONE) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawString(window->surface, control->bounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
-				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER,
+				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	}
 
@@ -177,6 +177,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 	if (!control) return nullptr;
 
 	control->type = type;
+	control->textAlign = OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER;
 
 	switch (type) {
 		case OS_CONTROL_BUTTON: {
@@ -200,6 +201,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
 			control->fillWidth = 13;
 			control->image = OSRectangle(42, 42 + 8, 110, 110 + 13);
+			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
 		} break;
 
 		case OS_CONTROL_RADIOBOX: {
@@ -208,12 +210,22 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
 			control->fillWidth = 14;
 			control->image = OSRectangle(116, 116 + 14, 42, 42 + 14);
+			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
 		} break;
 
 		case OS_CONTROL_STATIC: {
 			control->bounds.right = 4 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
 			control->bounds.bottom = 14;
 			control->imageType = OS_CONTROL_IMAGE_NONE;
+		} break;
+
+		case OS_CONTROL_TEXTBOX: {
+			control->bounds.right = 160;
+			control->bounds.bottom = 21;
+			control->imageType = OS_CONTROL_IMAGE_FILL;
+			control->image = OSRectangle(1, 1 + 7, 122, 122 + 21);
+			control->canHaveFocus = true;
+			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
 		} break;
 	}
 
@@ -276,6 +288,10 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 			if (window->hoverControl) {
 				window->pressedControl = window->hoverControl;
 				OSDrawControl(window, window->pressedControl);
+
+				if (window->pressedControl->canHaveFocus) {
+					window->focusedControl = window->pressedControl; // TODO Lose when the window is deactivated.
+				}
 			}
 		} break;
 

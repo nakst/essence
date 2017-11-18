@@ -66,6 +66,11 @@ extern "C" void ProgramEntry() {
 	RunTests();
 
 	OSWindow *window = OSCreateWindow(200, 150);
+
+	OSControl *textbox = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Test", 4, false);
+	OSAddControl(window, textbox, 16, 16);
+
+#if 0
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1, false);
 	textOutput->bounds.right = 200 - 32;
 	OSAddControl(window, textOutput, 16, 14);
@@ -86,6 +91,7 @@ extern "C" void ProgramEntry() {
 		button->action.argument = (void *) (intptr_t) i;
 		OSAddControl(window, button, x, y);
 	}
+#endif
 
 	while (true) {
 		OSMessage message;
@@ -94,6 +100,7 @@ extern "C" void ProgramEntry() {
 		if (OSGetMessage(&message) == OS_SUCCESS) {
 			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
 				continue;
+#if 0
 			} else if (message.type == OS_MESSAGE_KEYBOARD) {
 				if (!(message.keyboard.scancode & OS_SCANCODE_KEY_RELEASED)) {
 					switch (message.keyboard.scancode) {
@@ -111,6 +118,7 @@ extern "C" void ProgramEntry() {
 
 					OSUpdateWindow(window);
 				}
+#endif
 			} else {
 				// The message was not handled by the GUI.
 				// We should do something with it.

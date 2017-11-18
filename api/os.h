@@ -362,6 +362,7 @@ enum OSControlType {
 	OS_CONTROL_RADIOBOX,
 	OS_CONTROL_STATIC,
 	OS_CONTROL_GROUP,
+	OS_CONTROL_TEXTBOX,
 };
 
 enum OSControlImageType {
@@ -384,6 +385,7 @@ struct OSControl {
 	char *label;
 	size_t labelLength;
 	bool freeLabel;
+	unsigned textAlign;
 
 	OSRectangle image;
 	OSRectangle imageBorder;
@@ -395,6 +397,8 @@ struct OSControl {
 #define OS_CONTROL_CHECKED (1)
 #define OS_CONTROL_RADIO_CHECK (2)
 	int checked;
+
+	bool canHaveFocus;
 };
 
 struct OSWindow {
@@ -406,6 +410,7 @@ struct OSWindow {
 
 	OSControl *hoverControl;
 	OSControl *pressedControl;
+	OSControl *focusedControl;
 
 	bool dirty;
 };

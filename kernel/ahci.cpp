@@ -196,7 +196,7 @@ struct AHCICommandTable {
 	volatile uint8_t commandPacket[64];
 	volatile uint8_t atapiCommand[16];
 	volatile uint8_t _reserved0[48];
-	volatile AHCIPRDTEntry prdtEntries[1];
+	volatile AHCIPRDTEntry prdtEntries[8];
 };
 
 struct AHCIHBA {
@@ -229,7 +229,7 @@ struct AHCIPresentDrive {
 	AHCIReceivedPacket *receivedPacket;
 	AHCICommandTable *commandTable;
 	volatile uint16_t commandsInUse; // Bitset.
-	Mutex mutex, mutexStart, mutexEnd;
+	Mutex mutex, mutexStart;
 	Event commandAvailable;
 	struct Device *device;
 	uint64_t sectorCount;
@@ -249,8 +249,6 @@ struct AHCIDriver {
 	size_t driveCount;
 
 	AHCIHBA *r;
-
-	Mutex mutex;
 };
 
 AHCIDriver ahci;
@@ -260,10 +258,6 @@ AHCIDriver ahci;
 #define AHCI_DRIVER_IDENTFIY (2)
 
 bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
-	// TODO Work out why we can't do accesses in parallel?
-	mutex.Acquire();
-	Defer(mutex.Release());
-
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
 	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
@@ -272,28 +266,30 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 	volatile AHCIPort *port = r->ports + drive->port;
 
 	// Find a command we can use.
-	drive->mutexStart.Acquire();
-
-	if (drive->commandsInUse == (1 << AHCI_COMMAND_COUNT) - 1) {
-		drive->commandAvailable.Wait(OS_WAIT_NO_TIMEOUT);
-	}
-
 	uintptr_t commandIndex;
-	for (commandIndex = 0; commandIndex < AHCI_COMMAND_COUNT; commandIndex++) {
-		if (!(drive->commandsInUse & (1 << commandIndex))) {
-			drive->commandsInUse |= 1 << commandIndex;
-			break;
+	while (true) {
+		drive->commandAvailable.Wait(OS_WAIT_NO_TIMEOUT);
+		drive->mutexStart.Acquire();
+
+		for (commandIndex = 0; commandIndex < AHCI_COMMAND_COUNT; commandIndex++) {
+			if (!(drive->commandsInUse & (1 << commandIndex))) {
+				drive->commandsInUse |= 1 << commandIndex;
+				drive->mutexStart.Release();
+				goto foundCommand;
+			}
 		}
+
+		drive->mutexStart.Release();
 	}
 
-	if (commandIndex == AHCI_COMMAND_COUNT) {
-		KernelPanic("AHCIDriver::Access - Command available event was set, but no commands were available.\n");
-	}
-
-	drive->mutexStart.Release();
+	foundCommand:;
 
 	drive->mutex.Acquire();
-	
+
+	if (drive->commandsInUse == (1 << AHCI_COMMAND_COUNT) - 1) {
+		drive->commandAvailable.Reset();
+	}
+
 	AHCICommandHeader *header = drive->commandList + commandIndex;
 	AHCICommandTable *table = drive->commandTable + commandIndex;
 
@@ -370,26 +366,29 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 	}
 
 	// Issue the command.
+	drive->completeCommands[commandIndex].Reset();
 	port->commandIssue = 1 << commandIndex; 
 	drive->mutex.Release();
 
 	// Wait for the command to complete.
-	drive->completeCommands[commandIndex].Wait(AHCI_TIMEOUT);
-	drive->completeCommands[commandIndex].Reset();
+	bool timeout = drive->completeCommands[commandIndex].Wait(AHCI_TIMEOUT);
 
 	if (port->commandIssue & (1 << commandIndex)) {
-		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive %d (1).\n", _drive);
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive %d (1/%d).\n", _drive, timeout);
 		return false;
 	}
 
-	drive->mutexEnd.Acquire();
-	// Notify any waiting threads that the drive now has commands available.
-	if (!drive->commandAvailable.state)
+	drive->mutex.Acquire();
+
+	if (drive->commandsInUse == (1 << AHCI_COMMAND_COUNT) - 1) {
 		drive->commandAvailable.Set();
-	drive->mutexEnd.Release();
+	}
+
 	drive->mutexStart.Acquire();
 	drive->commandsInUse &= ~(1 << commandIndex);
 	drive->mutexStart.Release();
+
+	drive->mutex.Release();
 
 	if (port->interruptStatus & (1 << 30)) {
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive %d (2).\n", _drive);
@@ -431,7 +430,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 					AHCIPresentDrive *drive = ahci.drives + i;
 
 					if (drive->port == portIndex) {
-						uint16_t commandsFinished = drive->commandsInUse ^ port->commandIssue;
+						uint16_t commandsFinished = (~port->commandIssue) & (drive->commandsInUse);
 
 						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
 							// Is the command finished?
@@ -569,8 +568,8 @@ void AHCIDriver::Initialise() {
 			port->commandListBaseAddressHigh = (uint32_t) (commandListPage >> 32);
 			drives[i].commandList = (AHCICommandHeader *) commandListPageVirtual;
 
-			port->fisBaseAddressLow = (uint32_t) (commandListPage >> 0);
-			port->fisBaseAddressHigh = (uint32_t) (commandListPage >> 32);
+			port->fisBaseAddressLow = (uint32_t) (receivedPacketPage >> 0);
+			port->fisBaseAddressHigh = (uint32_t) (receivedPacketPage >> 32);
 			drives[i].receivedPacket = (AHCIReceivedPacket *) receivedPacketPageVirtual;
 
 			for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
@@ -582,7 +581,6 @@ void AHCIDriver::Initialise() {
 
 			commandListPage += 1024;
 			receivedPacketPage += 256;
-			commandTablePage += 256;
 			commandListPageVirtual += 1024;
 			receivedPacketPageVirtual += 256;
 
@@ -594,7 +592,7 @@ void AHCIDriver::Initialise() {
 			port->interruptStatus = port->interruptStatus; // Clear any remaining interrupts.
 			port->interruptEnable |= 0xFD800001; // Set the interrupts we want (all errors, and transfer processed).
 
-			drive->commandAvailable.autoReset = true;
+			drive->commandAvailable.Set();
 		}
 
 		// Get the identify data!

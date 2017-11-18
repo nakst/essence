@@ -67,7 +67,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
+#if 1
 	{
 		// Start the Odin test program.
 

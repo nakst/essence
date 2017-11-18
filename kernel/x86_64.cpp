@@ -22,8 +22,6 @@ bool RegisterIRQHandler(uintptr_t interrupt, IRQHandler handler) {
 	scheduler.lock.Acquire();
 	Defer(scheduler.lock.Release());
 
-	KernelLog(LOG_VERBOSE, "Registering IRQ handler for vector %d...\n", interrupt);
-
 	// Work out which interrupt the IoApic will sent to the processor.
 	// TODO Use the upper 4 bits for IRQ priority.
 	uintptr_t thisProcessorIRQ = interrupt + IRQ_BASE;
