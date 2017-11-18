@@ -175,6 +175,45 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 				entry->xoff = xoff;
 				entry->yoff = yoff;
 				fontCachePosition = (fontCachePosition + 1) % FONT_CACHE_SIZE;
+
+#if 0
+				for (int x = 0; x < entry->width; x++) {
+					for (int y = 0; y < entry->height; y++) {
+						int32_t result = 0;
+						int32_t totalWeight = 0;
+
+						const int32_t weights[][3] = {
+							{ 0, -1,  0},
+							{-1, 16, -1},
+							{ 0, -1,  0},
+						};
+
+						for (int i = -1; i <= 1; i++) {
+							for (int j = -1; j <= 1; j++) {
+								int x1 = x + i;
+								int y1 = y + j;
+
+								if (x1 >= 0 && x1 < entry->width && y1 >= 0 && y1 < entry->height) {
+									int32_t source = entry->data[x1 + y1 * width];
+									int32_t weight = weights[i + 1][j + 1];
+									result += source * weight;
+									totalWeight += weight > 0 ? weight : -weight;
+								}
+							}
+						}
+
+						if (totalWeight) {
+							result /= totalWeight;
+							
+							if (result >= 0) {
+								entry->data[x + y * width] = (uint8_t) result;
+							} else {
+								entry->data[x + y * width] = 0;
+							}
+						}
+					}
+				}
+#endif
 			} else {
 				goto skipCharacter;
 			}

@@ -217,7 +217,8 @@ void Graphics::UpdateScreen() {
 	frameBuffer.mutex.Acquire();
 	Defer(frameBuffer.mutex.Release());
 
-	int cursorX = windowManager.cursorX, cursorY = windowManager.cursorY;
+	int cursorX = windowManager.cursorX + windowManager.cursorImageOffsetX, cursorY = windowManager.cursorY + windowManager.cursorImageOffsetY;
+	int cursorImageX = windowManager.cursorImageX, cursorImageY = windowManager.cursorImageY;
 
 	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
 								cursorY, cursorY + CURSOR_SWAP_SIZE),
@@ -225,8 +226,8 @@ void Graphics::UpdateScreen() {
 
 	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + 12,
 						     cursorY, cursorY + 19),
-					 OSRectangle(125, 125 + 12, 96, 96 + 19),
-					 OSRectangle(125 + 2, 125 + 3, 96 + 2, 96 + 3), OS_DRAW_MODE_REPEAT_FIRST, true);
+					 OSRectangle(cursorImageX, cursorImageX + 12, cursorImageY, cursorImageY + 19),
+					 OSRectangle(cursorImageX + 2, cursorImageX + 3, cursorImageY + 2, cursorImageY + 3), OS_DRAW_MODE_REPEAT_FIRST, true);
 		
 	switch (colorMode) {
 		case VIDEO_COLOR_24_RGB: {

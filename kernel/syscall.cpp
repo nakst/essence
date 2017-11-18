@@ -766,6 +766,15 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			node->CopyInformation((OSNodeInformation *) argument0);
 		} break;
+
+		case OS_SYSCALL_SET_CURSOR_STYLE: {
+			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
+
+			window->SetCursorStyle((OSCursorStyle) argument1);
+		} break;
 	}
 
 	end:;

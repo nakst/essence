@@ -226,6 +226,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_RESET_EVENT			(38)
 #define OS_SYSCALL_POLL_EVENT			(39)
 #define OS_SYSCALL_REFRESH_NODE_INFORMATION	(40)
+#define OS_SYSCALL_SET_CURSOR_STYLE		(41)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -356,6 +357,11 @@ struct OSCallback {
 	void *argument;
 };
 
+enum OSCursorStyle {
+	OS_CURSOR_NORMAL, // 125, 96
+	OS_CURSOR_TEXT, // 142, 96
+};
+
 enum OSControlType {
 	OS_CONTROL_BUTTON,
 	OS_CONTROL_CHECKBOX,
@@ -373,8 +379,11 @@ enum OSControlImageType {
 
 struct OSControl {
 	OSRectangle bounds;
+	OSRectangle textBounds;
 
 	OSControlType type;
+
+	OSCursorStyle cursorStyle;
 
 	bool disabled;
 	struct OSWindow *parent;
@@ -556,6 +565,7 @@ extern "C" void OSDisableControl(OSControl *control, bool disabled);
 extern "C" void OSCheckControl(OSControl *control, bool checked);
 extern "C" OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, bool clone);
 extern "C" OSError OSInvalidateControl(OSControl *control);
+extern "C" OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);

@@ -60,7 +60,7 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 					OS_DRAW_MODE_REPEAT_FIRST);
 		}
 
-		OSDrawString(window->surface, control->bounds, 
+		OSDrawString(window->surface, control->textBounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, -1);
@@ -73,14 +73,13 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
 				OS_DRAW_MODE_REPEAT_FIRST);
 		OSDrawString(window->surface, 
-				OSRectangle(control->bounds.left + control->fillWidth + 4, 
-					control->bounds.right, control->bounds.top, control->bounds.bottom), 
+				control->textBounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	} else if (control->imageType == OS_CONTROL_IMAGE_NONE) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
-		OSDrawString(window->surface, control->bounds, 
+		OSDrawString(window->surface, control->textBounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
@@ -158,10 +157,15 @@ void OSCheckControl(OSControl *control, int checked) {
 }
 
 OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
-	control->bounds.left    = x + BORDER_OFFSET_X;
-	control->bounds.top     = y + BORDER_OFFSET_Y;
+	control->bounds.left   += x + BORDER_OFFSET_X;
+	control->bounds.top    += y + BORDER_OFFSET_Y;
 	control->bounds.right  += x + BORDER_OFFSET_X;
 	control->bounds.bottom += y + BORDER_OFFSET_Y;
+
+	control->textBounds.left   += x + BORDER_OFFSET_X;
+	control->textBounds.top    += y + BORDER_OFFSET_Y;
+	control->textBounds.right  += x + BORDER_OFFSET_X;
+	control->textBounds.bottom += y + BORDER_OFFSET_Y;
 
 	control->parent = window;
 	window->dirty = true;
@@ -178,11 +182,13 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 
 	control->type = type;
 	control->textAlign = OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER;
+	control->cursorStyle = OS_CURSOR_NORMAL;
 
 	switch (type) {
 		case OS_CONTROL_BUTTON: {
 			control->bounds.right = 80;
 			control->bounds.bottom = 21;
+			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(42, 42 + 8, 88, 88 + 21);
 		} break;
@@ -190,6 +196,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		case OS_CONTROL_GROUP: {
 			control->bounds.right = 100;
 			control->bounds.bottom = 100;
+			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(20, 20 + 6, 85, 85 + 6);
 			control->imageBorder = OSRectangle(22, 23, 87, 88);
@@ -198,6 +205,8 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		case OS_CONTROL_CHECKBOX: {
 			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
 			control->bounds.bottom = 13;
+			control->textBounds = control->bounds;
+			control->textBounds.left = 13 + 4;
 			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
 			control->fillWidth = 13;
 			control->image = OSRectangle(42, 42 + 8, 110, 110 + 13);
@@ -207,6 +216,8 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		case OS_CONTROL_RADIOBOX: {
 			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
 			control->bounds.bottom = 14;
+			control->textBounds = control->bounds;
+			control->textBounds.left = 13 + 4;
 			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
 			control->fillWidth = 14;
 			control->image = OSRectangle(116, 116 + 14, 42, 42 + 14);
@@ -216,16 +227,21 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		case OS_CONTROL_STATIC: {
 			control->bounds.right = 4 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
 			control->bounds.bottom = 14;
+			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_NONE;
 		} break;
 
 		case OS_CONTROL_TEXTBOX: {
 			control->bounds.right = 160;
 			control->bounds.bottom = 21;
+			control->textBounds = control->bounds;
+			control->textBounds.left += 4;
+			control->textBounds.right -= 4;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(1, 1 + 7, 122, 122 + 21);
 			control->canHaveFocus = true;
 			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
+			control->cursorStyle = OS_CURSOR_TEXT;
 		} break;
 	}
 
@@ -256,6 +272,34 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 	return window;
 }
 
+static void UpdateMousePosition(OSWindow *window, int x, int y) {
+	OSControl *previousHoverControl = window->hoverControl;
+
+	if (previousHoverControl) {
+		if (!OSControlHitTest(previousHoverControl, x, y)) {
+			window->hoverControl = nullptr;
+			OSDrawControl(window, previousHoverControl);
+		}
+	}
+
+	for (uintptr_t i = 0; !window->hoverControl && i < window->controlsCount; i++) {
+		OSControl *control = window->controls[i];
+
+		if (OSControlHitTest(control, x, y)) {
+			window->hoverControl = control;
+			OSDrawControl(window, window->hoverControl);
+
+			if (!window->pressedControl) {
+				OSSetCursorStyle(window->handle, control->cursorStyle);
+			}
+		}
+	}
+
+	if (!window->hoverControl && !window->pressedControl) {
+		OSSetCursorStyle(window->handle, OS_CURSOR_NORMAL);
+	}
+}
+
 OSError OSProcessGUIMessage(OSMessage *message) {
 	// TODO Message security. 
 	// 	How should we tell who sent the message?
@@ -265,23 +309,8 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_MOUSE_MOVED: {
-			OSControl *previousHoverControl = window->hoverControl;
-
-			if (previousHoverControl) {
-				if (!OSControlHitTest(previousHoverControl, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
-					window->hoverControl = nullptr;
-					OSDrawControl(window, previousHoverControl);
-				}
-			}
-
-			for (uintptr_t i = 0; !window->hoverControl && i < window->controlsCount; i++) {
-				OSControl *control = window->controls[i];
-
-				if (OSControlHitTest(control, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
-					window->hoverControl = control;
-					OSDrawControl(window, window->hoverControl);
-				}
-			}
+			UpdateMousePosition(window, message->mouseMoved.newPositionX, 
+					message->mouseMoved.newPositionY);
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
@@ -317,6 +346,9 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					data.type = OS_CALLBACK_ACTION;
 					SendCallback(previousPressedControl, previousPressedControl->action, data);
 				}
+
+				UpdateMousePosition(window, message->mousePressed.positionX, 
+						message->mousePressed.positionY);
 			}
 		} break;
 

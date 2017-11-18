@@ -194,3 +194,7 @@ uintptr_t OSWait(OSHandle *handles, size_t count, uintptr_t timeoutMs) {
 OSError OSRefreshNodeInformation(OSNodeInformation *information) {
 	return OSSyscall(OS_SYSCALL_REFRESH_NODE_INFORMATION, (uintptr_t) information, 0, 0, 0);
 }
+
+OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
+	return OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, (uintptr_t) window, (uintptr_t) style, 0, 0);
+}
