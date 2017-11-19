@@ -217,8 +217,10 @@ void Graphics::UpdateScreen() {
 	frameBuffer.mutex.Acquire();
 	Defer(frameBuffer.mutex.Release());
 
+	windowManager.mutex.Acquire();
 	int cursorX = windowManager.cursorX + windowManager.cursorImageOffsetX, cursorY = windowManager.cursorY + windowManager.cursorImageOffsetY;
 	int cursorImageX = windowManager.cursorImageX, cursorImageY = windowManager.cursorImageY;
+	windowManager.mutex.Release();
 
 	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
 								cursorY, cursorY + CURSOR_SWAP_SIZE),

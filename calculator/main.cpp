@@ -70,9 +70,7 @@ extern "C" void ProgramEntry() {
 #if 1
 	OSControl *textbox = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Test", 4, false);
 	OSAddControl(window, textbox, 16, 16);
-#endif
-
-#if 0
+#else
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1, false);
 	textOutput->bounds.right = 200 - 32;
 	textOutput->textBounds.right = 200 - 32;

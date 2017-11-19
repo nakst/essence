@@ -32,7 +32,7 @@ struct WindowManager {
 	Window **windows;
 	size_t windowsCount, windowsAllocated;
 
-	Window *pressedWindow;
+	Window *focusedWindow, *pressedWindow;
 
 	Mutex mutex;
 
@@ -60,6 +60,8 @@ void WindowManager::UpdateCursor(int xMovement, int yMovement, unsigned buttons)
 }
 
 void WindowManager::RefreshCursor(Window *window) {
+	mutex.AssertLocked();
+
 	OSCursorStyle style = OS_CURSOR_NORMAL;
 
 	if (window) {
@@ -129,6 +131,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 			if (message.type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 				pressedWindow = window;
+				focusedWindow = window;
 			} else if (message.type == OS_MESSAGE_MOUSE_LEFT_RELEASED) {
 				if (pressedWindow) {
 					// Always send the messages to the pressed window, if there is one.
@@ -158,7 +161,6 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
 	mutex.Acquire();
-	Defer(mutex.Release());
 
 	int oldCursorX = cursorX;
 	int oldCursorY = cursorY;
@@ -210,10 +212,36 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		// The cursor is not in a window.
 	}
 
+	mutex.Release();
+
 	graphics.UpdateScreen();
 }
 
+void CaretBlink(WindowManager *windowManager) {
+	Timer timer = {};
+
+	while (true) {
+		timer.Set(800, true);
+		timer.event.Wait(OS_WAIT_NO_TIMEOUT);
+		timer.Remove();
+
+		windowManager->mutex.Acquire();
+		Window *window = windowManager->focusedWindow;
+
+		if (window) {
+			OSMessage message = {};
+			message.type = OS_MESSAGE_WINDOW_BLINK_TIMER;
+			message.targetWindow = window->apiWindow;
+			window->owner->SendMessage(message);
+		}
+
+		windowManager->mutex.Release();
+	}
+}
+
 void WindowManager::Initialise() {
+	mutex.Acquire();
+
 	windowPool.Initialise(sizeof(Window));
 	uiSheetSurface.Initialise(kernelProcess->vmm, 256, 256, false);
 
@@ -222,9 +250,14 @@ void WindowManager::Initialise() {
 
 	RefreshCursor(nullptr);
 
+	mutex.Release();
+
 	// Draw the background.
 	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
 	graphics.UpdateScreen();
+
+	// Create the caret blink thread.
+	scheduler.SpawnThread((uintptr_t) CaretBlink, (uintptr_t) this, kernelProcess, false);
 }
 
 Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height) {
@@ -261,8 +294,10 @@ void Window::Update() {
 }
 
 void Window::SetCursorStyle(OSCursorStyle style) {
+	windowManager.mutex.Acquire();
 	cursorStyle = style;
 	windowManager.RefreshCursor(this);
+	windowManager.mutex.Release();
 }
 
 #endif

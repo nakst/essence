@@ -28,7 +28,7 @@ static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &
 	}
 }
 
-static void OSDrawControl(OSWindow *window, OSControl *control) {
+static void DrawControl(OSWindow *window, OSControl *control) {
 	if (!window) return;
 
 	int imageWidth = control->image.right - control->image.left;
@@ -63,8 +63,9 @@ static void OSDrawControl(OSWindow *window, OSControl *control) {
 		DrawString(window->surface, control->textBounds, 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
 				control->textAlign,
-				control->disabled ? 0x808080 : 0x000000, -1,
-				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret : -1);
+				control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
+				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret : -1, 
+				control->caret2, control->caretBlink);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
@@ -121,22 +122,32 @@ OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, b
 	control->labelLength = labelLength;
 	control->getLabel.callback = nullptr;
 
-	OSDrawControl(control->parent, control);
+	DrawControl(control->parent, control);
 
 	return OS_SUCCESS;
 }
 
 OSError OSInvalidateControl(OSControl *control) {
-	OSDrawControl(control->parent, control);
+	DrawControl(control->parent, control);
 	return OS_SUCCESS;
 }
 
-static bool OSControlHitTest(OSControl *control, int x, int y) {
-	if (x >= control->bounds.left && x < control->bounds.right
-			&& y >= control->bounds.top && y < control->bounds.bottom) {
-		return true;
+static bool ControlHitTest(OSControl *control, int x, int y) {
+	if (control->parent->pressedControl == control) {
+#define EXTRA_PRESSED_BORDER (5)
+		if (x >= control->bounds.left - EXTRA_PRESSED_BORDER && x < control->bounds.right + EXTRA_PRESSED_BORDER 
+				&& y >= control->bounds.top - EXTRA_PRESSED_BORDER && y < control->bounds.bottom + EXTRA_PRESSED_BORDER) {
+			return true;
+		} else {
+			return false;
+		}
 	} else {
-		return false;
+		if (x >= control->bounds.left && x < control->bounds.right
+				&& y >= control->bounds.top && y < control->bounds.bottom) {
+			return true;
+		} else {
+			return false;
+		}
 	}
 }
 
@@ -148,13 +159,13 @@ void OSDisableControl(OSControl *control, bool disabled) {
 		if (control == control->parent->pressedControl) control->parent->pressedControl = nullptr;
 	}
 
-	OSDrawControl(control->parent, control);
+	DrawControl(control->parent, control);
 }
 
 void OSCheckControl(OSControl *control, int checked) {
 	control->checked = checked;
 
-	OSDrawControl(control->parent, control);
+	DrawControl(control->parent, control);
 }
 
 OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
@@ -172,7 +183,7 @@ OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
 	window->dirty = true;
 
 	window->controls[window->controlsCount++] = control;
-	OSDrawControl(window, control);
+	DrawControl(window, control);
 
 	return OS_SUCCESS;
 }
@@ -273,7 +284,7 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 	return window;
 }
 
-static void FindCaret(OSControl *control, int positionX, int positionY) {
+static void FindCaret(OSControl *control, int positionX, int positionY, bool secondCaret) {
 	if (control->type == OS_CONTROL_TEXTBOX && !control->disabled) {
 		OSCallbackData labelEvent = {};
 		labelEvent.type = OS_CALLBACK_GET_LABEL;
@@ -281,7 +292,13 @@ static void FindCaret(OSControl *control, int positionX, int positionY) {
 
 		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
 				labelEvent.getLabel.label, labelEvent.getLabel.labelLength, 
-				control->textAlign, &control->caret);
+				control->textAlign, secondCaret ? &control->caret2 : &control->caret);
+
+		if (!secondCaret) {
+			control->caret2 = control->caret;
+		}
+
+		control->caretBlink = false;
 	}
 }
 
@@ -290,18 +307,18 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	window->previousHoverControl = previousHoverControl;
 
 	if (previousHoverControl) {
-		if (!OSControlHitTest(previousHoverControl, x, y)) {
+		if (!ControlHitTest(previousHoverControl, x, y)) {
 			window->hoverControl = nullptr;
-			OSDrawControl(window, previousHoverControl);
+			DrawControl(window, previousHoverControl);
 		}
 	}
 
 	for (uintptr_t i = 0; !window->hoverControl && i < window->controlsCount; i++) {
 		OSControl *control = window->controls[i];
 
-		if (OSControlHitTest(control, x, y)) {
+		if (ControlHitTest(control, x, y)) {
 			window->hoverControl = control;
-			OSDrawControl(window, window->hoverControl);
+			DrawControl(window, window->hoverControl);
 
 			if (!window->pressedControl) {
 				OSSetCursorStyle(window->handle, control->cursorStyle);
@@ -314,8 +331,8 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	}
 
 	if (window->pressedControl) {
-		FindCaret(window->pressedControl, x, y);
-		OSDrawControl(window, window->pressedControl);
+		FindCaret(window->pressedControl, x, y, true);
+		DrawControl(window, window->pressedControl);
 	}
 }
 
@@ -338,11 +355,11 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 				if (control->canHaveFocus) {
 					window->focusedControl = control; // TODO Lose when the window is deactivated.
-					FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY);
+					FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false);
 				}
 
 				window->pressedControl = control;
-				OSDrawControl(window, control);
+				DrawControl(window, control);
 			}
 		} break;
 
@@ -361,7 +378,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					previousPressedControl->checked = OS_CONTROL_RADIO_CHECK;
 				}
 
-				OSDrawControl(window, previousPressedControl);
+				DrawControl(window, previousPressedControl);
 
 				if (window->hoverControl == previousPressedControl
 						/* || (!window->hoverControl && window->previousHoverControl == previousPressedControl) */) { 
@@ -377,6 +394,13 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 		case OS_MESSAGE_WINDOW_CREATED: {
 			window->dirty = true;
+		} break;
+
+		case OS_MESSAGE_WINDOW_BLINK_TIMER: {
+			if (window->focusedControl) {
+				window->focusedControl->caretBlink = !window->focusedControl->caretBlink;
+				DrawControl(window, window->focusedControl);
+			}
 		} break;
 
 		default: {

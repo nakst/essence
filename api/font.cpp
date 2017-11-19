@@ -71,10 +71,9 @@ static float GetGUIFontScale() {
 	return scale;
 }
 
-static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer) {
-#define CARET_HEIGHT (14)
-	for (int y = 0; y < CARET_HEIGHT; y++) {
-		int oY = outputPosition.y + y - CARET_HEIGHT + 4;
+static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight) {
+	for (int y = 0; y < lineHeight; y++) {
+		int oY = outputPosition.y - lineHeight + y + 4;
 
 		if (oY < region.top) continue;
 		if (oY >= region.bottom) break;
@@ -99,8 +98,8 @@ static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle 
 
 static OSError DrawString(OSHandle surface, OSRectangle region, 
 		char *string, size_t stringLength,
-		unsigned alignment, uint32_t color, int32_t backgroundColor,
-		OSPoint coordinate, uintptr_t *_characterIndex, uintptr_t caretIndex) {
+		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
+		OSPoint coordinate, uintptr_t *_characterIndex, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink) {
 	if (!stringLength) return OS_SUCCESS;
 
 	bool actuallyDraw = _characterIndex == nullptr;
@@ -177,6 +176,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 		uint8_t *output = nullptr;
 
+		bool selected = false;
+
 		if (outputPosition.x + advanceWidth < region.left) {
 			goto skipCharacter;
 		} else if (outputPosition.x >= region.right) {
@@ -211,6 +212,46 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				xoff = entry->xoff;
 				yoff = entry->yoff;
 				break;
+			}
+		}
+
+		if (caretIndex != (uintptr_t) -1) {
+			if (caretIndex < caretIndex2) {
+				if (characterIndex >= caretIndex && characterIndex < caretIndex2) {
+					selected = true;
+				}
+			} else {
+				if (characterIndex >= caretIndex2 && characterIndex < caretIndex) {
+					selected = true;
+				}
+			}
+		}
+
+		if (selected) {
+			for (int y = 0; y < lineHeight; y++) {
+				int oY = outputPosition.y - lineHeight + y + 4;
+
+				if (oY < region.top) continue;
+				if (oY >= region.bottom) break;
+
+				if (oY < invalidatedRegion.top) invalidatedRegion.top = oY;
+				if (oY > invalidatedRegion.bottom) invalidatedRegion.bottom = oY;
+
+				for (int x = 0; x < advanceWidth + 1; x++) {
+					int oX = outputPosition.x + x;
+
+					if (oX < region.left) continue;
+					if (oX >= region.right) break;
+
+					if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
+					if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
+
+					uint32_t *destination = (uint32_t *) ((uint8_t *) linearBuffer.buffer + 
+							(oX) * 4 + 
+							(oY) * linearBuffer.stride);
+
+					*destination = selectionColor;
+				}
 			}
 		}
 
@@ -271,10 +312,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			}
 		}
 
-		if (characterIndex == caretIndex) {
-			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer);
-		}
-
 		for (int y = 0; y < height; y++) {
 			int oY = outputPosition.y + iy0 + y;
 
@@ -305,7 +342,9 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				} else {
 					uint32_t original;
 
-					if (backgroundColor < 0) {
+					if (selected) {
+						original = selectionColor;
+					} else if (backgroundColor < 0) {
 						original = *destination;
 					} else {
 						original = backgroundColor;
@@ -330,14 +369,18 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			}
 		}
 
+		if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
+			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight);
+		}
+
 		skipCharacter:
 		outputPosition.x += advanceWidth;
 		string = utf8_advance(string);
 		characterIndex++;
 	}
 
-	if (characterIndex == caretIndex) {
-		DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer);
+	if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
+		DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight);
 	}
 
 	if (coordinate.x >= outputPosition.x && !actuallyDraw && characterIndex) {
@@ -357,8 +400,8 @@ OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate,
 		unsigned alignment, uintptr_t *characterIndex) {
 	return DrawString(OS_INVALID_HANDLE, region, 
 			string, stringLength,
-			alignment, 0, 0,
-			coordinate, characterIndex, -1);
+			alignment, 0, 0, 0,
+			coordinate, characterIndex, -1, -1, false);
 }
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
@@ -366,6 +409,6 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		unsigned alignment, uint32_t color, int32_t backgroundColor) {
 	return DrawString(surface, region, 
 			string, stringLength,
-			alignment, color, backgroundColor,
-			OSPoint(0, 0), nullptr, -1);
+			alignment, color, backgroundColor, 0,
+			OSPoint(0, 0), nullptr, -1, -1, false);
 }

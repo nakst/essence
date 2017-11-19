@@ -401,6 +401,7 @@ struct OSControl {
 	int fillWidth;
 	unsigned textAlign;
 	bool canHaveFocus;
+	bool caretBlink;
 
 	// State:
 
@@ -413,7 +414,7 @@ struct OSControl {
 	size_t labelLength;
 	bool freeLabel;
 
-	uintptr_t caret;
+	uintptr_t caret, caret2;
 };
 
 struct OSWindow {
@@ -438,13 +439,14 @@ struct OSWindow {
 #define OS_MESSAGE_QUEUE_IPC		(0x10)
 
 enum OSMessageType {
-	OS_MESSAGE_MOUSE_MOVED = 0x1000,
-	OS_MESSAGE_MOUSE_LEFT_PRESSED = 0x1001,
-	OS_MESSAGE_MOUSE_LEFT_RELEASED = 0x1002,
+	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
+	OS_MESSAGE_MOUSE_LEFT_PRESSED 		= 0x1001,
+	OS_MESSAGE_MOUSE_LEFT_RELEASED 		= 0x1002,
 
-	OS_MESSAGE_KEYBOARD = 0x1400,
+	OS_MESSAGE_KEYBOARD 			= 0x1400,
 	
-	OS_MESSAGE_WINDOW_CREATED = 0x2000,
+	OS_MESSAGE_WINDOW_CREATED 		= 0x2000,
+	OS_MESSAGE_WINDOW_BLINK_TIMER 		= 0x2001, // Sent periodically to the focused window so it can blink its caret.
 };
 
 struct OSMessage {
