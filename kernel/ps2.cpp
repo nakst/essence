@@ -197,15 +197,15 @@ bool PS2IRQHandler(uintptr_t interruptIndex) {
 
 		if (firstByte == 0xE0) {
 			if (secondByte == 0xF0) {
-				update->scancode = OS_SCANCODE_KEY_RELEASED | (1 << 8) | thirdByte;
+				update->scancode = SCANCODE_KEY_RELEASED | (1 << 8) | thirdByte;
 			} else {
-				update->scancode = OS_SCANCODE_KEY_PRESSED | (1 << 8) | secondByte;
+				update->scancode = SCANCODE_KEY_PRESSED | (1 << 8) | secondByte;
 			}
 		} else {
 			if (firstByte == 0xF0) {
-				update->scancode = OS_SCANCODE_KEY_RELEASED | (0 << 8) | secondByte;
+				update->scancode = SCANCODE_KEY_RELEASED | (0 << 8) | secondByte;
 			} else {
-				update->scancode = OS_SCANCODE_KEY_PRESSED | (0 << 8) | firstByte;
+				update->scancode = SCANCODE_KEY_PRESSED | (0 << 8) | firstByte;
 			}
 		}
 

@@ -1,5 +1,8 @@
 #ifndef IMPLEMENTATION
 
+#define SCANCODE_KEY_RELEASED (1 << 15)
+#define SCANCODE_KEY_PRESSED  (0 << 15)
+
 #define LEFT_BUTTON (1)
 #define MIDDLE_BUTTON (2)
 #define RIGHT_BUTTON (4)
@@ -39,7 +42,9 @@ struct WindowManager {
 	int cursorX, cursorY;
 	int cursorImageX, cursorImageY;
 	int cursorImageOffsetX, cursorImageOffsetY;
+
 	unsigned lastButtons;
+	bool shift, alt, ctrl;
 };
 
 WindowManager windowManager;
@@ -89,16 +94,24 @@ void WindowManager::PressKey(unsigned scancode) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	// Send the message to the last window on which we clicked.
-	for (uintptr_t i = 0; i < windowsCount; i++) {
-		Window *window = windows[i];
-		if (window->keyboardFocus) {
-			OSMessage message = {};
-			message.type = OS_MESSAGE_KEYBOARD;
-			message.targetWindow = window->apiWindow;
-			message.keyboard.scancode = scancode;
-			window->owner->SendMessage(message);
-		}
+	if (scancode == OS_SCANCODE_LEFT_CTRL) ctrl = true;
+	if (scancode == (OS_SCANCODE_LEFT_CTRL | SCANCODE_KEY_RELEASED)) ctrl = false;
+	if (scancode == OS_SCANCODE_LEFT_SHIFT) shift = true;
+	if (scancode == (OS_SCANCODE_LEFT_SHIFT | SCANCODE_KEY_RELEASED)) shift = false;
+	if (scancode == OS_SCANCODE_LEFT_ALT) alt = true;
+	if (scancode == (OS_SCANCODE_LEFT_ALT | SCANCODE_KEY_RELEASED)) alt = false;
+
+	if (focusedWindow) {
+		Window *window = focusedWindow;
+
+		OSMessage message = {};
+		message.type = (scancode & SCANCODE_KEY_RELEASED) ? OS_MESSAGE_KEY_RELEASED : OS_MESSAGE_KEY_PRESSED;
+		message.targetWindow = window->apiWindow;
+		message.keyboard.alt = alt;
+		message.keyboard.ctrl = ctrl;
+		message.keyboard.shift = shift;
+		message.keyboard.scancode = scancode & ~SCANCODE_KEY_RELEASED;
+		window->owner->SendMessage(message);
 	}
 }
 

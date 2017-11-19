@@ -59,7 +59,7 @@ void NumberButtonPressed(OSControl *generator, void *argument, OSCallbackData *d
 	entryValue = entryValue * 10 + buttonValue;
 
 	size_t length = OSFormatString(textOutputBuffer, 1024, "%d", entryValue);
-	OSSetControlLabel(textOutput, textOutputBuffer, length, false);
+	OSSetControlText(textOutput, textOutputBuffer, length, false);
 }
 
 extern "C" void ProgramEntry() {
@@ -68,7 +68,10 @@ extern "C" void ProgramEntry() {
 	OSWindow *window = OSCreateWindow(200, 150);
 
 #if 1
-	OSControl *textbox = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Test", 4, false);
+	char *text = (char *) OSHeapAllocate(32, false);
+	OSCopyMemory(text, (void *) "Hey!", 4);
+	OSControl *textbox = OSCreateControl(OS_CONTROL_TEXTBOX, text, 4, true);
+	textbox->textAllocated = 32;
 	OSAddControl(window, textbox, 16, 16);
 #else
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1, false);

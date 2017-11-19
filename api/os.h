@@ -3,9 +3,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-#define OS_SCANCODE_KEY_RELEASED (1 << 15)
-#define OS_SCANCODE_KEY_PRESSED  (0 << 15)
-
 #define OS_SCANCODE_A (0x1C)
 #define OS_SCANCODE_B (0x32)
 #define OS_SCANCODE_C (0x21)
@@ -336,7 +333,9 @@ struct _OSDrawSurfaceArguments {
 enum OSCallbackType {
 	OS_CALLBACK_INVALID,
 	OS_CALLBACK_ACTION,
-	OS_CALLBACK_GET_LABEL,
+	OS_CALLBACK_GET_TEXT,
+	OS_CALLBACK_INSERT_TEXT,
+	OS_CALLBACK_REMOVE_TEXT,
 };
 
 struct OSCallbackData {
@@ -344,10 +343,21 @@ struct OSCallbackData {
 
 	union {
 		struct {
-			char *label;
-			size_t labelLength;
-			bool freeLabel;
-		} getLabel;
+			char *text;
+			size_t textLength;
+			bool freeText;
+		} getText;
+
+		struct {
+			uintptr_t index; // Character index.
+			char *text;
+			size_t textLength;
+		} insertText;
+
+		struct {
+			uintptr_t index; // Character index;
+			size_t characterCount; // Number of characters to remove.
+		} removeText;
 	};
 };
 
@@ -391,7 +401,9 @@ struct OSControl {
 
 	// Callbacks:
 	OSCallback action;
-	OSCallback getLabel;
+	OSCallback getText;
+	OSCallback insertText;
+	OSCallback removeText;
 
 	// Style:
 	OSRectangle image;
@@ -410,9 +422,9 @@ struct OSControl {
 #define OS_CONTROL_RADIO_CHECK (2)
 	int checked;
 
-	char *label;
-	size_t labelLength;
-	bool freeLabel;
+	char *text;
+	size_t textLength, textAllocated;
+	bool freeText;
 
 	uintptr_t caret, caret2;
 };
@@ -443,7 +455,8 @@ enum OSMessageType {
 	OS_MESSAGE_MOUSE_LEFT_PRESSED 		= 0x1001,
 	OS_MESSAGE_MOUSE_LEFT_RELEASED 		= 0x1002,
 
-	OS_MESSAGE_KEYBOARD 			= 0x1400,
+	OS_MESSAGE_KEY_PRESSED			= 0x1401,
+	OS_MESSAGE_KEY_RELEASED			= 0x1402,
 	
 	OS_MESSAGE_WINDOW_CREATED 		= 0x2000,
 	OS_MESSAGE_WINDOW_BLINK_TIMER 		= 0x2001, // Sent periodically to the focused window so it can blink its caret.
@@ -469,7 +482,8 @@ struct OSMessage {
 		} mousePressed;
 
 		struct {
-			unsigned scancode; // Check for OS_SCANCODE_KEY_RELEASED.
+			unsigned scancode; 
+			bool alt, ctrl, shift;
 		} keyboard;
 	};
 };
@@ -567,12 +581,12 @@ extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
 extern "C" OSWindow *OSCreateWindow(size_t width, size_t height);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
-extern "C" OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, bool cloneLabel);
+extern "C" OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength, bool cloneText);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSDisableControl(OSControl *control, bool disabled);
 extern "C" void OSCheckControl(OSControl *control, bool checked);
-extern "C" OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, bool clone);
+extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone);
 extern "C" OSError OSInvalidateControl(OSControl *control);
 extern "C" OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style);
 

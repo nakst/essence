@@ -1,3 +1,9 @@
+// TODO
+// 	- Selections
+// 		- Drag and scroll
+// 		- Double/triple click select
+//	- UTF-8
+
 #define BORDER_OFFSET_X (5)
 #define BORDER_OFFSET_Y (29)
 
@@ -9,20 +15,57 @@ static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &
 		callback.callback(from, callback.argument, &data);
 	} else {
 		switch (data.type) {
-			case OS_CALLBACK_INVALID: {
-				Panic();
-			} break;
-
 			case OS_CALLBACK_ACTION: {
 				// We can't really do anything if the program doesn't want to handle the action.
 			} break;
 
-			case OS_CALLBACK_GET_LABEL: {
+			case OS_CALLBACK_GET_TEXT: {
 				// The program wants us to store the text.
 				// Therefore, use the text we have stored in the control.
-				data.getLabel.label = from->label;
-				data.getLabel.labelLength = from->labelLength;
-				data.getLabel.freeLabel = false;
+				data.getText.text = from->text;
+				data.getText.textLength = from->textLength;
+				data.getText.freeText = false;
+			} break;
+
+			case OS_CALLBACK_INSERT_TEXT: {
+				if (from->textAllocated <= from->textLength + data.insertText.textLength) {
+					if (!from->freeText) {
+						// This means we don't own the text, so we don't know how to resize it.
+						Panic();
+					}
+
+					from->text = (char *) realloc(from->text, from->textLength + data.insertText.textLength + 16);
+					from->textAllocated = from->textLength + data.insertText.textLength + 16;
+				}
+
+				char *text = from->text;
+				for (uintptr_t i = 0; i < data.insertText.index; i++) {
+					text = utf8_advance(text);
+				}
+
+				memmove(text + data.insertText.textLength, text, from->textLength - (text - from->text));
+				OSCopyMemory(text, data.insertText.text, data.insertText.textLength);
+				from->textLength += data.insertText.textLength;
+			} break;
+
+			case OS_CALLBACK_REMOVE_TEXT: {
+				char *text = from->text;
+				for (uintptr_t i = 0; i < data.removeText.index; i++) {
+					text = utf8_advance(text);
+				}
+
+				char *text2 = text;
+				for (uintptr_t i = 0; i < data.removeText.characterCount; i++) {
+					text2 = utf8_advance(text2);
+				}
+
+				size_t bytes = text2 - text;
+				memmove(text, text2, from->textLength - (text2 - from->text));
+				from->textLength -= bytes;
+			} break;
+
+			default: {
+				Panic();
 			} break;
 		}
 	}
@@ -41,9 +84,9 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 			: ((isPressedControl || isHoverControl) ? 0 : 1)));
 	styleX = (imageWidth + 1) * styleX + control->image.left;
 
-	OSCallbackData labelEvent = {};
-	labelEvent.type = OS_CALLBACK_GET_LABEL;
-	SendCallback(control, control->getLabel, labelEvent);
+	OSCallbackData textEvent = {};
+	textEvent.type = OS_CALLBACK_GET_TEXT;
+	SendCallback(control, control->getText, textEvent);
 
 	if (control->imageType == OS_CONTROL_IMAGE_FILL) {
 		if (control->imageBorder.left) {
@@ -61,7 +104,7 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 		}
 
 		DrawString(window->surface, control->textBounds, 
-				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
+				textEvent.getText.text, textEvent.getText.textLength,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
 				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret : -1, 
@@ -76,13 +119,13 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 				OS_DRAW_MODE_REPEAT_FIRST);
 		OSDrawString(window->surface, 
 				control->textBounds, 
-				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
+				textEvent.getText.text, textEvent.getText.textLength,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	} else if (control->imageType == OS_CONTROL_IMAGE_NONE) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawString(window->surface, control->textBounds, 
-				labelEvent.getLabel.label, labelEvent.getLabel.labelLength,
+				textEvent.getText.text, textEvent.getText.textLength,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	}
@@ -98,29 +141,30 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 	}
 
 
-	if (labelEvent.getLabel.freeLabel) {
-		OSHeapFree(labelEvent.getLabel.label);
+	if (textEvent.getText.freeText) {
+		OSHeapFree(textEvent.getText.text);
 	}
 
 	window->dirty = true;
 }
 
-OSError OSSetControlLabel(OSControl *control, char *label, size_t labelLength, bool clone) {
-	if (control->freeLabel) {
-		OSHeapFree(control->label);
+OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone) {
+	if (control->freeText) {
+		OSHeapFree(control->text);
 	}
 
 	if (clone) {
-		char *temp = (char *) OSHeapAllocate(labelLength, false);
+		char *temp = (char *) OSHeapAllocate(textLength, false);
 		if (!temp) return OS_ERROR_COULD_NOT_ALLOCATE_MEMORY;
-		OSCopyMemory(temp, label, labelLength);
-		label = temp;
+		OSCopyMemory(temp, text, textLength);
+		text = temp;
 	}
 
-	control->freeLabel = clone;
-	control->label = label;
-	control->labelLength = labelLength;
-	control->getLabel.callback = nullptr;
+	control->freeText = clone;
+	control->text = text;
+	control->textLength = textLength;
+	control->textAllocated = textLength;
+	control->getText.callback = nullptr;
 
 	DrawControl(control->parent, control);
 
@@ -188,7 +232,7 @@ OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
 	return OS_SUCCESS;
 }
 
-OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, bool cloneLabel) {
+OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength, bool cloneText) {
 	OSControl *control = (OSControl *) OSHeapAllocate(sizeof(OSControl), true);
 	if (!control) return nullptr;
 
@@ -215,7 +259,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		} break;
 
 		case OS_CONTROL_CHECKBOX: {
-			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
+			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale());
 			control->bounds.bottom = 13;
 			control->textBounds = control->bounds;
 			control->textBounds.left = 13 + 4;
@@ -226,7 +270,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		} break;
 
 		case OS_CONTROL_RADIOBOX: {
-			control->bounds.right = 21 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
+			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale());
 			control->bounds.bottom = 14;
 			control->textBounds = control->bounds;
 			control->textBounds.left = 13 + 4;
@@ -237,7 +281,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		} break;
 
 		case OS_CONTROL_STATIC: {
-			control->bounds.right = 4 + MeasureStringWidth(label, labelLength, GetGUIFontScale());
+			control->bounds.right = 4 + MeasureStringWidth(text, textLength, GetGUIFontScale());
 			control->bounds.bottom = 14;
 			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_NONE;
@@ -257,7 +301,7 @@ OSControl *OSCreateControl(OSControlType type, char *label, size_t labelLength, 
 		} break;
 	}
 
-	OSSetControlLabel(control, label, labelLength, cloneLabel);
+	OSSetControlText(control, text, textLength, cloneText);
 
 	return control;
 }
@@ -286,12 +330,12 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 
 static void FindCaret(OSControl *control, int positionX, int positionY, bool secondCaret) {
 	if (control->type == OS_CONTROL_TEXTBOX && !control->disabled) {
-		OSCallbackData labelEvent = {};
-		labelEvent.type = OS_CALLBACK_GET_LABEL;
-		SendCallback(control, control->getLabel, labelEvent);
+		OSCallbackData textEvent = {};
+		textEvent.type = OS_CALLBACK_GET_TEXT;
+		SendCallback(control, control->getText, textEvent);
 
 		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
-				labelEvent.getLabel.label, labelEvent.getLabel.labelLength, 
+				textEvent.getText.text, textEvent.getText.textLength, 
 				control->textAlign, secondCaret ? &control->caret2 : &control->caret);
 
 		if (!secondCaret) {
@@ -299,6 +343,10 @@ static void FindCaret(OSControl *control, int positionX, int positionY, bool sec
 		}
 
 		control->caretBlink = false;
+
+		if (textEvent.getText.freeText) {
+			OSHeapFree(textEvent.getText.text);
+		}
 	}
 }
 
@@ -401,6 +449,109 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 				window->focusedControl->caretBlink = !window->focusedControl->caretBlink;
 				DrawControl(window, window->focusedControl);
 			}
+		} break;
+
+		case OS_MESSAGE_KEY_PRESSED: {
+			OSControl *control = window->focusedControl;
+			int ic = -1,
+			    isc = -1;
+
+			if (control && !control->disabled) {
+				switch (message->keyboard.scancode) {
+					case OS_SCANCODE_A: ic = 'a'; isc = 'A'; break;
+					case OS_SCANCODE_B: ic = 'b'; isc = 'B'; break;
+					case OS_SCANCODE_C: ic = 'c'; isc = 'C'; break;
+					case OS_SCANCODE_D: ic = 'd'; isc = 'D'; break;
+					case OS_SCANCODE_E: ic = 'e'; isc = 'E'; break;
+					case OS_SCANCODE_F: ic = 'f'; isc = 'F'; break;
+					case OS_SCANCODE_G: ic = 'g'; isc = 'G'; break;
+					case OS_SCANCODE_H: ic = 'h'; isc = 'H'; break;
+					case OS_SCANCODE_I: ic = 'i'; isc = 'I'; break;
+					case OS_SCANCODE_J: ic = 'j'; isc = 'J'; break;
+					case OS_SCANCODE_K: ic = 'k'; isc = 'K'; break;
+					case OS_SCANCODE_L: ic = 'l'; isc = 'L'; break;
+					case OS_SCANCODE_M: ic = 'm'; isc = 'M'; break;
+					case OS_SCANCODE_N: ic = 'n'; isc = 'N'; break;
+					case OS_SCANCODE_O: ic = 'o'; isc = 'O'; break;
+					case OS_SCANCODE_P: ic = 'p'; isc = 'P'; break;
+					case OS_SCANCODE_Q: ic = 'q'; isc = 'Q'; break;
+					case OS_SCANCODE_R: ic = 'r'; isc = 'R'; break;
+					case OS_SCANCODE_S: ic = 's'; isc = 'S'; break;
+					case OS_SCANCODE_T: ic = 't'; isc = 'T'; break;
+					case OS_SCANCODE_U: ic = 'u'; isc = 'U'; break;
+					case OS_SCANCODE_V: ic = 'v'; isc = 'V'; break;
+					case OS_SCANCODE_W: ic = 'w'; isc = 'W'; break;
+					case OS_SCANCODE_X: ic = 'x'; isc = 'X'; break;
+					case OS_SCANCODE_Y: ic = 'u'; isc = 'Y'; break;
+					case OS_SCANCODE_Z: ic = 'z'; isc = 'Z'; break;
+					case OS_SCANCODE_0: ic = '0'; isc = ')'; break;
+					case OS_SCANCODE_1: ic = '1'; isc = '!'; break;
+					case OS_SCANCODE_2: ic = '2'; isc = '@'; break;
+					case OS_SCANCODE_3: ic = '3'; isc = '#'; break;
+					case OS_SCANCODE_4: ic = '4'; isc = '$'; break;
+					case OS_SCANCODE_5: ic = '5'; isc = '%'; break;
+					case OS_SCANCODE_6: ic = '6'; isc = '^'; break;
+					case OS_SCANCODE_7: ic = '7'; isc = '&'; break;
+					case OS_SCANCODE_8: ic = '8'; isc = '*'; break;
+					case OS_SCANCODE_9: ic = '9'; isc = '('; break;
+					case OS_SCANCODE_SLASH: 	ic = '/';  isc = '?'; break;
+					case OS_SCANCODE_BACKSLASH: 	ic = '\\'; isc = '|'; break;
+					case OS_SCANCODE_LEFT_BRACE: 	ic = '[';  isc = '{'; break;
+					case OS_SCANCODE_RIGHT_BRACE: 	ic = ']';  isc = '}'; break;
+					case OS_SCANCODE_EQUALS: 	ic = '=';  isc = '+'; break;
+					case OS_SCANCODE_BACKTICK: 	ic = '`';  isc = '~'; break;
+					case OS_SCANCODE_HYPHEN: 	ic = '-';  isc = '_'; break;
+					case OS_SCANCODE_SEMICOLON: 	ic = ';';  isc = ':'; break;
+					case OS_SCANCODE_QUOTE: 	ic = '\''; isc = '"'; break;
+					case OS_SCANCODE_COMMA: 	ic = ',';  isc = '<'; break;
+					case OS_SCANCODE_PERIOD: 	ic = '.';  isc = '>'; break;
+					case OS_SCANCODE_SPACE:		ic = ' ';  isc = ' '; break;
+				}
+
+				if (ic != -1) {
+					{
+						// Remove the selected text.
+						OSCallbackData callback = {};
+						callback.type = OS_CALLBACK_REMOVE_TEXT;
+
+						if (control->caret < control->caret2) {
+							callback.removeText.index = control->caret;
+							callback.removeText.characterCount = control->caret2 - control->caret;
+							control->caret2 = control->caret;
+						} else {
+							callback.removeText.index = control->caret2;
+							callback.removeText.characterCount = control->caret - control->caret2;
+							control->caret = control->caret2;
+						}
+
+						SendCallback(control, control->removeText, callback);
+					}
+
+					{
+						char data[4];
+						// TODO UTF-8
+						data[0] = message->keyboard.shift ? isc : ic;
+
+						// Insert the pressed character.
+						OSCallbackData callback = {};
+						callback.type = OS_CALLBACK_INSERT_TEXT;
+						callback.insertText.text = data;
+						callback.insertText.textLength = 1;
+						callback.insertText.index = control->caret;
+						SendCallback(control, control->insertText, callback);
+					}
+
+					{
+						// Update the caret and redraw the control.
+						control->caret++;
+						control->caret2 = control->caret;
+						DrawControl(window, control);
+					}
+				}
+			}
+		} break;
+
+		case OS_MESSAGE_KEY_RELEASED: {
 		} break;
 
 		default: {

@@ -222,6 +222,7 @@ void Graphics::UpdateScreen() {
 	int cursorImageX = windowManager.cursorImageX, cursorImageY = windowManager.cursorImageY;
 	windowManager.mutex.Release();
 
+	// TODO This doesn't work with cursor image offset at the screen edge.
 	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
 								cursorY, cursorY + CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
