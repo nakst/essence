@@ -1,8 +1,10 @@
-// TODO
+// TODO Textboxes
 // 	- Selections
 // 		- Drag and scroll
 // 		- Double/triple click select
 //	- UTF-8
+//	- Control left/right
+//	- Clipboard and undo
 
 #define BORDER_OFFSET_X (5)
 #define BORDER_OFFSET_Y (29)
@@ -384,6 +386,164 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	}
 }
 
+void RemoveSelectedText(OSControl *control) {
+	OSCallbackData callback = {};
+	callback.type = OS_CALLBACK_REMOVE_TEXT;
+
+	if (control->caret < control->caret2) {
+		callback.removeText.index = control->caret;
+		callback.removeText.characterCount = control->caret2 - control->caret;
+		control->caret2 = control->caret;
+	} else {
+		callback.removeText.index = control->caret2;
+		callback.removeText.characterCount = control->caret - control->caret2;
+		control->caret = control->caret2;
+	}
+
+	SendCallback(control, control->removeText, callback);
+}
+
+void ProcessTextboxInput(OSMessage *message, OSControl *control) {
+	int ic = -1,
+	    isc = -1;
+
+	if (control && !control->disabled && control->type == OS_CONTROL_TEXTBOX) {
+		control->caretBlink = false;
+
+		switch (message->keyboard.scancode) {
+			case OS_SCANCODE_A: ic = 'a'; isc = 'A'; break;
+			case OS_SCANCODE_B: ic = 'b'; isc = 'B'; break;
+			case OS_SCANCODE_C: ic = 'c'; isc = 'C'; break;
+			case OS_SCANCODE_D: ic = 'd'; isc = 'D'; break;
+			case OS_SCANCODE_E: ic = 'e'; isc = 'E'; break;
+			case OS_SCANCODE_F: ic = 'f'; isc = 'F'; break;
+			case OS_SCANCODE_G: ic = 'g'; isc = 'G'; break;
+			case OS_SCANCODE_H: ic = 'h'; isc = 'H'; break;
+			case OS_SCANCODE_I: ic = 'i'; isc = 'I'; break;
+			case OS_SCANCODE_J: ic = 'j'; isc = 'J'; break;
+			case OS_SCANCODE_K: ic = 'k'; isc = 'K'; break;
+			case OS_SCANCODE_L: ic = 'l'; isc = 'L'; break;
+			case OS_SCANCODE_M: ic = 'm'; isc = 'M'; break;
+			case OS_SCANCODE_N: ic = 'n'; isc = 'N'; break;
+			case OS_SCANCODE_O: ic = 'o'; isc = 'O'; break;
+			case OS_SCANCODE_P: ic = 'p'; isc = 'P'; break;
+			case OS_SCANCODE_Q: ic = 'q'; isc = 'Q'; break;
+			case OS_SCANCODE_R: ic = 'r'; isc = 'R'; break;
+			case OS_SCANCODE_S: ic = 's'; isc = 'S'; break;
+			case OS_SCANCODE_T: ic = 't'; isc = 'T'; break;
+			case OS_SCANCODE_U: ic = 'u'; isc = 'U'; break;
+			case OS_SCANCODE_V: ic = 'v'; isc = 'V'; break;
+			case OS_SCANCODE_W: ic = 'w'; isc = 'W'; break;
+			case OS_SCANCODE_X: ic = 'x'; isc = 'X'; break;
+			case OS_SCANCODE_Y: ic = 'u'; isc = 'Y'; break;
+			case OS_SCANCODE_Z: ic = 'z'; isc = 'Z'; break;
+			case OS_SCANCODE_0: ic = '0'; isc = ')'; break;
+			case OS_SCANCODE_1: ic = '1'; isc = '!'; break;
+			case OS_SCANCODE_2: ic = '2'; isc = '@'; break;
+			case OS_SCANCODE_3: ic = '3'; isc = '#'; break;
+			case OS_SCANCODE_4: ic = '4'; isc = '$'; break;
+			case OS_SCANCODE_5: ic = '5'; isc = '%'; break;
+			case OS_SCANCODE_6: ic = '6'; isc = '^'; break;
+			case OS_SCANCODE_7: ic = '7'; isc = '&'; break;
+			case OS_SCANCODE_8: ic = '8'; isc = '*'; break;
+			case OS_SCANCODE_9: ic = '9'; isc = '('; break;
+			case OS_SCANCODE_SLASH: 	ic = '/';  isc = '?'; break;
+			case OS_SCANCODE_BACKSLASH: 	ic = '\\'; isc = '|'; break;
+			case OS_SCANCODE_LEFT_BRACE: 	ic = '[';  isc = '{'; break;
+			case OS_SCANCODE_RIGHT_BRACE: 	ic = ']';  isc = '}'; break;
+			case OS_SCANCODE_EQUALS: 	ic = '=';  isc = '+'; break;
+			case OS_SCANCODE_BACKTICK: 	ic = '`';  isc = '~'; break;
+			case OS_SCANCODE_HYPHEN: 	ic = '-';  isc = '_'; break;
+			case OS_SCANCODE_SEMICOLON: 	ic = ';';  isc = ':'; break;
+			case OS_SCANCODE_QUOTE: 	ic = '\''; isc = '"'; break;
+			case OS_SCANCODE_COMMA: 	ic = ',';  isc = '<'; break;
+			case OS_SCANCODE_PERIOD: 	ic = '.';  isc = '>'; break;
+			case OS_SCANCODE_SPACE:		ic = ' ';  isc = ' '; break;
+
+			case OS_SCANCODE_BACKSPACE: {
+				if (control->caret == control->caret2 && control->caret) {
+					OSCallbackData callback = {};
+					callback.type = OS_CALLBACK_REMOVE_TEXT;
+					callback.removeText.index = control->caret - 1;
+					callback.removeText.characterCount = 1;
+					control->caret2 = --control->caret;
+					SendCallback(control, control->removeText, callback);
+				} else {
+					RemoveSelectedText(control);
+				}
+			} break;
+
+			case OS_SCANCODE_DELETE: {
+				if (control->caret == control->caret2 && control->caret != control->textLength /*TODO Should be character count*/) {
+					OSCallbackData callback = {};
+					callback.type = OS_CALLBACK_REMOVE_TEXT;
+					callback.removeText.index = control->caret;
+					callback.removeText.characterCount = 1;
+					SendCallback(control, control->removeText, callback);
+				} else {
+					RemoveSelectedText(control);
+				}
+			} break;
+
+			case OS_SCANCODE_LEFT_ARROW: {
+				if (message->keyboard.shift) {
+					if (control->caret2) control->caret2--;
+				} else {
+					bool move = control->caret2 == control->caret;
+					if (control->caret2 < control->caret) control->caret = control->caret2;
+					if (control->caret) control->caret2 = (control->caret -= move ? 1 : 0);
+				}
+			} break;
+
+			case OS_SCANCODE_RIGHT_ARROW: {
+				if (message->keyboard.shift) {
+					if (control->caret2 != control->textLength /*TODO Should be character count*/) control->caret2++;
+				} else {
+					bool move = control->caret2 == control->caret;
+					if (control->caret2 > control->caret) control->caret = control->caret2;
+					if (control->caret != control->textLength /*TODO Should be character count*/) control->caret2 = (control->caret += move ? 1 : 0);
+				}
+			} break;
+
+			case OS_SCANCODE_HOME: {
+				control->caret2 = 0;
+				if (!message->keyboard.shift) control->caret = control->caret2;
+			} break;
+
+			case OS_SCANCODE_END: {
+				control->caret2 = control->textLength /**TODO Should be character count*/;
+				if (!message->keyboard.shift) control->caret = control->caret2;
+			} break;
+		}
+
+		if (ic != -1 && !message->keyboard.alt && !message->keyboard.ctrl) {
+			RemoveSelectedText(control);
+
+			{
+				char data[4];
+				// TODO UTF-8
+				data[0] = message->keyboard.shift ? isc : ic;
+
+				// Insert the pressed character.
+				OSCallbackData callback = {};
+				callback.type = OS_CALLBACK_INSERT_TEXT;
+				callback.insertText.text = data;
+				callback.insertText.textLength = 1;
+				callback.insertText.index = control->caret;
+				SendCallback(control, control->insertText, callback);
+			}
+
+			{
+				// Update the caret and redraw the control.
+				control->caret++;
+				control->caret2 = control->caret;
+			}
+		}
+
+		DrawControl(control->parent, control);
+	}
+}
+
 OSError OSProcessGUIMessage(OSMessage *message) {
 	// TODO Message security. 
 	// 	How should we tell who sent the message?
@@ -453,102 +613,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 		case OS_MESSAGE_KEY_PRESSED: {
 			OSControl *control = window->focusedControl;
-			int ic = -1,
-			    isc = -1;
-
-			if (control && !control->disabled) {
-				switch (message->keyboard.scancode) {
-					case OS_SCANCODE_A: ic = 'a'; isc = 'A'; break;
-					case OS_SCANCODE_B: ic = 'b'; isc = 'B'; break;
-					case OS_SCANCODE_C: ic = 'c'; isc = 'C'; break;
-					case OS_SCANCODE_D: ic = 'd'; isc = 'D'; break;
-					case OS_SCANCODE_E: ic = 'e'; isc = 'E'; break;
-					case OS_SCANCODE_F: ic = 'f'; isc = 'F'; break;
-					case OS_SCANCODE_G: ic = 'g'; isc = 'G'; break;
-					case OS_SCANCODE_H: ic = 'h'; isc = 'H'; break;
-					case OS_SCANCODE_I: ic = 'i'; isc = 'I'; break;
-					case OS_SCANCODE_J: ic = 'j'; isc = 'J'; break;
-					case OS_SCANCODE_K: ic = 'k'; isc = 'K'; break;
-					case OS_SCANCODE_L: ic = 'l'; isc = 'L'; break;
-					case OS_SCANCODE_M: ic = 'm'; isc = 'M'; break;
-					case OS_SCANCODE_N: ic = 'n'; isc = 'N'; break;
-					case OS_SCANCODE_O: ic = 'o'; isc = 'O'; break;
-					case OS_SCANCODE_P: ic = 'p'; isc = 'P'; break;
-					case OS_SCANCODE_Q: ic = 'q'; isc = 'Q'; break;
-					case OS_SCANCODE_R: ic = 'r'; isc = 'R'; break;
-					case OS_SCANCODE_S: ic = 's'; isc = 'S'; break;
-					case OS_SCANCODE_T: ic = 't'; isc = 'T'; break;
-					case OS_SCANCODE_U: ic = 'u'; isc = 'U'; break;
-					case OS_SCANCODE_V: ic = 'v'; isc = 'V'; break;
-					case OS_SCANCODE_W: ic = 'w'; isc = 'W'; break;
-					case OS_SCANCODE_X: ic = 'x'; isc = 'X'; break;
-					case OS_SCANCODE_Y: ic = 'u'; isc = 'Y'; break;
-					case OS_SCANCODE_Z: ic = 'z'; isc = 'Z'; break;
-					case OS_SCANCODE_0: ic = '0'; isc = ')'; break;
-					case OS_SCANCODE_1: ic = '1'; isc = '!'; break;
-					case OS_SCANCODE_2: ic = '2'; isc = '@'; break;
-					case OS_SCANCODE_3: ic = '3'; isc = '#'; break;
-					case OS_SCANCODE_4: ic = '4'; isc = '$'; break;
-					case OS_SCANCODE_5: ic = '5'; isc = '%'; break;
-					case OS_SCANCODE_6: ic = '6'; isc = '^'; break;
-					case OS_SCANCODE_7: ic = '7'; isc = '&'; break;
-					case OS_SCANCODE_8: ic = '8'; isc = '*'; break;
-					case OS_SCANCODE_9: ic = '9'; isc = '('; break;
-					case OS_SCANCODE_SLASH: 	ic = '/';  isc = '?'; break;
-					case OS_SCANCODE_BACKSLASH: 	ic = '\\'; isc = '|'; break;
-					case OS_SCANCODE_LEFT_BRACE: 	ic = '[';  isc = '{'; break;
-					case OS_SCANCODE_RIGHT_BRACE: 	ic = ']';  isc = '}'; break;
-					case OS_SCANCODE_EQUALS: 	ic = '=';  isc = '+'; break;
-					case OS_SCANCODE_BACKTICK: 	ic = '`';  isc = '~'; break;
-					case OS_SCANCODE_HYPHEN: 	ic = '-';  isc = '_'; break;
-					case OS_SCANCODE_SEMICOLON: 	ic = ';';  isc = ':'; break;
-					case OS_SCANCODE_QUOTE: 	ic = '\''; isc = '"'; break;
-					case OS_SCANCODE_COMMA: 	ic = ',';  isc = '<'; break;
-					case OS_SCANCODE_PERIOD: 	ic = '.';  isc = '>'; break;
-					case OS_SCANCODE_SPACE:		ic = ' ';  isc = ' '; break;
-				}
-
-				if (ic != -1) {
-					{
-						// Remove the selected text.
-						OSCallbackData callback = {};
-						callback.type = OS_CALLBACK_REMOVE_TEXT;
-
-						if (control->caret < control->caret2) {
-							callback.removeText.index = control->caret;
-							callback.removeText.characterCount = control->caret2 - control->caret;
-							control->caret2 = control->caret;
-						} else {
-							callback.removeText.index = control->caret2;
-							callback.removeText.characterCount = control->caret - control->caret2;
-							control->caret = control->caret2;
-						}
-
-						SendCallback(control, control->removeText, callback);
-					}
-
-					{
-						char data[4];
-						// TODO UTF-8
-						data[0] = message->keyboard.shift ? isc : ic;
-
-						// Insert the pressed character.
-						OSCallbackData callback = {};
-						callback.type = OS_CALLBACK_INSERT_TEXT;
-						callback.insertText.text = data;
-						callback.insertText.textLength = 1;
-						callback.insertText.index = control->caret;
-						SendCallback(control, control->insertText, callback);
-					}
-
-					{
-						// Update the caret and redraw the control.
-						control->caret++;
-						control->caret2 = control->caret;
-						DrawControl(window, control);
-					}
-				}
-			}
+			ProcessTextboxInput(message, control);
 		} break;
 
 		case OS_MESSAGE_KEY_RELEASED: {

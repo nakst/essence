@@ -100,8 +100,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		char *string, size_t stringLength,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
 		OSPoint coordinate, uintptr_t *_characterIndex, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink) {
-	if (!stringLength) return OS_SUCCESS;
-
 	bool actuallyDraw = _characterIndex == nullptr;
 
 	OSFontRendererInitialise();
@@ -369,11 +367,11 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			}
 		}
 
+		skipCharacter:
 		if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
 			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight);
 		}
 
-		skipCharacter:
 		outputPosition.x += advanceWidth;
 		string = utf8_advance(string);
 		characterIndex++;
