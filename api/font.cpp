@@ -97,10 +97,10 @@ static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle 
 }
 
 static OSError DrawString(OSHandle surface, OSRectangle region, 
-		char *string, size_t stringLength,
+		OSString *string,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
-		OSPoint coordinate, uintptr_t *_characterIndex, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink) {
-	bool actuallyDraw = _characterIndex == nullptr;
+		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink) {
+	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
@@ -115,14 +115,14 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 	int lineHeight = ascent - descent + lineGap;
 
-	char *stringEnd = string + stringLength;
+	char *stringEnd = string->buffer + string->bytes;
 
 	OSLinearBuffer linearBuffer;
 	if (surface != OS_INVALID_HANDLE) {
 		OSGetLinearBuffer(surface, &linearBuffer);
 	}
 
-	int totalWidth = MeasureStringWidth(string, stringLength, scale);
+	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, scale);
 
 	OSPoint outputPosition;
 
@@ -160,12 +160,14 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	uintptr_t characterIndex = 0;
 
 	if (coordinate.x < outputPosition.x && !actuallyDraw) {
-		*_characterIndex = characterIndex;
+		caret->byte = caret->character = 0;
 		return OS_SUCCESS;
 	}
 
-	while (string < stringEnd) {
-		int character = utf8_value(string);
+	char *buffer = string->buffer;
+
+	while (buffer < stringEnd) {
+		int character = utf8_value(buffer);
 
 		int advanceWidth, leftSideBearing;
 		stbtt_GetCodepointHMetrics(&guiRegularFont, character, &advanceWidth, &leftSideBearing);
@@ -186,12 +188,14 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		stbtt_GetCodepointBitmapBox(&guiRegularFont, character, scale, scale, &ix0, &iy0, &ix1, &iy1);
 
 		if (coordinate.x >= outputPosition.x && coordinate.x < outputPosition.x + advanceWidth / 2 && !actuallyDraw) {
-			*_characterIndex = characterIndex;
+			caret->character = characterIndex;
+			caret->byte = buffer - string->buffer;
 			return OS_SUCCESS;
 		}
 
 		if (coordinate.x >= outputPosition.x + advanceWidth / 2 && coordinate.x < outputPosition.x + advanceWidth && !actuallyDraw) {
-			*_characterIndex = characterIndex + 1;
+			caret->character = characterIndex + 1;
+			caret->byte = utf8_advance(buffer) - string->buffer;
 			return OS_SUCCESS;
 		}
 
@@ -373,7 +377,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		outputPosition.x += advanceWidth;
-		string = utf8_advance(string);
+		buffer = utf8_advance(buffer);
 		characterIndex++;
 	}
 
@@ -382,7 +386,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	}
 
 	if (coordinate.x >= outputPosition.x && !actuallyDraw && characterIndex) {
-		*_characterIndex = characterIndex;
+		caret->character = characterIndex;
+		caret->byte = buffer - string->buffer;
 		return OS_SUCCESS;
 	}
 
@@ -394,19 +399,18 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 }
 
 OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, 
-		char *string, size_t stringLength, 
-		unsigned alignment, uintptr_t *characterIndex) {
+		OSString *string, unsigned alignment, OSCaret *caret) {
 	return DrawString(OS_INVALID_HANDLE, region, 
-			string, stringLength,
+			string,
 			alignment, 0, 0, 0,
-			coordinate, characterIndex, -1, -1, false);
+			coordinate, caret, -1, -1, false);
 }
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
-		char *string, size_t stringLength,
+		OSString *string,
 		unsigned alignment, uint32_t color, int32_t backgroundColor) {
 	return DrawString(surface, region, 
-			string, stringLength,
+			string,
 			alignment, color, backgroundColor, 0,
 			OSPoint(0, 0), nullptr, -1, -1, false);
 }

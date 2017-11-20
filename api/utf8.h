@@ -72,7 +72,7 @@ char *utf8_retreat(char *string) {
 	return string;
 }
 
-int utf8_length(char *string, int max_bytes, int tab_size) {
+int utf8_length(char *string, int max_bytes) {
 	if (!string)
 		return 0;
 	if (!(*string))
@@ -87,10 +87,7 @@ int utf8_length(char *string, int max_bytes, int tab_size) {
 		if (!string) // Invalid code point
 			return -1;
 
-		if (utf8_value(string) == '\t')
-			length = (length - (length % tab_size)) + tab_size;
-		else length++;
-
+		length++;
 		string = utf8_advance(string);
 	}
 

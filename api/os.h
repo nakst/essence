@@ -343,20 +343,17 @@ struct OSCallbackData {
 
 	union {
 		struct {
-			char *text;
-			size_t textLength;
+			struct OSString *string;
 			bool freeText;
 		} getText;
 
 		struct {
-			uintptr_t index; // Character index.
-			char *text;
-			size_t textLength;
+			struct OSCaret *caret;
+			struct OSString *string;
 		} insertText;
 
 		struct {
-			uintptr_t index; // Character index;
-			size_t characterCount; // Number of characters to remove.
+			struct OSCaret *caretStart, *caretEnd;
 		} removeText;
 	};
 };
@@ -386,6 +383,16 @@ enum OSControlImageType {
 	OS_CONTROL_IMAGE_FILL,
 	OS_CONTROL_IMAGE_CENTER_LEFT,
 	OS_CONTROL_IMAGE_NONE,
+};
+
+struct OSCaret {
+	uintptr_t byte, character;
+};
+
+struct OSString {
+	char *buffer;
+	size_t bytes, characters;
+	size_t allocated;
 };
 
 struct OSControl {
@@ -422,11 +429,8 @@ struct OSControl {
 #define OS_CONTROL_RADIO_CHECK (2)
 	int checked;
 
-	char *text;
-	size_t textLength, textAllocated;
-	bool freeText;
-
-	uintptr_t caret, caret2;
+	OSCaret caret, caret2;
+	OSString text;
 };
 
 struct OSWindow {
@@ -572,8 +576,8 @@ extern "C" OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSCo
 extern "C" OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 extern "C" OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
 extern "C" OSError OSClearModifiedRegion(OSHandle surface);
-extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, char *string, size_t stringLength, unsigned flags, uint32_t color, int32_t backgroundColor);
-extern "C" OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, char *string, size_t stringLength, unsigned flags, uintptr_t *characterIndex);
+extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, unsigned flags, uint32_t color, int32_t backgroundColor);
+extern "C" OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
 
 extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
@@ -581,12 +585,12 @@ extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
 extern "C" OSWindow *OSCreateWindow(size_t width, size_t height);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
-extern "C" OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength, bool cloneText);
+extern "C" OSControl *OSCreateControl(OSControlType type, char *text, size_t textLengthBytes);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSDisableControl(OSControl *control, bool disabled);
 extern "C" void OSCheckControl(OSControl *control, bool checked);
-extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone);
+extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLengthBytes);
 extern "C" OSError OSInvalidateControl(OSControl *control);
 extern "C" OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style);
 

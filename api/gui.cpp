@@ -2,9 +2,9 @@
 // 	- Selections
 // 		- Drag and scroll
 // 		- Double/triple click select
-//	- UTF-8
-//	- Control left/right
+//	- Control (shift) left/right/backspace/delete
 //	- Clipboard and undo
+//	- Scrolling
 
 #define BORDER_OFFSET_X (5)
 #define BORDER_OFFSET_Y (29)
@@ -24,46 +24,40 @@ static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &
 			case OS_CALLBACK_GET_TEXT: {
 				// The program wants us to store the text.
 				// Therefore, use the text we have stored in the control.
-				data.getText.text = from->text;
-				data.getText.textLength = from->textLength;
+				*data.getText.string = from->text;
 				data.getText.freeText = false;
 			} break;
 
 			case OS_CALLBACK_INSERT_TEXT: {
-				if (from->textAllocated <= from->textLength + data.insertText.textLength) {
-					if (!from->freeText) {
-						// This means we don't own the text, so we don't know how to resize it.
-						Panic();
-					}
+				OSString *string = &from->text;
+				OSString *insert = data.insertText.string;
+				OSCaret *caret = data.insertText.caret;
 
-					from->text = (char *) realloc(from->text, from->textLength + data.insertText.textLength + 16);
-					from->textAllocated = from->textLength + data.insertText.textLength + 16;
+				if (string->allocated <= string->bytes + insert->bytes) {
+					string->buffer = (char *) realloc(string->buffer, (string->allocated = string->bytes + insert->bytes + 16));
 				}
 
-				char *text = from->text;
-				for (uintptr_t i = 0; i < data.insertText.index; i++) {
-					text = utf8_advance(text);
-				}
+				char *text = string->buffer;
+				text += caret->byte;
 
-				memmove(text + data.insertText.textLength, text, from->textLength - (text - from->text));
-				OSCopyMemory(text, data.insertText.text, data.insertText.textLength);
-				from->textLength += data.insertText.textLength;
+				memmove(text + insert->bytes, text, string->bytes - (text - string->buffer));
+				OSCopyMemory(text, insert->buffer, insert->bytes);
+
+				string->bytes += insert->bytes;
+				string->characters += insert->characters;
 			} break;
 
 			case OS_CALLBACK_REMOVE_TEXT: {
-				char *text = from->text;
-				for (uintptr_t i = 0; i < data.removeText.index; i++) {
-					text = utf8_advance(text);
-				}
-
-				char *text2 = text;
-				for (uintptr_t i = 0; i < data.removeText.characterCount; i++) {
-					text2 = utf8_advance(text2);
-				}
+				char *text = from->text.buffer + data.removeText.caretStart->byte;
+				char *text2 = from->text.buffer + data.removeText.caretEnd->byte;
 
 				size_t bytes = text2 - text;
-				memmove(text, text2, from->textLength - (text2 - from->text));
-				from->textLength -= bytes;
+				size_t characters = data.removeText.caretEnd->character - data.removeText.caretStart->character;
+
+				memmove(text, text2, from->text.bytes - (text2 - from->text.buffer));
+
+				from->text.bytes -= bytes;
+				from->text.characters -= characters;
 			} break;
 
 			default: {
@@ -87,7 +81,9 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 	styleX = (imageWidth + 1) * styleX + control->image.left;
 
 	OSCallbackData textEvent = {};
+	OSString controlText;
 	textEvent.type = OS_CALLBACK_GET_TEXT;
+	textEvent.getText.string = &controlText;
 	SendCallback(control, control->getText, textEvent);
 
 	if (control->imageType == OS_CONTROL_IMAGE_FILL) {
@@ -106,11 +102,11 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 		}
 
 		DrawString(window->surface, control->textBounds, 
-				textEvent.getText.text, textEvent.getText.textLength,
+				&controlText,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
-				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret : -1, 
-				control->caret2, control->caretBlink);
+				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret.character : -1, 
+				control->caret2.character, control->caretBlink);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
@@ -121,13 +117,13 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 				OS_DRAW_MODE_REPEAT_FIRST);
 		OSDrawString(window->surface, 
 				control->textBounds, 
-				textEvent.getText.text, textEvent.getText.textLength,
+				&controlText,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	} else if (control->imageType == OS_CONTROL_IMAGE_NONE) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawString(window->surface, control->textBounds, 
-				textEvent.getText.text, textEvent.getText.textLength,
+				&controlText,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	}
@@ -142,35 +138,34 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 				OS_DRAW_MODE_REPEAT_FIRST);
 	}
 
-
 	if (textEvent.getText.freeText) {
-		OSHeapFree(textEvent.getText.text);
+		OSHeapFree(controlText.buffer);
 	}
 
 	window->dirty = true;
 }
 
-OSError OSSetControlText(OSControl *control, char *text, size_t textLength, bool clone) {
-	if (control->freeText) {
-		OSHeapFree(control->text);
+OSError OSSetControlText(OSControl *control, char *text, size_t textLength) {
+	if (control->text.buffer) {
+		OSHeapFree(control->text.buffer);
 	}
 
-	if (clone) {
-		char *temp = (char *) OSHeapAllocate(textLength, false);
-		if (!temp) return OS_ERROR_COULD_NOT_ALLOCATE_MEMORY;
-		OSCopyMemory(temp, text, textLength);
-		text = temp;
+	if (control->getText.callback) {
+		Panic();
 	}
 
-	control->freeText = clone;
-	control->text = text;
-	control->textLength = textLength;
-	control->textAllocated = textLength;
-	control->getText.callback = nullptr;
+	char *temp = (char *) OSHeapAllocate(textLength, false);
+	if (!temp) return OS_ERROR_COULD_NOT_ALLOCATE_MEMORY;
+	OSCopyMemory(temp, text, textLength);
+	text = temp;
 
-	DrawControl(control->parent, control);
+	OSString *string = &control->text;
+	string->buffer = text;
+	string->bytes = textLength;
+	string->allocated = textLength;
+	string->characters = utf8_length(text, textLength);
 
-	return OS_SUCCESS;
+	return OSInvalidateControl(control);
 }
 
 OSError OSInvalidateControl(OSControl *control) {
@@ -205,13 +200,13 @@ void OSDisableControl(OSControl *control, bool disabled) {
 		if (control == control->parent->pressedControl) control->parent->pressedControl = nullptr;
 	}
 
-	DrawControl(control->parent, control);
+	OSInvalidateControl(control);
 }
 
 void OSCheckControl(OSControl *control, int checked) {
 	control->checked = checked;
 
-	DrawControl(control->parent, control);
+	OSInvalidateControl(control);
 }
 
 OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
@@ -234,7 +229,7 @@ OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
 	return OS_SUCCESS;
 }
 
-OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength, bool cloneText) {
+OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 	OSControl *control = (OSControl *) OSHeapAllocate(sizeof(OSControl), true);
 	if (!control) return nullptr;
 
@@ -303,7 +298,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength, bo
 		} break;
 	}
 
-	OSSetControlText(control, text, textLength, cloneText);
+	OSSetControlText(control, text, textLength);
 
 	return control;
 }
@@ -333,11 +328,13 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 static void FindCaret(OSControl *control, int positionX, int positionY, bool secondCaret) {
 	if (control->type == OS_CONTROL_TEXTBOX && !control->disabled) {
 		OSCallbackData textEvent = {};
+		OSString string;
+		textEvent.getText.string = &string;
 		textEvent.type = OS_CALLBACK_GET_TEXT;
 		SendCallback(control, control->getText, textEvent);
 
 		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
-				textEvent.getText.text, textEvent.getText.textLength, 
+				textEvent.getText.string, 
 				control->textAlign, secondCaret ? &control->caret2 : &control->caret);
 
 		if (!secondCaret) {
@@ -347,7 +344,7 @@ static void FindCaret(OSControl *control, int positionX, int positionY, bool sec
 		control->caretBlink = false;
 
 		if (textEvent.getText.freeText) {
-			OSHeapFree(textEvent.getText.text);
+			OSHeapFree(string.buffer);
 		}
 	}
 }
@@ -390,17 +387,21 @@ void RemoveSelectedText(OSControl *control) {
 	OSCallbackData callback = {};
 	callback.type = OS_CALLBACK_REMOVE_TEXT;
 
-	if (control->caret < control->caret2) {
-		callback.removeText.index = control->caret;
-		callback.removeText.characterCount = control->caret2 - control->caret;
-		control->caret2 = control->caret;
+	if (control->caret.byte < control->caret2.byte) {
+		callback.removeText.caretStart = &control->caret;
+		callback.removeText.caretEnd = &control->caret2;
 	} else {
-		callback.removeText.index = control->caret2;
-		callback.removeText.characterCount = control->caret - control->caret2;
-		control->caret = control->caret2;
+		callback.removeText.caretStart = &control->caret2;
+		callback.removeText.caretEnd = &control->caret;
 	}
 
 	SendCallback(control, control->removeText, callback);
+
+	if (control->caret.byte < control->caret2.byte) {
+		control->caret2 = control->caret;
+	} else {
+		control->caret = control->caret2;
+	}
 }
 
 void ProcessTextboxInput(OSMessage *message, OSControl *control) {
@@ -461,25 +462,36 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 			case OS_SCANCODE_SPACE:		ic = ' ';  isc = ' '; break;
 
 			case OS_SCANCODE_BACKSPACE: {
-				if (control->caret == control->caret2 && control->caret) {
+				if (control->caret.byte == control->caret2.byte && control->caret.byte) {
+					control->caret2.character--;
+					control->caret2.byte = utf8_retreat(control->text.buffer + control->caret2.byte) - control->text.buffer;
+
 					OSCallbackData callback = {};
 					callback.type = OS_CALLBACK_REMOVE_TEXT;
-					callback.removeText.index = control->caret - 1;
-					callback.removeText.characterCount = 1;
-					control->caret2 = --control->caret;
+					callback.removeText.caretStart = &control->caret2;
+					callback.removeText.caretEnd = &control->caret;
+
 					SendCallback(control, control->removeText, callback);
+
+					control->caret = control->caret2;
 				} else {
 					RemoveSelectedText(control);
 				}
 			} break;
 
 			case OS_SCANCODE_DELETE: {
-				if (control->caret == control->caret2 && control->caret != control->textLength /*TODO Should be character count*/) {
+				if (control->caret.byte == control->caret2.byte && control->caret.byte != control->text.bytes) {
+					control->caret2.character++;
+					control->caret2.byte = utf8_advance(control->text.buffer + control->caret2.byte) - control->text.buffer;
+
 					OSCallbackData callback = {};
 					callback.type = OS_CALLBACK_REMOVE_TEXT;
-					callback.removeText.index = control->caret;
-					callback.removeText.characterCount = 1;
+					callback.removeText.caretStart = &control->caret;
+					callback.removeText.caretEnd = &control->caret2;
+
 					SendCallback(control, control->removeText, callback);
+
+					control->caret2 = control->caret;
 				} else {
 					RemoveSelectedText(control);
 				}
@@ -487,33 +499,61 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 
 			case OS_SCANCODE_LEFT_ARROW: {
 				if (message->keyboard.shift) {
-					if (control->caret2) control->caret2--;
+					if (control->caret2.byte) {
+						control->caret2.character--;
+						control->caret2.byte = utf8_retreat(control->text.buffer + control->caret2.byte) - control->text.buffer;
+					}
 				} else {
-					bool move = control->caret2 == control->caret;
-					if (control->caret2 < control->caret) control->caret = control->caret2;
-					if (control->caret) control->caret2 = (control->caret -= move ? 1 : 0);
+					bool move = control->caret2.byte == control->caret.byte;
+					if (control->caret2.byte < control->caret.byte) control->caret = control->caret2;
+					else control->caret2 = control->caret;
+
+					if (move && control->caret.byte) {
+						control->caret2.character--;
+						control->caret2.byte = utf8_retreat(control->text.buffer + control->caret2.byte) - control->text.buffer;
+						control->caret = control->caret2;
+					}
 				}
 			} break;
 
 			case OS_SCANCODE_RIGHT_ARROW: {
 				if (message->keyboard.shift) {
-					if (control->caret2 != control->textLength /*TODO Should be character count*/) control->caret2++;
+					if (control->caret2.byte != control->text.bytes) {
+						control->caret2.character++;
+						control->caret2.byte = utf8_advance(control->text.buffer + control->caret2.byte) - control->text.buffer;
+					}
 				} else {
-					bool move = control->caret2 == control->caret;
-					if (control->caret2 > control->caret) control->caret = control->caret2;
-					if (control->caret != control->textLength /*TODO Should be character count*/) control->caret2 = (control->caret += move ? 1 : 0);
+					bool move = control->caret2.byte == control->caret.byte;
+					if (control->caret2.byte > control->caret.byte) control->caret = control->caret2;
+					else control->caret2 = control->caret;
+
+					if (move && control->caret.byte != control->text.bytes) {
+						control->caret2.character++;
+						control->caret2.byte = utf8_advance(control->text.buffer + control->caret2.byte) - control->text.buffer;
+						control->caret = control->caret2;
+					}
 				}
 			} break;
 
 			case OS_SCANCODE_HOME: {
-				control->caret2 = 0;
+				control->caret2.byte = 0;
+				control->caret2.character = 0;
 				if (!message->keyboard.shift) control->caret = control->caret2;
 			} break;
 
 			case OS_SCANCODE_END: {
-				control->caret2 = control->textLength /**TODO Should be character count*/;
+				control->caret2.byte = control->text.bytes;
+				control->caret2.character = control->text.characters;
 				if (!message->keyboard.shift) control->caret = control->caret2;
 			} break;
+		}
+
+		if (message->keyboard.scancode == OS_SCANCODE_A && message->keyboard.ctrl && !message->keyboard.alt) {
+			control->caret.byte = 0;
+			control->caret.character = 0;
+
+			control->caret2.byte = control->text.bytes;
+			control->caret2.character = control->text.characters;
 		}
 
 		if (ic != -1 && !message->keyboard.alt && !message->keyboard.ctrl) {
@@ -524,18 +564,23 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 				// TODO UTF-8
 				data[0] = message->keyboard.shift ? isc : ic;
 
+				OSString insert = {};
+				insert.buffer = data;
+				insert.bytes = 1;
+				insert.characters = 1;
+
 				// Insert the pressed character.
 				OSCallbackData callback = {};
 				callback.type = OS_CALLBACK_INSERT_TEXT;
-				callback.insertText.text = data;
-				callback.insertText.textLength = 1;
-				callback.insertText.index = control->caret;
+				callback.insertText.string = &insert;
+				callback.insertText.caret = &control->caret;
 				SendCallback(control, control->insertText, callback);
 			}
 
 			{
 				// Update the caret and redraw the control.
-				control->caret++;
+				control->caret.character++;
+				control->caret.byte = utf8_advance(control->text.buffer + control->caret.byte) - control->text.buffer;
 				control->caret2 = control->caret;
 			}
 		}
