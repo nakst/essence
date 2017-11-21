@@ -561,12 +561,11 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 
 			{
 				char data[4];
-				// TODO UTF-8
-				data[0] = message->keyboard.shift ? isc : ic;
+				int bytes = utf8_encode(message->keyboard.shift ? isc : ic, data);
 
 				OSString insert = {};
 				insert.buffer = data;
-				insert.bytes = 1;
+				insert.bytes = bytes;
 				insert.characters = 1;
 
 				// Insert the pressed character.

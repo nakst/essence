@@ -220,31 +220,34 @@ void CF(FormatStringCallback)(int character, void *data) {
 		return;
 	}
 
-	// TODO UTF-8
-	if (fsi->bytesRemaining == 0) return;
-	else {
-		fsi->buffer[0] = (char) character;
-		fsi->buffer++;
-		fsi->bytesRemaining--;
+	{
+		char data[4];
+		size_t bytes = utf8_encode(character, data);
+
+		if (fsi->bytesRemaining < bytes) return;
+		else {
+			utf8_encode(character, fsi->buffer);
+			fsi->buffer += bytes;
+			fsi->bytesRemaining -= bytes;
+		}
 	}
 }
 
 #ifndef KERNEL
 static OSHandle printMutex;
 
-static char printBuffer[32768];
+static char printBuffer[4096];
 static uintptr_t printBufferPosition = 0;
 
 void CF(PrintCallback)(int character, void *data) {
-	// TODO UTF-8
 	(void) data;
 
-	if (printBufferPosition == 32768) {
+	if (printBufferPosition >= 4090) {
 		OSSyscall(OS_SYSCALL_PRINT, (uintptr_t) printBuffer, printBufferPosition, 0, 0);
 		printBufferPosition = 0;
 	}
 
-	printBuffer[printBufferPosition++] = character;
+	printBufferPosition += utf8_encode(character, printBuffer + printBufferPosition); 
 }
 
 void CF(Print)(const char *format, ...) {

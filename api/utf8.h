@@ -55,6 +55,63 @@ int utf8_value(char *character) {
 	return value;
 }
 
+int utf8_encode(int value, char *buffer) {
+	if (value < (1 << 7)) {
+		if (buffer) {
+			buffer[0] = value & 0x7F;
+		}
+
+		return 1;
+	} else if (value < (1 << 11)) {
+		if (buffer) {
+			buffer[0] = 0xC0 | ((value >> 6) & 0x1F);
+			buffer[1] = 0x80 | (value & 0x3F);
+		}
+
+		return 2;
+	} else if (value < (1 << 16)) {
+		if (buffer) {
+			buffer[0] = 0xE0 | ((value >> 12) & 0xF);
+			buffer[1] = 0x80 | ((value >> 6) & 0x3F);
+			buffer[2] = 0x80 | (value & 0x3F);
+		}
+
+		return 3;
+	} else if (value < (1 << 21)) {
+		if (buffer) {
+			buffer[0] = 0xF0 | ((value >> 18) & 0x7);
+			buffer[1] = 0x80 | ((value >> 12) & 0x3F);
+			buffer[2] = 0x80 | ((value >> 6) & 0x3F);
+			buffer[3] = 0x80 | (value & 0x3F);
+		}
+
+		return 4;
+	} else if (value < (1 << 26)) {
+		if (buffer) {
+			buffer[0] = 0xF0 | ((value >> 24) & 0x3);
+			buffer[1] = 0x80 | ((value >> 18) & 0x3F);
+			buffer[2] = 0x80 | ((value >> 12) & 0x3F);
+			buffer[3] = 0x80 | ((value >> 6) & 0x3F);
+			buffer[4] = 0x80 | (value & 0x3F);
+		}
+
+		return 5;
+	} else if (value < (1 << 31)) {
+		if (buffer) {
+			buffer[0] = 0xF0 | ((value >> 30) & 0x1);
+			buffer[1] = 0x80 | ((value >> 24) & 0x3F);
+			buffer[2] = 0x80 | ((value >> 18) & 0x3F);
+			buffer[3] = 0x80 | ((value >> 12) & 0x3F);
+			buffer[4] = 0x80 | ((value >> 6) & 0x3F);
+			buffer[5] = 0x80 | (value & 0x3F);
+		}
+
+		return 6;
+	}
+
+	return 0; // Cannot encode character
+}
+
 char *utf8_advance(char *string) {
 	int length;
 	UTF8_LENGTH_CHAR(string, length);
