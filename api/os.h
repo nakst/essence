@@ -420,7 +420,10 @@ struct OSControl {
 	int fillWidth;
 	unsigned textAlign;
 	bool canHaveFocus;
-	bool caretBlink;
+	int caretBlink;
+
+	// Misc:
+	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
 
 	// State:
 
@@ -483,6 +486,7 @@ struct OSMessage {
 		struct {
 			int positionX;
 			int positionY;
+			unsigned clickChainCount;
 		} mousePressed;
 
 		struct {

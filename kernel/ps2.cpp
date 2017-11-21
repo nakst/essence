@@ -1,3 +1,4 @@
+// TODO Double-clicking doesn't work in Qemu?
 // TODO Scrolling
 // TODO Register the devices
 

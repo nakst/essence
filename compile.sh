@@ -1,6 +1,9 @@
 ColorBlue='\033[0;36m'
 ColorNormal='\033[0m'
 
+# Optimise="-O3"
+# OptimiseKernel="-O3 -DDEBUG_BUILD"
+
 Optimise=""
 OptimiseKernel="-DDEBUG_BUILD"
 
@@ -34,6 +37,5 @@ cp bin/os/calculator bin/os/calculator_symbols
 echo "-> Removing temporary files..."
 x86_64-elf-strip --strip-all bin/os/kernel
 x86_64-elf-strip --strip-all bin/os/executive
-x86_64-elf-strip --strip-all bin/os/test
 x86_64-elf-strip --strip-all bin/os/calculator
 rm bin/os/*.o

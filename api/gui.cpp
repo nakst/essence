@@ -1,10 +1,7 @@
 // TODO Textboxes
-// 	- Selections
-// 		- Drag and scroll
-// 		- Double/triple click select
-//	- Control (shift) left/right/backspace/delete
 //	- Clipboard and undo
-//	- Scrolling
+//	- Scrolling (including drag selections)
+//	- Actually use the OS_CALLBACK_GET_TEXT callback for everything.
 
 #define BORDER_OFFSET_X (5)
 #define BORDER_OFFSET_Y (29)
@@ -106,7 +103,7 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
 				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret.character : -1, 
-				control->caret2.character, control->caretBlink);
+				control->caret2.character, control->caretBlink == 2);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
@@ -325,7 +322,102 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 	return window;
 }
 
-static void FindCaret(OSControl *control, int positionX, int positionY, bool secondCaret) {
+void RemoveSelectedText(OSControl *control) {
+	OSCallbackData callback = {};
+	callback.type = OS_CALLBACK_REMOVE_TEXT;
+
+	if (control->caret.byte < control->caret2.byte) {
+		callback.removeText.caretStart = &control->caret;
+		callback.removeText.caretEnd = &control->caret2;
+	} else {
+		callback.removeText.caretStart = &control->caret2;
+		callback.removeText.caretEnd = &control->caret;
+	}
+
+	SendCallback(control, control->removeText, callback);
+
+	if (control->caret.byte < control->caret2.byte) {
+		control->caret2 = control->caret;
+	} else {
+		control->caret = control->caret2;
+	}
+}
+
+enum CharacterType {
+	CHARACTER_INVALID,
+	CHARACTER_IDENTIFIER, // A-Z, a-z, 0-9, _, >= 0x7F
+	CHARACTER_WHITESPACE, // space, tab, newline
+	CHARACTER_OTHER,
+};
+
+CharacterType GetCharacterType(int character) {
+	if ((character >= '0' && character <= '9') 
+			|| (character >= 'a' && character <= 'z')
+			|| (character >= 'A' && character <= 'Z')
+			|| (character == '_')
+			|| (character >= 0x80)) {
+		return CHARACTER_IDENTIFIER;
+	}
+
+	if (character == '\n' || character == '\t' || character == ' ') {
+		return CHARACTER_WHITESPACE;
+	}
+
+	return CHARACTER_OTHER;
+}
+
+void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool strongWhitespace = false) {
+	CharacterType type = CHARACTER_INVALID;
+
+	if (word && right) goto checkCharacterType;
+
+	while (true) {
+
+		if (!right) {
+			if (caret->character) {
+				caret->character--;
+				caret->byte = utf8_retreat(string->buffer + caret->byte) - string->buffer;
+			} else {
+				return; // We cannot move any further left.
+			}
+		} else {
+			if (caret->character != string->characters) {
+				caret->character++;
+				caret->byte = utf8_advance(string->buffer + caret->byte) - string->buffer;
+			} else {
+				return; // We cannot move any further right.
+			}
+		}
+
+		if (!word) {
+			return;
+		}
+
+		checkCharacterType:;
+		CharacterType newType = GetCharacterType(utf8_value(string->buffer + caret->byte));
+
+		if (type == CHARACTER_INVALID) {
+			if (newType != CHARACTER_WHITESPACE || strongWhitespace) {
+				type = newType;
+			}
+		} else {
+			if (newType != type) {
+				if (!right) {
+					// We've gone too far.
+					MoveCaret(string, caret, true, false);
+				}
+
+				break;
+			}
+		}
+	}
+}
+
+static void FindCaret(OSControl *control, int positionX, int positionY, bool secondCaret, unsigned clickChainCount) {
+	if (!clickChainCount) {
+		Panic();
+	}
+
 	if (control->type == OS_CONTROL_TEXTBOX && !control->disabled) {
 		OSCallbackData textEvent = {};
 		OSString string;
@@ -333,21 +425,45 @@ static void FindCaret(OSControl *control, int positionX, int positionY, bool sec
 		textEvent.type = OS_CALLBACK_GET_TEXT;
 		SendCallback(control, control->getText, textEvent);
 
-		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
-				textEvent.getText.string, 
-				control->textAlign, secondCaret ? &control->caret2 : &control->caret);
+		if (clickChainCount >= 3) {
+			control->caret.byte = 0;
+			control->caret.character = 0;
+			control->caret2.byte = string.bytes;
+			control->caret2.character = string.characters;
+		} else {
+			OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), &string, control->textAlign, &control->caret2);
 
-		if (!secondCaret) {
-			control->caret2 = control->caret;
+			if (!secondCaret) {
+				control->caret = control->caret2;
+
+				if (clickChainCount == 2) {
+					MoveCaret(&string, &control->caret, false, true, true);
+					MoveCaret(&string, &control->caret2, true, true, true);
+					control->wordSelectionAnchor  = control->caret;
+					control->wordSelectionAnchor2 = control->caret2;
+				}
+			} else {
+				if (clickChainCount == 2) {
+					if (control->caret2.byte < control->caret.byte) {
+						MoveCaret(&string, &control->caret2, false, true);
+						control->caret = control->wordSelectionAnchor2;
+					} else {
+						MoveCaret(&string, &control->caret2, true, true);
+						control->caret = control->wordSelectionAnchor;
+					}
+				}
+			}
 		}
 
-		control->caretBlink = false;
+		control->caretBlink = 0;
 
 		if (textEvent.getText.freeText) {
 			OSHeapFree(string.buffer);
 		}
 	}
 }
+
+static unsigned lastClickChainCount;
 
 static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	OSControl *previousHoverControl = window->hoverControl;
@@ -377,39 +493,19 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 		OSSetCursorStyle(window->handle, OS_CURSOR_NORMAL);
 	}
 
+	OSPrint("moved\n");
 	if (window->pressedControl) {
-		FindCaret(window->pressedControl, x, y, true);
+		FindCaret(window->pressedControl, x, y, true, lastClickChainCount);
 		DrawControl(window, window->pressedControl);
 	}
 }
 
-void RemoveSelectedText(OSControl *control) {
-	OSCallbackData callback = {};
-	callback.type = OS_CALLBACK_REMOVE_TEXT;
-
-	if (control->caret.byte < control->caret2.byte) {
-		callback.removeText.caretStart = &control->caret;
-		callback.removeText.caretEnd = &control->caret2;
-	} else {
-		callback.removeText.caretStart = &control->caret2;
-		callback.removeText.caretEnd = &control->caret;
-	}
-
-	SendCallback(control, control->removeText, callback);
-
-	if (control->caret.byte < control->caret2.byte) {
-		control->caret2 = control->caret;
-	} else {
-		control->caret = control->caret2;
-	}
-}
-
-void ProcessTextboxInput(OSMessage *message, OSControl *control) {
+static void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 	int ic = -1,
 	    isc = -1;
 
 	if (control && !control->disabled && control->type == OS_CONTROL_TEXTBOX) {
-		control->caretBlink = false;
+		control->caretBlink = 0;
 
 		switch (message->keyboard.scancode) {
 			case OS_SCANCODE_A: ic = 'a'; isc = 'A'; break;
@@ -463,8 +559,7 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 
 			case OS_SCANCODE_BACKSPACE: {
 				if (control->caret.byte == control->caret2.byte && control->caret.byte) {
-					control->caret2.character--;
-					control->caret2.byte = utf8_retreat(control->text.buffer + control->caret2.byte) - control->text.buffer;
+					MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
 
 					OSCallbackData callback = {};
 					callback.type = OS_CALLBACK_REMOVE_TEXT;
@@ -481,8 +576,7 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 
 			case OS_SCANCODE_DELETE: {
 				if (control->caret.byte == control->caret2.byte && control->caret.byte != control->text.bytes) {
-					control->caret2.character++;
-					control->caret2.byte = utf8_advance(control->text.buffer + control->caret2.byte) - control->text.buffer;
+					MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
 
 					OSCallbackData callback = {};
 					callback.type = OS_CALLBACK_REMOVE_TEXT;
@@ -499,39 +593,33 @@ void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 
 			case OS_SCANCODE_LEFT_ARROW: {
 				if (message->keyboard.shift) {
-					if (control->caret2.byte) {
-						control->caret2.character--;
-						control->caret2.byte = utf8_retreat(control->text.buffer + control->caret2.byte) - control->text.buffer;
-					}
+					MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
 				} else {
 					bool move = control->caret2.byte == control->caret.byte;
 					if (control->caret2.byte < control->caret.byte) control->caret = control->caret2;
 					else control->caret2 = control->caret;
 
-					if (move && control->caret.byte) {
-						control->caret2.character--;
-						control->caret2.byte = utf8_retreat(control->text.buffer + control->caret2.byte) - control->text.buffer;
-						control->caret = control->caret2;
+					if (move) {
+						MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
 					}
+
+					control->caret = control->caret2;
 				}
 			} break;
 
 			case OS_SCANCODE_RIGHT_ARROW: {
 				if (message->keyboard.shift) {
-					if (control->caret2.byte != control->text.bytes) {
-						control->caret2.character++;
-						control->caret2.byte = utf8_advance(control->text.buffer + control->caret2.byte) - control->text.buffer;
-					}
+					MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
 				} else {
 					bool move = control->caret2.byte == control->caret.byte;
 					if (control->caret2.byte > control->caret.byte) control->caret = control->caret2;
 					else control->caret2 = control->caret;
 
-					if (move && control->caret.byte != control->text.bytes) {
-						control->caret2.character++;
-						control->caret2.byte = utf8_advance(control->text.buffer + control->caret2.byte) - control->text.buffer;
-						control->caret = control->caret2;
+					if (move) {
+						MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
 					}
+
+					control->caret = control->caret2;
 				}
 			} break;
 
@@ -607,7 +695,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 				if (control->canHaveFocus) {
 					window->focusedControl = control; // TODO Lose when the window is deactivated.
-					FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false);
+					FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, (lastClickChainCount = message->mousePressed.clickChainCount));
 				}
 
 				window->pressedControl = control;
@@ -650,7 +738,12 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 		case OS_MESSAGE_WINDOW_BLINK_TIMER: {
 			if (window->focusedControl) {
-				window->focusedControl->caretBlink = !window->focusedControl->caretBlink;
+				window->focusedControl->caretBlink++;
+
+				if (window->focusedControl->caretBlink == 3) {
+					window->focusedControl->caretBlink = 1;
+				}
+
 				DrawControl(window, window->focusedControl);
 			}
 		} break;

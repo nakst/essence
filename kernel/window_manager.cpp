@@ -45,6 +45,10 @@ struct WindowManager {
 
 	unsigned lastButtons;
 	bool shift, alt, ctrl;
+
+	uint64_t clickChainStartMs;
+	unsigned clickChainCount;
+	int clickChainX, clickChainY;
 };
 
 WindowManager windowManager;
@@ -94,6 +98,8 @@ void WindowManager::PressKey(unsigned scancode) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
+	// TODO Right alt/ctrl/shift.
+	// TODO Caps/num lock.
 	if (scancode == OS_SCANCODE_LEFT_CTRL) ctrl = true;
 	if (scancode == (OS_SCANCODE_LEFT_CTRL | SCANCODE_KEY_RELEASED)) ctrl = false;
 	if (scancode == OS_SCANCODE_LEFT_SHIFT) shift = true;
@@ -113,6 +119,12 @@ void WindowManager::PressKey(unsigned scancode) {
 		message.keyboard.scancode = scancode & ~SCANCODE_KEY_RELEASED;
 		window->owner->SendMessage(message);
 	}
+}
+
+int MeasureDistance(int x1, int y1, int x2, int y2) {
+	int dx = x2 - x1;
+	int dy = y2 - y1;
+	return dx * dx + dy * dy;
 }
 
 void WindowManager::ClickCursor(unsigned buttons) {
@@ -138,9 +150,25 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			// The cursor is not in a window.
 		}
 
+		if (buttons & LEFT_BUTTON) {
+#define CLICK_CHAIN_TIMEOUT (500)
+			if (clickChainStartMs + CLICK_CHAIN_TIMEOUT < scheduler.timeMs
+					|| MeasureDistance(cursorX, cursorY, clickChainX, clickChainY) >= 5) {
+				// Start a new click chain.
+				clickChainStartMs = scheduler.timeMs;
+				clickChainCount = 1;
+				clickChainX = cursorX;
+				clickChainY = cursorY;
+			} else {
+				clickChainStartMs = scheduler.timeMs;
+				clickChainCount++;
+			}
+		}
+
 		{
 			OSMessage message = {};
 			message.type = (buttons & LEFT_BUTTON) ? OS_MESSAGE_MOUSE_LEFT_PRESSED : OS_MESSAGE_MOUSE_LEFT_RELEASED;
+			Print("message.type = %d\n", message.type);
 
 			if (message.type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 				pressedWindow = window;
@@ -157,6 +185,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			if (window) {
 				message.mousePressed.positionX = cursorX - window->position.x;
 				message.mousePressed.positionY = cursorY - window->position.y;
+				message.mousePressed.clickChainCount = clickChainCount;
 
 				message.targetWindow = window->apiWindow;
 				window->keyboardFocus = true;
