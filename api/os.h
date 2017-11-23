@@ -570,7 +570,7 @@ extern "C" OSHandle OSOpenNamedSharedMemory(char *name, size_t nameLength);
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);
 
-extern "C" void *OSGetCreationArgument(OSHandle process);
+extern "C" void *OSGetCreationArgument(OSHandle object);
 
 extern "C" OSError OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer);
 extern "C" OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle);

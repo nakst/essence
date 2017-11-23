@@ -10,15 +10,17 @@
 struct Window {
 	void Update();
 	void SetCursorStyle(OSCursorStyle style);
+	void Destroy();
 
-	Surface surface;
+	Surface *surface;
 	OSPoint position;
 	size_t width, height;
 	uintptr_t z;
 	Process *owner;
 	OSWindow *apiWindow;
-	bool keyboardFocus;
 	OSCursorStyle cursorStyle;
+
+	volatile unsigned handles;
 };
 
 struct WindowManager {
@@ -29,10 +31,9 @@ struct WindowManager {
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
 	void PressKey(unsigned scancode);
 	void RefreshCursor(Window *window);
+	void Redraw(OSPoint position, int width, int height, uint16_t below);
 
-	Pool windowPool;
-
-	Window **windows;
+	Window **windows; // Sorted by z.
 	size_t windowsCount, windowsAllocated;
 
 	Window *focusedWindow, *pressedWindow;
@@ -134,10 +135,6 @@ void WindowManager::ClickCursor(unsigned buttons) {
 	unsigned delta = lastButtons ^ buttons;
 
 	if (delta & LEFT_BUTTON) {
-		for (uintptr_t i = 0; i < windowsCount; i++) {
-			windows[i]->keyboardFocus = false;
-		}
-
 		// Send a mouse pressed message to the window the cursor is over.
 		uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
 		Window *window;
@@ -186,9 +183,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 				message.mousePressed.positionX = cursorX - window->position.x;
 				message.mousePressed.positionY = cursorY - window->position.y;
 				message.mousePressed.clickChainCount = clickChainCount;
-
 				message.targetWindow = window->apiWindow;
-				window->keyboardFocus = true;
 
 				RefreshCursor(window);
 				window->owner->SendMessage(message);
@@ -284,7 +279,6 @@ void CaretBlink(WindowManager *windowManager) {
 void WindowManager::Initialise() {
 	mutex.Acquire();
 
-	windowPool.Initialise(sizeof(Window));
 	uiSheetSurface.Initialise(kernelProcess->vmm, 256, 256, false);
 
 	cursorX = graphics.resX / 2;
@@ -308,31 +302,119 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 
 	static int cx = 20, cy = 20;
 
-	Window *window = (Window *) windowPool.Add();
+	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
+	window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
 
-	if (!window->surface.Initialise(process->vmm, width, height, false)) {
-		windowPool.Remove(window);
+	if (!window->surface->Initialise(process->vmm, width, height, false)) {
+		OSHeapFree(window->surface, sizeof(Surface));
+		OSHeapFree(window, sizeof(Window));
 		return nullptr;
 	}
 
+	window->surface->handles++;
 	window->position = OSPoint(cx += 20, cy += 20);
 	window->width = width;
 	window->height = height;
-	window->z = windowsCount;
 	window->owner = process;
+	window->handles = 1;
 
+	window->z = windowsCount;
 	ArrayAdd(windows, window);
 
 	return window;
 }
 
+void Window::Destroy() {
+	{
+		windowManager.mutex.Acquire();
+		Defer(windowManager.mutex.Release());
+
+		if (windowManager.focusedWindow == this) windowManager.focusedWindow = nullptr;
+		if (windowManager.pressedWindow == this) windowManager.pressedWindow = nullptr;
+
+		{
+			graphics.frameBuffer.mutex.Acquire();
+			Defer(graphics.frameBuffer.mutex.Release());
+
+			uint16_t thisWindowDepth = z + 1;
+
+			for (uintptr_t y = 0; y < graphics.frameBuffer.resY; y++) {
+				for (uintptr_t x = 0; x < graphics.frameBuffer.resX; x++) {
+					uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
+
+					if (*depth > thisWindowDepth) {
+						*depth = *depth - 1;
+					} else if (*depth == thisWindowDepth) {
+						*depth = 0;
+					}
+				}
+			}
+		}
+
+		CopyMemory(windowManager.windows + z, windowManager.windows + z + 1, sizeof(Window *) * (windowManager.windowsCount - z - 1));
+		windowManager.windowsCount--;
+
+		for (uintptr_t index = z; index < windowManager.windowsCount; index++) {
+			windowManager.windows[index]->z--;
+		}
+
+		windowManager.Redraw(position, width, height, z);
+		CloseHandleToObject(surface, KERNEL_OBJECT_SURFACE);
+		OSHeapFree(this, sizeof(Window));
+	}
+
+	graphics.UpdateScreen();
+}
+
+void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t below) {
+	mutex.AssertLocked();
+
+	graphics.frameBuffer.FillRectangle({position.x, position.x + width, position.y, position.y + height}, OSColor(83, 114, 166));
+
+	for (uintptr_t index = 0; index < below; index++) {
+		Window *window = windows[index];
+
+		if (position.x > window->position.x + (int) window->width
+				|| position.x + width < window->position.x
+				|| position.y > window->position.y + (int) window->height
+				|| position.y + height < window->position.y) {
+			continue;
+		}
+
+		OSRectangle rectangle = {0, (int) window->width, 0, (int) window->height};
+
+		if (position.x > window->position.x) {
+			rectangle.left = position.x - window->position.x;
+		}
+
+		if (position.y > window->position.y) {
+			rectangle.top = position.y - window->position.y;
+		}
+
+		if (position.x + width < window->position.x + (int) window->width) {
+			rectangle.right = window->position.x + (int) window->width - position.x - width;
+		}
+
+		if (position.y + height < window->position.y + (int) window->height) {
+			rectangle.bottom = window->position.y + (int) window->height - position.y - height;
+		}
+
+		window->surface->InvalidateRectangle(rectangle);
+		graphics.frameBuffer.Copy(*window->surface, window->position, OSRectangle(0, window->width, 0, window->height), true, window->z + 1);
+
+		window->surface->mutex.Acquire();
+		window->surface->ClearModifiedRegion();
+		window->surface->mutex.Release();
+	}
+}
+
 void Window::Update() {
-	graphics.frameBuffer.Copy(surface, position, OSRectangle(0, width, 0, height), true, z + 1);
+	graphics.frameBuffer.Copy(*surface, position, OSRectangle(0, width, 0, height), true, z + 1);
 	graphics.UpdateScreen();
 
-	surface.mutex.Acquire();
-	surface.ClearModifiedRegion();
-	surface.mutex.Release();
+	surface->mutex.Acquire();
+	surface->ClearModifiedRegion();
+	surface->mutex.Release();
 }
 
 void Window::SetCursorStyle(OSCursorStyle style) {

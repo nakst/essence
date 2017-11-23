@@ -117,12 +117,27 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_GET_CREATION_ARGUMENT: {
-			KernelObjectType type = KERNEL_OBJECT_PROCESS;
-			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(0);
-			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
+			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_WINDOW);
+			void *object = currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!object) SYSCALL_RETURN(0);
+			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
-			uintptr_t creationArgument = (uintptr_t) process->creationArgument;
+			uintptr_t creationArgument;
+
+			switch (type) {
+				case KERNEL_OBJECT_PROCESS: {
+					creationArgument = (uintptr_t) ((Process *) object)->creationArgument;
+				} break;
+
+				case KERNEL_OBJECT_WINDOW: {
+					creationArgument = (uintptr_t) ((Window *) object)->apiWindow;
+				} break;
+
+				default: {
+					KernelPanic("DoSyscall - Invalid creation argument object type.\n");
+				} break;
+			}
+
 			SYSCALL_RETURN(creationArgument);
 		} break;
 
@@ -347,7 +362,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				osWindow->handle = currentProcess->handleTable.OpenHandle(_handle);
 
 				_handle.type = KERNEL_OBJECT_SURFACE;
-				_handle.object = &window->surface;
+				_handle.object = window->surface;
 				osWindow->surface = currentProcess->handleTable.OpenHandle(_handle);
 				
 				OSMessage message = {};

@@ -55,6 +55,26 @@ void CF(CopyMemory)(void *_destination, void *_source, size_t bytes) {
 	}
 }
 
+void CF(CopyMemoryReverse)(void *_destination, void *_source, size_t bytes) {
+	if (!bytes) {
+		return;
+	}
+
+	uint8_t *destination = (uint8_t *) _destination;
+	uint8_t *source = (uint8_t *) _source;
+
+	destination += bytes - 1;
+	source += bytes - 1;
+
+	while (bytes >= 1) {
+		((uint8_t *) destination)[0] = ((uint8_t *) source)[0];
+
+		source -= 1;
+		destination -= 1;
+		bytes -= 1;
+	}
+}
+
 void CF(ZeroMemory)(void *destination, size_t bytes) {
 	if (!bytes) {
 		return;

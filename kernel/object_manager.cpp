@@ -2,7 +2,8 @@
 
 #define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
 		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
-		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE | KERNEL_OBJECT_EVENT))
+		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE | KERNEL_OBJECT_EVENT \
+		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW))
 
 enum KernelObjectType {
 	KERNEL_OBJECT_PROCESS 	= 0x00000001,
@@ -132,6 +133,31 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 
 		case KERNEL_OBJECT_NODE: {
 			vfs.CloseNode((Node *) object, flags);
+		} break;
+
+		case KERNEL_OBJECT_SURFACE: {
+			Surface *surface = (Surface *) object;
+			surface->mutex.Acquire();
+			bool destroy = surface->handles == 1;
+			surface->handles--;
+			surface->mutex.Release();
+
+			if (destroy) {
+				surface->Destroy();
+			}
+		} break;
+
+		case KERNEL_OBJECT_WINDOW: {
+			Window *window = (Window *) object;
+			windowManager.mutex.Acquire();
+			bool destroy = window->handles == 1;
+			window->handles--;
+			windowManager.mutex.Release();
+
+			if (destroy) {
+				Print("destroying window...\n");
+				window->Destroy();
+			}
 		} break;
 
 		default: {
@@ -350,6 +376,8 @@ void HandleTable::Destroy() {
 							if (handle->type & CLOSABLE_OBJECT_TYPES) {
 								// KernelLog(LOG_VERBOSE, "Destroying handle to object %x of type %d...\n", handle->object, handle->type);
 								CloseHandleToObject(handle->object, handle->type);
+							} else {
+								KernelPanic("HandleTable::Destroy - Handle type %d cannot be closed.\n", handle->type);
 							}
 						}
 					}

@@ -51,6 +51,7 @@ extern "C" void ProgramEntry() {
 			OSPrint("Error: Could not load the font file.\n");
 		} else {
 			char *fontName = OS_GUI_FONT_REGULAR;
+			// TODO Reference counting of the shared memory doesn't seem to work properly?
 			OSHandle sharedMemory = OSCreateSharedMemory(fileSize, fontName, OSCStringLength(fontName));
 			OSCopyMemory(OSMapSharedMemory(sharedMemory, 0, fileSize), loadedFile, fileSize);
 			OSHeapFree(loadedFile);
@@ -61,9 +62,11 @@ extern "C" void ProgramEntry() {
 	{
 		// Start the calculator test program.
 
-		const char *path = "/os/calculator";
-		OSProcessInformation process;
-		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
+		for (int i = 0; i < 10; i++) {
+			const char *path = "/os/calculator";
+			OSProcessInformation process;
+			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
+		}
 	}
 #endif
 

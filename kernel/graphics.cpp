@@ -21,6 +21,7 @@ struct Surface {
 	bool Initialise(VMM *vmm /*the VMM to allocate the surface's memory from*/, 
 			size_t resX, size_t resY,
 			bool createDepthBuffer = false);
+	void Destroy();
 
 	// Copy the contents of the rectangular region sourceRegion from the source surface to this surface, 
 	// where destinationPoint corresponds to where the top-left corner of the sourceRegion will be copied.
@@ -49,6 +50,7 @@ struct Surface {
 	void ClearModifiedRegion();
 
 	// The memory used by the surface.
+	VMM *vmm;
 	uint8_t *memory;
 	bool memoryInKernelAddressSpace;
 
@@ -75,6 +77,8 @@ struct Surface {
 
 	// Prevent multiple threads modifing the surface at the same time.
 	Mutex mutex;
+
+	volatile unsigned handles;
 };
 
 struct Graphics {
@@ -261,9 +265,12 @@ void Graphics::Initialise() {
 	frameBuffer.Initialise(&kernelVMM, resX, resY, true /*Create depth buffer for window manager*/);
 }
 
-bool Surface::Initialise(VMM *vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {
+bool Surface::Initialise(VMM *_vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {
+	vmm = _vmm;
 	resX = _resX;
 	resY = _resY;
+
+	handles = 1;
 
 	memoryInKernelAddressSpace = vmm == &kernelVMM;
 
@@ -630,6 +637,11 @@ void Surface::FillRectangle(OSRectangle region, OSColor color) {
 
 		destinationPixel = scanlineStart + 4 * resX;
 	}
+}
+
+void Surface::Destroy() {
+	vmm->Free(memory);
+	OSHeapFree(this);
 }
 
 #endif

@@ -493,7 +493,6 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 		OSSetCursorStyle(window->handle, OS_CURSOR_NORMAL);
 	}
 
-	OSPrint("moved\n");
 	if (window->pressedControl) {
 		FindCaret(window->pressedControl, x, y, true, lastClickChainCount);
 		DrawControl(window, window->pressedControl);

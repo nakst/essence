@@ -62,21 +62,33 @@ void NumberButtonPressed(OSControl *generator, void *argument, OSCallbackData *d
 	OSSetControlText(textOutput, textOutputBuffer, length);
 }
 
+void ExitButtonPressed(OSControl *, void *, OSCallbackData *) {
+#if 1
+	OSTerminateProcess(OS_CURRENT_PROCESS);
+#endif
+}
+
 extern "C" void ProgramEntry() {
+#if 0
 	RunTests();
+#endif
 
 	OSWindow *window = OSCreateWindow(200, 150);
-
+	OSPrint("window = %x\n", window);
+#if 1
 #if 1
 	OSControl *textbox = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Hello, world!", 13);
 	OSAddControl(window, textbox, 16, 16);
+	OSControl *exitButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Exit", 4);
+	OSAddControl(window, exitButton, 16, 16 + 80 + 8);
+	exitButton->action.callback = ExitButtonPressed;
 #else
-	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1, false);
+	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1);
 	textOutput->bounds.right = 200 - 32;
 	textOutput->textBounds.right = 200 - 32;
 	OSAddControl(window, textOutput, 16, 14);
 
-	OSControl *groupBox = OSCreateControl(OS_CONTROL_GROUP, nullptr, 0, false);
+	OSControl *groupBox = OSCreateControl(OS_CONTROL_GROUP, nullptr, 0);
 	groupBox->bounds.right = 200 - 24;
 	groupBox->bounds.bottom = 25;
 	OSAddControl(window, groupBox, 12, 10);
@@ -86,7 +98,7 @@ extern "C" void ProgramEntry() {
 		int x = ((i + 2) % 3) * 40 + 42;
 
 		char label = '0' + i;
-		OSControl *button = OSCreateControl(OS_CONTROL_BUTTON, &label, 1, true);
+		OSControl *button = OSCreateControl(OS_CONTROL_BUTTON, &label, 1);
 		button->bounds.right = 36;
 		button->textBounds.right = 36;
 		button->action.callback = NumberButtonPressed;
@@ -128,4 +140,5 @@ extern "C" void ProgramEntry() {
 			}
 		}
 	}
+#endif
 }
