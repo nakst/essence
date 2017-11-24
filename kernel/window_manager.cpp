@@ -371,7 +371,7 @@ void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t bel
 
 	graphics.frameBuffer.FillRectangle({position.x, position.x + width, position.y, position.y + height}, OSColor(83, 114, 166));
 
-	for (uintptr_t index = 0; index < below; index++) {
+	for (int index = below - 1; index >= 0; index--) {
 		Window *window = windows[index];
 
 		if (position.x > window->position.x + (int) window->width

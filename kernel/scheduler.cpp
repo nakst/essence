@@ -745,6 +745,8 @@ void KillThread(void *_thread) {
 		scheduler.allProcesses.Remove(&thread->process->allItem);
 		scheduler.lock.Release();
 
+		// TODO Destroy all the windows this process owns.
+
 		// There are no threads left in this process.
 		// We should destroy the handle table at this point.
 		// Otherwise, the process might never be freed

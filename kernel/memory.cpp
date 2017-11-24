@@ -1313,7 +1313,11 @@ SharedMemoryRegion *SharedMemoryManager::LookupSharedMemory(char *name, size_t n
 	for (uintptr_t i = 0; i < namedSharedMemoryRegionsCount; i++) {
 		if (namedSharedMemoryRegions[i].nameLength == nameLength 
 				&& !CompareBytes(namedSharedMemoryRegions[i].name, name, nameLength)) {
-			return namedSharedMemoryRegions[i].region;
+			SharedMemoryRegion *region = namedSharedMemoryRegions[i].region;
+			region->mutex.Acquire();
+			region->handles++;
+			region->mutex.Release();
+			return region;
 		}
 	}
 

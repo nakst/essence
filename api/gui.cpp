@@ -494,6 +494,7 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	}
 
 	if (window->pressedControl) {
+		if (!lastClickChainCount) return;
 		FindCaret(window->pressedControl, x, y, true, lastClickChainCount);
 		DrawControl(window, window->pressedControl);
 	}
