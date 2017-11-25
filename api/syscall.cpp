@@ -198,3 +198,7 @@ OSError OSRefreshNodeInformation(OSNodeInformation *information) {
 OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
 	return OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, (uintptr_t) window, (uintptr_t) style, 0, 0);
 }
+
+OSError OSMoveWindow(OSHandle window, OSPoint position) {
+	return OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, position.x, position.y, 0);
+}

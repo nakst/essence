@@ -665,11 +665,11 @@ void Scheduler::RemoveProcess(Process *process) {
 	// Free all the remaining messages in the message queue.
 	LinkedList &messageQueue = process->messageQueue;
 	LinkedItem *item = messageQueue.firstItem;
-	while (item != messageQueue.lastItem) {
+	while (item) {
 		Message *message = (Message *) item->thisItem;
+		item = item->nextItem;
 		if (!message) KernelPanic("Scheduler::RemoveProcess - Message was null.\n");
 		messagePool.Remove(message);
-		item = item->nextItem;
 	}
 
 	// Destroy the virtual memory manager.

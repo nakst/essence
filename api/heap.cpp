@@ -32,7 +32,7 @@ Mutex heapMutex;
 static OSHandle heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(heapMutex)
 #define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(heapMutex)
-#define OS_HEAP_PANIC(n) Panic()
+#define OS_HEAP_PANIC(n) { OSPrint("Heap panic, %d\n", n); Panic(); }
 #define OS_HEAP_ALLOCATE_CALL(x) OSAllocate(x)
 #define OS_HEAP_FREE_CALL(x) OSFree(x)
 #endif

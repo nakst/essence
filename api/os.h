@@ -225,6 +225,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_POLL_EVENT			(39)
 #define OS_SYSCALL_REFRESH_NODE_INFORMATION	(40)
 #define OS_SYSCALL_SET_CURSOR_STYLE		(41)
+#define OS_SYSCALL_MOVE_WINDOW			(42)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -377,6 +378,7 @@ enum OSControlType {
 	OS_CONTROL_STATIC,
 	OS_CONTROL_GROUP,
 	OS_CONTROL_TEXTBOX,
+	OS_CONTROL_TITLEBAR,
 };
 
 enum OSControlImageType {
@@ -417,10 +419,13 @@ struct OSControl {
 	OSRectangle imageBorder;
 	OSCursorStyle cursorStyle;
 	OSControlImageType imageType;
+	bool manualImage;
 	int fillWidth;
 	unsigned textAlign;
 	bool canHaveFocus;
 	int caretBlink;
+	bool textShadow;
+	int fontSize;
 
 	// Misc:
 	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
@@ -587,7 +592,7 @@ extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
 extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
-extern "C" OSWindow *OSCreateWindow(size_t width, size_t height, bool decorate);
+extern "C" OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, size_t height, bool decorate);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
 extern "C" OSControl *OSCreateControl(OSControlType type, char *text, size_t textLengthBytes);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);
@@ -597,6 +602,7 @@ extern "C" void OSCheckControl(OSControl *control, bool checked);
 extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLengthBytes);
 extern "C" OSError OSInvalidateControl(OSControl *control);
 extern "C" OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style);
+extern "C" OSError OSMoveWindow(OSHandle window, OSPoint position);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);

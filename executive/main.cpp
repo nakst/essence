@@ -75,7 +75,7 @@ extern "C" void ProgramEntry() {
 	{
 		// Start the calculator test program.
 
-		for (int i = 0; i < 10; i++) {
+		for (int i = 0; i < 1; i++) {
 			const char *path = "/os/calculator";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);

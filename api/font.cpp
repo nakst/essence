@@ -8,7 +8,7 @@ static bool fontRendererInitialised;
 
 struct FontCacheEntry {
 	uint8_t *data;
-	int character;
+	int character, size;
 	int width, height, xoff, yoff;
 };
 
@@ -62,12 +62,11 @@ static int MeasureStringWidth(char *string, size_t stringLength, float scale) {
 	return totalWidth;
 }
 
-static float GetGUIFontScale() {
+static float GetGUIFontScale(int size) {
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
 
-#define FONT_SIZE (16.0f)
-	float scale = stbtt_ScaleForPixelHeight(&guiRegularFont, FONT_SIZE);
+	float scale = stbtt_ScaleForPixelHeight(&guiRegularFont, size);
 	return scale;
 }
 
@@ -99,13 +98,14 @@ static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle 
 static OSError DrawString(OSHandle surface, OSRectangle region, 
 		OSString *string,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
-		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink) {
+		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink,
+		int size) {
 	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
 
-	float scale = GetGUIFontScale();
+	float scale = GetGUIFontScale(size);
 
 	int ascent, descent, lineGap;
 	stbtt_GetFontVMetrics(&guiRegularFont, &ascent, &descent, &lineGap);
@@ -206,7 +206,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		int width, height, xoff, yoff;
 
 		for (uintptr_t i = 0; i < FONT_CACHE_SIZE; i++) {
-			if (fontCache[i].character == character) {
+			if (fontCache[i].character == character && fontCache[i].size == size) {
 				FontCacheEntry *entry = fontCache + i;
 				output = entry->data;
 				width = entry->width;
@@ -269,6 +269,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				entry->height = height;
 				entry->xoff = xoff;
 				entry->yoff = yoff;
+				entry->size = size;
 				fontCachePosition = (fontCachePosition + 1) % FONT_CACHE_SIZE;
 
 #if 0
@@ -398,12 +399,14 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;
 }
 
+#define FONT_SIZE (16)
+
 OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, 
 		OSString *string, unsigned alignment, OSCaret *caret) {
 	return DrawString(OS_INVALID_HANDLE, region, 
 			string,
 			alignment, 0, 0, 0,
-			coordinate, caret, -1, -1, false);
+			coordinate, caret, -1, -1, false, FONT_SIZE);
 }
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
@@ -412,5 +415,5 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 	return DrawString(surface, region, 
 			string,
 			alignment, color, backgroundColor, 0,
-			OSPoint(0, 0), nullptr, -1, -1, false);
+			OSPoint(0, 0), nullptr, -1, -1, false, FONT_SIZE);
 }

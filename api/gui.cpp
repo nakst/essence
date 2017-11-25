@@ -1,3 +1,5 @@
+// TODO Heap panic with textboxes, to investigate.
+
 // TODO Textboxes
 //	- Clipboard and undo
 //	- Scrolling (including drag selections)
@@ -72,6 +74,12 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 
 	bool isHoverControl = (control == window->hoverControl) || (control == window->focusedControl);
 	bool isPressedControl = (control == window->pressedControl) || (control == window->focusedControl);
+
+	if (control->manualImage) {
+		isHoverControl = true;
+		isPressedControl = false;
+	}
+
 	intptr_t styleX = (control->disabled ? 3
 			: ((isPressedControl && isHoverControl) ? 2 
 			: ((isPressedControl || isHoverControl) ? 0 : 1)));
@@ -98,12 +106,22 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 					OS_DRAW_MODE_REPEAT_FIRST);
 		}
 
+		if (control->textShadow) {
+#define SHADOW_OFFSET (1)
+			DrawString(window->surface, OSRectangle(control->textBounds.left + SHADOW_OFFSET, control->textBounds.right + SHADOW_OFFSET,
+								control->textBounds.top + SHADOW_OFFSET, control->textBounds.bottom + SHADOW_OFFSET), 
+					&controlText,
+					control->textAlign,
+					control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
+					OSPoint(0, 0), nullptr, -1, 0, false, control->fontSize);
+		}
+		
 		DrawString(window->surface, control->textBounds, 
 				&controlText,
 				control->textAlign,
-				control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
+				control->disabled ? 0x808080 : (control->textShadow ? 0xFFFFFF : 0x000000), -1, 0xFFAFC6EA,
 				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret.character : -1, 
-				control->caret2.character, control->caretBlink == 2);
+				control->caret2.character, control->caretBlink == 2, control->fontSize);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
 		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
@@ -233,6 +251,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 	control->type = type;
 	control->textAlign = OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER;
 	control->cursorStyle = OS_CURSOR_NORMAL;
+	control->fontSize = FONT_SIZE;
 
 	switch (type) {
 		case OS_CONTROL_BUTTON: {
@@ -253,7 +272,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 		} break;
 
 		case OS_CONTROL_CHECKBOX: {
-			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale());
+			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
 			control->bounds.bottom = 13;
 			control->textBounds = control->bounds;
 			control->textBounds.left = 13 + 4;
@@ -264,7 +283,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 		} break;
 
 		case OS_CONTROL_RADIOBOX: {
-			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale());
+			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
 			control->bounds.bottom = 14;
 			control->textBounds = control->bounds;
 			control->textBounds.left = 13 + 4;
@@ -275,7 +294,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 		} break;
 
 		case OS_CONTROL_STATIC: {
-			control->bounds.right = 4 + MeasureStringWidth(text, textLength, GetGUIFontScale());
+			control->bounds.right = 4 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
 			control->bounds.bottom = 14;
 			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_NONE;
@@ -293,6 +312,16 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
 			control->cursorStyle = OS_CURSOR_TEXT;
 		} break;
+
+		case OS_CONTROL_TITLEBAR: {
+			control->bounds.bottom = 28;
+			control->textBounds = control->bounds;
+			control->imageType = OS_CONTROL_IMAGE_FILL;
+			control->image = OSRectangle(97, 97 + 7, 43, 43 + 28);
+			control->manualImage = true;
+			control->textShadow = true;
+			control->fontSize = 20;
+		} break;
 	}
 
 	OSSetControlText(control, text, textLength);
@@ -300,7 +329,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 	return control;
 }
 
-OSWindow *OSCreateWindow(size_t width, size_t height, bool decorate) {
+OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, size_t height, bool decorate) {
 	OSWindow *window = (OSWindow *) OSHeapAllocate(sizeof(OSWindow), true);
 
 	// Add the size of the border.
@@ -318,6 +347,11 @@ OSWindow *OSCreateWindow(size_t width, size_t height, bool decorate) {
 		// Draw the window background and border.
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
 				OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
+
+		OSControl *titlebar = OSCreateControl(OS_CONTROL_TITLEBAR, title, titleLengthBytes);
+		titlebar->bounds.right = width - 2;
+		titlebar->textBounds = titlebar->bounds;
+		OSAddControl(window, titlebar, 1 - BORDER_OFFSET_X, 1 - BORDER_OFFSET_Y);
 	}
 
 	OSUpdateWindow(window);
@@ -535,7 +569,7 @@ static void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 			case OS_SCANCODE_V: ic = 'v'; isc = 'V'; break;
 			case OS_SCANCODE_W: ic = 'w'; isc = 'W'; break;
 			case OS_SCANCODE_X: ic = 'x'; isc = 'X'; break;
-			case OS_SCANCODE_Y: ic = 'u'; isc = 'Y'; break;
+			case OS_SCANCODE_Y: ic = 'y'; isc = 'Y'; break;
 			case OS_SCANCODE_Z: ic = 'z'; isc = 'Z'; break;
 			case OS_SCANCODE_0: ic = '0'; isc = ')'; break;
 			case OS_SCANCODE_1: ic = '1'; isc = '!'; break;

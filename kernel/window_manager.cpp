@@ -11,7 +11,9 @@ struct Window {
 	void Update();
 	void SetCursorStyle(OSCursorStyle style);
 	void Destroy();
+	void Move(OSPoint newPosition);
 
+	Mutex mutex;
 	Surface *surface;
 	OSPoint position;
 	size_t width, height;
@@ -31,7 +33,7 @@ struct WindowManager {
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
 	void PressKey(unsigned scancode);
 	void RefreshCursor(Window *window);
-	void Redraw(OSPoint position, int width, int height, uint16_t below);
+	void Redraw(OSPoint position, int width, int height, uint16_t below, Window *except = nullptr);
 
 	Window **windows; // Sorted by z.
 	size_t windowsCount, windowsAllocated;
@@ -324,6 +326,39 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	return window;
 }
 
+void Window::Move(OSPoint newPosition) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	{
+		windowManager.mutex.Acquire();
+		Defer(windowManager.mutex.Release());
+
+		{
+			graphics.frameBuffer.mutex.Acquire();
+			Defer(graphics.frameBuffer.mutex.Release());
+
+			uint16_t thisWindowDepth = z + 1;
+
+			for (uintptr_t y = position.y; y < position.y + height; y++) {
+				for (uintptr_t x = position.x; x < position.x + width; x++) {
+					uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
+
+					if (*depth == thisWindowDepth) {
+						*depth = 0;
+					}
+				}
+			}
+		}
+
+		windowManager.Redraw(position, width, height, z, this);
+		position = newPosition;
+	}
+
+	surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
+	Update();
+}
+
 void Window::Destroy() {
 	{
 		windowManager.mutex.Acquire();
@@ -366,13 +401,17 @@ void Window::Destroy() {
 	graphics.UpdateScreen();
 }
 
-void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t below) {
+void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t below, Window *except) {
 	mutex.AssertLocked();
 
 	graphics.frameBuffer.FillRectangle({position.x, position.x + width, position.y, position.y + height}, OSColor(83, 114, 166));
 
 	for (int index = below - 1; index >= 0; index--) {
 		Window *window = windows[index];
+
+		if (window == except) {
+			continue;
+		}
 
 		if (position.x > window->position.x + (int) window->width
 				|| position.x + width < window->position.x
@@ -409,6 +448,8 @@ void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t bel
 }
 
 void Window::Update() {
+	mutex.AssertLocked();
+
 	graphics.frameBuffer.Copy(*surface, position, OSRectangle(0, width, 0, height), true, z + 1);
 	graphics.UpdateScreen();
 
@@ -418,6 +459,9 @@ void Window::Update() {
 }
 
 void Window::SetCursorStyle(OSCursorStyle style) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
 	windowManager.mutex.Acquire();
 	cursorStyle = style;
 	windowManager.RefreshCursor(this);

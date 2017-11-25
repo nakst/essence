@@ -62,10 +62,16 @@ void NumberButtonPressed(OSControl *generator, void *argument, OSCallbackData *d
 	OSSetControlText(textOutput, textOutputBuffer, length);
 }
 
+OSWindow *window;
+
 void ExitButtonPressed(OSControl *, void *, OSCallbackData *) {
-#if 1
 	OSTerminateProcess(OS_CURRENT_PROCESS);
-#endif
+}
+
+void MoveButtonPressed(OSControl *, void *, OSCallbackData *) {
+	for (int i = 100; i < 300; i++) {
+		OSMoveWindow(window->handle, OSPoint(i, 200));
+	}
 }
 
 extern "C" void ProgramEntry() {
@@ -73,7 +79,7 @@ extern "C" void ProgramEntry() {
 	RunTests();
 #endif
 
-	OSWindow *window = OSCreateWindow(200, 150, true);
+	window = OSCreateWindow((char *) "Calculator", 10, 640, 480, true);
 	OSPrint("window = %x\n", window);
 #if 1
 #if 1
@@ -81,7 +87,10 @@ extern "C" void ProgramEntry() {
 	OSAddControl(window, textbox, 16, 16);
 	OSControl *exitButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Exit", 4);
 	OSAddControl(window, exitButton, 16, 16 + 80 + 8);
+	OSControl *moveButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Move", 4);
+	OSAddControl(window, moveButton, 16 + 80 + 16, 16 + 80 + 8);
 	exitButton->action.callback = ExitButtonPressed;
+	moveButton->action.callback = MoveButtonPressed;
 #else
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1);
 	textOutput->bounds.right = 200 - 32;

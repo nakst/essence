@@ -5,6 +5,8 @@ uintptr_t DoSyscall(uintptr_t index,
 #ifdef IMPLEMENTATION
 
 bool Process::SendMessage(OSMessage &_message) {
+	// TODO Merge mouse moved messages.
+
 	messageQueueMutex.Acquire();
 	Defer(messageQueueMutex.Release());
 
@@ -382,7 +384,9 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
+			window->mutex.Acquire();
 			window->Update();
+			window->mutex.Release();
 
 			SYSCALL_RETURN(OS_SUCCESS);
 		} break;
@@ -791,6 +795,15 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->SetCursorStyle((OSCursorStyle) argument1);
+		} break;
+
+		case OS_SYSCALL_MOVE_WINDOW: {
+			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
+
+			window->Move(OSPoint(argument1, argument2));
 		} break;
 	}
 
