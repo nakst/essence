@@ -46,3 +46,9 @@ Nebula.jpg
 https://commons.wikimedia.org/wiki/File:Colossal_Hot_Cloud_Envelopes_Colliding_Galaxies_(9934118223).jpg
 Author Chandra X-ray Observatory Center	
 Licensed under the terms of the No known copyright restrictions. (Please see wikimedia commons link for more info)
+
+Flower.jpg
+https://commons.wikimedia.org/wiki/File:Lotus_flower_(978659).jpg
+Author Hong Zhang
+This file is licensed under the Creative Commons Zero license. (public domain)
+https://creativecommons.org/publicdomain/zero/1.0/deed.en
