@@ -184,6 +184,8 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			if (window) {
 				message.mousePressed.positionX = cursorX - window->position.x;
 				message.mousePressed.positionY = cursorY - window->position.y;
+				message.mousePressed.positionXScreen = cursorX;
+				message.mousePressed.positionYScreen = cursorY;
 				message.mousePressed.clickChainCount = clickChainCount;
 				message.targetWindow = window->apiWindow;
 
@@ -227,28 +229,22 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 
 	// Work out which window the mouse is now over.
 	uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
-	if (index) {
-		Window *window = windows[index - 1];
 
-		if (pressedWindow) {
-			// Always send the messages to the pressed window, if there is one.
-			window = pressedWindow;
-		}
+	Window *window = pressedWindow ? pressedWindow : (index ? windows[index - 1] : nullptr);
 
+	if (window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_MOVED;
 		message.targetWindow = window->apiWindow;
 		message.mouseMoved.newPositionX = cursorX - window->position.x;
 		message.mouseMoved.newPositionY = cursorY - window->position.y;
+		message.mouseMoved.newPositionXScreen = cursorX;
+		message.mouseMoved.newPositionYScreen = cursorY;
 		message.mouseMoved.oldPositionX = oldCursorX - window->position.x;
 		message.mouseMoved.oldPositionY = oldCursorY - window->position.y;
 		window->owner->SendMessage(message);
 
 		RefreshCursor(window);
-	} else {
-		RefreshCursor(pressedWindow);
-
-		// The cursor is not in a window.
 	}
 
 	mutex.Release();
@@ -340,8 +336,13 @@ void Window::Move(OSPoint newPosition) {
 
 			uint16_t thisWindowDepth = z + 1;
 
-			for (uintptr_t y = position.y; y < position.y + height; y++) {
-				for (uintptr_t x = position.x; x < position.x + width; x++) {
+			for (int y = position.y; y < position.y + (int) height; y++) {
+				for (int x = position.x; x < position.x + (int) width; x++) {
+					if (x < 0 || x >= (int) graphics.frameBuffer.resX
+							|| y < 0 || y >= (int) graphics.frameBuffer.resY) {
+						continue;
+					}
+
 					uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
 
 					if (*depth == thisWindowDepth) {
@@ -404,7 +405,16 @@ void Window::Destroy() {
 void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t below, Window *except) {
 	mutex.AssertLocked();
 
-	graphics.frameBuffer.FillRectangle({position.x, position.x + width, position.y, position.y + height}, OSColor(83, 114, 166));
+	{
+		OSRectangle background = {position.x, position.x + width, position.y, position.y + height};
+
+		if (background.left < 0) background.left = 0;
+		if (background.top < 0) background.top = 0;
+		if (background.right > (int) graphics.frameBuffer.resX) background.right = graphics.frameBuffer.resX;
+		if (background.bottom > (int) graphics.frameBuffer.resY) background.bottom = graphics.frameBuffer.resY;
+
+		graphics.frameBuffer.FillRectangle(background, OSColor(83, 114, 166));
+	}
 
 	for (int index = below - 1; index >= 0; index--) {
 		Window *window = windows[index];

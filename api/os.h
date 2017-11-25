@@ -486,11 +486,15 @@ struct OSMessage {
 			int newPositionX;
 			int oldPositionY;
 			int newPositionY;
+			int newPositionXScreen;
+			int newPositionYScreen;
 		} mouseMoved;
 
 		struct {
 			int positionX;
 			int positionY;
+			int positionXScreen;
+			int positionYScreen;
 			unsigned clickChainCount;
 		} mousePressed;
 

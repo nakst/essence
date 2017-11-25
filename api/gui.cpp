@@ -501,8 +501,9 @@ static void FindCaret(OSControl *control, int positionX, int positionY, bool sec
 }
 
 static unsigned lastClickChainCount;
+static int lastClickX, lastClickY;
 
-static void UpdateMousePosition(OSWindow *window, int x, int y) {
+static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) {
 	OSControl *previousHoverControl = window->hoverControl;
 	window->previousHoverControl = previousHoverControl;
 
@@ -531,9 +532,15 @@ static void UpdateMousePosition(OSWindow *window, int x, int y) {
 	}
 
 	if (window->pressedControl) {
-		if (!lastClickChainCount) return;
-		FindCaret(window->pressedControl, x, y, true, lastClickChainCount);
-		DrawControl(window, window->pressedControl);
+		OSControl *control = window->pressedControl;
+
+		if (control->type == OS_CONTROL_TEXTBOX) {
+			if (!lastClickChainCount) return;
+			FindCaret(control, x, y, true, lastClickChainCount);
+			DrawControl(window, control);
+		} else if (control->type == OS_CONTROL_TITLEBAR) {
+			OSMoveWindow(window->handle, OSPoint(sx - lastClickX, sy - lastClickY));
+		}
 	}
 }
 
@@ -722,11 +729,17 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_MOUSE_MOVED: {
-			UpdateMousePosition(window, message->mouseMoved.newPositionX, 
-					message->mouseMoved.newPositionY);
+			UpdateMousePosition(window, 
+					message->mouseMoved.newPositionX, 
+					message->mouseMoved.newPositionY,
+					message->mouseMoved.newPositionXScreen,
+					message->mouseMoved.newPositionYScreen);
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
+			lastClickX = message->mousePressed.positionX;
+			lastClickY = message->mousePressed.positionY;
+
 			if (window->hoverControl) {
 				OSControl *control = window->hoverControl;
 
@@ -764,8 +777,11 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					SendCallback(previousPressedControl, previousPressedControl->action, data);
 				}
 
-				UpdateMousePosition(window, message->mousePressed.positionX, 
-						message->mousePressed.positionY);
+				UpdateMousePosition(window, 
+						message->mousePressed.positionX, 
+						message->mousePressed.positionY,
+						message->mousePressed.positionXScreen,
+						message->mousePressed.positionYScreen);
 			}
 		} break;
 
