@@ -5,7 +5,7 @@ uintptr_t DoSyscall(uintptr_t index,
 #ifdef IMPLEMENTATION
 
 bool Process::SendMessage(OSMessage &_message) {
-	// TODO Merge mouse moved messages.
+	// TODO These really don't need to be allocated on the heap.
 
 	messageQueueMutex.Acquire();
 	Defer(messageQueueMutex.Release());
@@ -18,6 +18,17 @@ bool Process::SendMessage(OSMessage &_message) {
 	CopyMemory(&message->data, &_message, sizeof(OSMessage));
 	message->item.thisItem = message;
 	messageQueue.InsertEnd(&message->item);
+
+	if (message->data.type == OS_MESSAGE_MOUSE_MOVED) {
+		if (messageQueueMouseMovedMessage) {
+			message->data.mouseMoved.oldPositionX = messageQueueMouseMovedMessage->data.mouseMoved.oldPositionX;
+			message->data.mouseMoved.oldPositionY = messageQueueMouseMovedMessage->data.mouseMoved.oldPositionY;
+
+			messageQueue.Remove(&messageQueueMouseMovedMessage->item);
+		}
+
+		messageQueueMouseMovedMessage = message;
+	}
 
 	if (!messageQueueIsNotEmpty.Poll()) {
 		messageQueueIsNotEmpty.Set();
@@ -301,6 +312,10 @@ uintptr_t DoSyscall(uintptr_t index,
 					Message *message = (Message *) currentProcess->messageQueue.firstItem->thisItem;
 					currentProcess->messageQueue.Remove(currentProcess->messageQueue.firstItem);
 					CopyMemory(returnMessage, &message->data, sizeof(OSMessage));
+
+					if (message == currentProcess->messageQueueMouseMovedMessage) {
+						currentProcess->messageQueueMouseMovedMessage = nullptr;
+					}
 
 					if (!currentProcess->messageQueue.count) {
 						currentProcess->messageQueueIsNotEmpty.Reset();

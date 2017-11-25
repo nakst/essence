@@ -79,7 +79,7 @@ extern "C" void ProgramEntry() {
 	RunTests();
 #endif
 
-	window = OSCreateWindow((char *) "Calculator", 10, 640, 480, true);
+	window = OSCreateWindow((char *) "(Not a) Calculator", 18, 640, 480, true);
 	OSPrint("window = %x\n", window);
 #if 1
 #if 1

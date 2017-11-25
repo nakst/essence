@@ -122,6 +122,7 @@ struct Process {
 	LinkedList messageQueue;
 	Mutex messageQueueMutex;
 	Event messageQueueIsNotEmpty;
+	struct Message *messageQueueMouseMovedMessage;
 
 	LinkedItem allItem;
 	LinkedList threads;
@@ -926,7 +927,10 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 	lock.Release();
 
 	// Early exit if this is a user request to block the thread and the thread is terminating.
-	while ((!thread->terminating || thread->terminatableState != THREAD_USER_BLOCK_REQUEST) && thread->blockingMutex->owner);
+	while ((!thread->terminating || thread->terminatableState != THREAD_USER_BLOCK_REQUEST) && thread->blockingMutex->owner) {
+		thread->state = THREAD_WAITING_MUTEX;
+	}
+
 	thread->state = THREAD_ACTIVE;
 }
 
