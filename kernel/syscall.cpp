@@ -303,6 +303,8 @@ uintptr_t DoSyscall(uintptr_t index,
 					if (!currentProcess->messageQueue.count) {
 						currentProcess->messageQueueIsNotEmpty.Reset();
 					}
+
+					messagePool.Remove(message);
 				} else {
 					SYSCALL_RETURN(OS_ERROR_NO_MESSAGES_AVAILABLE);
 				}

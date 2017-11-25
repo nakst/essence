@@ -300,7 +300,7 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 	return control;
 }
 
-OSWindow *OSCreateWindow(size_t width, size_t height) {
+OSWindow *OSCreateWindow(size_t width, size_t height, bool decorate) {
 	OSWindow *window = (OSWindow *) OSHeapAllocate(sizeof(OSWindow), true);
 
 	// Add the size of the border.
@@ -314,9 +314,12 @@ OSWindow *OSCreateWindow(size_t width, size_t height) {
 		return nullptr;
 	}
 
-	// Draw the window background and border.
-	OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
-			OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
+	if (decorate) {
+		// Draw the window background and border.
+		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
+				OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
+	}
+
 	OSUpdateWindow(window);
 
 	return window;

@@ -51,10 +51,23 @@ extern "C" void ProgramEntry() {
 			OSPrint("Error: Could not load the font file.\n");
 		} else {
 			char *fontName = OS_GUI_FONT_REGULAR;
-			// TODO Reference counting of the shared memory doesn't seem to work properly?
 			OSHandle sharedMemory = OSCreateSharedMemory(fileSize, fontName, OSCStringLength(fontName));
 			OSCopyMemory(OSMapSharedMemory(sharedMemory, 0, fileSize), loadedFile, fileSize);
 			OSHeapFree(loadedFile);
+		}
+	}
+
+	{
+		// Load the wallpaper.
+
+		char *wallpaperPath = (char *) "/os/sample_images/Nebula.jpg";
+		size_t fileSize;
+		void *loadedFile = OSReadEntireFile(wallpaperPath, OSCStringLength(wallpaperPath), &fileSize);
+
+		if (!loadedFile) {
+			OSPrint("Error: Could not load the wallpaper.\n");
+		} else {
+			
 		}
 	}
 

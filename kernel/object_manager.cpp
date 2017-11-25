@@ -109,13 +109,13 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 
 		case KERNEL_OBJECT_PROCESS: {
 			scheduler.lock.Acquire();
-			RegisterAsyncTask(CloseHandleToProcess, object, (Process *) object);
+			RegisterAsyncTask(CloseHandleToProcess, object, (Process *) object, true);
 			scheduler.lock.Release();
 		} break;
 
 		case KERNEL_OBJECT_THREAD: {
 			scheduler.lock.Acquire();
-			RegisterAsyncTask(CloseHandleToThread, object, kernelProcess);
+			RegisterAsyncTask(CloseHandleToThread, object, kernelProcess, true);
 			scheduler.lock.Release();
 		} break;
 

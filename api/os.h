@@ -587,7 +587,7 @@ extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
 extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
-extern "C" OSWindow *OSCreateWindow(size_t width, size_t height);
+extern "C" OSWindow *OSCreateWindow(size_t width, size_t height, bool decorate);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
 extern "C" OSControl *OSCreateControl(OSControlType type, char *text, size_t textLengthBytes);
 extern "C" OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y);

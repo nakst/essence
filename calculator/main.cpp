@@ -73,7 +73,7 @@ extern "C" void ProgramEntry() {
 	RunTests();
 #endif
 
-	OSWindow *window = OSCreateWindow(200, 150);
+	OSWindow *window = OSCreateWindow(200, 150, true);
 	OSPrint("window = %x\n", window);
 #if 1
 #if 1

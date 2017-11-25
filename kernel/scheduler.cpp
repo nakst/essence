@@ -7,7 +7,7 @@ void CloseHandleToThread(void *_thread);
 void CloseHandleToProcess(void *_thread);
 void KillThread(void *_thread);
 
-void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Process *targetProcess);
+void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Process *targetProcess, bool needed /*If false, the task may not be registered if there are many queued tasks.*/);
 
 struct Event {
 	void Set(bool schedulerAlreadyLocked = false);
@@ -219,13 +219,6 @@ void Spinlock::Acquire() {
 	CPULocalStorage *storage = GetLocalStorage();
 
 	if (storage && storage->currentThread && owner && owner == storage->currentThread) {
-		Print("__builtin_return_address(0) = %x\n", __builtin_return_address(0));
-		Print("__builtin_return_address(1) = %x\n", __builtin_return_address(1));
-		Print("__builtin_return_address(2) = %x\n", __builtin_return_address(2));
-		Print("__builtin_return_address(3) = %x\n", __builtin_return_address(3));
-		Print("__builtin_return_address(4) = %x\n", __builtin_return_address(4));
-		Print("__builtin_return_address(5) = %x\n", __builtin_return_address(5));
-		Print("__builtin_return_address(6) = %x\n", __builtin_return_address(6));
 		KernelPanic("Spinlock::Acquire - Attempt to acquire a spinlock owned by the current thread (%x/%x).\n", storage->currentThread, owner);
 	}
 
@@ -461,7 +454,7 @@ void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
 				// The thread is terminatable and it isn't executing.
 				// Remove it from the executing list, and then remove the thread.
 				activeThreads.Remove(&thread->item[0]);
-				RegisterAsyncTask(KillThread, thread, thread->process);
+				RegisterAsyncTask(KillThread, thread, thread->process, true);
 				if (!lockAlreadyAcquired) scheduler.lock.Release();
 			}
 		} else if (thread->terminatableState == THREAD_USER_BLOCK_REQUEST) {
@@ -640,10 +633,14 @@ void Scheduler::InitialiseAP() {
 	GetLocalStorage()->schedulerReady = true; // The processor can now be pre-empted.
 }
 
-void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targetProcess) {
+void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targetProcess, bool needed) {
 	scheduler.lock.AssertLocked();
 
 	CPULocalStorage *local = GetLocalStorage();
+
+	if (local->asyncTasksCount >= MAX_ASYNC_TASKS / 2 && !needed) {
+		return;
+	}
 
 	if (local->asyncTasksCount == MAX_ASYNC_TASKS) {
 		KernelPanic("RegisterAsyncTask - Maximum number of queued asynchronous tasks reached.\n");
@@ -661,7 +658,7 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 }
 
 void Scheduler::RemoveProcess(Process *process) {
-	// KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
+	KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
 	// At this point, no pointers to the process (should) remain (I think).
 
@@ -670,7 +667,9 @@ void Scheduler::RemoveProcess(Process *process) {
 	LinkedItem *item = messageQueue.firstItem;
 	while (item != messageQueue.lastItem) {
 		Message *message = (Message *) item->thisItem;
+		if (!message) KernelPanic("Scheduler::RemoveProcess - Message was null.\n");
 		messagePool.Remove(message);
+		item = item->nextItem;
 	}
 
 	// Destroy the virtual memory manager.
@@ -802,7 +801,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	if (killThread) {
 		local->currentThread->state = THREAD_TERMINATED;
 		// KernelLog(LOG_VERBOSE, "terminated yielded thread %x\n", local->currentThread);
-		RegisterAsyncTask(KillThread, local->currentThread, local->currentThread->process);
+		RegisterAsyncTask(KillThread, local->currentThread, local->currentThread->process, true);
 	}
 
 	// If the thread is waiting for an object to be notified, put it in the relevant blockedThreads list.

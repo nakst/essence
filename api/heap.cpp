@@ -25,14 +25,14 @@ static OSHeapRegion *heapRegions[12];
 Mutex heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() heapMutex.Acquire()
 #define OS_HEAP_RELEASE_MUTEX() heapMutex.Release()
-#define OS_HEAP_PANIC() KernelPanic("Heap panic.\n")
+#define OS_HEAP_PANIC(n) KernelPanic("Heap panic (%d).\n", n)
 #define OS_HEAP_ALLOCATE_CALL(x) kernelVMM.Allocate("Heap", x)
 #define OS_HEAP_FREE_CALL(x) kernelVMM.Free(x)
 #else
 static OSHandle heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(heapMutex)
 #define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(heapMutex)
-#define OS_HEAP_PANIC() Panic()
+#define OS_HEAP_PANIC(n) Panic()
 #define OS_HEAP_ALLOCATE_CALL(x) OSAllocate(x)
 #define OS_HEAP_FREE_CALL(x) OSFree(x)
 #endif
@@ -50,7 +50,7 @@ static void OSHeapInitialise() {
 
 static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 	if (!region->regionListReference || region->used) {
-		OS_HEAP_PANIC();
+		OS_HEAP_PANIC(0);
 	}
 
 	*region->regionListReference = region->regionListNext;
@@ -64,7 +64,7 @@ static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 
 static void OSHeapAddFreeRegion(OSHeapRegion *region) {
 	if (region->used || region->size < 32) {
-		OS_HEAP_PANIC();
+		OS_HEAP_PANIC(1);
 	}
 
 	int index = OSHeapCalculateIndex(region->size);
@@ -87,13 +87,16 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 		// We don't need to zero this memory. (It'll be done by the PMM).
 		OSHeapRegion *region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(size);
 		region->used = 0xABCD;
-		if (!region) return nullptr; else return OS_HEAP_REGION_DATA(region);
+		if (!region) return nullptr; 
+		
+		void *address = OS_HEAP_REGION_DATA(region);
+		return address;
 	}
 
 	OS_HEAP_ACQUIRE_MUTEX();
 
 	static bool concurrentModificationCheck = false;
-	if (concurrentModificationCheck) OS_HEAP_PANIC();
+	if (concurrentModificationCheck) OS_HEAP_PANIC(2);
 	concurrentModificationCheck = true;
 
 	OSHeapRegion *region = nullptr;
@@ -125,7 +128,7 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	foundRegion:
 
 	if (region->used || region->size < size) {
-		OS_HEAP_PANIC();
+		OS_HEAP_PANIC(4);
 	}
 
 	if (region->size == size) {
@@ -135,7 +138,9 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 		concurrentModificationCheck = false;
 		OS_HEAP_RELEASE_MUTEX();
 		if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(region), originalSize);
-		return OS_HEAP_REGION_DATA(region);
+
+		void *address = OS_HEAP_REGION_DATA(region);
+		return address;
 	}
 
 	// Split the region into 2 parts.
@@ -158,7 +163,9 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	concurrentModificationCheck = false;
 	OS_HEAP_RELEASE_MUTEX();
 	if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(allocatedRegion), originalSize);
-	return OS_HEAP_REGION_DATA(allocatedRegion);
+
+	void *address = OS_HEAP_REGION_DATA(region);
+	return address;
 }
 
 #ifdef KERNEL
@@ -167,10 +174,11 @@ void OSHeapFree(void *address, size_t expectedSize = 0) {
 void OSHeapFree(void *address) {
 	size_t expectedSize = 0;
 #endif
+	if (!address && expectedSize) OS_HEAP_PANIC(10);
 	if (!address) return;
 
 	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);
-	if (region->used != 0xABCD) OS_HEAP_PANIC();
+	if (region->used != 0xABCD) OS_HEAP_PANIC(region->used);
 
 	bool expectingSize = expectedSize != 0;
 	expectedSize += 0x10; // Region metadata.
@@ -185,7 +193,7 @@ void OSHeapFree(void *address) {
 	OS_HEAP_ACQUIRE_MUTEX();
 
 	region->used = false;
-	if (expectingSize && region->size != expectedSize) OS_HEAP_PANIC();
+	if (expectingSize && region->size != expectedSize) OS_HEAP_PANIC(6);
 
 	// Attempt to merge with the next region.
 
@@ -213,7 +221,7 @@ void OSHeapFree(void *address) {
 	}
 
 	if (region->size == 65536 - 32) {
-		if (region->offset) OS_HEAP_PANIC();
+		if (region->offset) OS_HEAP_PANIC(7);
 
 		// The memory block is empty.
 		OS_HEAP_FREE_CALL(region);

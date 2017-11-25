@@ -339,7 +339,7 @@ void VMM::Destroy() {
 	// 	--> On async task threads??!?
 #if ARCH_X86_64
 	scheduler.lock.Acquire();
-	RegisterAsyncTask(CleanupVirtualAddressSpace, (void *) virtualAddressSpace.cr3, kernelProcess);
+	RegisterAsyncTask(CleanupVirtualAddressSpace, (void *) virtualAddressSpace.cr3, kernelProcess, true);
 	scheduler.lock.Release();
 #endif
 
