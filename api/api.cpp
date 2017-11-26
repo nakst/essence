@@ -24,7 +24,7 @@ void Panic() {
 
 extern "C" void ProgramEntry();
 
-extern "C" void _start() {
+extern "C" void OSInitialiseAPI() {
 	// TODO Seed random number generator.
 
 	void OSFPInitialise();
@@ -33,6 +33,13 @@ extern "C" void _start() {
 	OSHeapInitialise();
 	printMutex = OSCreateMutex();
 
+	OSPrint("API initialised.\n");
+}
+
+#ifndef NO_START
+extern "C" void _start() {
+	OSInitialiseAPI();
 	ProgramEntry();
 	OSTerminateThread(OS_CURRENT_THREAD);
 }
+#endif

@@ -28,6 +28,8 @@ struct Handle {
 	bool readOnly;
 };
 
+size_t totalHandleCount;
+
 void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags = 0);
 
 enum ResolveHandleReason {
@@ -349,6 +351,9 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 	*_handle = handle;
 
 	OSHandle index = (l3Index) + (l2Index * HANDLE_TABLE_L3_ENTRIES) + (l1Index * HANDLE_TABLE_L3_ENTRIES * HANDLE_TABLE_L2_ENTRIES);
+
+	__sync_fetch_and_add(&totalHandleCount, 1);
+
 	return index;
 }
 

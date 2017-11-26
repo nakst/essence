@@ -280,6 +280,10 @@ void CF(Print)(const char *format, ...) {
 	OSSyscall(OS_SYSCALL_PRINT, (uintptr_t) printBuffer, printBufferPosition, 0, 0);
 	OSReleaseMutex(printMutex);
 }
+
+void CF(PrintDirect)(char *string, size_t stringLength) {
+	OSSyscall(OS_SYSCALL_PRINT, (uintptr_t) string, stringLength, 0, 0);
+}
 #endif
 
 size_t CF(FormatString)(char *buffer, size_t bufferLength, const char *format, ...) {

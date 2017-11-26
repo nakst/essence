@@ -545,6 +545,8 @@ typedef void (*OSThreadEntryFunction)(void *argument);
 #define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x4000) // Create the directories leading to the file, if they don't already exist.
 
 #ifndef KERNEL
+extern "C" void OSInitialiseAPI();
+
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
 extern "C" OSHandle OSCreateSurface(size_t width, size_t height);
@@ -561,6 +563,7 @@ extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
+extern "C" OSError OSTerminateThisProcess();
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);
@@ -617,6 +620,7 @@ extern "C" void OSZeroMemory(void *destination, size_t bytes);
 extern "C" int OSCompareBytes(void *a, void *b, size_t bytes);
 extern "C" uint8_t OSSumBytes(uint8_t *data, size_t bytes);
 extern "C" void OSPrint(const char *format, ...);
+extern "C" void OSPrintDirect(char *string, size_t stringLength);
 extern "C" size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
 extern "C" void OSHelloWorld();
 extern "C" uint8_t OSGetRandomByte();
