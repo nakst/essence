@@ -226,6 +226,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_REFRESH_NODE_INFORMATION	(40)
 #define OS_SYSCALL_SET_CURSOR_STYLE		(41)
 #define OS_SYSCALL_MOVE_WINDOW			(42)
+#define OS_SYSCALL_GET_WINDOW_BOUNDS 		(43)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -367,8 +368,12 @@ struct OSCallback {
 };
 
 enum OSCursorStyle {
-	OS_CURSOR_NORMAL, // 125, 96
-	OS_CURSOR_TEXT, // 142, 96
+	OS_CURSOR_NORMAL, 
+	OS_CURSOR_TEXT, 
+	OS_CURSOR_RESIZE_VERTICAL, 
+	OS_CURSOR_RESIZE_HORIZONTAL,
+	OS_CURSOR_RESIZE_DIAGONAL_1, // '/'
+	OS_CURSOR_RESIZE_DIAGONAL_2, // '\'
 };
 
 enum OSControlType {
@@ -379,12 +384,14 @@ enum OSControlType {
 	OS_CONTROL_GROUP,
 	OS_CONTROL_TEXTBOX,
 	OS_CONTROL_TITLEBAR,
+	OS_CONTROL_WINDOW_BORDER,
 };
 
 enum OSControlImageType {
 	OS_CONTROL_IMAGE_FILL,
 	OS_CONTROL_IMAGE_CENTER_LEFT,
 	OS_CONTROL_IMAGE_NONE,
+	OS_CONTROL_IMAGE_TRANSPARENT,
 };
 
 struct OSCaret {
@@ -429,6 +436,7 @@ struct OSControl {
 
 	// Misc:
 	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
+	uint8_t resizeRegionIndex;
 
 	// State:
 
@@ -444,6 +452,8 @@ struct OSControl {
 struct OSWindow {
 	OSHandle handle;
 	OSHandle surface;
+
+	size_t width, height;
 
 	OSControl *controls[256];
 	size_t controlsCount;
@@ -609,7 +619,8 @@ extern "C" void OSCheckControl(OSControl *control, bool checked);
 extern "C" OSError OSSetControlText(OSControl *control, char *text, size_t textLengthBytes);
 extern "C" OSError OSInvalidateControl(OSControl *control);
 extern "C" OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style);
-extern "C" OSError OSMoveWindow(OSHandle window, OSPoint position);
+extern "C" OSError OSMoveWindow(OSHandle window, OSRectangle rectangle);
+extern "C" OSError OSGetWindowBounds(OSHandle window, OSRectangle *rectangle);
 
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);

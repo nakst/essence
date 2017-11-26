@@ -117,7 +117,7 @@ struct Mutex {
 	void AssertLocked();
 
 	struct Thread *volatile owner;
-	uintptr_t acquireAddress, releaseAddress;
+	uintptr_t acquireAddress, releaseAddress; // TODO Remove in non-debug builds?
 
 	size_t handles;
 

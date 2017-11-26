@@ -203,6 +203,10 @@ OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
 	return OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, (uintptr_t) window, (uintptr_t) style, 0, 0);
 }
 
-OSError OSMoveWindow(OSHandle window, OSPoint position) {
-	return OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, position.x, position.y, 0);
+OSError OSMoveWindow(OSHandle window, OSRectangle newBounds) {
+	return OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, (uintptr_t) &newBounds, 0, 0);
+}
+
+OSError OSGetWindowBounds(OSHandle window, OSRectangle *rectangle) {
+	return OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, (uintptr_t) window, (uintptr_t) rectangle, 0, 0);
 }

@@ -67,7 +67,7 @@ static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &
 }
 
 static void DrawControl(OSWindow *window, OSControl *control) {
-	if (!window) return;
+	if (!window || control->imageType == OS_CONTROL_IMAGE_TRANSPARENT) return;
 
 	int imageWidth = control->image.right - control->image.left;
 	int imageHeight = control->image.bottom - control->image.top;
@@ -314,13 +314,18 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 		} break;
 
 		case OS_CONTROL_TITLEBAR: {
-			control->bounds.bottom = 28;
+			control->bounds.bottom = 24;
 			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
-			control->image = OSRectangle(97, 97 + 7, 43, 43 + 28);
+			control->image = OSRectangle(149, 149 + 7, 64, 64 + 24);
 			control->manualImage = true;
 			control->textShadow = true;
 			control->fontSize = 20;
+		} break;
+
+		case OS_CONTROL_WINDOW_BORDER: {
+			control->imageType = OS_CONTROL_IMAGE_TRANSPARENT;
+			control->manualImage = true;
 		} break;
 	}
 
@@ -336,6 +341,9 @@ OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, siz
 	width += BORDER_SIZE_X;
 	height += BORDER_SIZE_Y;
 
+	window->width = width;
+	window->height = height;
+
 	OSError result = OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) window, width, height, 0);
 
 	if (result != OS_SUCCESS) {
@@ -349,9 +357,59 @@ OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, siz
 				OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
 
 		OSControl *titlebar = OSCreateControl(OS_CONTROL_TITLEBAR, title, titleLengthBytes);
-		titlebar->bounds.right = width - 2;
+		titlebar->bounds.right = width - 8;
 		titlebar->textBounds = titlebar->bounds;
-		OSAddControl(window, titlebar, 1 - BORDER_OFFSET_X, 1 - BORDER_OFFSET_Y);
+		OSAddControl(window, titlebar, 4 - BORDER_OFFSET_X, 4 - BORDER_OFFSET_Y);
+
+		OSControl *resizeTop = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeTop->bounds = OSRectangle(0, width - 8, 0, 4);
+		resizeTop->cursorStyle = OS_CURSOR_RESIZE_VERTICAL;
+		resizeTop->resizeRegionIndex = 0;
+		OSAddControl(window, resizeTop, 4 - BORDER_OFFSET_X, 0 - BORDER_OFFSET_Y);
+
+		OSControl *resizeBottom = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeBottom->bounds = OSRectangle(0, width - 8, 0, 4);
+		resizeBottom->cursorStyle = OS_CURSOR_RESIZE_VERTICAL;
+		resizeBottom->resizeRegionIndex = 1;
+		OSAddControl(window, resizeBottom, 4 - BORDER_OFFSET_X, height - 4 - BORDER_OFFSET_Y);
+
+		OSControl *resizeLeft = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeLeft->bounds = OSRectangle(0, 4, 0, height - 8);
+		resizeLeft->cursorStyle = OS_CURSOR_RESIZE_HORIZONTAL;
+		resizeLeft->resizeRegionIndex = 2;
+		OSAddControl(window, resizeLeft, 0 - BORDER_OFFSET_X, 4 - BORDER_OFFSET_Y);
+
+		OSControl *resizeRight = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeRight->bounds = OSRectangle(0, 4, 0, height - 8);
+		resizeRight->cursorStyle = OS_CURSOR_RESIZE_HORIZONTAL;
+		resizeRight->resizeRegionIndex = 3;
+		OSAddControl(window, resizeRight, width - 4 - BORDER_OFFSET_X, 4 - BORDER_OFFSET_Y);
+
+		// TODO Maybe increase the diagonal resize regions?
+
+		OSControl *resizeTopLeft = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeTopLeft->bounds = OSRectangle(0, 4, 0, 4);
+		resizeTopLeft->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_2;
+		resizeTopLeft->resizeRegionIndex = 4;
+		OSAddControl(window, resizeTopLeft, 0 - BORDER_OFFSET_X, 0 - BORDER_OFFSET_Y);
+
+		OSControl *resizeBottomRight = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeBottomRight->bounds = OSRectangle(0, 4, 0, 4);
+		resizeBottomRight->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_2;
+		resizeBottomRight->resizeRegionIndex = 5;
+		OSAddControl(window, resizeBottomRight, width - 4 - BORDER_OFFSET_X, height - 4 - BORDER_OFFSET_Y);
+
+		OSControl *resizeTopRight = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeTopRight->bounds = OSRectangle(0, 4, 0, 4);
+		resizeTopRight->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_1;
+		resizeTopRight->resizeRegionIndex = 6;
+		OSAddControl(window, resizeTopRight, width - 4 - BORDER_OFFSET_X, 0 - BORDER_OFFSET_Y);
+
+		OSControl *resizeBottomLeft = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
+		resizeBottomLeft->bounds = OSRectangle(0, 4, 0, 4);
+		resizeBottomLeft->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_1;
+		resizeBottomLeft->resizeRegionIndex = 7;
+		OSAddControl(window, resizeBottomLeft, 0 - BORDER_OFFSET_X, height - 4 - BORDER_OFFSET_Y);
 	}
 
 	OSUpdateWindow(window);
@@ -502,6 +560,7 @@ static void FindCaret(OSControl *control, int positionX, int positionY, bool sec
 
 static unsigned lastClickChainCount;
 static int lastClickX, lastClickY;
+static int lastClickWindowWidth, lastClickWindowHeight;
 
 static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) {
 	OSControl *previousHoverControl = window->hoverControl;
@@ -539,7 +598,106 @@ static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) 
 			FindCaret(control, x, y, true, lastClickChainCount);
 			DrawControl(window, control);
 		} else if (control->type == OS_CONTROL_TITLEBAR) {
-			OSMoveWindow(window->handle, OSPoint(sx - lastClickX, sy - lastClickY));
+			OSRectangle bounds;
+			OSGetWindowBounds(window->handle, &bounds);
+			int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
+			bounds.left = sx - lastClickX;
+			bounds.right = sx - lastClickX + width;
+			bounds.top = sy - lastClickY;
+			bounds.bottom = sy - lastClickY + height;
+			OSMoveWindow(window->handle, bounds);
+			window->dirty = true;
+		} else if (control->type == OS_CONTROL_WINDOW_BORDER) {
+			OSRectangle bounds;
+			OSGetWindowBounds(window->handle, &bounds);
+
+			bool la = false, ta = false;
+
+			switch (control->resizeRegionIndex) {
+				case 0: {
+					bounds.top = sy - lastClickY;
+					ta = true;
+				} break;
+
+				case 1: {
+					bounds.bottom = sy - lastClickY + lastClickWindowHeight;
+				} break;
+
+				case 2: {
+					bounds.left = sx - lastClickX;
+					la = true;
+				} break;
+
+				case 3: {
+					bounds.right = sx - lastClickX + lastClickWindowWidth;
+				} break;
+
+				case 4: {
+					bounds.top = sy - lastClickY;
+					bounds.left = sx - lastClickX;
+					ta = true;
+					la = true;
+				} break;
+
+				case 5: {
+					bounds.bottom = sy - lastClickY + lastClickWindowHeight;
+					bounds.right = sx - lastClickX + lastClickWindowWidth;
+				} break;
+
+				case 6: {
+					bounds.top = sy - lastClickY;
+					bounds.right = sx - lastClickX + lastClickWindowWidth;
+					ta = true;
+				} break;
+
+				case 7: {
+					bounds.bottom = sy - lastClickY + lastClickWindowHeight;
+					bounds.left = sx - lastClickX;
+					la = true;
+				} break;
+			}
+
+			int width = bounds.right - bounds.left;
+			int height = bounds.bottom - bounds.top;
+
+			// TODO Window minimum size.
+
+			if (width < 256) {
+				width = 256;
+				if (!la) bounds.right = bounds.left + 256;
+				else bounds.left = bounds.right - 256;
+			}
+
+			if (height < 256) {
+				height = 256;
+				if (!ta) bounds.bottom = bounds.top + 256;
+				else bounds.top = bounds.bottom - 256;
+			}
+
+			window->width = width;
+			window->height = height;
+
+			window->controls[0]->bounds = OSRectangle(4, width - 4, 4, 28);
+			window->controls[0]->textBounds = window->controls[0]->bounds;
+
+			window->controls[1]->bounds = OSRectangle(4, width - 4, 0, 4);
+			window->controls[2]->bounds = OSRectangle(4, width - 4, height - 4, height);
+			window->controls[3]->bounds = OSRectangle(0, 4, 4, height - 4);
+			window->controls[4]->bounds = OSRectangle(width - 4, width, 4, height - 4);
+			window->controls[5]->bounds = OSRectangle(0, 4, 0, 4);
+			window->controls[6]->bounds = OSRectangle(width - 4, width, height - 4, height);
+			window->controls[7]->bounds = OSRectangle(width - 4, width, 0, 4);
+			window->controls[8]->bounds = OSRectangle(0, 4, height - 4, height);
+
+			OSMoveWindow(window->handle, bounds);
+
+			// Redraw the window background and border.
+			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
+					OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
+
+			for (uintptr_t i = 0; i < window->controlsCount; i++) {
+				DrawControl(window, window->controls[i]);
+			}
 		}
 	}
 }
@@ -739,6 +897,8 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
 			lastClickX = message->mousePressed.positionX;
 			lastClickY = message->mousePressed.positionY;
+			lastClickWindowWidth = window->width;
+			lastClickWindowHeight = window->height;
 
 			if (window->hoverControl) {
 				OSControl *control = window->hoverControl;

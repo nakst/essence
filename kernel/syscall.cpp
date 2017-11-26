@@ -6,6 +6,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 bool Process::SendMessage(OSMessage &_message) {
 	// TODO These really don't need to be allocated on the heap.
+	// TODO Linked list validate (4) bug?
 
 	messageQueueMutex.Acquire();
 	Defer(messageQueueMutex.Release());
@@ -334,7 +335,10 @@ uintptr_t DoSyscall(uintptr_t index,
 			while (!currentProcess->messageQueue.count) {
 				currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 				// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
-				currentProcess->messageQueueIsNotEmpty.Wait(argument0 /*Timeout*/);
+				
+				if (!currentProcess->messageQueueIsNotEmpty.Wait(argument0 /*Timeout*/)) {
+					break;
+				}
 			}
 
 			SYSCALL_RETURN(OS_SUCCESS);
@@ -818,7 +822,31 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
-			window->Move(OSPoint(argument1, argument2));
+			OSRectangle *rectangle = (OSRectangle *) argument1;
+			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
+			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region1));
+
+			window->Move(*rectangle);
+		} break;
+
+		case OS_SYSCALL_GET_WINDOW_BOUNDS: {
+			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
+
+			OSRectangle *rectangle = (OSRectangle *) argument1;
+			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
+			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			Defer(currentVMM->UnlockRegion(region1));
+
+			window->mutex.Acquire();
+			rectangle->left = window->position.x;
+			rectangle->top = window->position.y;
+			rectangle->right = window->position.x + window->width;
+			rectangle->bottom = window->position.y + window->height;
+			window->mutex.Release();
 		} break;
 	}
 

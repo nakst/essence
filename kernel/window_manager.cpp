@@ -11,7 +11,9 @@ struct Window {
 	void Update();
 	void SetCursorStyle(OSCursorStyle style);
 	void Destroy();
-	void Move(OSPoint newPosition);
+	void Move(OSRectangle &newBounds);
+	void Resize(size_t newWidth, size_t newHeight);
+	void ClearImage();
 
 	Mutex mutex;
 	Surface *surface;
@@ -45,6 +47,7 @@ struct WindowManager {
 	int cursorX, cursorY;
 	int cursorImageX, cursorImageY;
 	int cursorImageOffsetX, cursorImageOffsetY;
+	int cursorImageWidth, cursorImageHeight;
 
 	unsigned lastButtons;
 	bool shift, alt, ctrl;
@@ -86,13 +89,54 @@ void WindowManager::RefreshCursor(Window *window) {
 			windowManager.cursorImageY = 96;
 			windowManager.cursorImageOffsetX = -3;
 			windowManager.cursorImageOffsetY = -7;
+			windowManager.cursorImageWidth = 12;
+			windowManager.cursorImageHeight = 19;
 		} break;
 
+		case OS_CURSOR_RESIZE_VERTICAL: {
+			windowManager.cursorImageX = 112;
+			windowManager.cursorImageY = 97;
+			windowManager.cursorImageOffsetX = -4;
+			windowManager.cursorImageOffsetY = -8;
+			windowManager.cursorImageWidth = 12;
+			windowManager.cursorImageHeight = 19;
+		} break;
+
+		case OS_CURSOR_RESIZE_HORIZONTAL: {
+			windowManager.cursorImageX = 154;
+			windowManager.cursorImageY = 100;
+			windowManager.cursorImageOffsetX = -8;
+			windowManager.cursorImageOffsetY = -4;
+			windowManager.cursorImageWidth = 17;
+			windowManager.cursorImageHeight = 19;
+		} break;
+
+		case OS_CURSOR_RESIZE_DIAGONAL_1: {
+			windowManager.cursorImageX = 193;
+			windowManager.cursorImageY = 97;
+			windowManager.cursorImageOffsetX = -6;
+			windowManager.cursorImageOffsetY = -6;
+			windowManager.cursorImageWidth = 17;
+			windowManager.cursorImageHeight = 19;
+		} break;
+
+		case OS_CURSOR_RESIZE_DIAGONAL_2: {
+			windowManager.cursorImageX = 176;
+			windowManager.cursorImageY = 97;
+			windowManager.cursorImageOffsetX = -6;
+			windowManager.cursorImageOffsetY = -6;
+			windowManager.cursorImageWidth = 17;
+			windowManager.cursorImageHeight = 19;
+		} break;
+
+		case OS_CURSOR_NORMAL:
 		default: {
 			windowManager.cursorImageX = 125;
 			windowManager.cursorImageY = 96;
 			windowManager.cursorImageOffsetX = 0;
 			windowManager.cursorImageOffsetY = 0;
+			windowManager.cursorImageWidth = 12;
+			windowManager.cursorImageHeight = 19;
 		} break;
 	}
 }
@@ -244,11 +288,10 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		message.mouseMoved.oldPositionY = oldCursorY - window->position.y;
 		window->owner->SendMessage(message);
 
-		RefreshCursor(window);
 	}
 
+	RefreshCursor(window);
 	mutex.Release();
-
 	graphics.UpdateScreen();
 }
 
@@ -322,42 +365,59 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	return window;
 }
 
-void Window::Move(OSPoint newPosition) {
-	mutex.Acquire();
-	Defer(mutex.Release());
+void Window::ClearImage() {
+	windowManager.mutex.Acquire();
+	Defer(windowManager.mutex.Release());
 
 	{
-		windowManager.mutex.Acquire();
-		Defer(windowManager.mutex.Release());
+		graphics.frameBuffer.mutex.Acquire();
+		Defer(graphics.frameBuffer.mutex.Release());
 
-		{
-			graphics.frameBuffer.mutex.Acquire();
-			Defer(graphics.frameBuffer.mutex.Release());
+		uint16_t thisWindowDepth = z + 1;
 
-			uint16_t thisWindowDepth = z + 1;
+		for (int y = position.y; y < position.y + (int) height; y++) {
+			for (int x = position.x; x < position.x + (int) width; x++) {
+				if (x < 0 || x >= (int) graphics.frameBuffer.resX
+						|| y < 0 || y >= (int) graphics.frameBuffer.resY) {
+					continue;
+				}
 
-			for (int y = position.y; y < position.y + (int) height; y++) {
-				for (int x = position.x; x < position.x + (int) width; x++) {
-					if (x < 0 || x >= (int) graphics.frameBuffer.resX
-							|| y < 0 || y >= (int) graphics.frameBuffer.resY) {
-						continue;
-					}
+				uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
 
-					uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
-
-					if (*depth == thisWindowDepth) {
-						*depth = 0;
-					}
+				if (*depth == thisWindowDepth) {
+					*depth = 0;
 				}
 			}
 		}
+	}
 
-		windowManager.Redraw(position, width, height, z, this);
-		position = newPosition;
+	windowManager.Redraw(position, width, height, z, this);
+}
+
+void Window::Move(OSRectangle &rectangle) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	size_t newWidth = rectangle.right - rectangle.left;
+	size_t newHeight = rectangle.bottom - rectangle.top;
+
+	if (newWidth < 128 || newHeight < 64 
+			|| rectangle.left > rectangle.right 
+			|| rectangle.top > rectangle.bottom) return;
+
+	ClearImage();
+	position = OSPoint(rectangle.left, rectangle.top);
+
+	size_t oldWidth = width;
+	size_t oldHeight = height;
+	width = newWidth;
+	height = newHeight;
+
+	if (oldWidth != width || oldHeight != height) {
+		surface->Resize(width, height);
 	}
 
 	surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
-	Update();
 }
 
 void Window::Destroy() {

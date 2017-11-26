@@ -746,6 +746,7 @@ void KillThread(void *_thread) {
 		scheduler.lock.Release();
 
 		// TODO Destroy all the windows this process owns.
+		// TODO Destroy all the surfaces this process owns.
 
 		// There are no threads left in this process.
 		// We should destroy the handle table at this point.

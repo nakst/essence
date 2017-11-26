@@ -70,8 +70,15 @@ void ExitButtonPressed(OSControl *, void *, OSCallbackData *) {
 
 void MoveButtonPressed(OSControl *, void *, OSCallbackData *) {
 	for (int i = 100; i < 300; i++) {
-		OSMoveWindow(window->handle, OSPoint(i, 200));
+		OSMoveWindow(window->handle, OSRectangle(i, i + 640, 200, 200 + 480));
 	}
+}
+
+void ResizeButtonPressed(OSControl *, void *, OSCallbackData *) {
+	OSMoveWindow(window->handle, OSRectangle(10, 330, 10, 210));
+#if 0
+	OSResizeWindow(window->handle, 320, 200);
+#endif
 }
 
 extern "C" void ProgramEntry() {
@@ -89,8 +96,11 @@ extern "C" void ProgramEntry() {
 	OSAddControl(window, exitButton, 16, 16 + 80 + 8);
 	OSControl *moveButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Move", 4);
 	OSAddControl(window, moveButton, 16 + 80 + 16, 16 + 80 + 8);
+	OSControl *resizeButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Resize", 6);
+	OSAddControl(window, resizeButton, 32 + 160 + 16, 16 + 80 + 8);
 	exitButton->action.callback = ExitButtonPressed;
 	moveButton->action.callback = MoveButtonPressed;
+	resizeButton->action.callback = ResizeButtonPressed;
 #else
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1);
 	textOutput->bounds.right = 200 - 32;

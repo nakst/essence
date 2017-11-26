@@ -23,6 +23,8 @@ struct Surface {
 			bool createDepthBuffer = false);
 	void Destroy();
 
+	void Resize(size_t newResX, size_t newResY);
+
 	// Copy the contents of the rectangular region sourceRegion from the source surface to this surface, 
 	// where destinationPoint corresponds to where the top-left corner of the sourceRegion will be copied.
 	// If avoidUnmodifiedRegions is set then regions that have not been marked as modified may not copied;
@@ -215,25 +217,26 @@ void Graphics::UpdateScreen() {
 		return;
 	}
 
+	windowManager.mutex.Acquire();
+	int cursorX = windowManager.cursorX + windowManager.cursorImageOffsetX, cursorY = windowManager.cursorY + windowManager.cursorImageOffsetY;
+	int cursorImageX = windowManager.cursorImageX, cursorImageY = windowManager.cursorImageY;
+	int cursorImageWidth = windowManager.cursorImageWidth, cursorImageHeight = windowManager.cursorImageHeight;
+	windowManager.mutex.Release();
+
 	updateScreenMutex.Acquire();
 	Defer(updateScreenMutex.Release());
 
 	frameBuffer.mutex.Acquire();
 	Defer(frameBuffer.mutex.Release());
 
-	windowManager.mutex.Acquire();
-	int cursorX = windowManager.cursorX + windowManager.cursorImageOffsetX, cursorY = windowManager.cursorY + windowManager.cursorImageOffsetY;
-	int cursorImageX = windowManager.cursorImageX, cursorImageY = windowManager.cursorImageY;
-	windowManager.mutex.Release();
-
 	// TODO This doesn't work with cursor image offset at the screen edge.
 	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
 								cursorY, cursorY + CURSOR_SWAP_SIZE),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
-	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + 12,
-						     cursorY, cursorY + 19),
-					 OSRectangle(cursorImageX, cursorImageX + 12, cursorImageY, cursorImageY + 19),
+	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + cursorImageWidth,
+						     cursorY, cursorY + cursorImageHeight),
+					 OSRectangle(cursorImageX, cursorImageX + cursorImageWidth, cursorImageY, cursorImageY + cursorImageHeight),
 					 OSRectangle(cursorImageX + 2, cursorImageX + 3, cursorImageY + 2, cursorImageY + 3), OS_DRAW_MODE_REPEAT_FIRST, true);
 		
 	switch (colorMode) {
@@ -263,6 +266,30 @@ void Graphics::Initialise() {
 
 	cursorSwap.Initialise(&kernelVMM, CURSOR_SWAP_SIZE, CURSOR_SWAP_SIZE, false);
 	frameBuffer.Initialise(&kernelVMM, resX, resY, true /*Create depth buffer for window manager*/);
+}
+
+void Surface::Resize(size_t newResX, size_t newResY) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (depthBuffer) {
+		KernelPanic("Surface::Resize - Attempt to resize a surface with a depth buffer.\n");
+	}
+
+	vmm->Free(memory);
+
+	{
+		resX = newResX;
+		resY = newResY;
+
+		size_t memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 4 + (resY + 7) / 8;
+		memory = (uint8_t *) vmm->Allocate("Surface", memoryNeeded);
+		linearBuffer = memory;
+		depthBuffer = nullptr;
+		modifiedScanlines = (ModifiedScanline *) (memory + resX * resY * 4);
+		modifiedScanlineBitset = (uint8_t *) (modifiedScanlines + resY);
+		stride = resX * 4;
+	}
 }
 
 bool Surface::Initialise(VMM *_vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {
