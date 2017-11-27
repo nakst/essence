@@ -290,6 +290,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			if (interrupt == 14) {
+				if (interrupt == 14 && (context->errorCode & (1 << 3))) {
+					goto fault;
+				}
+
 				if (!HandlePageFault(context->cr2)) {
 					goto fault;
 				}

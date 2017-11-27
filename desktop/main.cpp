@@ -1,6 +1,6 @@
 #include "../api/os.h"
 
-// TODO Move all of this into the kernel?
+// TODO Move some of this into the kernel?
 // 	- Ideally, the kernel would still allow us to use system calls.
 
 extern "C" void ProgramEntry() {
@@ -36,6 +36,7 @@ extern "C" void ProgramEntry() {
 
 			free(image);
 			OSHeapFree(loadedFile);
+			OSCloseHandle(surface);
 		}
 	}
 
@@ -62,13 +63,42 @@ extern "C" void ProgramEntry() {
 
 		char *wallpaperPath = (char *) "/os/sample_images/Nebula.jpg";
 		size_t fileSize;
-		void *loadedFile = OSReadEntireFile(wallpaperPath, OSCStringLength(wallpaperPath), &fileSize);
+		uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(wallpaperPath, OSCStringLength(wallpaperPath), &fileSize);
 
 		if (!loadedFile) {
 			OSPrint("Error: Could not load the wallpaper.\n");
 		} else {
-			
+			int imageX, imageY, imageChannels;
+			uint8_t *image = stbi_load_from_memory(loadedFile, fileSize, &imageX, &imageY, &imageChannels, 4);
+
+			if (!image) {
+				OSPrint("Error: Could not load the wallpaper.\n");
+			} else {
+				OSHandle surface = OSCreateSurface(imageX, imageY);
+				OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
+
+				for (intptr_t y = 0; y < imageY; y++) {
+					for (intptr_t x = 0; x < imageX; x++) {
+						uint8_t *destination = (uint8_t *) buffer.buffer + y * buffer.stride + x * 4;
+						uint8_t *source = image + y * imageX * 4 + x * 4;
+						destination[2] = source[0];
+						destination[1] = source[1];
+						destination[0] = source[2];
+						destination[3] = source[3];
+					}
+				}
+
+				OSInvalidateRectangle(OS_SURFACE_WALLPAPER, OSRectangle(0, imageX, 0, imageY));
+				OSCopySurface(OS_SURFACE_WALLPAPER, surface, OSPoint(0, 0));
+
+				free(image);
+				OSCloseHandle(surface);
+			}
+
+			OSHeapFree(loadedFile);
 		}
+
+		OSRedrawAll();
 	}
 
 #if 1

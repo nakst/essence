@@ -848,6 +848,12 @@ uintptr_t DoSyscall(uintptr_t index,
 			rectangle->bottom = window->position.y + window->height;
 			window->mutex.Release();
 		} break;
+
+		case OS_SYSCALL_REDRAW_ALL: {
+			windowManager.mutex.Acquire();
+			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, nullptr);
+			windowManager.mutex.Release();
+		} break;
 	}
 
 	end:;

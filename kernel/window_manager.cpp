@@ -58,7 +58,7 @@ struct WindowManager {
 };
 
 WindowManager windowManager;
-Surface uiSheetSurface;
+Surface uiSheetSurface, wallpaperSurface;
 
 #else
 
@@ -321,16 +321,16 @@ void WindowManager::Initialise() {
 	mutex.Acquire();
 
 	uiSheetSurface.Initialise(kernelProcess->vmm, 256, 256, false);
+	wallpaperSurface.Initialise(kernelProcess->vmm, graphics.resX, graphics.resY, false);
 
 	cursorX = graphics.resX / 2;
 	cursorY = graphics.resY / 2;
 
 	RefreshCursor(nullptr);
 
-	mutex.Release();
-
 	// Draw the background.
-	graphics.frameBuffer.FillRectangle(OSRectangle(0, graphics.resX, 0, graphics.resY), OSColor(83, 114, 166));
+	Redraw(OSPoint(0, 0), graphics.resX, graphics.resY, 0, nullptr);
+	mutex.Release();
 	graphics.UpdateScreen();
 
 	// Create the caret blink thread.
@@ -473,10 +473,17 @@ void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t bel
 		if (background.right > (int) graphics.frameBuffer.resX) background.right = graphics.frameBuffer.resX;
 		if (background.bottom > (int) graphics.frameBuffer.resY) background.bottom = graphics.frameBuffer.resY;
 
+#if 0
 		graphics.frameBuffer.FillRectangle(background, OSColor(83, 114, 166));
+#else
+		graphics.frameBuffer.Copy(wallpaperSurface, OSPoint(background.left, background.top), background, false);
+#endif
 	}
 
-	for (int index = below - 1; index >= 0; index--) {
+	int index = below - 1;
+	if ((unsigned) index >= windowsCount) index = windowsCount - 1;
+
+	for (; index >= 0; index--) {
 		Window *window = windows[index];
 
 		if (window == except) {

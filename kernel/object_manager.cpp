@@ -211,6 +211,9 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 		} else if (handle == OS_SURFACE_UI_SHEET && (type & KERNEL_OBJECT_SURFACE)) {
 			type = KERNEL_OBJECT_SURFACE;
 			return &uiSheetSurface;
+		} else if (handle == OS_SURFACE_WALLPAPER && (type & KERNEL_OBJECT_SURFACE)) {
+			type = KERNEL_OBJECT_SURFACE;
+			return &wallpaperSurface;
 		}
 	}
 

@@ -12,9 +12,9 @@ void KernelInitilisation() {
 	graphics.Initialise(); 
 	windowManager.Initialise();
 
-	KernelLog(LOG_INFO, "KernelInitilisation - Starting the executive...\n");
-	char *executive = (char *) "/os/executive";
-	scheduler.SpawnProcess(executive, CStringLength(executive));
+	KernelLog(LOG_INFO, "KernelInitilisation - Starting the desktop...\n");
+	char *desktop = (char *) "/os/desktop";
+	scheduler.SpawnProcess(desktop, CStringLength(desktop));
 
 	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
 	scheduler.TerminateThread(GetCurrentThread());

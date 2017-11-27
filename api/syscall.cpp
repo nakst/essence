@@ -210,3 +210,7 @@ OSError OSMoveWindow(OSHandle window, OSRectangle newBounds) {
 OSError OSGetWindowBounds(OSHandle window, OSRectangle *rectangle) {
 	return OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, (uintptr_t) window, (uintptr_t) rectangle, 0, 0);
 }
+
+void OSRedrawAll() {
+	OSSyscall(OS_SYSCALL_REDRAW_ALL, 0, 0, 0, 0);
+}

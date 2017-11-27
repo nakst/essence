@@ -95,9 +95,9 @@ extern "C" void ProgramEntry() {
 	OSControl *exitButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Exit", 4);
 	OSAddControl(window, exitButton, 16, 16 + 80 + 8);
 	OSControl *moveButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Move", 4);
-	OSAddControl(window, moveButton, 16 + 80 + 16, 16 + 80 + 8);
+	// OSAddControl(window, moveButton, 16 + 80 + 16, 16 + 80 + 8);
 	OSControl *resizeButton = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Resize", 6);
-	OSAddControl(window, resizeButton, 32 + 160 + 16, 16 + 80 + 8);
+	// OSAddControl(window, resizeButton, 32 + 160 + 16, 16 + 80 + 8);
 	exitButton->action.callback = ExitButtonPressed;
 	moveButton->action.callback = MoveButtonPressed;
 	resizeButton->action.callback = ResizeButtonPressed;

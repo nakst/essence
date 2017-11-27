@@ -492,7 +492,6 @@ void Scheduler::Start() {
 
 void NewProcess() {
 	Process *thisProcess = GetCurrentThread()->process;
-	KernelLog(LOG_VERBOSE, "Creating process %d, %s...\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	// TODO Shared memory with executables.
 	uintptr_t processStartAddress = LoadELF(thisProcess->executablePath, thisProcess->executablePathLength);

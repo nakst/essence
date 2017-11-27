@@ -227,11 +227,13 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_SET_CURSOR_STYLE		(41)
 #define OS_SYSCALL_MOVE_WINDOW			(42)
 #define OS_SYSCALL_GET_WINDOW_BOUNDS 		(43)
+#define OS_SYSCALL_REDRAW_ALL			(44)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
 #define OS_CURRENT_PROCESS	 	((OSHandle) (0x1001))
 #define OS_SURFACE_UI_SHEET		((OSHandle) (0x2000))
+#define OS_SURFACE_WALLPAPER		((OSHandle) (0x2001))
 
 #define OS_WAIT_NO_TIMEOUT (-1)
 
@@ -609,6 +611,7 @@ extern "C" OSError OSGetMessage(OSMessage *message);
 extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
 extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
+extern "C" void OSRedrawAll();
 extern "C" OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, size_t height, bool decorate);
 extern "C" OSError OSUpdateWindow(OSWindow *window);
 extern "C" OSControl *OSCreateControl(OSControlType type, char *text, size_t textLengthBytes);
@@ -655,6 +658,7 @@ extern "C" void OSAssertionFailure();
 
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
 #define STBI_NO_LINEAR
 #include "stb_image.h"
 
