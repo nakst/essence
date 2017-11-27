@@ -70,8 +70,6 @@ enum ThreadTerminatableState {
 };
 
 struct Thread {
-	void *temporary;
-
 	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in activeThreads or blockedThreads list.
 	LinkedItem allItem; 			// Entry in the allThreads list.
 	LinkedItem processItem; 		// Entry in the process's list of threads.
@@ -82,16 +80,16 @@ struct Thread {
 	uintptr_t timeSlices;
 
 	volatile ThreadState state;
+	volatile ThreadTerminatableState terminatableState;
 	volatile bool executing;
 	volatile bool terminating; // Set when a request to terminate the thread has been registered.
+	volatile bool paused;	   // Set to pause a thread, usually when it has crashed or being debugged. The scheduler will skip threads marked as paused when deciding what to run.
 
 	int executingProcessorID;
 
 	Mutex *volatile blockingMutex;
 	Event *volatile blockingEvents[OS_MAX_WAIT_COUNT];
 	volatile size_t blockingEventCount;
-
-	InterruptContext *interruptContext;
 
 	Event killedEvent;
 
@@ -103,8 +101,6 @@ struct Thread {
 
 	ThreadType type;
 
-	volatile ThreadTerminatableState terminatableState;
-
 	volatile size_t handles;
 
 	// If the type of the thread is THREAD_ASYNC_TASK,
@@ -112,8 +108,8 @@ struct Thread {
 	// when the task is being executed.
 	VirtualAddressSpace *volatile asyncTempAddressSpace;
 
-	// TODO Temporary.
-	uintptr_t lastKnownExecutionAddress;
+	InterruptContext *interruptContext;
+	uintptr_t lastKnownExecutionAddress; // For debugging.
 };
 
 struct Process {

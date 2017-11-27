@@ -81,6 +81,12 @@ void ResizeButtonPressed(OSControl *, void *, OSCallbackData *) {
 #endif
 }
 
+void Div0ButtonPressed(OSControl *, void *, OSCallbackData *) {
+	int x = 1;
+	int y = 0;
+	OSPrint("x / y = %d\n", x / y);
+}
+
 extern "C" void ProgramEntry() {
 #if 0
 	RunTests();
@@ -101,6 +107,9 @@ extern "C" void ProgramEntry() {
 	exitButton->action.callback = ExitButtonPressed;
 	moveButton->action.callback = MoveButtonPressed;
 	resizeButton->action.callback = ResizeButtonPressed;
+	OSControl *div0Button = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Divide by 0", 11);
+	OSAddControl(window, div0Button, 32 + 160 + 16, 16 + 80 + 8);
+	div0Button->action.callback = Div0ButtonPressed;
 #else
 	textOutput = OSCreateControl(OS_CONTROL_STATIC, (char *) "0", 1);
 	textOutput->bounds.right = 200 - 32;

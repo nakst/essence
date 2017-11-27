@@ -252,18 +252,23 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
 			}
 
-			if (GetCurrentThread()->isKernelThread) KernelPanic("InterruptHandler - Kernel thread executing user code. (1)\n");
+			if (GetCurrentThread()->isKernelThread) {
+				KernelPanic("InterruptHandler - Kernel thread executing user code. (1)\n");
+			}
 
+			// User-code exceptions are *basically* the same thing as system calls.
 			ThreadTerminatableState previousTerminatableState;
 			previousTerminatableState = GetCurrentThread()->terminatableState;
 			GetCurrentThread()->terminatableState = THREAD_IN_SYSCALL;
-			// KernelLog(LOG_VERBOSE, "Thread %x in syscall (interrupt) was %d\n", GetCurrentThread(), previousTerminatableState);
+
+			if (local && local->spinlockCount) {
+				KernelPanic("InterruptHandler - User exception occurred with spinlock acquired.");
+			}
+
+			// Enable intrerupts during exception handling.
+			ProcessorEnableInterrupts();
 
 			if (interrupt == 14) {
-				if (local && local->spinlockCount) {
-					KernelPanic("InterruptHandler - Page fault occurred with spinlock acquired.");
-				}
-
 				bool success = HandlePageFault(context->cr2);
 
 				if (success) {
@@ -278,12 +283,15 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					context->rip, local->processorID, context->rsp, context->errorCode, context->cr2);
 
 			resolved:;
-			if (GetCurrentThread()->isKernelThread) {
-				KernelPanic("InterruptHandler - Kernel thread (is = %d) executing user code. (2)\n", GetCurrentThread()->isKernelThread);
+
+			if (GetCurrentThread()->terminatableState != THREAD_IN_SYSCALL) {
+				KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
 			}
-			if (GetCurrentThread()->terminatableState != THREAD_IN_SYSCALL) KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
+
 			GetCurrentThread()->terminatableState = previousTerminatableState;
-			// KernelLog(LOG_VERBOSE, "Thread %x terminatable now %d (interrupt done)\n", GetCurrentThread(), previousTerminatableState);
+
+			// Disable interrupts when we're done.
+			ProcessorDisableInterrupts();
 		} else {
 			if (context->cs != 0x48) {
 				KernelPanic("InterruptHandler - Unexpected value of CS 0x%X\n", context->cs);
@@ -294,9 +302,13 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					goto fault;
 				}
 
+				ProcessorEnableInterrupts();
+
 				if (!HandlePageFault(context->cr2)) {
 					goto fault;
 				}
+
+				ProcessorDisableInterrupts();
 			} else {
 				fault:
 				KernelPanic("Unresolvable processor exception encountered in supervisor mode.\n%z\nRIP = %x (CPU %d)\nX86_64 error codes: [err] %x, [cr2] %x\n"

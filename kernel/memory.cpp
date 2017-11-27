@@ -796,14 +796,11 @@ bool HandlePageFault(uintptr_t page) {
 		if (GetLocalStorage()->spinlockCount)
 			KernelPanic("HandlePageFault - Page fault occurred in critical section.\n");
 
-		ProcessorEnableInterrupts();
-
 		kernelVMM.lock.Acquire();
 		Defer(kernelVMM.lock.Release());
 
 		bool result = kernelVMM.HandlePageFault(page);
 
-		ProcessorDisableInterrupts();
 		return result;
 	} else if (page >= 0xFFFFFF0000000000 && page < 0xFFFFFF0100000000) {
 		kernelVMM.virtualAddressSpace.lock.Acquire();
@@ -818,14 +815,11 @@ bool HandlePageFault(uintptr_t page) {
 		if (GetLocalStorage()->spinlockCount)
 			KernelPanic("HandlePageFault - Page fault occurred in critical section.\n");
 
-		ProcessorEnableInterrupts();
-
 		vmm->lock.Acquire();
 		Defer(vmm->lock.Release());
 
 		bool result = vmm->HandlePageFault(page);
 
-		ProcessorDisableInterrupts();
 		return result;
 	} else {
 		return false;

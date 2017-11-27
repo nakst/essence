@@ -628,6 +628,8 @@ ASMInterruptHandler:
 	mov	rax,cr2
 	push	rax
 
+	call	ProcessorDisableInterrupts
+
 	mov	rdi,rsp
 	mov	rbx,rsp
 	and	rsp,~0xF
