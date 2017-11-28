@@ -35,7 +35,7 @@ struct MultipleAPICDescriptionTable {
 };
 
 struct ACPIProcessor {
-	uint8_t processorID;
+	uint8_t processorID, kernelProcessorID;
 	uint8_t apicID;
 	bool bootstrapProcessor;
 	bool started;

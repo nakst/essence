@@ -88,21 +88,20 @@ bool RegisterIRQHandler(uintptr_t interrupt, IRQHandler handler) {
 
 Spinlock ipiLock;
 
-void ProcessorSendIPI(uintptr_t interrupt, bool nmi) {
+void ProcessorSendIPI(uintptr_t interrupt, bool nmi, int processorID) {
 	ipiLock.AssertLocked();
 	ipiVector = interrupt;
 
-#if 0
 	// We now send IPIs at a special priority that ProcessorDisableInterrupts doesn't mask.
 	// Therefore, this isn't a problem.
-
+#if 0
 	if (!nmi && ProcessorGetLocalStorage()->spinlockCount) {
 		KernelPanic("ProcessorSendIPI - Cannot send IPIs with spinlocks acquired.\n");
 	}
 #endif
 
 	for (uintptr_t i = 0; i < acpi.processorCount; i++) {
-		if (acpi.processors + i == GetLocalStorage()->acpiProcessor) {
+		if (acpi.processors + i == GetLocalStorage()->acpiProcessor || (processorID != -1 && processorID != acpi.processors[i].kernelProcessorID)) {
 			// Don't send the IPI to this processor.
 			continue;
 		}
@@ -186,6 +185,7 @@ extern "C" void SetupProcessor2() {
 
 	// Create the idle thread for this processor.
 	scheduler.CreateProcessorThreads();
+	localStorage->acpiProcessor->kernelProcessorID = localStorage->processorID;
 }
 
 const char *exceptionInformation[] = {
@@ -265,7 +265,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				KernelPanic("InterruptHandler - User exception occurred with spinlock acquired.");
 			}
 
-			// Enable intrerupts during exception handling.
+			// Re-enable intrerupts during exception handling.
 			ProcessorEnableInterrupts();
 
 			if (interrupt == 14) {
@@ -277,10 +277,12 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			// TODO Usermode exceptions and debugging.
-			KernelPanic("InterruptHandler - Exception (%z) in userland program (%s).\nRIP = %x (CPU %d)\nRSP = %x\nX86_64 error codes: [err] %x, [cr2] %x\n", 
+			KernelLog(LOG_WARNING, "InterruptHandler - Exception (%z) in userland program (%s).\nRIP = %x (CPU %d)\nRSP = %x\nX86_64 error codes: [err] %x, [cr2] %x\n", 
 					exceptionInformation[interrupt], 
 					GetCurrentThread()->process->executablePathLength, GetCurrentThread()->process->executablePath,
 					context->rip, local->processorID, context->rsp, context->errorCode, context->cr2);
+
+			scheduler.PauseProcess(GetCurrentThread()->process, false);
 
 			resolved:;
 
@@ -302,7 +304,9 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					goto fault;
 				}
 
-				ProcessorEnableInterrupts();
+				if ((context->flags & 0x200) && context->cr8 != 0xE) {
+					ProcessorEnableInterrupts();
+				}
 
 				if (!HandlePageFault(context->cr2)) {
 					goto fault;
@@ -344,6 +348,9 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 
 		if (interrupt == TIMER_INTERRUPT) {
 			local->irqSwitchThread = true;
+		} else if (interrupt == YIELD_IPI) {
+			local->irqSwitchThread = true;
+			GetCurrentThread()->receivedYieldIPI = true;
 		} else {
 			size_t overloads = usedIrqHandlers[interrupt - IRQ_BASE];
 			bool handledInterrupt = false;

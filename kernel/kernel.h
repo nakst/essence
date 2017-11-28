@@ -22,6 +22,8 @@
 
 #ifdef ARCH_X86_64
 #define TIMER_INTERRUPT (0x40)
+#define YIELD_IPI (0x41)
+// Note: IRQ_BASE is currently 0x50.
 #define TLB_SHOOTDOWN_IPI (0xF0)
 #define KERNEL_PANIC_IPI (0x0)
 #define LOW_MEMORY_MAP_START (0xFFFFFF0000000000)
@@ -72,7 +74,7 @@ extern "C" void ProcessorBreakpointHelper(...);
 extern "C" struct CPULocalStorage *GetLocalStorage();
 extern "C" struct Thread *GetCurrentThread();
 extern "C" void ProcessorSetLocalStorage(struct CPULocalStorage *cls);
-extern "C" void ProcessorSendIPI(uintptr_t interrupt, bool nmi = false);
+extern "C" void ProcessorSendIPI(uintptr_t interrupt, bool nmi = false, int processorID = -1);
 extern "C" void ProcessorDebugOutputByte(uint8_t byte);
 extern "C" void ProcessorFakeTimerInterrupt();
 extern "C" uint64_t ProcessorReadTimeStamp();
@@ -133,6 +135,7 @@ struct Spinlock {
 	volatile bool interruptsEnabled;
 	struct Thread *volatile owner;
 	volatile uintptr_t acquireAddress, releaseAddress;
+	volatile uint8_t ownerCPU;
 };
 
 typedef void (*AsyncTaskCallback)(void *argument);

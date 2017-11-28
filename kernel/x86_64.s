@@ -427,6 +427,8 @@ ProcessorDisableInterrupts:
 
 [global ProcessorEnableInterrupts]
 ProcessorEnableInterrupts:
+	; WARNING: Changing this mechanism also requires update in x86_64.cpp, when deciding if we should re-enable interrupts on exception.
+
 	mov	rax,0
 	mov	cr8,rax
 	sti
@@ -627,8 +629,6 @@ ASMInterruptHandler:
 	mov	es,ax
 	mov	rax,cr2
 	push	rax
-
-	call	ProcessorDisableInterrupts
 
 	mov	rdi,rsp
 	mov	rbx,rsp

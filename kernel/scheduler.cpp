@@ -70,7 +70,7 @@ enum ThreadTerminatableState {
 };
 
 struct Thread {
-	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in activeThreads or blockedThreads list.
+	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in relevent thread queue or blockedThreads list.
 	LinkedItem allItem; 			// Entry in the allThreads list.
 	LinkedItem processItem; 		// Entry in the process's list of threads.
 
@@ -108,8 +108,10 @@ struct Thread {
 	// when the task is being executed.
 	VirtualAddressSpace *volatile asyncTempAddressSpace;
 
-	InterruptContext *interruptContext;
+	InterruptContext *interruptContext;  // TODO Store the userland interrupt context instead?
 	uintptr_t lastKnownExecutionAddress; // For debugging.
+
+	volatile bool receivedYieldIPI;
 };
 
 struct Process {
@@ -163,13 +165,15 @@ struct Scheduler {
 	Thread *SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveList = true);
 	void TerminateThread(Thread *thread, bool lockAlreadyAcquired = false);
 	void RemoveThread(Thread *thread); // Do not call. Use TerminateThread/CloseHandleToObject.
+	void PauseThread(Thread *thread, bool resume /*true to resume, false to pause*/, bool lockAlreadyAcquired = false);
 
 	Process *SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess = false, void *argument = nullptr);
 	void TerminateProcess(Process *process);
 	void RemoveProcess(Process *process); // Do not call. Use TerminateProcess/CloseHandleToObject.
+	void PauseProcess(Process *process, bool resume);
 
-	void AddActiveThread(Thread *thread, bool start);
-	void InsertNewThread(Thread *thread, bool addToActiveList, Process *owner);
+	void AddActiveThread(Thread *thread, bool start /*Put it at the start*/);	// Add an active thread into the queue.
+	void InsertNewThread(Thread *thread, bool addToActiveList, Process *owner); 	// Used during thread creation.
 
 	void WaitMutex(Mutex *mutex);
 	uintptr_t WaitEvents(Event **events, size_t count); // Returns index of notified object.
@@ -177,7 +181,7 @@ struct Scheduler {
 	void UnblockThread(Thread *unblockedThread);
 
 	Pool threadPool, processPool;
-	LinkedList activeThreads;
+	LinkedList activeThreads, pausedThreads;
 	LinkedList activeTimers;
 	LinkedList allThreads;
 	LinkedList allProcesses;
@@ -213,10 +217,17 @@ void Spinlock::Acquire() {
 	bool _interruptsEnabled = ProcessorAreInterruptsEnabled();
 	ProcessorDisableInterrupts();
 
+#if 0
+	if (_interruptsEnabled && this == &scheduler.lock) {
+		Print("!\n");
+	}
+#endif
+
 	CPULocalStorage *storage = GetLocalStorage();
 
 	if (storage && storage->currentThread && owner && owner == storage->currentThread) {
-		KernelPanic("Spinlock::Acquire - Attempt to acquire a spinlock owned by the current thread (%x/%x).\n", storage->currentThread, owner);
+		KernelPanic("Spinlock::Acquire - Attempt to acquire a spinlock owned by the current thread (%x/%x, CPU: %d/%d).\nAcquired at %x.\n", 
+				storage->currentThread, owner, storage->processorID, ownerCPU, acquireAddress);
 	}
 
 	if (storage) {
@@ -231,6 +242,7 @@ void Spinlock::Acquire() {
 
 	if (storage) {
 		owner = storage->currentThread;
+		ownerCPU = storage->processorID;
 	} else {
 		// Because spinlocks can be accessed very early on in initialisation there may not be
 		// a CPULocalStorage available for the current processor. Therefore, just set this field to nullptr.
@@ -295,10 +307,15 @@ void Scheduler::AddActiveThread(Thread *thread, bool start) {
 		KernelPanic("Scheduler::AddActiveThread - Thread %d has type %d\n", thread->id, thread->type);
 	}
 
-	if (start) {
-		activeThreads.InsertStart(&thread->item[0]);
+	if (thread->paused) {
+		// The thread is paused, so we can put it into the paused queue until it is resumed.
+		pausedThreads.InsertStart(&thread->item[0]);
 	} else {
-		activeThreads.InsertEnd(&thread->item[0]);
+		if (start) {
+			activeThreads.InsertStart(&thread->item[0]);
+		} else {
+			activeThreads.InsertEnd(&thread->item[0]);
+		}
 	}
 }
 
@@ -626,7 +643,8 @@ void Scheduler::CreateProcessorThreads() {
 
 void Scheduler::InitialiseAP() {
 //	CreateProcessorThreads(); (Moved to x86_64.cpp)
-	GetLocalStorage()->schedulerReady = true; // The processor can now be pre-empted.
+	CPULocalStorage *local = GetLocalStorage();
+	local->schedulerReady = true; // The processor can now be pre-empted.
 }
 
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targetProcess, bool needed) {
@@ -682,6 +700,81 @@ void Scheduler::RemoveThread(Thread *thread) {
 	// so we can finally deallocate the thread.
 
 	scheduler.threadPool.Remove(thread);
+}
+
+void Scheduler::PauseThread(Thread *thread, bool resume, bool lockAlreadyAcquired) {
+	if (!lockAlreadyAcquired) lock.Acquire();
+
+	thread->paused = !resume;
+
+	if (!resume) {
+		if (thread->state == THREAD_ACTIVE) {
+			if (thread->executing) {
+				if (thread == GetCurrentThread()) {
+					lock.Release();
+
+					// Yield.
+					ProcessorFakeTimerInterrupt();
+
+					if (thread->paused) {
+						KernelPanic("Scheduler::PauseThread - Current thread incorrectly resumed.\n");
+					}
+				} else {
+					// The thread is executing, but on a different processor.
+					// Send them an IPI to stop.
+					thread->receivedYieldIPI = false;
+					ProcessorSendIPI(YIELD_IPI, false);
+					while (!thread->receivedYieldIPI); // Spin until the thread gets the IPI.
+					// TODO The interrupt context might not be set at this point.
+				}
+			} else {
+				// Remove the thread from the active queue, and put it into the paused queue.
+				activeThreads.Remove(thread->item);
+				AddActiveThread(thread, false);
+			}
+		} else {
+			// The thread doesn't need to be in the paused queue as it won't run anyway.
+			// If it is unblocked, then AddActiveThread will put it into the correct queue.
+		}
+	} else if (thread->item->list == &pausedThreads) {
+		// Remove the thread from the paused queue, and put it into the active queue.
+		pausedThreads.Remove(thread->item);
+		AddActiveThread(thread, false);
+	}
+
+	if (!lockAlreadyAcquired && thread != GetCurrentThread()) lock.Release();
+}
+
+void Scheduler::PauseProcess(Process *process, bool resume) {
+	Thread *currentThread = GetCurrentThread();
+	bool isCurrentProcess = process == currentThread->process;
+	bool foundCurrentThread = false;
+
+	{
+		scheduler.lock.Acquire();
+		Defer(scheduler.lock.Release());
+
+		LinkedItem *thread = process->threads.firstItem;
+
+		while (thread) {
+			Thread *threadObject = (Thread *) thread->thisItem;
+			thread = thread->nextItem;
+
+			if (threadObject != currentThread) {
+				PauseThread(threadObject, resume, true);
+			} else if (isCurrentProcess) {
+				foundCurrentThread = true;
+			} else {
+				KernelPanic("Scheduler::PauseProcess - Found current thread in the wrong process?!\n");
+			}
+		}
+	}
+
+	if (!foundCurrentThread && isCurrentProcess) {
+		KernelPanic("Scheduler::PauseProcess - Could not find current thread in the current process?!\n");
+	} else if (isCurrentProcess) {
+		PauseThread(currentThread, resume, false);
+	}
 }
 
 void CloseHandleToProcess(void *_process) {
