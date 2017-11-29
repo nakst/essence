@@ -170,6 +170,8 @@ struct UniqueIdentifier {
 
 UniqueIdentifier installationID; // The identifier of this OS installation, given to us by the bootloader.
 
+struct Process *desktopProcess;
+
 #endif
 
 #include "memory.cpp"

@@ -366,8 +366,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 }
 
 void Window::ClearImage() {
-	windowManager.mutex.Acquire();
-	Defer(windowManager.mutex.Release());
+	windowManager.mutex.AssertLocked();
 
 	{
 		graphics.frameBuffer.mutex.Acquire();
@@ -395,29 +394,40 @@ void Window::ClearImage() {
 }
 
 void Window::Move(OSRectangle &rectangle) {
-	mutex.Acquire();
-	Defer(mutex.Release());
+	{
+		windowManager.mutex.Acquire();
+		Defer(windowManager.mutex.Release());
 
-	size_t newWidth = rectangle.right - rectangle.left;
-	size_t newHeight = rectangle.bottom - rectangle.top;
+		mutex.Acquire();
+		Defer(mutex.Release());
 
-	if (newWidth < 128 || newHeight < 64 
-			|| rectangle.left > rectangle.right 
-			|| rectangle.top > rectangle.bottom) return;
+		size_t newWidth = rectangle.right - rectangle.left;
+		size_t newHeight = rectangle.bottom - rectangle.top;
 
-	ClearImage();
-	position = OSPoint(rectangle.left, rectangle.top);
+		if (newWidth < 128 || newHeight < 64 
+				|| rectangle.left > rectangle.right 
+				|| rectangle.top > rectangle.bottom) return;
 
-	size_t oldWidth = width;
-	size_t oldHeight = height;
-	width = newWidth;
-	height = newHeight;
+		ClearImage();
+		position = OSPoint(rectangle.left, rectangle.top);
 
-	if (oldWidth != width || oldHeight != height) {
-		surface->Resize(width, height);
+		size_t oldWidth = width;
+		size_t oldHeight = height;
+		width = newWidth;
+		height = newHeight;
+
+		if (oldWidth != width || oldHeight != height) {
+			surface->Resize(width, height);
+		}
+
+		surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
 	}
 
-	surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
+	{
+		mutex.Acquire();
+		Defer(mutex.Release());
+		Update();
+	}
 }
 
 void Window::Destroy() {

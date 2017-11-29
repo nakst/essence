@@ -269,6 +269,10 @@ void Graphics::Initialise() {
 }
 
 void Surface::Resize(size_t newResX, size_t newResY) {
+	// WARNING:
+	// 	Don't expose this through the system call API!
+	// 	We don't lock all the surfaces properly at the moment in draw/copy operations.
+
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -276,7 +280,9 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 		KernelPanic("Surface::Resize - Attempt to resize a surface with a depth buffer.\n");
 	}
 
-	vmm->Free(memory);
+	Surface oldState;
+	CopyMemory(&oldState, this, sizeof(Surface));
+	ZeroMemory(&oldState.mutex, sizeof(Mutex));
 
 	{
 		resX = newResX;
@@ -290,6 +296,9 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 		modifiedScanlineBitset = (uint8_t *) (modifiedScanlines + resY);
 		stride = resX * 4;
 	}
+
+	Copy(oldState, OSPoint(0, 0), OSRectangle(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
+	vmm->Free(oldState.memory);
 }
 
 bool Surface::Initialise(VMM *_vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {

@@ -228,6 +228,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_MOVE_WINDOW			(42)
 #define OS_SYSCALL_GET_WINDOW_BOUNDS 		(43)
 #define OS_SYSCALL_REDRAW_ALL			(44)
+#define OS_SYSCALL_GET_CRASH_MESSAGE		(45)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -484,6 +485,8 @@ enum OSMessageType {
 	
 	OS_MESSAGE_WINDOW_CREATED 		= 0x2000,
 	OS_MESSAGE_WINDOW_BLINK_TIMER 		= 0x2001, // Sent periodically to the focused window so it can blink its caret.
+
+	OS_MESSAGE_PROGRAM_CRASH		= 0x3000,
 };
 
 struct OSMessage {

@@ -14,7 +14,7 @@ void KernelInitilisation() {
 
 	KernelLog(LOG_INFO, "KernelInitilisation - Starting the desktop...\n");
 	char *desktop = (char *) "/os/desktop";
-	scheduler.SpawnProcess(desktop, CStringLength(desktop));
+	desktopProcess = scheduler.SpawnProcess(desktop, CStringLength(desktop));
 
 	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
 	scheduler.TerminateThread(GetCurrentThread());

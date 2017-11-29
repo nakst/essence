@@ -113,7 +113,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
+#if 1
 	{
 		// Start the Odin test program.
 
@@ -123,5 +123,15 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-	OSTerminateThread(OS_CURRENT_THREAD);
+	while (true) {
+		OSMessage message;
+		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
+
+		if (OSGetMessage(&message) == OS_SUCCESS) {
+			if (message.type == OS_MESSAGE_PROGRAM_CRASH) {
+				OSPrint("The desktop process received a message that another process crashed.\n");
+				OSPrint("In the future a dialog box will appear!!\n");
+			}
+		}
+	}
 }

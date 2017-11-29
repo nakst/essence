@@ -69,6 +69,10 @@ enum ThreadTerminatableState {
 					// It can be unblocked, and then terminated when it returns from the system call.
 };
 
+struct CrashReason {
+	int id;
+};
+
 struct Thread {
 	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in relevent thread queue or blockedThreads list.
 	LinkedItem allItem; 			// Entry in the allThreads list.
@@ -128,6 +132,8 @@ struct Process {
 	VMM *vmm;
 	VMM _vmm;
 
+	CrashReason crashReason;
+
 	char *executablePath;
 	size_t executablePathLength;
 	void *creationArgument;
@@ -141,6 +147,8 @@ struct Process {
 	uintptr_t executableState;
 	Event executableLoadAttemptComplete;
 	Thread *executableMainThread;
+
+	Mutex crashMutex;
 
 	HandleTable handleTable;
 
@@ -171,6 +179,8 @@ struct Scheduler {
 	void TerminateProcess(Process *process);
 	void RemoveProcess(Process *process); // Do not call. Use TerminateProcess/CloseHandleToObject.
 	void PauseProcess(Process *process, bool resume);
+
+	void CrashProcess(Process *process, CrashReason &reason);
 
 	void AddActiveThread(Thread *thread, bool start /*Put it at the start*/);	// Add an active thread into the queue.
 	void InsertNewThread(Thread *thread, bool addToActiveList, Process *owner); 	// Used during thread creation.
@@ -466,8 +476,9 @@ void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
 				}
 
 				// The thread is terminatable and it isn't executing.
-				// Remove it from the executing list, and then remove the thread.
-				activeThreads.Remove(&thread->item[0]);
+				// Remove it from its queue, and then remove the thread.
+				if (!thread->paused) 	activeThreads.Remove(&thread->item[0]);
+				else			pausedThreads.Remove(&thread->item[0]);
 				RegisterAsyncTask(KillThread, thread, thread->process, true);
 				if (!lockAlreadyAcquired) scheduler.lock.Release();
 			}
@@ -702,8 +713,30 @@ void Scheduler::RemoveThread(Thread *thread) {
 	scheduler.threadPool.Remove(thread);
 }
 
+void Scheduler::CrashProcess(Process *process, CrashReason &crashReason) {
+	if (GetCurrentThread()->process != process) {
+		KernelPanic("Scheduler::CrashProcess - Attempt to crash process from different process.\n");
+	}
+
+	process->crashMutex.Acquire();
+
+	CopyMemory(&process->crashReason, &crashReason, sizeof(CrashReason));
+
+	OSMessage message;
+	message.type = OS_MESSAGE_PROGRAM_CRASH;
+	desktopProcess->SendMessage(message);
+
+	scheduler.PauseProcess(GetCurrentThread()->process, false);
+
+	process->crashMutex.Release();
+}
+
 void Scheduler::PauseThread(Thread *thread, bool resume, bool lockAlreadyAcquired) {
 	if (!lockAlreadyAcquired) lock.Acquire();
+
+	if (thread->paused == !resume) {
+		return;
+	}
 
 	thread->paused = !resume;
 

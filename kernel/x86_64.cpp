@@ -282,7 +282,9 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					GetCurrentThread()->process->executablePathLength, GetCurrentThread()->process->executablePath,
 					context->rip, local->processorID, context->rsp, context->errorCode, context->cr2);
 
-			scheduler.PauseProcess(GetCurrentThread()->process, false);
+			CrashReason crashReason;
+			crashReason.id = 1;
+			scheduler.CrashProcess(GetCurrentThread()->process, crashReason);
 
 			resolved:;
 
