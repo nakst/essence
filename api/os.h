@@ -180,6 +180,7 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_TIMEOUT_REACHED		(-29)
 #define OS_ERROR_INCORRECT_NODE_TYPE		(-30) 	// Always crash?
 #define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
+#define OS_ERROR_PROCESSOR_EXCEPTION		(-32)
 
 typedef intptr_t OSError;
 
@@ -229,6 +230,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_GET_WINDOW_BOUNDS 		(43)
 #define OS_SYSCALL_REDRAW_ALL			(44)
 #define OS_SYSCALL_GET_CRASH_MESSAGE		(45)
+#define OS_SYSCALL_PAUSE_PROCESS		(46)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -323,7 +325,7 @@ enum OSColorFormat {
 struct OSLinearBuffer {
 	size_t width, height, stride;
 	OSColorFormat colorFormat;
-	void *buffer;
+	OSHandle handle; // A shared memory region. See OSMapSharedMemory.
 };
 
 struct _OSRectangleAndColor {
@@ -468,6 +470,10 @@ struct OSWindow {
 	bool dirty;
 };
 
+struct OSCrashReason {
+	OSError errorCode;
+};
+
 // TODO Implement separate message queues.
 #define OS_MESSAGE_QUEUE_WINDOW_MANAGER (0x01)
 #define OS_MESSAGE_QUEUE_DEBUGGER	(0x02)
@@ -517,6 +523,11 @@ struct OSMessage {
 			unsigned scancode; 
 			bool alt, ctrl, shift;
 		} keyboard;
+
+		struct {
+			OSCrashReason reason;
+			OSHandle process;
+		} crash;
 	};
 };
 
@@ -579,6 +590,7 @@ extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
 extern "C" OSError OSTerminateThisProcess();
+extern "C" void OSPauseProcess(OSHandle process, bool resume);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);

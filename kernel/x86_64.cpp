@@ -282,8 +282,8 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					GetCurrentThread()->process->executablePathLength, GetCurrentThread()->process->executablePath,
 					context->rip, local->processorID, context->rsp, context->errorCode, context->cr2);
 
-			CrashReason crashReason;
-			crashReason.id = 1;
+			OSCrashReason crashReason;
+			crashReason.errorCode = OS_ERROR_PROCESSOR_EXCEPTION;
 			scheduler.CrashProcess(GetCurrentThread()->process, crashReason);
 
 			resolved:;
@@ -293,6 +293,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			GetCurrentThread()->terminatableState = previousTerminatableState;
+
+			if (GetCurrentThread()->terminating) {
+				ProcessorFakeTimerInterrupt();
+			}
 
 			// Disable interrupts when we're done.
 			ProcessorDisableInterrupts();

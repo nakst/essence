@@ -17,12 +17,13 @@ extern "C" void ProgramEntry() {
 			int imageX, imageY, imageChannels;
 			uint8_t *image = stbi_load_from_memory(loadedFile, fileSize, &imageX, &imageY, &imageChannels, 4);
 
-			OSHandle surface = OSCreateSurface(imageX, imageY);
+			OSHandle surface = OS_SURFACE_UI_SHEET;
 			OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
+			void *bitmap = OSMapSharedMemory(buffer.handle, 0, buffer.height * buffer.stride);
 
 			for (intptr_t y = 0; y < imageY; y++) {
 				for (intptr_t x = 0; x < imageX; x++) {
-					uint8_t *destination = (uint8_t *) buffer.buffer + y * buffer.stride + x * 4;
+					uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
 					uint8_t *source = image + y * imageX * 4 + x * 4;
 					destination[2] = source[0];
 					destination[1] = source[1];
@@ -31,12 +32,10 @@ extern "C" void ProgramEntry() {
 				}
 			}
 
-			OSInvalidateRectangle(OS_SURFACE_UI_SHEET, OSRectangle(0, imageX, 0, imageY));
-			OSCopySurface(OS_SURFACE_UI_SHEET, surface, OSPoint(0, 0));
-
-			free(image);
+			OSInvalidateRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height));
+			OSHeapFree(image);
 			OSHeapFree(loadedFile);
-			OSCloseHandle(surface);
+			OSFree(bitmap);
 		}
 	}
 
@@ -74,12 +73,13 @@ extern "C" void ProgramEntry() {
 			if (!image) {
 				OSPrint("Error: Could not load the wallpaper.\n");
 			} else {
-				OSHandle surface = OSCreateSurface(imageX, imageY);
+				OSHandle surface = OS_SURFACE_WALLPAPER;
 				OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
+				void *bitmap = OSMapSharedMemory(buffer.handle, 0, buffer.height * buffer.stride);
 
-				for (intptr_t y = 0; y < imageY; y++) {
-					for (intptr_t x = 0; x < imageX; x++) {
-						uint8_t *destination = (uint8_t *) buffer.buffer + y * buffer.stride + x * 4;
+				for (uintptr_t y = 0; y < buffer.height; y++) {
+					for (uintptr_t x = 0; x < buffer.width; x++) {
+						uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
 						uint8_t *source = image + y * imageX * 4 + x * 4;
 						destination[2] = source[0];
 						destination[1] = source[1];
@@ -88,11 +88,9 @@ extern "C" void ProgramEntry() {
 					}
 				}
 
-				OSInvalidateRectangle(OS_SURFACE_WALLPAPER, OSRectangle(0, imageX, 0, imageY));
-				OSCopySurface(OS_SURFACE_WALLPAPER, surface, OSPoint(0, 0));
-
-				free(image);
-				OSCloseHandle(surface);
+				OSInvalidateRectangle(surface, OSRectangle(0, imageX, 0, imageY));
+				OSHeapFree(image);
+				OSFree(bitmap);
 			}
 
 			OSHeapFree(loadedFile);
@@ -109,6 +107,8 @@ extern "C" void ProgramEntry() {
 			const char *path = "/os/calculator";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
+			OSCloseHandle(process.mainThread.handle);
+			OSCloseHandle(process.handle);
 		}
 	}
 #endif
@@ -128,9 +128,16 @@ extern "C" void ProgramEntry() {
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
-			if (message.type == OS_MESSAGE_PROGRAM_CRASH) {
+			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
+				continue;
+			} else if (message.type == OS_MESSAGE_PROGRAM_CRASH) {
 				OSPrint("The desktop process received a message that another process crashed.\n");
-				OSPrint("In the future a dialog box will appear!!\n");
+				OSPrint("Error code: %d\n", message.crash.reason.errorCode);
+				OSTerminateProcess(message.crash.process);
+				OSPauseProcess(message.crash.process, true);
+				OSCloseHandle(message.crash.process);
+
+				OSCreateWindow((char *) "Program Crash", 13, 300, 100, true);
 			}
 		}
 	}

@@ -70,7 +70,7 @@ static float GetGUIFontScale(int size) {
 	return scale;
 }
 
-static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight) {
+static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap) {
 	for (int y = 0; y < lineHeight; y++) {
 		int oY = outputPosition.y - lineHeight + y + 4;
 
@@ -88,7 +88,7 @@ static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle 
 		if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
 		if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
-		uint32_t *destination = (uint32_t *) ((uint8_t *) linearBuffer.buffer + 
+		uint32_t *destination = (uint32_t *) ((uint8_t *) bitmap + 
 				(oX) * 4 + 
 				(oY) * linearBuffer.stride);
 		*destination = 0xFF000000;
@@ -118,8 +118,10 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	char *stringEnd = string->buffer + string->bytes;
 
 	OSLinearBuffer linearBuffer;
+	void *bitmap = nullptr;
 	if (surface != OS_INVALID_HANDLE) {
 		OSGetLinearBuffer(surface, &linearBuffer);
+		bitmap = OSMapSharedMemory(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height);
 	}
 
 	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, scale);
@@ -248,7 +250,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 					if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
 					if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
-					uint32_t *destination = (uint32_t *) ((uint8_t *) linearBuffer.buffer + 
+					uint32_t *destination = (uint32_t *) ((uint8_t *) bitmap + 
 							(oX) * 4 + 
 							(oY) * linearBuffer.stride);
 
@@ -334,7 +336,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
 				uint8_t pixel = output[x + y * width];
-				uint32_t *destination = (uint32_t *) ((uint8_t *) linearBuffer.buffer + 
+				uint32_t *destination = (uint32_t *) ((uint8_t *) bitmap + 
 						(oX) * 4 + 
 						(oY) * linearBuffer.stride);
 
@@ -374,7 +376,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 		skipCharacter:
 		if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
-			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight);
+			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight, bitmap);
 		}
 
 		outputPosition.x += advanceWidth;
@@ -383,7 +385,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	}
 
 	if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
-		DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight);
+		DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight, bitmap);
 	}
 
 	if (coordinate.x >= outputPosition.x && !actuallyDraw && characterIndex) {
@@ -394,6 +396,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 	if (surface != OS_INVALID_HANDLE) {
 		OSInvalidateRectangle(surface, invalidatedRegion);
+		OSFree(bitmap);
 	}
 
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;

@@ -113,7 +113,7 @@ struct VirtualAddressSpace {
 
 struct VMM {
 	void Initialise();
-	void Destroy(); // This MUST be called with the kernelVMM active!
+	void Destroy(); 
 
 	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);

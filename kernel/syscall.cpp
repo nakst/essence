@@ -157,7 +157,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_CREATE_SURFACE: {
 			Surface *surface = (Surface *) graphics.surfacePool.Add();
-			if (!surface->Initialise(currentVMM, argument0, argument1, false)) {
+			if (!surface->Initialise(argument0, argument1, false)) {
 				SYSCALL_RETURN(OS_INVALID_HANDLE);
 			}
 
@@ -179,13 +179,13 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
 			Defer(currentVMM->UnlockRegion(region1));
 
-			if (surface->memoryInKernelAddressSpace) {
-				SYSCALL_RETURN(OS_ERROR_BUFFER_NOT_ACCESSIBLE);
-			}
+			Handle handle;
+			handle.type = KERNEL_OBJECT_SHMEM;
+			handle.object = surface->region;
 
+			linearBuffer->handle = currentProcess->handleTable.OpenHandle(handle);
 			linearBuffer->width = surface->resX;
 			linearBuffer->height = surface->resY;
-			linearBuffer->buffer = surface->linearBuffer;
 			linearBuffer->stride = surface->stride;
 			linearBuffer->colorFormat = OS_COLOR_FORMAT_32_XRGB;
 
@@ -853,6 +853,15 @@ uintptr_t DoSyscall(uintptr_t index,
 			windowManager.mutex.Acquire();
 			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, nullptr);
 			windowManager.mutex.Release();
+		} break;
+					    
+		case OS_SYSCALL_PAUSE_PROCESS: {
+			KernelObjectType type = KERNEL_OBJECT_PROCESS;
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
+
+			scheduler.PauseProcess(process, (bool) argument1);
 		} break;
 	}
 

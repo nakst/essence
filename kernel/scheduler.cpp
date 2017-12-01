@@ -69,10 +69,6 @@ enum ThreadTerminatableState {
 					// It can be unblocked, and then terminated when it returns from the system call.
 };
 
-struct CrashReason {
-	int id;
-};
-
 struct Thread {
 	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in relevent thread queue or blockedThreads list.
 	LinkedItem allItem; 			// Entry in the allThreads list.
@@ -132,7 +128,7 @@ struct Process {
 	VMM *vmm;
 	VMM _vmm;
 
-	CrashReason crashReason;
+	OSCrashReason crashReason;
 
 	char *executablePath;
 	size_t executablePathLength;
@@ -180,7 +176,7 @@ struct Scheduler {
 	void RemoveProcess(Process *process); // Do not call. Use TerminateProcess/CloseHandleToObject.
 	void PauseProcess(Process *process, bool resume);
 
-	void CrashProcess(Process *process, CrashReason &reason);
+	void CrashProcess(Process *process, OSCrashReason &reason);
 
 	void AddActiveThread(Thread *thread, bool start /*Put it at the start*/);	// Add an active thread into the queue.
 	void InsertNewThread(Thread *thread, bool addToActiveList, Process *owner); 	// Used during thread creation.
@@ -454,6 +450,10 @@ void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
 		scheduler.lock.Acquire();
 	}
 
+	if (thread->terminating) {
+		return;
+	}
+
 	thread->terminating = true;
 
 	if (thread == GetCurrentThread()) {
@@ -671,9 +671,12 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 		KernelPanic("RegisterAsyncTask - Maximum number of queued asynchronous tasks reached.\n");
 	}
 
+	// We need to register tasks for terminating processes.
+#if 0
 	if (!targetProcess->handles) {
 		KernelPanic("RegisterAsyncTask - Process has no handles.\n");
 	}
+#endif
 
 	volatile AsyncTask *task = local->asyncTasks + local->asyncTasksCount;
 	task->callback = callback;
@@ -713,17 +716,24 @@ void Scheduler::RemoveThread(Thread *thread) {
 	scheduler.threadPool.Remove(thread);
 }
 
-void Scheduler::CrashProcess(Process *process, CrashReason &crashReason) {
+void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 	if (GetCurrentThread()->process != process) {
 		KernelPanic("Scheduler::CrashProcess - Attempt to crash process from different process.\n");
 	}
 
 	process->crashMutex.Acquire();
 
-	CopyMemory(&process->crashReason, &crashReason, sizeof(CrashReason));
+	CopyMemory(&process->crashReason, &crashReason, sizeof(OSCrashReason));
+
+	Handle handle;
+	handle.type = KERNEL_OBJECT_PROCESS;
+	handle.object = process;
+	OSHandle handle2 = desktopProcess->handleTable.OpenHandle(handle);
 
 	OSMessage message;
 	message.type = OS_MESSAGE_PROGRAM_CRASH;
+	message.crash.process = handle2;
+	CopyMemory(&message.crash.reason, &crashReason, sizeof(OSCrashReason));
 	desktopProcess->SendMessage(message);
 
 	scheduler.PauseProcess(GetCurrentThread()->process, false);

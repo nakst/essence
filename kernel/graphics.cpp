@@ -18,8 +18,7 @@ struct Surface {
 	// All Surfaces are currently VIDEO_COLOR_32_XRGB.
 	// This reduces the amount of graphics function I have to write.
 
-	bool Initialise(VMM *vmm /*the VMM to allocate the surface's memory from*/, 
-			size_t resX, size_t resY,
+	bool Initialise(size_t resX, size_t resY,
 			bool createDepthBuffer = false);
 	void Destroy();
 
@@ -52,9 +51,8 @@ struct Surface {
 	void ClearModifiedRegion();
 
 	// The memory used by the surface.
-	VMM *vmm;
 	uint8_t *memory;
-	bool memoryInKernelAddressSpace;
+	SharedMemoryRegion *region;
 
 	uint8_t *linearBuffer; // The linear buffer of the surface. 
 			       // Currently each pixel is 32-bit [A/X]RGB, little-endian.
@@ -264,8 +262,8 @@ void Graphics::Initialise() {
 
 	surfacePool.Initialise(sizeof(Surface));
 
-	cursorSwap.Initialise(&kernelVMM, CURSOR_SWAP_SIZE, CURSOR_SWAP_SIZE, false);
-	frameBuffer.Initialise(&kernelVMM, resX, resY, true /*Create depth buffer for window manager*/);
+	cursorSwap.Initialise(CURSOR_SWAP_SIZE, CURSOR_SWAP_SIZE, false);
+	frameBuffer.Initialise(resX, resY, true /*Create depth buffer for window manager*/);
 }
 
 void Surface::Resize(size_t newResX, size_t newResY) {
@@ -289,7 +287,8 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 		resY = newResY;
 
 		size_t memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 4 + (resY + 7) / 8;
-		memory = (uint8_t *) vmm->Allocate("Surface", memoryNeeded);
+		region = sharedMemoryManager.CreateSharedMemory(memoryNeeded);
+		memory = (uint8_t *) kernelVMM.Allocate("Surface", memoryNeeded, vmmMapLazy, vmmRegionShared, 0, VMM_REGION_FLAG_CACHABLE, region);
 		linearBuffer = memory;
 		depthBuffer = nullptr;
 		modifiedScanlines = (ModifiedScanline *) (memory + resX * resY * 4);
@@ -298,17 +297,14 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 	}
 
 	Copy(oldState, OSPoint(0, 0), OSRectangle(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
-	vmm->Free(oldState.memory);
+	kernelVMM.Free(oldState.memory);
 }
 
-bool Surface::Initialise(VMM *_vmm, size_t _resX, size_t _resY, bool createDepthBuffer) {
-	vmm = _vmm;
+bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
 	resX = _resX;
 	resY = _resY;
 
 	handles = 1;
-
-	memoryInKernelAddressSpace = vmm == &kernelVMM;
 
 	stride = resX * 4;
 
@@ -321,14 +317,16 @@ bool Surface::Initialise(VMM *_vmm, size_t _resX, size_t _resY, bool createDepth
 	size_t memoryNeeded;
 	if (createDepthBuffer) {
 		memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 6 + (resY + 7) / 8;
-		memory = (uint8_t *) vmm->Allocate("Surface", memoryNeeded);
+		region = sharedMemoryManager.CreateSharedMemory(memoryNeeded);
+		memory = (uint8_t *) kernelVMM.Allocate("Surface", memoryNeeded, vmmMapLazy, vmmRegionShared, 0, VMM_REGION_FLAG_CACHABLE, region);
 		linearBuffer = memory;
 		depthBuffer = (uint16_t *) (memory + resX * resY * 4);
 		modifiedScanlines = (ModifiedScanline *) (depthBuffer + resX * resY);
 		modifiedScanlineBitset = (uint8_t *) (modifiedScanlines + resY);
 	} else {
 		memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 4 + (resY + 7) / 8;
-		memory = (uint8_t *) vmm->Allocate("Surface", memoryNeeded);
+		region = sharedMemoryManager.CreateSharedMemory(memoryNeeded);
+		memory = (uint8_t *) kernelVMM.Allocate("Surface", memoryNeeded, vmmMapLazy, vmmRegionShared, 0, VMM_REGION_FLAG_CACHABLE, region);
 		linearBuffer = memory;
 		depthBuffer = nullptr;
 		modifiedScanlines = (ModifiedScanline *) (memory + resX * resY * 4);
@@ -676,7 +674,7 @@ void Surface::FillRectangle(OSRectangle region, OSColor color) {
 }
 
 void Surface::Destroy() {
-	vmm->Free(memory);
+	kernelVMM.Free(memory);
 	OSHeapFree(this);
 }
 

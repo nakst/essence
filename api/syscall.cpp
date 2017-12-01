@@ -214,3 +214,7 @@ OSError OSGetWindowBounds(OSHandle window, OSRectangle *rectangle) {
 void OSRedrawAll() {
 	OSSyscall(OS_SYSCALL_REDRAW_ALL, 0, 0, 0, 0);
 }
+
+void OSPauseProcess(OSHandle process, bool resume) {
+	OSSyscall(OS_SYSCALL_PAUSE_PROCESS, process, resume, 0, 0);
+}

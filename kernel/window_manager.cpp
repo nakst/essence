@@ -1,5 +1,7 @@
 #ifndef IMPLEMENTATION
 
+// TODO Switch to shared memory with surface storage.
+
 #define SCANCODE_KEY_RELEASED (1 << 15)
 #define SCANCODE_KEY_PRESSED  (0 << 15)
 
@@ -320,8 +322,8 @@ void CaretBlink(WindowManager *windowManager) {
 void WindowManager::Initialise() {
 	mutex.Acquire();
 
-	uiSheetSurface.Initialise(kernelProcess->vmm, 256, 256, false);
-	wallpaperSurface.Initialise(kernelProcess->vmm, graphics.resX, graphics.resY, false);
+	uiSheetSurface.Initialise(256, 256, false);
+	wallpaperSurface.Initialise(graphics.resX, graphics.resY, false);
 
 	cursorX = graphics.resX / 2;
 	cursorY = graphics.resY / 2;
@@ -346,7 +348,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 	window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
 
-	if (!window->surface->Initialise(process->vmm, width, height, false)) {
+	if (!window->surface->Initialise(width, height, false)) {
 		OSHeapFree(window->surface, sizeof(Surface));
 		OSHeapFree(window, sizeof(Window));
 		return nullptr;
