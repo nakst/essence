@@ -407,9 +407,11 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 		superblock->blocksPerGroup /= 2;
 	}
 
+#if 0
 	printf("Block size: %d\n", superblock->blockSize);
 	printf("Block groups: %d\n", superblock->groupCount);
 	printf("Blocks per group: %d\n", superblock->blocksPerGroup);
+#endif
 
 	superblock->blocksPerGroupExtentTable = BlocksNeededToStore(superblock->blocksPerGroup);
 

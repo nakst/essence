@@ -138,8 +138,6 @@ extern "C" void ProgramEntry() {
 				OSTerminateProcess(message.crash.process);
 				OSPauseProcess(message.crash.process, true);
 				OSCloseHandle(message.crash.process);
-
-				OSCreateWindow((char *) "Program Crash", 13, 300, 100, true);
 			}
 		}
 	}

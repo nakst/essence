@@ -1,9 +1,79 @@
-// TODO Heap panic with textboxes, to investigate.
-
 // TODO Textboxes
 //	- Clipboard and undo
 //	- Scrolling (including drag selections)
 //	- Actually use the OS_CALLBACK_GET_TEXT callback for everything.
+//	- Heap corruption?
+
+struct Control {
+	OSControlType type;
+	struct Pane *pane;
+	bool dirty;
+
+	// Position and size:
+	unsigned preferredWidth, preferredHeight;
+	unsigned textBoundsBorder;
+
+	// Properties:
+#define OS_CONTROL_ENABLED  (false)
+#define OS_CONTROL_DISABLED (true)
+	bool disabled;
+	struct Window *window;
+
+	// Callbacks:
+	OSCallback action;
+	OSCallback getText;
+	OSCallback insertText;
+	OSCallback removeText;
+
+	// Style:
+	OSRectangle image;
+	OSRectangle imageBorder;
+	OSCursorStyle cursorStyle;
+	OSControlImageType imageType;
+	bool manualImage;
+	int fillWidth;
+	unsigned textAlign;
+	bool canHaveFocus;
+	int caretBlink;
+	bool textShadow;
+	int fontSize;
+
+	// Misc:
+	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
+	uint8_t resizeRegionIndex;
+
+	// State:
+
+	OSCaret caret, caret2;
+	OSString text;
+};
+
+struct Pane {
+	struct Window *window;
+	struct Pane *parent;
+	Control *control;
+	OSRectangle bounds;
+
+	struct Pane *children;
+	size_t childrenCount;
+
+	bool dirty;
+};
+
+struct Window {
+	OSHandle handle;
+	OSHandle surface;
+
+	size_t width, height;
+
+	Pane pane;
+
+	Control *hoverControl, *previousHoverControl;
+	Control *pressedControl;
+	Control *focusedControl;
+
+	bool dirty;
+};
 
 #define BORDER_OFFSET_X (5)
 #define BORDER_OFFSET_Y (29)
@@ -11,7 +81,7 @@
 #define BORDER_SIZE_X (8)
 #define BORDER_SIZE_Y (34)
 
-static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &data) {
+static void SendCallback(Control *from, OSCallback &callback, OSCallbackData &data) {
 	if (callback.callback) {
 		callback.callback(from, callback.argument, &data);
 	} else {
@@ -66,7 +136,35 @@ static void SendCallback(OSControl *from, OSCallback &callback, OSCallbackData &
 	}
 }
 
-static void DrawControl(OSWindow *window, OSControl *control) {
+static OSRectangle GetControlBounds(Control *control) {
+	Pane *pane = control->pane;
+	OSRectangle rectangle = pane->bounds;
+	pane = pane->parent;
+
+	while (pane) {
+		rectangle.left   += pane->bounds.left;
+		rectangle.right  += pane->bounds.left;
+		rectangle.top    += pane->bounds.top;
+		rectangle.bottom += pane->bounds.top;
+
+		pane = pane->parent;
+	}
+
+	return rectangle;
+}
+
+static OSRectangle GetControlTextBounds(Control *control) {
+	OSRectangle textBounds = GetControlBounds(control);
+	textBounds.left += control->textBoundsBorder;
+	textBounds.right -= control->textBoundsBorder;
+	textBounds.top += control->textBoundsBorder;
+	textBounds.bottom -= control->textBoundsBorder;
+	return textBounds;
+}
+
+static void DrawControl(Control *control) {
+	Window *window = control->window;
+
 	if (!window || control->imageType == OS_CONTROL_IMAGE_TRANSPARENT) return;
 
 	int imageWidth = control->image.right - control->image.left;
@@ -91,16 +189,19 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 	textEvent.getText.string = &controlText;
 	SendCallback(control, control->getText, textEvent);
 
+	OSRectangle textBounds = GetControlTextBounds(control);
+	OSRectangle bounds = GetControlBounds(control);
+
 	if (control->imageType == OS_CONTROL_IMAGE_FILL) {
 		if (control->imageBorder.left) {
 			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
-					control->bounds,
+					bounds,
 					control->image,
 					control->imageBorder,
 					OS_DRAW_MODE_REPEAT_FIRST);
 		} else {
 			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
-					control->bounds,
+					bounds,
 					OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
 					OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
 					OS_DRAW_MODE_REPEAT_FIRST);
@@ -108,59 +209,64 @@ static void DrawControl(OSWindow *window, OSControl *control) {
 
 		if (control->textShadow) {
 #define SHADOW_OFFSET (1)
-			DrawString(window->surface, OSRectangle(control->textBounds.left + SHADOW_OFFSET, control->textBounds.right + SHADOW_OFFSET,
-								control->textBounds.top + SHADOW_OFFSET, control->textBounds.bottom + SHADOW_OFFSET), 
+			DrawString(window->surface, OSRectangle(textBounds.left + SHADOW_OFFSET, textBounds.right + SHADOW_OFFSET,
+								textBounds.top + SHADOW_OFFSET, textBounds.bottom + SHADOW_OFFSET), 
 					&controlText,
 					control->textAlign,
 					control->disabled ? 0x808080 : 0x000000, -1, 0xFFAFC6EA,
 					OSPoint(0, 0), nullptr, -1, 0, false, control->fontSize);
 		}
 		
-		DrawString(window->surface, control->textBounds, 
+		DrawString(window->surface, textBounds, 
 				&controlText,
 				control->textAlign,
 				control->disabled ? 0x808080 : (control->textShadow ? 0xFFFFFF : 0x000000), -1, 0xFFAFC6EA,
 				OSPoint(0, 0), nullptr, control == window->focusedControl && !control->disabled ? control->caret.character : -1, 
 				control->caret2.character, control->caretBlink == 2, control->fontSize);
 	} else if (control->imageType == OS_CONTROL_IMAGE_CENTER_LEFT) {
-		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
+		OSFillRectangle(window->surface, bounds, OSColor(0xF0, 0xF0, 0xF5));
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
-				OSRectangle(control->bounds.left, control->bounds.left + control->fillWidth, 
-					control->bounds.top, control->bounds.top + imageHeight),
+				OSRectangle(bounds.left, bounds.left + control->fillWidth, 
+					bounds.top, bounds.top + imageHeight),
 				OSRectangle(styleX, styleX + imageWidth, control->image.top, control->image.bottom),
 				OSRectangle(styleX + 3, styleX + 5, control->image.top + 10, control->image.top + 11),
 				OS_DRAW_MODE_REPEAT_FIRST);
 		OSDrawString(window->surface, 
-				control->textBounds, 
+				textBounds, 
 				&controlText,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
 	} else if (control->imageType == OS_CONTROL_IMAGE_NONE) {
-		OSFillRectangle(window->surface, control->bounds, OSColor(0xF0, 0xF0, 0xF5));
-		OSDrawString(window->surface, control->textBounds, 
+		OSFillRectangle(window->surface, bounds, OSColor(0xF0, 0xF0, 0xF5));
+		OSDrawString(window->surface, textBounds, 
 				&controlText,
 				control->textAlign,
 				control->disabled ? 0x808080 : 0x000000, 0xF0F0F5);
-	}
-
-	if (control->checked) {
-		int checkY = 92 + 13 * control->checked - 13; 
-		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, 
-				OSRectangle(control->bounds.left, control->bounds.left + control->fillWidth, 
-					control->bounds.top, control->bounds.top + imageHeight),
-				OSRectangle(96, 96 + 13, checkY, checkY + 13),
-				OSRectangle(96 + 1, 96 + 2, checkY + 1, checkY + 2),
-				OS_DRAW_MODE_REPEAT_FIRST);
 	}
 
 	if (textEvent.getText.freeText) {
 		OSHeapFree(controlText.buffer);
 	}
-
-	window->dirty = true;
 }
 
-OSError OSSetControlText(OSControl *control, char *text, size_t textLength) {
+static void DrawPane(Pane *pane, bool force) {
+	if (pane->dirty == false && !force) {
+		return;
+	} else {
+		pane->dirty = false;
+	}
+
+	if (pane->control && (pane->control->dirty || force)) {
+		DrawControl(pane->control);
+		pane->control->dirty = false;
+	}
+
+	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
+		DrawPane(pane->children + i, force);
+	}
+}
+
+void OSSetControlText(Control *control, char *text, size_t textLength) {
 	if (control->text.buffer) {
 		OSHeapFree(control->text.buffer);
 	}
@@ -180,26 +286,35 @@ OSError OSSetControlText(OSControl *control, char *text, size_t textLength) {
 	string->allocated = textLength;
 	string->characters = utf8_length(text, textLength);
 
-	return OSInvalidateControl(control);
+	OSInvalidateControl(control);
 }
 
-OSError OSInvalidateControl(OSControl *control) {
-	DrawControl(control->parent, control);
-	return OS_SUCCESS;
+void OSInvalidateControl(OSObject _control) {
+	Control *control = (Control *) _control;
+	control->dirty = true;
+
+	Pane *pane = control->pane;
+	while (pane) {
+		pane->dirty = true;
+		pane->window->dirty = true;
+		pane = pane->parent;
+	}
 }
 
-static bool ControlHitTest(OSControl *control, int x, int y) {
-	if (control->parent->pressedControl == control) {
+static bool ControlHitTest(Control *control, int x, int y) {
+	OSRectangle bounds = GetControlBounds(control);
+
+	if (control->window->pressedControl == control) {
 #define EXTRA_PRESSED_BORDER (5)
-		if (x >= control->bounds.left - EXTRA_PRESSED_BORDER && x < control->bounds.right + EXTRA_PRESSED_BORDER 
-				&& y >= control->bounds.top - EXTRA_PRESSED_BORDER && y < control->bounds.bottom + EXTRA_PRESSED_BORDER) {
+		if (x >= bounds.left - EXTRA_PRESSED_BORDER && x < bounds.right + EXTRA_PRESSED_BORDER 
+				&& y >= bounds.top - EXTRA_PRESSED_BORDER && y < bounds.bottom + EXTRA_PRESSED_BORDER) {
 			return true;
 		} else {
 			return false;
 		}
 	} else {
-		if (x >= control->bounds.left && x < control->bounds.right
-				&& y >= control->bounds.top && y < control->bounds.bottom) {
+		if (x >= bounds.left && x < bounds.right
+				&& y >= bounds.top && y < bounds.bottom) {
 			return true;
 		} else {
 			return false;
@@ -207,45 +322,23 @@ static bool ControlHitTest(OSControl *control, int x, int y) {
 	}
 }
 
-void OSDisableControl(OSControl *control, bool disabled) {
+void OSDisableControl(OSObject object, bool disabled) {
+	Control *control = (Control *) object;
+
 	control->disabled = disabled;
 
 	if (disabled) {
-		if (control == control->parent->hoverControl)   control->parent->hoverControl = nullptr;
-		if (control == control->parent->pressedControl) control->parent->pressedControl = nullptr;
+		if (control == control->window->hoverControl)   control->window->hoverControl = nullptr;
+		if (control == control->window->pressedControl) control->window->pressedControl = nullptr;
 	}
 
 	OSInvalidateControl(control);
 }
 
-void OSCheckControl(OSControl *control, int checked) {
-	control->checked = checked;
+OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsigned flags) {
+	(void) flags;
 
-	OSInvalidateControl(control);
-}
-
-OSError OSAddControl(OSWindow *window, OSControl *control, int x, int y) {
-	control->bounds.left   += x + BORDER_OFFSET_X;
-	control->bounds.top    += y + BORDER_OFFSET_Y;
-	control->bounds.right  += x + BORDER_OFFSET_X;
-	control->bounds.bottom += y + BORDER_OFFSET_Y;
-
-	control->textBounds.left   += x + BORDER_OFFSET_X;
-	control->textBounds.top    += y + BORDER_OFFSET_Y;
-	control->textBounds.right  += x + BORDER_OFFSET_X;
-	control->textBounds.bottom += y + BORDER_OFFSET_Y;
-
-	control->parent = window;
-	window->dirty = true;
-
-	window->controls[window->controlsCount++] = control;
-	DrawControl(window, control);
-
-	return OS_SUCCESS;
-}
-
-OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
-	OSControl *control = (OSControl *) OSHeapAllocate(sizeof(OSControl), true);
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	if (!control) return nullptr;
 
 	control->type = type;
@@ -255,57 +348,22 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 
 	switch (type) {
 		case OS_CONTROL_BUTTON: {
-			control->bounds.right = 80;
-			control->bounds.bottom = 21;
-			control->textBounds = control->bounds;
+			control->preferredWidth = 80;
+			control->preferredHeight = 21;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(42, 42 + 8, 88, 88 + 21);
 		} break;
 
-		case OS_CONTROL_GROUP: {
-			control->bounds.right = 100;
-			control->bounds.bottom = 100;
-			control->textBounds = control->bounds;
-			control->imageType = OS_CONTROL_IMAGE_FILL;
-			control->image = OSRectangle(20, 20 + 6, 85, 85 + 6);
-			control->imageBorder = OSRectangle(22, 23, 87, 88);
-		} break;
-
-		case OS_CONTROL_CHECKBOX: {
-			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
-			control->bounds.bottom = 13;
-			control->textBounds = control->bounds;
-			control->textBounds.left = 13 + 4;
-			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
-			control->fillWidth = 13;
-			control->image = OSRectangle(42, 42 + 8, 110, 110 + 13);
-			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
-		} break;
-
-		case OS_CONTROL_RADIOBOX: {
-			control->bounds.right = 21 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
-			control->bounds.bottom = 14;
-			control->textBounds = control->bounds;
-			control->textBounds.left = 13 + 4;
-			control->imageType = OS_CONTROL_IMAGE_CENTER_LEFT;
-			control->fillWidth = 14;
-			control->image = OSRectangle(116, 116 + 14, 42, 42 + 14);
-			control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
-		} break;
-
 		case OS_CONTROL_STATIC: {
-			control->bounds.right = 4 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
-			control->bounds.bottom = 14;
-			control->textBounds = control->bounds;
+			control->preferredWidth = 4 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
+			control->preferredHeight = 14;
 			control->imageType = OS_CONTROL_IMAGE_NONE;
 		} break;
 
 		case OS_CONTROL_TEXTBOX: {
-			control->bounds.right = 160;
-			control->bounds.bottom = 21;
-			control->textBounds = control->bounds;
-			control->textBounds.left += 4;
-			control->textBounds.right -= 4;
+			control->preferredWidth = 160;
+			control->preferredHeight = 21;
+			control->textBoundsBorder = 4;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(1, 1 + 7, 122, 122 + 21);
 			control->canHaveFocus = true;
@@ -314,8 +372,6 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 		} break;
 
 		case OS_CONTROL_TITLEBAR: {
-			control->bounds.bottom = 24;
-			control->textBounds = control->bounds;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
 			control->image = OSRectangle(149, 149 + 7, 64, 64 + 24);
 			control->manualImage = true;
@@ -334,8 +390,22 @@ OSControl *OSCreateControl(OSControlType type, char *text, size_t textLength) {
 	return control;
 }
 
-OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, size_t height, bool decorate) {
-	OSWindow *window = (OSWindow *) OSHeapAllocate(sizeof(OSWindow), true);
+static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t childrenCount, Control *control) {
+	pane->bounds = bounds;
+	pane->window = window;
+	pane->parent = parent;
+	pane->children = (Pane *) OSHeapAllocate(sizeof(Pane) * (pane->childrenCount = childrenCount), true);
+	pane->control = control;
+
+	if (control) {
+		control->pane = pane;
+		control->window = window;
+		OSInvalidateControl(control);
+	}
+}
+
+OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, unsigned height, unsigned flags) {
+	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 
 	// Add the size of the border.
 	width += BORDER_SIZE_X;
@@ -351,65 +421,61 @@ OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, siz
 		return nullptr;
 	}
 
+	bool decorate = !(flags & OS_CREATE_WINDOW_NO_DECORATIONS);
+
+	// Create the root and content panes.
+	InitialisePane(&window->pane, OSRectangle(0, width, 0, height), window, nullptr, decorate ? 10 : 1, nullptr);
+	InitialisePane(window->pane.children + 0, OSRectangle(BORDER_OFFSET_X, width - BORDER_SIZE_X + BORDER_OFFSET_X, BORDER_OFFSET_Y, height - BORDER_SIZE_Y + BORDER_OFFSET_Y), window, &window->pane, 0, nullptr);
+	
 	if (decorate) {
 		// Draw the window background and border.
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
 				OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
 
-		OSControl *titlebar = OSCreateControl(OS_CONTROL_TITLEBAR, title, titleLengthBytes);
-		titlebar->bounds.right = width - 8;
-		titlebar->textBounds = titlebar->bounds;
-		OSAddControl(window, titlebar, 4 - BORDER_OFFSET_X, 4 - BORDER_OFFSET_Y);
+		// TODO Increase the resize region sizes.
 
-		OSControl *resizeTop = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeTop->bounds = OSRectangle(0, width - 8, 0, 4);
+		Control *titlebar = (Control *) OSCreateControl(OS_CONTROL_TITLEBAR, title, titleLengthBytes, 0);
+		InitialisePane(window->pane.children + 1, OSRectangle(4, width - 4, 4, 28), window, &window->pane, 0, titlebar);
+
+		Control *resizeTop = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeTop->cursorStyle = OS_CURSOR_RESIZE_VERTICAL;
 		resizeTop->resizeRegionIndex = 0;
-		OSAddControl(window, resizeTop, 4 - BORDER_OFFSET_X, 0 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 2, OSRectangle(4, width - 8, 0, 4), window, &window->pane, 0, resizeTop);
 
-		OSControl *resizeBottom = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeBottom->bounds = OSRectangle(0, width - 8, 0, 4);
+		Control *resizeBottom = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeBottom->cursorStyle = OS_CURSOR_RESIZE_VERTICAL;
 		resizeBottom->resizeRegionIndex = 1;
-		OSAddControl(window, resizeBottom, 4 - BORDER_OFFSET_X, height - 4 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 3, OSRectangle(4, width - 8, height - 4, height), window, &window->pane, 0, resizeBottom);
 
-		OSControl *resizeLeft = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeLeft->bounds = OSRectangle(0, 4, 0, height - 8);
+		Control *resizeLeft = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeLeft->cursorStyle = OS_CURSOR_RESIZE_HORIZONTAL;
 		resizeLeft->resizeRegionIndex = 2;
-		OSAddControl(window, resizeLeft, 0 - BORDER_OFFSET_X, 4 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 4, OSRectangle(0, 4, 4, height - 8), window, &window->pane, 0, resizeLeft);
 
-		OSControl *resizeRight = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeRight->bounds = OSRectangle(0, 4, 0, height - 8);
+		Control *resizeRight = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeRight->cursorStyle = OS_CURSOR_RESIZE_HORIZONTAL;
 		resizeRight->resizeRegionIndex = 3;
-		OSAddControl(window, resizeRight, width - 4 - BORDER_OFFSET_X, 4 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 5, OSRectangle(width - 4, width, 4, height - 8), window, &window->pane, 0, resizeRight);
 
-		// TODO Maybe increase the diagonal resize regions?
-
-		OSControl *resizeTopLeft = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeTopLeft->bounds = OSRectangle(0, 4, 0, 4);
+		Control *resizeTopLeft = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeTopLeft->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_2;
 		resizeTopLeft->resizeRegionIndex = 4;
-		OSAddControl(window, resizeTopLeft, 0 - BORDER_OFFSET_X, 0 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 6, OSRectangle(0, 4, 0, 4), window, &window->pane, 0, resizeTopLeft);
 
-		OSControl *resizeBottomRight = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeBottomRight->bounds = OSRectangle(0, 4, 0, 4);
+		Control *resizeBottomRight = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeBottomRight->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_2;
 		resizeBottomRight->resizeRegionIndex = 5;
-		OSAddControl(window, resizeBottomRight, width - 4 - BORDER_OFFSET_X, height - 4 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 7, OSRectangle(width - 4, width, height - 4, height), window, &window->pane, 0, resizeBottomRight);
 
-		OSControl *resizeTopRight = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeTopRight->bounds = OSRectangle(0, 4, 0, 4);
+		Control *resizeTopRight = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeTopRight->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_1;
 		resizeTopRight->resizeRegionIndex = 6;
-		OSAddControl(window, resizeTopRight, width - 4 - BORDER_OFFSET_X, 0 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 8, OSRectangle(width - 4, width, 0, 4), window, &window->pane, 0, resizeTopRight);
 
-		OSControl *resizeBottomLeft = OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0);
-		resizeBottomLeft->bounds = OSRectangle(0, 4, 0, 4);
+		Control *resizeBottomLeft = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeBottomLeft->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_1;
 		resizeBottomLeft->resizeRegionIndex = 7;
-		OSAddControl(window, resizeBottomLeft, 0 - BORDER_OFFSET_X, height - 4 - BORDER_OFFSET_Y);
+		InitialisePane(window->pane.children + 9, OSRectangle(0, 4, height - 4, height), window, &window->pane, 0, resizeBottomLeft);
 	}
 
 	OSUpdateWindow(window);
@@ -417,7 +483,7 @@ OSWindow *OSCreateWindow(char *title, size_t titleLengthBytes, size_t width, siz
 	return window;
 }
 
-void RemoveSelectedText(OSControl *control) {
+void RemoveSelectedText(Control *control) {
 	OSCallbackData callback = {};
 	callback.type = OS_CALLBACK_REMOVE_TEXT;
 
@@ -508,7 +574,7 @@ void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool str
 	}
 }
 
-static void FindCaret(OSControl *control, int positionX, int positionY, bool secondCaret, unsigned clickChainCount) {
+static void FindCaret(Control *control, int positionX, int positionY, bool secondCaret, unsigned clickChainCount) {
 	if (!clickChainCount) {
 		Panic();
 	}
@@ -526,7 +592,8 @@ static void FindCaret(OSControl *control, int positionX, int positionY, bool sec
 			control->caret2.byte = string.bytes;
 			control->caret2.character = string.characters;
 		} else {
-			OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), &string, control->textAlign, &control->caret2);
+			OSRectangle textBounds = GetControlTextBounds(control);
+			OSFindCharacterAtCoordinate(textBounds, OSPoint(positionX, positionY), &string, control->textAlign, &control->caret2);
 
 			if (!secondCaret) {
 				control->caret = control->caret2;
@@ -562,23 +629,40 @@ static unsigned lastClickChainCount;
 static int lastClickX, lastClickY;
 static int lastClickWindowWidth, lastClickWindowHeight;
 
-static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) {
-	OSControl *previousHoverControl = window->hoverControl;
+static Control *FindControl(Pane *pane, int x, int y) {
+	if (pane->bounds.left > x || pane->bounds.top > y
+			|| pane->bounds.left + pane->bounds.right <= x || pane->bounds.top + pane->bounds.bottom <= y) {
+		return nullptr;
+	}
+
+	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
+		Control *control = FindControl(pane->children + i, x - pane->bounds.left, y - pane->bounds.top);
+
+		if (control) {
+			return control;
+		}
+	}
+
+	return pane->control;
+}
+
+static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
+	Control *previousHoverControl = window->hoverControl;
 	window->previousHoverControl = previousHoverControl;
 
 	if (previousHoverControl) {
 		if (!ControlHitTest(previousHoverControl, x, y)) {
 			window->hoverControl = nullptr;
-			DrawControl(window, previousHoverControl);
+			OSInvalidateControl(previousHoverControl);
 		}
 	}
 
-	for (uintptr_t i = 0; !window->hoverControl && i < window->controlsCount; i++) {
-		OSControl *control = window->controls[i];
+	if (!window->hoverControl) {
+		Control *control = FindControl(&window->pane, x, y);
 
-		if (ControlHitTest(control, x, y)) {
+		if (control) {
 			window->hoverControl = control;
-			DrawControl(window, window->hoverControl);
+			OSInvalidateControl(window->hoverControl);
 
 			if (!window->pressedControl) {
 				OSSetCursorStyle(window->handle, control->cursorStyle);
@@ -591,12 +675,12 @@ static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) 
 	}
 
 	if (window->pressedControl) {
-		OSControl *control = window->pressedControl;
+		Control *control = window->pressedControl;
 
 		if (control->type == OS_CONTROL_TEXTBOX) {
 			if (!lastClickChainCount) return;
 			FindCaret(control, x, y, true, lastClickChainCount);
-			DrawControl(window, control);
+			OSInvalidateControl(control);
 		} else if (control->type == OS_CONTROL_TITLEBAR) {
 			OSRectangle bounds;
 			OSGetWindowBounds(window->handle, &bounds);
@@ -677,17 +761,18 @@ static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) 
 			window->width = width;
 			window->height = height;
 
-			window->controls[0]->bounds = OSRectangle(4, width - 4, 4, 28);
-			window->controls[0]->textBounds = window->controls[0]->bounds;
+			// TODO Window resizing.
 
-			window->controls[1]->bounds = OSRectangle(4, width - 4, 0, 4);
-			window->controls[2]->bounds = OSRectangle(4, width - 4, height - 4, height);
-			window->controls[3]->bounds = OSRectangle(0, 4, 4, height - 4);
-			window->controls[4]->bounds = OSRectangle(width - 4, width, 4, height - 4);
-			window->controls[5]->bounds = OSRectangle(0, 4, 0, 4);
-			window->controls[6]->bounds = OSRectangle(width - 4, width, height - 4, height);
-			window->controls[7]->bounds = OSRectangle(width - 4, width, 0, 4);
-			window->controls[8]->bounds = OSRectangle(0, 4, height - 4, height);
+			window->pane.children[0].bounds = OSRectangle(4, width - 4, 4, height - 4);
+			window->pane.children[1].bounds = OSRectangle(4, width - 4, 4, 28);
+			window->pane.children[2].bounds = OSRectangle(4, width - 4, 0, 4);
+			window->pane.children[3].bounds = OSRectangle(4, width - 4, height - 4, height);
+			window->pane.children[4].bounds = OSRectangle(0, 4, 4, height - 4);
+			window->pane.children[5].bounds = OSRectangle(width - 4, width, 4, height - 4);
+			window->pane.children[6].bounds = OSRectangle(0, 4, 0, 4);
+			window->pane.children[7].bounds = OSRectangle(width - 4, width, height - 4, height);
+			window->pane.children[8].bounds = OSRectangle(width - 4, width, 0, 4);
+			window->pane.children[9].bounds = OSRectangle(0, 4, height - 4, height);
 
 			OSMoveWindow(window->handle, bounds);
 
@@ -695,14 +780,13 @@ static void UpdateMousePosition(OSWindow *window, int x, int y, int sx, int sy) 
 			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
 					OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
 
-			for (uintptr_t i = 0; i < window->controlsCount; i++) {
-				DrawControl(window, window->controls[i]);
-			}
+			// Redraw the window.
+			DrawPane(&window->pane, true);
 		}
 	}
 }
 
-static void ProcessTextboxInput(OSMessage *message, OSControl *control) {
+static void ProcessTextboxInput(OSMessage *message, Control *control) {
 	int ic = -1,
 	    isc = -1;
 
@@ -874,7 +958,7 @@ static void ProcessTextboxInput(OSMessage *message, OSControl *control) {
 			}
 		}
 
-		DrawControl(control->parent, control);
+		OSInvalidateControl(control);
 	}
 }
 
@@ -883,7 +967,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 	// 	How should we tell who sent the message?
 	// 	(and that they gave us a valid window?)
 
-	OSWindow *window = message->targetWindow;
+	Window *window = (Window *) message->targetWindow;
 
 	switch (message->type) {
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -901,7 +985,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 			lastClickWindowHeight = window->height;
 
 			if (window->hoverControl) {
-				OSControl *control = window->hoverControl;
+				Control *control = window->hoverControl;
 
 				if (control->canHaveFocus) {
 					window->focusedControl = control; // TODO Lose when the window is deactivated.
@@ -909,26 +993,16 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 				}
 
 				window->pressedControl = control;
-				DrawControl(window, control);
+				OSInvalidateControl(control);
 			}
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
 			if (window->pressedControl) {
-				OSControl *previousPressedControl = window->pressedControl;
+				Control *previousPressedControl = window->pressedControl;
 				window->pressedControl = nullptr;
 
-				if (previousPressedControl->type == OS_CONTROL_CHECKBOX) {
-					// If this is a checkbox, then toggle the check.
-					previousPressedControl->checked = previousPressedControl->checked ? OS_CONTROL_NO_CHECK : OS_CONTROL_CHECKED;
-				} else if (previousPressedControl->type == OS_CONTROL_RADIOBOX) {
-					// TODO If this is a radiobox,
-					// 	clear the check on all other controls in the container,
-
-					previousPressedControl->checked = OS_CONTROL_RADIO_CHECK;
-				}
-
-				DrawControl(window, previousPressedControl);
+				OSInvalidateControl(previousPressedControl);
 
 				if (window->hoverControl == previousPressedControl
 						/* || (!window->hoverControl && window->previousHoverControl == previousPressedControl) */) { 
@@ -957,12 +1031,12 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					window->focusedControl->caretBlink = 1;
 				}
 
-				DrawControl(window, window->focusedControl);
+				OSInvalidateControl(window->focusedControl);
 			}
 		} break;
 
 		case OS_MESSAGE_KEY_PRESSED: {
-			OSControl *control = window->focusedControl;
+			Control *control = window->focusedControl;
 			ProcessTextboxInput(message, control);
 		} break;
 
@@ -975,6 +1049,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 	}
 
 	if (window->dirty) {
+		DrawPane(&window->pane, false);
 		OSUpdateWindow(window);
 		window->dirty = false;
 	}

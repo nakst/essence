@@ -23,7 +23,7 @@ struct Window {
 	size_t width, height;
 	uintptr_t z;
 	Process *owner;
-	OSWindow *apiWindow;
+	OSObject apiWindow;
 	OSCursorStyle cursorStyle;
 
 	volatile unsigned handles;

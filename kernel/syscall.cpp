@@ -378,8 +378,8 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_CREATE_WINDOW: {
-			OSWindow *osWindow = (OSWindow *) argument0;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) osWindow, sizeof(OSWindow));
+			OSHandle *returnData = (OSHandle *) argument0;
+			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) returnData, sizeof(OSHandle) * 2);
 			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
@@ -388,17 +388,17 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {
-				window->apiWindow = osWindow;
+				window->apiWindow = returnData;
 
 				Handle _handle = {};
 
 				_handle.type = KERNEL_OBJECT_WINDOW;
 				_handle.object = window;
-				osWindow->handle = currentProcess->handleTable.OpenHandle(_handle);
+				returnData[0] = currentProcess->handleTable.OpenHandle(_handle);
 
 				_handle.type = KERNEL_OBJECT_SURFACE;
 				_handle.object = window->surface;
-				osWindow->surface = currentProcess->handleTable.OpenHandle(_handle);
+				returnData[1] = currentProcess->handleTable.OpenHandle(_handle);
 				
 				OSMessage message = {};
 				message.type = OS_MESSAGE_WINDOW_CREATED;
@@ -873,6 +873,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			windowManager.mutex.Acquire();
 			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, nullptr);
 			windowManager.mutex.Release();
+			graphics.UpdateScreen();
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 					    

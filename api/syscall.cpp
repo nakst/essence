@@ -70,8 +70,8 @@ OSError OSWaitMessage(uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT_MESSAGE, timeoutMs, 0, 0, 0);
 }
 
-OSError OSUpdateWindow(OSWindow *window) {
-	return OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->handle, 0, 0, 0);
+void OSUpdateWindow(OSObject window) {
+	OSSyscall(OS_SYSCALL_UPDATE_WINDOW, ((Window *) window)->handle, 0, 0, 0);
 }
 
 OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode) {
@@ -199,16 +199,16 @@ OSError OSRefreshNodeInformation(OSNodeInformation *information) {
 	return OSSyscall(OS_SYSCALL_REFRESH_NODE_INFORMATION, (uintptr_t) information, 0, 0, 0);
 }
 
-OSError OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
-	return OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, (uintptr_t) window, (uintptr_t) style, 0, 0);
+void OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
+	OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, (uintptr_t) window, (uintptr_t) style, 0, 0);
 }
 
-OSError OSMoveWindow(OSHandle window, OSRectangle newBounds) {
-	return OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, (uintptr_t) &newBounds, 0, 0);
+void OSMoveWindow(OSHandle window, OSRectangle newBounds) {
+	OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, (uintptr_t) &newBounds, 0, 0);
 }
 
-OSError OSGetWindowBounds(OSHandle window, OSRectangle *rectangle) {
-	return OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, (uintptr_t) window, (uintptr_t) rectangle, 0, 0);
+void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle) {
+	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, (uintptr_t) window, (uintptr_t) rectangle, 0, 0);
 }
 
 void OSRedrawAll() {

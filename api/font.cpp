@@ -396,6 +396,10 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 	if (surface != OS_INVALID_HANDLE) {
 		OSInvalidateRectangle(surface, invalidatedRegion);
+	}
+
+	if (bitmap) {
+		// TODO Memory leak? Is this not working?
 		OSFree(bitmap);
 	}
 
