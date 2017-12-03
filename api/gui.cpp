@@ -170,7 +170,7 @@ OSError OSSetControlText(OSControl *control, char *text, size_t textLength) {
 	}
 
 	char *temp = (char *) OSHeapAllocate(textLength, false);
-	if (!temp) return OS_ERROR_COULD_NOT_ALLOCATE_MEMORY;
+	if (!temp && textLength) OSCrashProcess(OS_FATAL_ERROR_COULD_NOT_ALLOCATE_MEMORY);
 	OSCopyMemory(temp, text, textLength);
 	text = temp;
 

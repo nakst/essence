@@ -64,7 +64,7 @@ static int MeasureStringWidth(char *string, size_t stringLength, float scale) {
 
 static float GetGUIFontScale(int size) {
 	OSFontRendererInitialise();
-	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
+	if (!fontRendererInitialised) OSCrashProcess(OS_FATAL_ERROR_COULD_NOT_LOAD_FONT);
 
 	float scale = stbtt_ScaleForPixelHeight(&guiRegularFont, size);
 	return scale;
@@ -103,7 +103,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();
-	if (!fontRendererInitialised) return OS_ERROR_COULD_NOT_LOAD_FONT;
+	if (!fontRendererInitialised) OSCrashProcess(OS_FATAL_ERROR_COULD_NOT_LOAD_FONT);
 
 	float scale = GetGUIFontScale(size);
 

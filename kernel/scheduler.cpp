@@ -149,6 +149,7 @@ struct Process {
 	HandleTable handleTable;
 
 	Event killedEvent;
+	bool allThreadsTerminated;
 };
 
 struct Message {
@@ -359,7 +360,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 
 Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveThreads) {
 	Thread *thread = (Thread *) threadPool.Add();
-	// KernelLog(LOG_VERBOSE, "Created thread, %x -> %x\n", thread, thread + 1);
+	KernelLog(LOG_VERBOSE, "Created thread, %x\n", thread);
 	thread->isKernelThread = !userland;
 
 	// 2 handles to the thread:
@@ -528,7 +529,7 @@ void NewProcess() {
 		KernelPanic("NewProcess - Could not start a new process.\n");
 	}
 
-	KernelLog(LOG_VERBOSE, "Created process %d, %s.\n", thisProcess->id, thisProcess->executablePathLength, thisProcess->executablePath);
+	KernelLog(LOG_VERBOSE, "Created process %d %x, %s.\n", thisProcess->id, thisProcess, thisProcess->executablePathLength, thisProcess->executablePath);
 
 	thisProcess->executableLoadAttemptComplete.Set();
 	scheduler.TerminateThread(GetCurrentThread());
@@ -690,6 +691,10 @@ void Scheduler::RemoveProcess(Process *process) {
 
 	// At this point, no pointers to the process (should) remain (I think).
 
+	if (!process->allThreadsTerminated) {
+		KernelPanic("Scheduler::RemoveProcess - The process is being removed before all its threads have terminated?!\n");
+	}
+
 	// Free all the remaining messages in the message queue.
 	LinkedList &messageQueue = process->messageQueue;
 	LinkedItem *item = messageQueue.firstItem;
@@ -713,6 +718,8 @@ void Scheduler::RemoveThread(Thread *thread) {
 	// The last handle to the thread has been closed,
 	// so we can finally deallocate the thread.
 
+	KernelLog(LOG_INFO, "Removing thread %d.\n", thread->id);
+
 	scheduler.threadPool.Remove(thread);
 }
 
@@ -723,11 +730,22 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 
 	process->crashMutex.Acquire();
 
+	if (process == desktopProcess) {
+		KernelPanic("Scheduler::CrashProcess - Desktop process has crashed (%d).\n", crashReason.errorCode);
+	}
+
+	KernelLog(LOG_WARNING, "Process %x has crashed! (%d)\n", process, crashReason.errorCode);
+
 	CopyMemory(&process->crashReason, &crashReason, sizeof(OSCrashReason));
 
 	Handle handle;
 	handle.type = KERNEL_OBJECT_PROCESS;
 	handle.object = process;
+
+	scheduler.lock.Acquire();
+	process->handles++;
+	scheduler.lock.Release();
+
 	OSHandle handle2 = desktopProcess->handleTable.OpenHandle(handle);
 
 	OSMessage message;
@@ -831,7 +849,7 @@ void CloseHandleToProcess(void *_process) {
 
 	bool deallocate = !process->handles;
 
-	// KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
+	KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
 
 	scheduler.lock.Release();
 
@@ -852,7 +870,7 @@ void CloseHandleToThread(void *_thread) {
 	}
 	thread->handles--;
 	bool removeThread = thread->handles == 0;
-	// KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
+	KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
 	scheduler.lock.Release();
 
 	if (removeThread) {
@@ -867,10 +885,12 @@ void KillThread(void *_thread) {
 	scheduler.allThreads.Remove(&thread->allItem);
 	thread->process->threads.Remove(&thread->processItem);
 
-	// KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
+	KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
 
 	if (thread->process->threads.count == 0) {
-		// KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
+		KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
+
+		thread->process->allThreadsTerminated = true;
 
 		// Make sure that the process cannot be opened.
 		scheduler.allProcesses.Remove(&thread->process->allItem);

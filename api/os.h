@@ -149,24 +149,32 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 
 #define OS_SUCCESS 				(-1)
 
-#define OS_ERROR_INVALID_BUFFER 		(-2)	// Always crash?
-#define OS_ERROR_UNKNOWN_SYSCALL 		(-3)	// Always crash?
-#define OS_ERROR_INVALID_MEMORY_REGION 		(-4)	// Always crash?
-#define OS_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL (-5)	// Always crash?
-#define OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT 	(-6)	// Always crash?
+enum OSFatalError {
+	OS_FATAL_ERROR_INVALID_BUFFER,
+	OS_FATAL_ERROR_UNKNOWN_SYSCALL,
+	OS_FATAL_ERROR_INVALID_MEMORY_REGION,
+	OS_FATAL_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL,
+	OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT,
+	OS_FATAL_ERROR_INVALID_HANDLE,
+	OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD,
+	OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED,
+	OS_FATAL_ERROR_BUFFER_NOT_ACCESSIBLE,
+	OS_FATAL_ERROR_SHARED_MEMORY_REGION_TOO_LARGE,
+	OS_FATAL_ERROR_SHARED_MEMORY_STILL_MAPPED,
+	OS_FATAL_ERROR_COULD_NOT_LOAD_FONT,
+	OS_FATAL_ERROR_COULD_NOT_DRAW_FONT,
+	OS_FATAL_ERROR_COULD_NOT_ALLOCATE_MEMORY,
+	OS_FATAL_ERROR_INCORRECT_FILE_ACCESS,
+	OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS,
+	OS_FATAL_ERROR_INCORRECT_NODE_TYPE,
+	OS_FATAL_ERROR_PROCESSOR_EXCEPTION,
+	OS_FATAL_ERROR_COUNT,
+};
+
 #define OS_ERROR_UNKNOWN_OPERATION_FAILURE 	(-7)
-#define OS_ERROR_INVALID_HANDLE			(-8)	// Always crash?
 #define OS_ERROR_NO_MESSAGES_AVAILABLE		(-9)
 #define OS_ERROR_MESSAGE_QUEUE_FULL		(-10)
-#define OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD	(-11)	// Always crash?
-#define OS_ERROR_MUTEX_ALREADY_ACQUIRED		(-11)	// Always crash?
-#define OS_ERROR_BUFFER_NOT_ACCESSIBLE		(-12)	// Always crash?
 #define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
-#define OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE	(-14)	// Always crash?
-#define OS_ERROR_SHARED_MEMORY_STILL_MAPPED	(-15)	// Always crash?
-#define OS_ERROR_COULD_NOT_LOAD_FONT		(-16)	// Always crash?
-#define OS_ERROR_COULD_NOT_DRAW_FONT		(-17)	// Always crash?
-#define OS_ERROR_COULD_NOT_ALLOCATE_MEMORY	(-18)	// Always crash?
 #define OS_ERROR_FILE_ALREADY_EXISTS		(-19)
 #define OS_ERROR_FILE_DOES_NOT_EXIST		(-20)
 #define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21)
@@ -174,13 +182,9 @@ extern "C" uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintpt
 #define OS_ERROR_FILE_PERMISSION_NOT_GRANTED	(-23)
 #define OS_ERROR_FILE_IN_EXCLUSIVE_USE		(-24)
 #define OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE	(-25)
-#define OS_ERROR_INCORRECT_FILE_ACCESS		(-26)	// Always crash?
 #define OS_ERROR_EVENT_NOT_SET			(-27)
-#define OS_ERROR_TOO_MANY_WAIT_OBJECTS		(-28)   // Always crash?
 #define OS_ERROR_TIMEOUT_REACHED		(-29)
-#define OS_ERROR_INCORRECT_NODE_TYPE		(-30) 	// Always crash?
 #define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
-#define OS_ERROR_PROCESSOR_EXCEPTION		(-32)
 
 typedef intptr_t OSError;
 
@@ -231,6 +235,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_REDRAW_ALL			(44)
 #define OS_SYSCALL_GET_CRASH_MESSAGE		(45)
 #define OS_SYSCALL_PAUSE_PROCESS		(46)
+#define OS_SYSCALL_CRASH_PROCESS		(47)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -590,7 +595,9 @@ extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
 extern "C" OSError OSTerminateThisProcess();
+
 extern "C" void OSPauseProcess(OSHandle process, bool resume);
+extern "C" void OSCrashProcess(OSError error);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);

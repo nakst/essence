@@ -78,6 +78,8 @@ struct HandleTable {
 Mutex objectHandleCountChange;
 
 void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
+	KernelLog(LOG_VERBOSE, "Close handle to object %x of type %d\n", object, type);
+
 	switch (type) {
 		case KERNEL_OBJECT_MUTEX: {
 			objectHandleCountChange.Acquire();
@@ -154,6 +156,7 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			windowManager.mutex.Acquire();
 			bool destroy = window->handles == 1;
 			window->handles--;
+			Print("closing window handle, %d remain...\n", window->handles);
 			windowManager.mutex.Release();
 
 			if (destroy) {
@@ -363,7 +366,7 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 void HandleTable::Destroy() {
 	HandleTableL1 *l1 = &l1r;
 
-	// KernelLog(LOG_VERBOSE, "Destroying handle table...\n");
+	Print("--- Destroying handle table...\n");
 
 	for (uintptr_t i = 1; i < HANDLE_TABLE_L1_ENTRIES; i++) {
 		if (l1->u[i]) {
@@ -382,7 +385,7 @@ void HandleTable::Destroy() {
 							}
 
 							if (handle->type & CLOSABLE_OBJECT_TYPES) {
-								// KernelLog(LOG_VERBOSE, "Destroying handle to object %x of type %d...\n", handle->object, handle->type);
+								KernelLog(LOG_VERBOSE, "Destroying handle to object %x of type %d...\n", handle->object, handle->type);
 								CloseHandleToObject(handle->object, handle->type);
 							} else {
 								KernelPanic("HandleTable::Destroy - Handle type %d cannot be closed.\n", handle->type);
@@ -397,6 +400,8 @@ void HandleTable::Destroy() {
 			OSHeapFree(l2, sizeof(HandleTableL2));
 		}
 	}
+
+	Print("--- Handle table destroyed.\n");
 }
 
 #endif

@@ -283,7 +283,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					context->rip, local->processorID, context->rsp, context->errorCode, context->cr2);
 
 			OSCrashReason crashReason;
-			crashReason.errorCode = OS_ERROR_PROCESSOR_EXCEPTION;
+			crashReason.errorCode = OS_FATAL_ERROR_PROCESSOR_EXCEPTION;
 			scheduler.CrashProcess(GetCurrentThread()->process, crashReason);
 
 			resolved:;

@@ -532,7 +532,7 @@ void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMR
 
 OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVirtualAddressSpaceUpdate) {
 	if (!address) {
-		return OS_ERROR_INVALID_MEMORY_REGION;
+		return OS_FATAL_ERROR_INVALID_MEMORY_REGION;
 	}
 
 	ValidateCurrentVMM(this);
@@ -544,9 +544,9 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	VMMRegion *region = FindRegion(baseAddress, regions, regionsCount);
 
 	if (!region) {
-		return OS_ERROR_INVALID_MEMORY_REGION;
+		return OS_FATAL_ERROR_INVALID_MEMORY_REGION;
 	} else if (region->lock) {
-		return OS_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL;
+		return OS_FATAL_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL;
 	}
 
 	if (object) *object = region->object;

@@ -361,6 +361,8 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	window->owner = process;
 	window->handles = 1;
 
+	KernelLog(LOG_VERBOSE, "Created window %x, handles = %d\n", window, window->handles);
+
 	window->z = windowsCount;
 	ArrayAdd(windows, window);
 
@@ -436,6 +438,8 @@ void Window::Destroy() {
 	{
 		windowManager.mutex.Acquire();
 		Defer(windowManager.mutex.Release());
+
+		KernelLog(LOG_VERBOSE, "Window %x (api %x) is being destroyed...\n", this, apiWindow);
 
 		if (windowManager.focusedWindow == this) windowManager.focusedWindow = nullptr;
 		if (windowManager.pressedWindow == this) windowManager.pressedWindow = nullptr;

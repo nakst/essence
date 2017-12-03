@@ -57,6 +57,7 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
+#if 1
 	{
 		// Load the wallpaper.
 
@@ -98,6 +99,7 @@ extern "C" void ProgramEntry() {
 
 		OSRedrawAll();
 	}
+#endif
 
 #if 1
 	{

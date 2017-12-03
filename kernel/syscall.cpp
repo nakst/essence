@@ -1,3 +1,6 @@
+// TODO Replace OS_ERROR_UNKNOWN_OPERATION_FAILURE with proper errors.
+// TODO Clean up the return values for system calls; with FATAL_ERRORs there should need to be less error codes returned.
+
 uintptr_t DoSyscall(uintptr_t index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3);
@@ -7,6 +10,8 @@ uintptr_t DoSyscall(uintptr_t index,
 bool Process::SendMessage(OSMessage &_message) {
 	// TODO These really don't need to be allocated on the heap.
 	// TODO Linked list validate (4) bug?
+
+	KernelLog(LOG_VERBOSE, "SendMessage to %x from %x\n", this, _message.targetWindow);
 
 	messageQueueMutex.Acquire();
 	Defer(messageQueueMutex.Release());
@@ -73,44 +78,46 @@ uintptr_t DoSyscall(uintptr_t index,
 	currentThread->terminatableState = THREAD_IN_SYSCALL;
 	// KernelLog(LOG_VERBOSE, "Thread %x now in syscall\n", currentThread);
 
-	OSError returnValue = OS_ERROR_UNKNOWN_SYSCALL;
-#define SYSCALL_RETURN(value) {returnValue = value; goto end;}
+	OSError returnValue = OS_FATAL_ERROR_UNKNOWN_SYSCALL;
+	bool fatalError = true;
+
+#define SYSCALL_RETURN(value, fatal) {returnValue = value; fatalError = fatal; goto end;}
 
 	switch (index) {
 		case OS_SYSCALL_PRINT: {
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region));
 			Print("%s", argument1, argument0);
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 	     	} break;
 
 		case OS_SYSCALL_ALLOCATE: {
 			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument0);
-			SYSCALL_RETURN(address);
+			SYSCALL_RETURN(address, false);
 		} break;
 
 		case OS_SYSCALL_FREE: {
 			OSError error = currentVMM->Free((void *) argument0);
-			SYSCALL_RETURN(error);
+			SYSCALL_RETURN(error, false);
 		} break;
 
 		case OS_SYSCALL_CREATE_PROCESS: {
-			if (argument1 > MAX_PATH) SYSCALL_RETURN(OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT);
+			if (argument1 > MAX_PATH) SYSCALL_RETURN(OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT, true);
 
 			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(OSProcessInformation));
-			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region2));
 
 			OSProcessInformation *process = (OSProcessInformation *) argument2;
 			Process *processObject = scheduler.SpawnProcess((char *) argument0, argument1, false, (void *) argument3);
 
 			if (!processObject) {
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {
 				Handle handle = {};
 				handle.type = KERNEL_OBJECT_PROCESS;
@@ -126,14 +133,14 @@ uintptr_t DoSyscall(uintptr_t index,
 				process->mainThread.handle = currentProcess->handleTable.OpenHandle(handle2);
 				process->mainThread.tid = processObject->executableMainThread->id;
 
-				SYSCALL_RETURN(OS_SUCCESS);
+				SYSCALL_RETURN(OS_SUCCESS, false);
 			}
 		} break;
 
 		case OS_SYSCALL_GET_CREATION_ARGUMENT: {
 			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_WINDOW);
 			void *object = currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!object) SYSCALL_RETURN(0);
+			if (!object) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
 			uintptr_t creationArgument;
@@ -152,32 +159,36 @@ uintptr_t DoSyscall(uintptr_t index,
 				} break;
 			}
 
-			SYSCALL_RETURN(creationArgument);
+			SYSCALL_RETURN(creationArgument, false);
 		} break;
 
 		case OS_SYSCALL_CREATE_SURFACE: {
 			Surface *surface = (Surface *) graphics.surfacePool.Add();
 			if (!surface->Initialise(argument0, argument1, false)) {
-				SYSCALL_RETURN(OS_INVALID_HANDLE);
+				SYSCALL_RETURN(OS_INVALID_HANDLE, true);
 			}
 
 			Handle _handle = {};
 			_handle.type = KERNEL_OBJECT_SURFACE;
 			_handle.object = surface;
 			// TODO Prevent the program from deallocating the surface's linear buffer.
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(_handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(_handle), true);
 		} break;
 
 		case OS_SYSCALL_GET_LINEAR_BUFFER: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSLinearBuffer *linearBuffer = (OSLinearBuffer *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) linearBuffer, sizeof(OSLinearBuffer));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
+
+			surface->region->mutex.Acquire();
+			surface->region->handles++;
+			surface->region->mutex.Release();
 
 			Handle handle;
 			handle.type = KERNEL_OBJECT_SHMEM;
@@ -189,120 +200,121 @@ uintptr_t DoSyscall(uintptr_t index,
 			linearBuffer->stride = surface->stride;
 			linearBuffer->colorFormat = OS_COLOR_FORMAT_32_XRGB;
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_INVALIDATE_RECTANGLE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			surface->InvalidateRectangle(*rectangle);
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_COPY_TO_SCREEN: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSPoint *point = (OSPoint *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) point, sizeof(OSPoint));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			graphics.frameBuffer.Copy(*surface, *point, OSRectangle(0, surface->resX, 0, surface->resY), true, (uint16_t) argument2);
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_FILL_RECTANGLE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			_OSRectangleAndColor *arg = (_OSRectangleAndColor *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) arg, sizeof(_OSRectangleAndColor));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			surface->FillRectangle(arg->rectangle, arg->color);
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_FORCE_SCREEN_UPDATE: {
 			graphics.UpdateScreen();
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_COPY_SURFACE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 
 			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!destination) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!destination) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			Surface *source = (Surface *) currentProcess->handleTable.ResolveHandle(argument1, type);
-			if (!source) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!source) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			OSPoint *point = (OSPoint *) argument2;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) point, sizeof(OSPoint));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			destination->Copy(*source, *point, OSRectangle(0, source->resX, 0, source->resY), true, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_DRAW_SURFACE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 
 			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!destination) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!destination) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			Surface *source = (Surface *) currentProcess->handleTable.ResolveHandle(argument1, type);
-			if (!source) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!source) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			_OSDrawSurfaceArguments *arguments = (_OSDrawSurfaceArguments *) argument2;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) arguments, sizeof(_OSDrawSurfaceArguments));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			destination->Draw(*source, arguments->destination, arguments->source, arguments->border, (OSDrawMode) argument3);
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_CLEAR_MODIFIED_REGION: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!destination) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!destination) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			destination->mutex.Acquire();
 			destination->ClearModifiedRegion();
 			destination->mutex.Release();
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_GET_MESSAGE: {
 			OSMessage *returnMessage = (OSMessage *) argument0;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) returnMessage, sizeof(OSMessage));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			{
@@ -324,11 +336,11 @@ uintptr_t DoSyscall(uintptr_t index,
 
 					messagePool.Remove(message);
 				} else {
-					SYSCALL_RETURN(OS_ERROR_NO_MESSAGES_AVAILABLE);
+					SYSCALL_RETURN(OS_ERROR_NO_MESSAGES_AVAILABLE, false);
 				}
 			}
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_WAIT_MESSAGE: {
@@ -341,40 +353,40 @@ uintptr_t DoSyscall(uintptr_t index,
 				}
 			}
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_SEND_MESSAGE: {
 			OSMessage *message = (OSMessage *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) message, sizeof(OSMessage));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			{
 				currentProcess->messageQueueMutex.Acquire();
 				Defer(currentProcess->messageQueueMutex.Release());
 
-				SYSCALL_RETURN(process->SendMessage(*message) ? OS_SUCCESS : OS_ERROR_MESSAGE_QUEUE_FULL);
+				SYSCALL_RETURN(process->SendMessage(*message) ? OS_SUCCESS : OS_ERROR_MESSAGE_QUEUE_FULL, false);
 			}
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_CREATE_WINDOW: {
 			OSWindow *osWindow = (OSWindow *) argument0;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) osWindow, sizeof(OSWindow));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			Window *window = windowManager.CreateWindow(currentProcess, argument1, argument2);
 
 			if (!window) {
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {
 				window->apiWindow = osWindow;
 
@@ -393,66 +405,66 @@ uintptr_t DoSyscall(uintptr_t index,
 				message.targetWindow = window->apiWindow;
 				window->owner->SendMessage(message);
 
-				SYSCALL_RETURN(OS_SUCCESS);
+				SYSCALL_RETURN(OS_SUCCESS, false);
 			}
 		} break;
 
 		case OS_SYSCALL_UPDATE_WINDOW: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->mutex.Acquire();
 			window->Update();
 			window->mutex.Release();
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_CREATE_EVENT: {
 			Event *event = (Event *) OSHeapAllocate(sizeof(Event), true);
-			if (!event) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			if (!event) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			event->handles = 1;
 			event->autoReset = argument0;
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_EVENT;
 			handle.object = event;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
 		case OS_SYSCALL_CREATE_MUTEX: {
 			Mutex *mutex = (Mutex *) OSHeapAllocate(sizeof(Mutex), true);
-			if (!mutex) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			if (!mutex) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			mutex->handles = 1;
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_MUTEX;
 			handle.object = mutex;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
 		case OS_SYSCALL_ACQUIRE_MUTEX: {
 			KernelObjectType type = KERNEL_OBJECT_MUTEX;
 			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!mutex) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!mutex) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
-			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_ERROR_MUTEX_ALREADY_ACQUIRED);
+			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
 			currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 			// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
 			mutex->Acquire();
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_RELEASE_MUTEX: {
 			KernelObjectType type = KERNEL_OBJECT_MUTEX;
 			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!mutex) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!mutex) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
-			if (mutex->owner != currentThread) SYSCALL_RETURN(OS_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD);
+			if (mutex->owner != currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD, true);
 			mutex->Release();
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_CLOSE_HANDLE: {
@@ -460,43 +472,43 @@ uintptr_t DoSyscall(uintptr_t index,
 			void *object = currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
 
 			if (!object) {
-				SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+				SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			}
 
 			currentProcess->handleTable.CloseHandle(argument0);
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_TERMINATE_THREAD: {
 			KernelObjectType type = KERNEL_OBJECT_THREAD;
 			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!thread) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!thread) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
 
 			scheduler.TerminateThread(thread);
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_TERMINATE_PROCESS: {
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			scheduler.TerminateProcess(process);
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_CREATE_THREAD: {
 			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(OSThreadInformation));
-			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region2));
 
 			OSThreadInformation *thread = (OSThreadInformation *) argument2;
 			Thread *threadObject = scheduler.SpawnThread(argument0, argument3, currentProcess, true, true);
 
 			if (!threadObject) {
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {
 				Handle handle = {};
 				handle.type = KERNEL_OBJECT_THREAD;
@@ -506,37 +518,37 @@ uintptr_t DoSyscall(uintptr_t index,
 				thread->handle = currentProcess->handleTable.OpenHandle(handle); 
 				thread->tid = threadObject->id;
 
-				SYSCALL_RETURN(OS_SUCCESS);
+				SYSCALL_RETURN(OS_SUCCESS, false);
 			}
 		} break;
 
 		case OS_SYSCALL_CREATE_SHARED_MEMORY: {
 			if (argument0 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
-				SYSCALL_RETURN(OS_ERROR_SHARED_MEMORY_REGION_TOO_LARGE);
+				SYSCALL_RETURN(OS_FATAL_ERROR_SHARED_MEMORY_REGION_TOO_LARGE, true);
 			}
 
 			if (argument2 > OS_SHARED_MEMORY_NAME_MAX_LENGTH) {
-				SYSCALL_RETURN(OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT);
+				SYSCALL_RETURN(OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT, true);
 			}
 
-			if (argument1 && !argument2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (argument1 && !argument2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 
 			VMMRegion *region1 = argument1 ? currentVMM->FindAndLockRegion(argument1, argument2) : nullptr;
-			if (!region1 && argument1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1 && argument1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(if (region1) currentVMM->UnlockRegion(region1));
 
 			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0, (char *) argument1, argument2);
-			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE);
+			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE, false);
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
 		case OS_SYSCALL_MAP_SHARED_MEMORY: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
 			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
 
 			if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
@@ -549,52 +561,56 @@ uintptr_t DoSyscall(uintptr_t index,
 				CloseHandleToObject(region, KERNEL_OBJECT_SHMEM);
 			}
 
-			SYSCALL_RETURN(address);
+			SYSCALL_RETURN(address, false);
 		} break;
 
 		case OS_SYSCALL_SHARE_MEMORY: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
 			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
 
 			type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument1, type);
-			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument1));
+
+			region->mutex.Acquire();
+			region->handles++;
+			region->mutex.Release();
 
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
 			handle.readOnly = argument2 ? true : false;
-			SYSCALL_RETURN(process->handleTable.OpenHandle(handle));
+			SYSCALL_RETURN(process->handleTable.OpenHandle(handle), false);
 		} break;
 
 		case OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY: {
 			if (argument1 > OS_SHARED_MEMORY_NAME_MAX_LENGTH) {
-				SYSCALL_RETURN(OS_ERROR_PATH_LENGTH_EXCEEDS_LIMIT);
+				SYSCALL_RETURN(OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT, true);
 			}
 
 			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			SharedMemoryRegion *region = sharedMemoryManager.LookupSharedMemory((char *) argument0, argument1);
-			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE);
+			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE, false);
 
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle));
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
 		case OS_SYSCALL_OPEN_NODE: {
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region));
 
 			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument3, sizeof(OSNodeInformation));
-			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region2));
 
 			char *path = (char *) argument0;
@@ -605,7 +621,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			if (!node) {
 				// TODO Improve the error reporting in the file I/O API.
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			}
 
 			Handle handle = {};
@@ -617,27 +633,27 @@ uintptr_t DoSyscall(uintptr_t index,
 			node->CopyInformation(information);
 			information->handle = currentProcess->handleTable.OpenHandle(handle);
 
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_READ_FILE_SYNC: {
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
-			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_ERROR_INCORRECT_NODE_TYPE);
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
 
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region));
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3);
-				SYSCALL_RETURN(bytesRead);
+				SYSCALL_RETURN(bytesRead, false);
 			} else {
-				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
+				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
 		} break;
 
@@ -645,20 +661,20 @@ uintptr_t DoSyscall(uintptr_t index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
-			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_ERROR_INCORRECT_NODE_TYPE);
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
 
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region));
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3);
-				SYSCALL_RETURN(bytesWritten);
+				SYSCALL_RETURN(bytesWritten, false);
 			} else {
-				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
+				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
 		} break;
 
@@ -666,56 +682,56 @@ uintptr_t DoSyscall(uintptr_t index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
-			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_ERROR_INCORRECT_NODE_TYPE);
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_RESIZE) {
 				bool success = file->Resize(argument1);
-				SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {
-				SYSCALL_RETURN(OS_ERROR_INCORRECT_FILE_ACCESS);
+				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
 		} break;
 					     
 		case OS_SYSCALL_SET_EVENT: {
 			KernelObjectType type = KERNEL_OBJECT_EVENT;
 			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!event) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!event) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
 			event->Set();
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_RESET_EVENT: {
 			KernelObjectType type = KERNEL_OBJECT_EVENT;
 			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!event) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!event) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
 			event->Reset();
-			SYSCALL_RETURN(OS_SUCCESS);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_POLL_EVENT: {
 			KernelObjectType type = KERNEL_OBJECT_EVENT;
 			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!event) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!event) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
 			bool eventWasSet = event->Poll();
-			SYSCALL_RETURN(eventWasSet ? OS_SUCCESS : OS_ERROR_EVENT_NOT_SET);
+			SYSCALL_RETURN(eventWasSet ? OS_SUCCESS : OS_ERROR_EVENT_NOT_SET, false);
 		} break;
 
 		case OS_SYSCALL_WAIT: {
 			if (argument1 >= OS_MAX_WAIT_COUNT) {
-				SYSCALL_RETURN(OS_ERROR_TOO_MANY_WAIT_OBJECTS);
+				SYSCALL_RETURN(OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS, true);
 			}
 
 			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1 * sizeof(OSHandle));
-			if (!region) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region));
 
 			OSHandle *_handles = (OSHandle *) argument0;
@@ -738,7 +754,7 @@ uintptr_t DoSyscall(uintptr_t index,
 						currentProcess->handleTable.CompleteHandle(objects[j], handles[j]);
 					}
 
-					SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+					SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 				}
 
 				objects[i] = object;
@@ -788,12 +804,12 @@ uintptr_t DoSyscall(uintptr_t index,
 				timer->Remove();
 			}
 
-			SYSCALL_RETURN(waitReturnValue);
+			SYSCALL_RETURN(waitReturnValue, false);
 		} break;
 
 		case OS_SYSCALL_REFRESH_NODE_INFORMATION: {
 			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument0, sizeof(OSNodeInformation));
-			if (!region2) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region2));
 
 			OSNodeInformation *information = (OSNodeInformation *) argument0;
@@ -801,44 +817,47 @@ uintptr_t DoSyscall(uintptr_t index,
 			volatile OSHandle handle = information->handle;
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Node *node = (Node *) currentProcess->handleTable.ResolveHandle(handle, type);
-			if (!node) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!node) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(node, handle));
 
 			node->CopyInformation((OSNodeInformation *) argument0);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_SET_CURSOR_STYLE: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->SetCursorStyle((OSCursorStyle) argument1);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_MOVE_WINDOW: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			window->Move(*rectangle);
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_GET_WINDOW_BOUNDS: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
 			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
-			if (!region1) SYSCALL_RETURN(OS_ERROR_INVALID_BUFFER);
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
 			window->mutex.Acquire();
@@ -847,25 +866,39 @@ uintptr_t DoSyscall(uintptr_t index,
 			rectangle->right = window->position.x + window->width;
 			rectangle->bottom = window->position.y + window->height;
 			window->mutex.Release();
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_REDRAW_ALL: {
 			windowManager.mutex.Acquire();
 			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, nullptr);
 			windowManager.mutex.Release();
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 					    
 		case OS_SYSCALL_PAUSE_PROCESS: {
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(OS_ERROR_INVALID_HANDLE);
+			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			scheduler.PauseProcess(process, (bool) argument1);
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_CRASH_PROCESS: {
+			KernelLog(LOG_WARNING, "process crash request, reason %d\n", argument0);
+			SYSCALL_RETURN(argument0, true);
 		} break;
 	}
 
 	end:;
+
+	if (fatalError) {
+		OSCrashReason reason;
+		reason.errorCode = returnValue;
+		scheduler.CrashProcess(currentProcess, reason);
+	}
 
 	currentThread->terminatableState = THREAD_TERMINATABLE;
 	// KernelLog(LOG_VERBOSE, "Thread %x finished syscall\n", currentThread);

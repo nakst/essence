@@ -218,3 +218,7 @@ void OSRedrawAll() {
 void OSPauseProcess(OSHandle process, bool resume) {
 	OSSyscall(OS_SYSCALL_PAUSE_PROCESS, process, resume, 0, 0);
 }
+
+void OSCrashProcess(OSError error) {
+	OSSyscall(OS_SYSCALL_CRASH_PROCESS, error, 0, 0, 0);
+}
