@@ -4,6 +4,11 @@
 //	- Actually use the OS_CALLBACK_GET_TEXT callback for everything.
 //	- Heap corruption?
 
+struct OSCallback {
+	_OSCallback callback;
+	void *argument;
+};
+
 struct Control {
 	OSControlType type;
 	struct Pane *pane;
@@ -57,7 +62,7 @@ struct Pane {
 	struct Pane *children;
 	size_t childrenCount;
 
-	bool dirty;
+	bool dirty, vertical;
 };
 
 struct Window {
@@ -136,8 +141,7 @@ static void SendCallback(Control *from, OSCallback &callback, OSCallbackData &da
 	}
 }
 
-static OSRectangle GetControlBounds(Control *control) {
-	Pane *pane = control->pane;
+static OSRectangle GetPaneBounds(Pane *pane) {
 	OSRectangle rectangle = pane->bounds;
 	pane = pane->parent;
 
@@ -151,6 +155,10 @@ static OSRectangle GetControlBounds(Control *control) {
 	}
 
 	return rectangle;
+}
+
+static OSRectangle GetControlBounds(Control *control) {
+	return GetPaneBounds(control->pane);
 }
 
 static OSRectangle GetControlTextBounds(Control *control) {
@@ -335,6 +343,132 @@ void OSDisableControl(OSObject object, bool disabled) {
 	OSInvalidateControl(control);
 }
 
+OSObject OSGetWindowContentPane(OSObject _window) {
+	Window *window = (Window *) _window;
+	return window->pane.children;
+}
+
+OSObject OSGetPane(OSObject _pane, uintptr_t index) {
+	Pane *pane = (Pane *) _pane;
+
+	if (pane->childrenCount <= index) {
+		OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_CHILD);
+	}
+
+	return pane->children + index;
+}
+
+void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType type, _OSCallback function, void *argument) {
+	switch (objectType) {
+		case OS_OBJECT_CONTROL: {
+			Control *control = (Control *) object;
+
+			switch (type) {
+				case OS_CALLBACK_ACTION: {
+					control->action.callback = function;
+					control->action.argument = argument;
+				} break;
+
+				default: { goto unsupported; } break;
+			}
+		} break;
+
+		default: {
+			unsupported:;
+			OSCrashProcess(OS_FATAL_ERROR_UNSUPPORTED_CALLBACK);
+		} break;
+	}
+}
+
+static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t childrenCount, Control *control);
+
+void OSSetPaneColumns(OSObject _pane, size_t count, size_t expandColumn, unsigned expandFlags) {
+	(void) expandColumn;
+	(void) expandFlags;
+
+	Pane *pane = (Pane *) _pane;
+	pane->vertical = false;
+	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, count, nullptr);
+
+	for (uintptr_t i = 0; i < count; i++) {
+		InitialisePane(pane->children + i, OSRectangle(0, 0, 0, 0), pane->parent->window, pane, 0, nullptr);
+	}
+}
+
+void OSSetPaneRows(OSObject _pane, size_t count, size_t expandRow, unsigned expandFlags) {
+	(void) expandRow;
+	(void) expandFlags;
+
+	Pane *pane = (Pane *) _pane;
+	pane->vertical = true;
+	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, count, nullptr);
+
+	for (uintptr_t i = 0; i < count; i++) {
+		InitialisePane(pane->children + i, OSRectangle(0, 0, 0, 0), pane->parent->window, pane, 0, nullptr);
+	}
+}
+
+void OSSetPaneObject(OSObject _pane, OSObject object, OSObjectType objectType) {
+	Pane *pane = (Pane *) _pane;
+
+	switch (objectType) {
+		case OS_OBJECT_CONTROL: {
+			InitialisePane(pane, OSRectangle(0, 0, 0, 0), pane->parent->window, pane->parent, 0, (Control *) object);
+		} break;
+
+		default: {
+			OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+		} break;
+	}
+}
+
+static void LayoutPane(Pane *pane) {
+	if (pane->childrenCount == 0 && pane->control) {
+		pane->bounds = OSRectangle(0, pane->control->preferredWidth, 0, pane->control->preferredHeight);
+	} else {
+		int position = 4;
+		int position2 = 4;
+
+		for (uintptr_t i = 0; i < pane->childrenCount; i++) {
+			Pane *child = pane->children + i;
+			LayoutPane(child);
+
+			if (pane->vertical) {
+				child->bounds.top += position;
+				child->bounds.bottom += position;
+				child->bounds.left += position2;
+				child->bounds.right += position2;
+				position += child->bounds.bottom - child->bounds.top + 4;
+			} else {
+				child->bounds.left += position;
+				child->bounds.right += position;
+				child->bounds.top += position2;
+				child->bounds.bottom += position2;
+				position += child->bounds.right - child->bounds.left + 4;
+			}
+		}
+	}
+}
+
+static void InvalidatePane(Pane *pane) {
+	if (pane->control) {
+		pane->control->dirty = true;
+	}
+
+	pane->dirty = true;
+	pane->window->dirty = true;
+
+	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
+		InvalidatePane(pane->children + i);
+	}
+}
+
+void OSLayoutPane(OSObject _pane) {
+	Pane *pane = (Pane *) _pane;
+	LayoutPane(pane);
+	InvalidatePane(pane);
+}
+
 OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsigned flags) {
 	(void) flags;
 
@@ -425,7 +559,7 @@ OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, un
 
 	// Create the root and content panes.
 	InitialisePane(&window->pane, OSRectangle(0, width, 0, height), window, nullptr, decorate ? 10 : 1, nullptr);
-	InitialisePane(window->pane.children + 0, OSRectangle(BORDER_OFFSET_X, width - BORDER_SIZE_X + BORDER_OFFSET_X, BORDER_OFFSET_Y, height - BORDER_SIZE_Y + BORDER_OFFSET_Y), window, &window->pane, 0, nullptr);
+	InitialisePane(window->pane.children + 0, OSRectangle(4, width - 4, 30, height - 4), window, &window->pane, 0, nullptr);
 	
 	if (decorate) {
 		// Draw the window background and border.
@@ -630,13 +764,15 @@ static int lastClickX, lastClickY;
 static int lastClickWindowWidth, lastClickWindowHeight;
 
 static Control *FindControl(Pane *pane, int x, int y) {
-	if (pane->bounds.left > x || pane->bounds.top > y
-			|| pane->bounds.left + pane->bounds.right <= x || pane->bounds.top + pane->bounds.bottom <= y) {
+	OSRectangle bounds = GetPaneBounds(pane);
+
+	if (bounds.left > x || bounds.top > y
+			|| bounds.right <= x || bounds.bottom <= y) {
 		return nullptr;
 	}
 
 	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
-		Control *control = FindControl(pane->children + i, x - pane->bounds.left, y - pane->bounds.top);
+		Control *control = FindControl(pane->children + i, x, y);
 
 		if (control) {
 			return control;
@@ -763,7 +899,7 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 
 			// TODO Window resizing.
 
-			window->pane.children[0].bounds = OSRectangle(4, width - 4, 4, height - 4);
+			window->pane.children[0].bounds = OSRectangle(4, width - 4, 30, height - 4);
 			window->pane.children[1].bounds = OSRectangle(4, width - 4, 4, 28);
 			window->pane.children[2].bounds = OSRectangle(4, width - 4, 0, 4);
 			window->pane.children[3].bounds = OSRectangle(4, width - 4, height - 4, height);
@@ -779,6 +915,9 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 			// Redraw the window background and border.
 			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
 					OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
+
+			// Layout the window.
+			OSLayoutPane(window->pane.children);
 
 			// Redraw the window.
 			DrawPane(&window->pane, true);

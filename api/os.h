@@ -168,6 +168,9 @@ enum OSFatalError {
 	OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS,
 	OS_FATAL_ERROR_INCORRECT_NODE_TYPE,
 	OS_FATAL_ERROR_PROCESSOR_EXCEPTION,
+	OS_FATAL_ERROR_INVALID_PANE_CHILD,
+	OS_FATAL_ERROR_INVALID_PANE_OBJECT,
+	OS_FATAL_ERROR_UNSUPPORTED_CALLBACK,
 	OS_FATAL_ERROR_COUNT,
 };
 
@@ -375,11 +378,6 @@ struct OSCallbackData {
 
 typedef void (*_OSCallback)(OSObject generator, void *argument, OSCallbackData *data);
 
-struct OSCallback {
-	_OSCallback callback;
-	void *argument;
-};
-
 enum OSCursorStyle {
 	OS_CURSOR_NORMAL, 
 	OS_CURSOR_TEXT, 
@@ -483,6 +481,12 @@ enum OSDrawMode {
 
 typedef void (*OSThreadEntryFunction)(void *argument);
 
+enum OSObjectType {
+	OS_OBJECT_CONTROL,
+	OS_OBJECT_WINDOW,
+	OS_OBJECT_PANE,
+};
+
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE (1073742824)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
 #define OS_SHARED_MEMORY_MAP_ALL (0)
@@ -579,10 +583,11 @@ extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textB
 extern "C" OSObject OSGetWindowContentPane(OSObject window);
 extern "C" OSObject OSGetPane(OSObject parent, uintptr_t index);
 
-extern "C" void OSSetPaneObject(OSObject pane, OSObject object);
+extern "C" void OSSetPaneObject(OSObject pane, OSObject object, OSObjectType objectType);
 extern "C" void OSSetPaneColumns(OSObject pane, size_t count, size_t expandColumn, unsigned expandFlags);
 extern "C" void OSSetPaneRows(OSObject pane, size_t count, size_t expandRow, unsigned expandFlags);
-extern "C" void OSSetObjectCallback(OSObject object, OSCallbackType type, _OSCallback function, void *argument);
+extern "C" void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType callbackType, _OSCallback function, void *argument);
+extern "C" void OSLayoutPane(OSObject pane);
 
 extern "C" void OSDisableControl(OSObject control, bool disabled);
 extern "C" void OSSetControlText(OSObject control, char *text, size_t textBytes);
