@@ -127,6 +127,7 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
 			region->mutex.Acquire();
 			bool destroy = region->handles == 1;
+			KernelLog(LOG_VERBOSE, "Close shmem handle, %d remain\n", region->handles);
 			region->handles--;
 			region->mutex.Release();
 

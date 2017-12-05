@@ -1259,6 +1259,8 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	mutex.Acquire();
 	Defer(mutex.Release());
 
+	KernelLog(LOG_VERBOSE, "SharedMemoryManager::CreateSharedMemory - %d bytes\n", sizeBytes);
+
 	NamedSharedMemoryRegion *namedRegion = nullptr;
 
 	if (name) {
@@ -1332,7 +1334,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 	uintptr_t *addresses = (uintptr_t *) (region + 1);
 
-	// KernelLog(LOG_VERBOSE, "Freeing shared memory region....\n");
+	KernelLog(LOG_VERBOSE, "Freeing shared memory region.... (%d bytes)\n", region->sizeBytes);
 
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < pages; i++) {

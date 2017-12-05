@@ -62,7 +62,9 @@ struct Pane {
 	struct Pane *children;
 	size_t childrenCount;
 
-	bool dirty, vertical;
+	bool dirty : 1, 
+	     vertical : 1,
+	     indent : 1;
 };
 
 struct Window {
@@ -143,6 +145,8 @@ static void SendCallback(Control *from, OSCallback &callback, OSCallbackData &da
 
 static OSRectangle GetPaneBounds(Pane *pane) {
 	OSRectangle rectangle = pane->bounds;
+
+#if 0
 	pane = pane->parent;
 
 	while (pane) {
@@ -153,6 +157,7 @@ static OSRectangle GetPaneBounds(Pane *pane) {
 
 		pane = pane->parent;
 	}
+#endif
 
 	return rectangle;
 }
@@ -382,25 +387,13 @@ void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackTyp
 
 static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t childrenCount, Control *control);
 
-void OSSetPaneColumns(OSObject _pane, size_t count, size_t expandColumn, unsigned expandFlags) {
-	(void) expandColumn;
-	(void) expandFlags;
+void OSConfigurePane(OSObject _pane, size_t count, size_t expandIndex, unsigned flags) {
+	(void) expandIndex;
 
 	Pane *pane = (Pane *) _pane;
-	pane->vertical = false;
-	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, count, nullptr);
+	pane->vertical = flags & OS_CONFIGURE_PANE_VERTICAL;
+	pane->indent = !(flags & OS_CONFIGURE_PANE_NO_INDENT);
 
-	for (uintptr_t i = 0; i < count; i++) {
-		InitialisePane(pane->children + i, OSRectangle(0, 0, 0, 0), pane->parent->window, pane, 0, nullptr);
-	}
-}
-
-void OSSetPaneRows(OSObject _pane, size_t count, size_t expandRow, unsigned expandFlags) {
-	(void) expandRow;
-	(void) expandFlags;
-
-	Pane *pane = (Pane *) _pane;
-	pane->vertical = true;
 	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, count, nullptr);
 
 	for (uintptr_t i = 0; i < count; i++) {
@@ -424,28 +417,43 @@ void OSSetPaneObject(OSObject _pane, OSObject object, OSObjectType objectType) {
 
 static void LayoutPane(Pane *pane) {
 	if (pane->childrenCount == 0 && pane->control) {
-		pane->bounds = OSRectangle(0, pane->control->preferredWidth, 0, pane->control->preferredHeight);
+		pane->bounds.right = pane->bounds.left + pane->control->preferredWidth;
+		pane->bounds.bottom = pane->bounds.top + pane->control->preferredHeight;
+
 	} else {
-		int position = 4;
-		int position2 = 4;
+		int position = pane->indent ? 4 : 0;
+		int position2 = pane->indent ? 4 : 0;
 
 		for (uintptr_t i = 0; i < pane->childrenCount; i++) {
 			Pane *child = pane->children + i;
+			child->bounds = pane->bounds;
+
+			if (pane->vertical) {
+				child->bounds.left += position2;
+				child->bounds.right += pane->bounds.right - pane->bounds.left - position2;
+				child->bounds.top += position;
+				child->bounds.bottom += position;
+			} else {
+				child->bounds.top += position2;
+				child->bounds.bottom += pane->bounds.bottom - pane->bounds.top - position2;
+				child->bounds.left += position;
+				child->bounds.right += position;
+			}
+
 			LayoutPane(child);
 
 			if (pane->vertical) {
-				child->bounds.top += position;
-				child->bounds.bottom += position;
-				child->bounds.left += position2;
-				child->bounds.right += position2;
 				position += child->bounds.bottom - child->bounds.top + 4;
 			} else {
-				child->bounds.left += position;
-				child->bounds.right += position;
-				child->bounds.top += position2;
-				child->bounds.bottom += position2;
 				position += child->bounds.right - child->bounds.left + 4;
 			}
+
+		}
+
+		if (pane->vertical) {
+			pane->bounds.bottom += position;
+		} else {
+			pane->bounds.right += position;
 		}
 	}
 }
@@ -896,8 +904,6 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 
 			window->width = width;
 			window->height = height;
-
-			// TODO Window resizing.
 
 			window->pane.children[0].bounds = OSRectangle(4, width - 4, 30, height - 4);
 			window->pane.children[1].bounds = OSRectangle(4, width - 4, 4, 28);

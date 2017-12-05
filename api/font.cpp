@@ -323,6 +323,9 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			if (oY < region.top) continue;
 			if (oY >= region.bottom) break;
 
+			if (oY < 0) continue;
+			if (oY >= (int) linearBuffer.height) break;
+
 			if (oY < invalidatedRegion.top) invalidatedRegion.top = oY;
 			if (oY > invalidatedRegion.bottom) invalidatedRegion.bottom = oY;
 
@@ -331,6 +334,9 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			
 				if (oX < region.left) continue;
 				if (oX >= region.right) break;
+
+				if (oX < 0) continue;
+				if (oX >= (int) linearBuffer.width) break;
 
 				if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
 				if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
@@ -399,8 +405,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	}
 
 	if (bitmap) {
-		// TODO Memory leak? Is this not working?
 		OSFree(bitmap);
+		OSCloseHandle(linearBuffer.handle);
 	}
 
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;

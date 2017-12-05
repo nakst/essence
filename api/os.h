@@ -518,6 +518,10 @@ enum OSObjectType {
 #define OS_CREATE_WINDOW_NO_DECORATIONS (1)
 #define OS_CREATE_WINDOW_NOT_RESIZABLE  (2)
 
+#define OS_CONFIGURE_PANE_VERTICAL   (1)
+#define OS_CONFIGURE_PANE_HORIZONTAL (2)
+#define OS_CONFIGURE_PANE_NO_INDENT  (4)
+
 #ifndef KERNEL
 extern "C" void OSInitialiseAPI();
 
@@ -584,8 +588,7 @@ extern "C" OSObject OSGetWindowContentPane(OSObject window);
 extern "C" OSObject OSGetPane(OSObject parent, uintptr_t index);
 
 extern "C" void OSSetPaneObject(OSObject pane, OSObject object, OSObjectType objectType);
-extern "C" void OSSetPaneColumns(OSObject pane, size_t count, size_t expandColumn, unsigned expandFlags);
-extern "C" void OSSetPaneRows(OSObject pane, size_t count, size_t expandRow, unsigned expandFlags);
+extern "C" void OSConfigurePane(OSObject pane, size_t count, size_t expandIndex, unsigned flags);
 extern "C" void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType callbackType, _OSCallback function, void *argument);
 extern "C" void OSLayoutPane(OSObject pane);
 
