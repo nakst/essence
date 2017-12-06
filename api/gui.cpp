@@ -410,15 +410,26 @@ void OSSetPaneObject(OSObject _pane, OSObject object, unsigned flags) {
 	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, 0, 0, control);
 }
 
-static void MeasurePane(Pane *pane, unsigned &width, unsigned &height) {
+#define PUSH (-1)
+
+static void MeasurePane(Pane *pane, int &width, int &height) {
 	if (pane->control) {
 		width = pane->control->preferredWidth;
 		height = pane->control->preferredHeight;
+
+		if (pane->flags & OS_SET_PANE_OBJECT_HORIZONTAL_PUSH) {
+			width = PUSH;
+		}
+
+		if (pane->flags & OS_SET_PANE_OBJECT_VERTICAL_PUSH) {
+			height = PUSH;
+		}
+
 		return;
 	}
 
-	unsigned columnWidths[pane->gridWidth];
-	unsigned rowHeights[pane->gridHeight];
+	int columnWidths[pane->gridWidth];
+	int rowHeights[pane->gridHeight];
 
 	OSZeroMemory(columnWidths, sizeof(columnWidths));
 	OSZeroMemory(rowHeights, sizeof(rowHeights));
@@ -426,14 +437,14 @@ static void MeasurePane(Pane *pane, unsigned &width, unsigned &height) {
 	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
 		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
 			Pane *cell = (Pane *) OSGetPane(pane, i, j);
-			unsigned width, height;
+			int width, height;
 			MeasurePane(cell, width, height);
 
-			if (columnWidths[i] < width) {
+			if ((columnWidths[i] < width && columnWidths[i] != PUSH) || width == PUSH) {
 				columnWidths[i] = width;
 			}
 
-			if (rowHeights[j] < height) {
+			if ((rowHeights[j] < height && rowHeights[j] != PUSH) || height == PUSH) {
 				rowHeights[j] = height;
 			}
 		}
@@ -443,11 +454,21 @@ static void MeasurePane(Pane *pane, unsigned &width, unsigned &height) {
 	height = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4;
 
 	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
-		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
-			height += rowHeights[j] + 4;
-		}
-
 		width += columnWidths[i] + 4;
+
+		if (columnWidths[i] == PUSH) {
+			width = PUSH;
+			break;
+		}
+	}
+
+	for (uintptr_t j = 0; j < pane->gridHeight; j++) {
+		height += rowHeights[j] + 4;
+
+		if (rowHeights[j] == PUSH) {
+			height = PUSH;
+			break;
+		}
 	}
 }
 
@@ -483,8 +504,11 @@ static void LayoutPane(Pane *pane) {
 		return;
 	}
 
-	unsigned columnWidths[pane->gridWidth];
-	unsigned rowHeights[pane->gridHeight];
+	int columnWidths[pane->gridWidth];
+	int rowHeights[pane->gridHeight];
+
+	int pushColumnCount = 0;
+	int pushRowCount = 0;
 
 	OSZeroMemory(columnWidths, sizeof(columnWidths));
 	OSZeroMemory(rowHeights, sizeof(rowHeights));
@@ -492,15 +516,59 @@ static void LayoutPane(Pane *pane) {
 	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
 		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
 			Pane *cell = (Pane *) OSGetPane(pane, i, j);
-			unsigned width, height;
+			int width, height;
 			MeasurePane(cell, width, height);
 
-			if (columnWidths[i] < width) {
+			if ((columnWidths[i] < width && columnWidths[i] != PUSH) || width == PUSH) {
 				columnWidths[i] = width;
 			}
 
-			if (rowHeights[j] < height) {
+			if ((rowHeights[j] < height && rowHeights[j] != PUSH) || height == PUSH) {
 				rowHeights[j] = height;
+			}
+
+			if (width == PUSH) {
+				pushColumnCount++;
+			}
+
+			if (height == PUSH) {
+				pushRowCount++;
+			}
+		}
+	}
+
+	if (pushColumnCount) {
+		int usedWidth = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4;
+
+		for (uintptr_t i = 0; i < pane->gridWidth; i++) {
+			if (columnWidths[i] != PUSH) {
+				usedWidth += columnWidths[i] + 4;
+			}
+		}
+
+		int widthPerPush = (pane->bounds.right - pane->bounds.left - usedWidth) / pushColumnCount;
+
+		for (uintptr_t i = 0; i < pane->gridWidth; i++) {
+			if (columnWidths[i] == PUSH) {
+				columnWidths[i] = widthPerPush;
+			}
+		}
+	}
+
+	if (pushRowCount) {
+		int usedHeight = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4;
+
+		for (uintptr_t i = 0; i < pane->gridHeight; i++) {
+			if (rowHeights[i] != PUSH) {
+				usedHeight += rowHeights[i] + 4;
+			}
+		}
+
+		int heightPerPush = (pane->bounds.bottom - pane->bounds.top - usedHeight) / pushRowCount - 4;
+
+		for (uintptr_t i = 0; i < pane->gridHeight; i++) {
+			if (rowHeights[i] == PUSH) {
+				rowHeights[i] = heightPerPush;
 			}
 		}
 	}
