@@ -15,6 +15,7 @@ struct Control {
 	bool dirty;
 
 	// Position and size:
+	OSRectangle bounds;
 	unsigned preferredWidth, preferredHeight;
 	unsigned textBoundsBorder;
 
@@ -58,13 +59,13 @@ struct Pane {
 	struct Pane *parent;
 	Control *control;
 	OSRectangle bounds;
+	unsigned preferredWidth, preferredHeight;
 
-	struct Pane *children;
-	size_t childrenCount;
+	struct Pane *grid;
+	size_t gridWidth, gridHeight;
 
-	bool dirty : 1, 
-	     vertical : 1,
-	     indent : 1;
+	unsigned flags;
+	bool dirty;
 };
 
 struct Window {
@@ -163,7 +164,7 @@ static OSRectangle GetPaneBounds(Pane *pane) {
 }
 
 static OSRectangle GetControlBounds(Control *control) {
-	return GetPaneBounds(control->pane);
+	return control->bounds;
 }
 
 static OSRectangle GetControlTextBounds(Control *control) {
@@ -274,8 +275,8 @@ static void DrawPane(Pane *pane, bool force) {
 		pane->control->dirty = false;
 	}
 
-	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
-		DrawPane(pane->children + i, force);
+	for (uintptr_t i = 0; i < pane->gridWidth * pane->gridHeight; i++) {
+		DrawPane(pane->grid + i, force);
 	}
 }
 
@@ -315,6 +316,8 @@ void OSInvalidateControl(OSObject _control) {
 }
 
 static bool ControlHitTest(Control *control, int x, int y) {
+	if (!control) return false;
+
 	OSRectangle bounds = GetControlBounds(control);
 
 	if (control->window->pressedControl == control) {
@@ -350,17 +353,17 @@ void OSDisableControl(OSObject object, bool disabled) {
 
 OSObject OSGetWindowContentPane(OSObject _window) {
 	Window *window = (Window *) _window;
-	return window->pane.children;
+	return window->pane.grid;
 }
 
-OSObject OSGetPane(OSObject _pane, uintptr_t index) {
+OSObject OSGetPane(OSObject _pane, uintptr_t gridX, uintptr_t gridY) {
 	Pane *pane = (Pane *) _pane;
 
-	if (pane->childrenCount <= index) {
+	if (pane->gridWidth <= gridX || pane->gridHeight <= gridY) {
 		OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_CHILD);
 	}
 
-	return pane->children + index;
+	return pane->grid + gridX + gridY * pane->gridWidth;
 }
 
 void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType type, _OSCallback function, void *argument) {
@@ -385,76 +388,136 @@ void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackTyp
 	}
 }
 
-static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t childrenCount, Control *control);
+static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t gridWidth, size_t gridHeight, Control *control);
 
-void OSConfigurePane(OSObject _pane, size_t count, size_t expandIndex, unsigned flags) {
-	(void) expandIndex;
-
+void OSConfigurePane(OSObject _pane, size_t gridWidth, size_t gridHeight, unsigned flags) {
 	Pane *pane = (Pane *) _pane;
-	pane->vertical = flags & OS_CONFIGURE_PANE_VERTICAL;
-	pane->indent = !(flags & OS_CONFIGURE_PANE_NO_INDENT);
+	pane->flags = flags;
 
-	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, count, nullptr);
+	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, gridWidth, gridHeight, nullptr);
 
-	for (uintptr_t i = 0; i < count; i++) {
-		InitialisePane(pane->children + i, OSRectangle(0, 0, 0, 0), pane->parent->window, pane, 0, nullptr);
+	for (uintptr_t i = 0; i < gridWidth * gridHeight; i++) {
+		InitialisePane(pane->grid + i, OSRectangle(0, 0, 0, 0), pane->parent->window, pane, 0, 0, nullptr);
 	}
 }
 
-void OSSetPaneObject(OSObject _pane, OSObject object, OSObjectType objectType) {
+void OSSetPaneObject(OSObject _pane, OSObject object, unsigned flags) {
+	Control *control = (Control *) object;
+	
 	Pane *pane = (Pane *) _pane;
+	pane->flags = flags;
 
-	switch (objectType) {
-		case OS_OBJECT_CONTROL: {
-			InitialisePane(pane, OSRectangle(0, 0, 0, 0), pane->parent->window, pane->parent, 0, (Control *) object);
-		} break;
+	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, 0, 0, control);
+}
 
-		default: {
-			OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
-		} break;
+static void MeasurePane(Pane *pane, unsigned &width, unsigned &height) {
+	if (pane->control) {
+		width = pane->control->preferredWidth;
+		height = pane->control->preferredHeight;
+		return;
+	}
+
+	unsigned columnWidths[pane->gridWidth];
+	unsigned rowHeights[pane->gridHeight];
+
+	OSZeroMemory(columnWidths, sizeof(columnWidths));
+	OSZeroMemory(rowHeights, sizeof(rowHeights));
+
+	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
+		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
+			Pane *cell = (Pane *) OSGetPane(pane, i, j);
+			unsigned width, height;
+			MeasurePane(cell, width, height);
+
+			if (columnWidths[i] < width) {
+				columnWidths[i] = width;
+			}
+
+			if (rowHeights[j] < height) {
+				rowHeights[j] = height;
+			}
+		}
+	}
+
+	width = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4;
+	height = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4;
+
+	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
+		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
+			height += rowHeights[j] + 4;
+		}
+
+		width += columnWidths[i] + 4;
 	}
 }
 
 static void LayoutPane(Pane *pane) {
-	if (pane->childrenCount == 0 && pane->control) {
-		pane->bounds.right = pane->bounds.left + pane->control->preferredWidth;
-		pane->bounds.bottom = pane->bounds.top + pane->control->preferredHeight;
+	if (pane->control) {
+		unsigned givenWidth = pane->bounds.right - pane->bounds.left;
+		unsigned givenHeight = pane->bounds.bottom - pane->bounds.top;
 
-	} else {
-		int position = pane->indent ? 4 : 0;
-		int position2 = pane->indent ? 4 : 0;
+		pane->control->bounds = pane->bounds;
 
-		for (uintptr_t i = 0; i < pane->childrenCount; i++) {
-			Pane *child = pane->children + i;
-			child->bounds = pane->bounds;
-
-			if (pane->vertical) {
-				child->bounds.left += position2;
-				child->bounds.right += pane->bounds.right - pane->bounds.left - position2;
-				child->bounds.top += position;
-				child->bounds.bottom += position;
-			} else {
-				child->bounds.top += position2;
-				child->bounds.bottom += pane->bounds.bottom - pane->bounds.top - position2;
-				child->bounds.left += position;
-				child->bounds.right += position;
+		if (givenWidth > pane->control->preferredWidth) {
+			if (pane->flags & OS_SET_PANE_OBJECT_HORIZONTAL_LEFT) {
+				pane->control->bounds.right = pane->control->bounds.left + pane->control->preferredWidth;
+			} else if (pane->flags & OS_SET_PANE_OBJECT_HORIZONTAL_RIGHT) {
+				pane->control->bounds.left = pane->control->bounds.right - pane->control->preferredWidth;
+			} else if (pane->flags & OS_SET_PANE_OBJECT_HORIZONTAL_CENTER) {
+				pane->control->bounds.left = pane->control->bounds.left + givenWidth / 2 - pane->control->preferredWidth / 2;
+				pane->control->bounds.right = pane->control->bounds.left + pane->control->preferredWidth;
 			}
-
-			LayoutPane(child);
-
-			if (pane->vertical) {
-				position += child->bounds.bottom - child->bounds.top + 4;
-			} else {
-				position += child->bounds.right - child->bounds.left + 4;
-			}
-
 		}
 
-		if (pane->vertical) {
-			pane->bounds.bottom += position;
-		} else {
-			pane->bounds.right += position;
+		if (givenHeight > pane->control->preferredHeight) {
+			if (pane->flags & OS_SET_PANE_OBJECT_VERTICAL_TOP) {
+				pane->control->bounds.bottom = pane->control->bounds.top + pane->control->preferredHeight;
+			} else if (pane->flags & OS_SET_PANE_OBJECT_VERTICAL_BOTTOM) {
+				pane->control->bounds.top = pane->control->bounds.bottom - pane->control->preferredHeight;
+			} else if (pane->flags & OS_SET_PANE_OBJECT_VERTICAL_CENTER) {
+				pane->control->bounds.top = pane->control->bounds.top + givenHeight / 2 - pane->control->preferredHeight / 2;
+				pane->control->bounds.bottom = pane->control->bounds.top + pane->control->preferredHeight;
+			}
 		}
+
+		return;
+	}
+
+	unsigned columnWidths[pane->gridWidth];
+	unsigned rowHeights[pane->gridHeight];
+
+	OSZeroMemory(columnWidths, sizeof(columnWidths));
+	OSZeroMemory(rowHeights, sizeof(rowHeights));
+
+	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
+		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
+			Pane *cell = (Pane *) OSGetPane(pane, i, j);
+			unsigned width, height;
+			MeasurePane(cell, width, height);
+
+			if (columnWidths[i] < width) {
+				columnWidths[i] = width;
+			}
+
+			if (rowHeights[j] < height) {
+				rowHeights[j] = height;
+			}
+		}
+	}
+
+	unsigned positionX = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4 + pane->bounds.left;
+
+	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
+		unsigned positionY = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT) ? 0 : 4 + pane->bounds.top;
+
+		for (uintptr_t j = 0; j < pane->gridHeight; j++) {
+			Pane *cell = (Pane *) OSGetPane(pane, i, j);
+			cell->bounds = OSRectangle(positionX, positionX + columnWidths[i], positionY, positionY + rowHeights[j]);
+			LayoutPane(cell);
+			positionY += rowHeights[j] + 4;
+		}
+
+		positionX += columnWidths[i] + 4;
 	}
 }
 
@@ -466,8 +529,8 @@ static void InvalidatePane(Pane *pane) {
 	pane->dirty = true;
 	pane->window->dirty = true;
 
-	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
-		InvalidatePane(pane->children + i);
+	for (uintptr_t i = 0; i < pane->gridWidth * pane->gridHeight; i++) {
+		InvalidatePane(pane->grid + i);
 	}
 }
 
@@ -532,21 +595,26 @@ OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsi
 	return control;
 }
 
-static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t childrenCount, Control *control) {
+static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane *parent, size_t gridWidth, size_t gridHeight, Control *control) {
 	pane->bounds = bounds;
 	pane->window = window;
 	pane->parent = parent;
-	pane->children = (Pane *) OSHeapAllocate(sizeof(Pane) * (pane->childrenCount = childrenCount), true);
+	pane->gridWidth = gridWidth;
+	pane->gridHeight = gridHeight;
+	pane->grid = (Pane *) OSHeapAllocate(sizeof(Pane) * gridWidth * gridHeight, true);
 	pane->control = control;
 
 	if (control) {
 		control->pane = pane;
 		control->window = window;
+		control->bounds = bounds;
 		OSInvalidateControl(control);
 	}
 }
 
 OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, unsigned height, unsigned flags) {
+	(void) flags;
+
 	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 
 	// Add the size of the border.
@@ -563,13 +631,11 @@ OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, un
 		return nullptr;
 	}
 
-	bool decorate = !(flags & OS_CREATE_WINDOW_NO_DECORATIONS);
-
 	// Create the root and content panes.
-	InitialisePane(&window->pane, OSRectangle(0, width, 0, height), window, nullptr, decorate ? 10 : 1, nullptr);
-	InitialisePane(window->pane.children + 0, OSRectangle(4, width - 4, 30, height - 4), window, &window->pane, 0, nullptr);
+	InitialisePane(&window->pane, OSRectangle(0, width, 0, height), window, nullptr, 10, 1, nullptr);
+	InitialisePane(window->pane.grid + 0, OSRectangle(4, width - 4, 30, height - 4), window, &window->pane, 0, 0, nullptr);
 	
-	if (decorate) {
+	{
 		// Draw the window background and border.
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
 				OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
@@ -577,47 +643,47 @@ OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, un
 		// TODO Increase the resize region sizes.
 
 		Control *titlebar = (Control *) OSCreateControl(OS_CONTROL_TITLEBAR, title, titleLengthBytes, 0);
-		InitialisePane(window->pane.children + 1, OSRectangle(4, width - 4, 4, 28), window, &window->pane, 0, titlebar);
+		InitialisePane(window->pane.grid + 1, OSRectangle(4, width - 4, 4, 28), window, &window->pane, 0, 0, titlebar);
 
 		Control *resizeTop = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeTop->cursorStyle = OS_CURSOR_RESIZE_VERTICAL;
 		resizeTop->resizeRegionIndex = 0;
-		InitialisePane(window->pane.children + 2, OSRectangle(4, width - 8, 0, 4), window, &window->pane, 0, resizeTop);
+		InitialisePane(window->pane.grid + 2, OSRectangle(4, width - 8, 0, 4), window, &window->pane, 0, 0, resizeTop);
 
 		Control *resizeBottom = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeBottom->cursorStyle = OS_CURSOR_RESIZE_VERTICAL;
 		resizeBottom->resizeRegionIndex = 1;
-		InitialisePane(window->pane.children + 3, OSRectangle(4, width - 8, height - 4, height), window, &window->pane, 0, resizeBottom);
+		InitialisePane(window->pane.grid + 3, OSRectangle(4, width - 8, height - 4, height), window, &window->pane, 0, 0, resizeBottom);
 
 		Control *resizeLeft = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeLeft->cursorStyle = OS_CURSOR_RESIZE_HORIZONTAL;
 		resizeLeft->resizeRegionIndex = 2;
-		InitialisePane(window->pane.children + 4, OSRectangle(0, 4, 4, height - 8), window, &window->pane, 0, resizeLeft);
+		InitialisePane(window->pane.grid + 4, OSRectangle(0, 4, 4, height - 8), window, &window->pane, 0, 0, resizeLeft);
 
 		Control *resizeRight = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeRight->cursorStyle = OS_CURSOR_RESIZE_HORIZONTAL;
 		resizeRight->resizeRegionIndex = 3;
-		InitialisePane(window->pane.children + 5, OSRectangle(width - 4, width, 4, height - 8), window, &window->pane, 0, resizeRight);
+		InitialisePane(window->pane.grid + 5, OSRectangle(width - 4, width, 4, height - 8), window, &window->pane, 0, 0, resizeRight);
 
 		Control *resizeTopLeft = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeTopLeft->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_2;
 		resizeTopLeft->resizeRegionIndex = 4;
-		InitialisePane(window->pane.children + 6, OSRectangle(0, 4, 0, 4), window, &window->pane, 0, resizeTopLeft);
+		InitialisePane(window->pane.grid + 6, OSRectangle(0, 4, 0, 4), window, &window->pane, 0, 0, resizeTopLeft);
 
 		Control *resizeBottomRight = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeBottomRight->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_2;
 		resizeBottomRight->resizeRegionIndex = 5;
-		InitialisePane(window->pane.children + 7, OSRectangle(width - 4, width, height - 4, height), window, &window->pane, 0, resizeBottomRight);
+		InitialisePane(window->pane.grid + 7, OSRectangle(width - 4, width, height - 4, height), window, &window->pane, 0, 0, resizeBottomRight);
 
 		Control *resizeTopRight = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeTopRight->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_1;
 		resizeTopRight->resizeRegionIndex = 6;
-		InitialisePane(window->pane.children + 8, OSRectangle(width - 4, width, 0, 4), window, &window->pane, 0, resizeTopRight);
+		InitialisePane(window->pane.grid + 8, OSRectangle(width - 4, width, 0, 4), window, &window->pane, 0, 0, resizeTopRight);
 
 		Control *resizeBottomLeft = (Control *) OSCreateControl(OS_CONTROL_WINDOW_BORDER, nullptr, 0, 0);
 		resizeBottomLeft->cursorStyle = OS_CURSOR_RESIZE_DIAGONAL_1;
 		resizeBottomLeft->resizeRegionIndex = 7;
-		InitialisePane(window->pane.children + 9, OSRectangle(0, 4, height - 4, height), window, &window->pane, 0, resizeBottomLeft);
+		InitialisePane(window->pane.grid + 9, OSRectangle(0, 4, height - 4, height), window, &window->pane, 0, 0, resizeBottomLeft);
 	}
 
 	OSUpdateWindow(window);
@@ -779,15 +845,15 @@ static Control *FindControl(Pane *pane, int x, int y) {
 		return nullptr;
 	}
 
-	for (uintptr_t i = 0; i < pane->childrenCount; i++) {
-		Control *control = FindControl(pane->children + i, x, y);
+	for (uintptr_t i = 0; i < pane->gridWidth * pane->gridHeight; i++) {
+		Control *control = FindControl(pane->grid + i, x, y);
 
 		if (control) {
 			return control;
 		}
 	}
 
-	return pane->control;
+	return ControlHitTest(pane->control, x, y) ? pane->control : nullptr;
 }
 
 static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
@@ -905,16 +971,18 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 			window->width = width;
 			window->height = height;
 
-			window->pane.children[0].bounds = OSRectangle(4, width - 4, 30, height - 4);
-			window->pane.children[1].bounds = OSRectangle(4, width - 4, 4, 28);
-			window->pane.children[2].bounds = OSRectangle(4, width - 4, 0, 4);
-			window->pane.children[3].bounds = OSRectangle(4, width - 4, height - 4, height);
-			window->pane.children[4].bounds = OSRectangle(0, 4, 4, height - 4);
-			window->pane.children[5].bounds = OSRectangle(width - 4, width, 4, height - 4);
-			window->pane.children[6].bounds = OSRectangle(0, 4, 0, 4);
-			window->pane.children[7].bounds = OSRectangle(width - 4, width, height - 4, height);
-			window->pane.children[8].bounds = OSRectangle(width - 4, width, 0, 4);
-			window->pane.children[9].bounds = OSRectangle(0, 4, height - 4, height);
+			window->pane.grid[0].bounds = OSRectangle(4, width - 4, 30, height - 4);
+			window->pane.grid[1].bounds = OSRectangle(4, width - 4, 4, 28);
+			window->pane.grid[2].bounds = OSRectangle(4, width - 4, 0, 4);
+			window->pane.grid[3].bounds = OSRectangle(4, width - 4, height - 4, height);
+			window->pane.grid[4].bounds = OSRectangle(0, 4, 4, height - 4);
+			window->pane.grid[5].bounds = OSRectangle(width - 4, width, 4, height - 4);
+			window->pane.grid[6].bounds = OSRectangle(0, 4, 0, 4);
+			window->pane.grid[7].bounds = OSRectangle(width - 4, width, height - 4, height);
+			window->pane.grid[8].bounds = OSRectangle(width - 4, width, 0, 4);
+			window->pane.grid[9].bounds = OSRectangle(0, 4, height - 4, height);
+
+			for (uintptr_t i = 1; i < 10; i++) window->pane.grid[i].control->bounds = window->pane.grid[i].bounds;
 
 			OSMoveWindow(window->handle, bounds);
 
@@ -923,7 +991,7 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 					OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
 
 			// Layout the window.
-			OSLayoutPane(window->pane.children);
+			OSLayoutPane(window->pane.grid);
 
 			// Redraw the window.
 			DrawPane(&window->pane, true);
@@ -1166,6 +1234,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 		case OS_MESSAGE_WINDOW_CREATED: {
 			window->dirty = true;
+			InvalidatePane(&window->pane);
 		} break;
 
 		case OS_MESSAGE_WINDOW_BLINK_TIMER: {

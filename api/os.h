@@ -515,12 +515,21 @@ enum OSObjectType {
 #define OS_OPEN_NODE_DIRECTORY		(0x2000)
 #define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x4000) // Create the directories leading to the file, if they don't already exist.
 
-#define OS_CREATE_WINDOW_NO_DECORATIONS (1)
 #define OS_CREATE_WINDOW_NOT_RESIZABLE  (2)
 
-#define OS_CONFIGURE_PANE_VERTICAL   (1)
-#define OS_CONFIGURE_PANE_HORIZONTAL (2)
 #define OS_CONFIGURE_PANE_NO_INDENT  (4)
+
+#define OS_SET_PANE_OBJECT_HORIZONTAL_RIGHT  (2)
+#define OS_SET_PANE_OBJECT_HORIZONTAL_LEFT   (4)
+#define OS_SET_PANE_OBJECT_HORIZONTAL_CENTER (8)
+#define OS_SET_PANE_OBJECT_HORIZONTAL_STRECH (16)
+#define OS_SET_PANE_OBJECT_HORIZONTAL_PUSH   (32)
+
+#define OS_SET_PANE_OBJECT_VERTICAL_TOP    (64)
+#define OS_SET_PANE_OBJECT_VERTICAL_BOTTOM (128)
+#define OS_SET_PANE_OBJECT_VERTICAL_CENTER (256)
+#define OS_SET_PANE_OBJECT_VERTICAL_STRECH (512)
+#define OS_SET_PANE_OBJECT_VERTICAL_PUSH   (1024)
 
 #ifndef KERNEL
 extern "C" void OSInitialiseAPI();
@@ -585,10 +594,10 @@ extern "C" void OSRedrawAll();
 extern "C" OSObject OSCreateWindow(char *title, size_t titleBytes, unsigned width, unsigned height, unsigned flags);
 extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textBytes, unsigned flags);
 extern "C" OSObject OSGetWindowContentPane(OSObject window);
-extern "C" OSObject OSGetPane(OSObject parent, uintptr_t index);
+extern "C" OSObject OSGetPane(OSObject parent, uintptr_t gridX, uintptr_t gridY);
 
-extern "C" void OSSetPaneObject(OSObject pane, OSObject object, OSObjectType objectType);
-extern "C" void OSConfigurePane(OSObject pane, size_t count, size_t expandIndex, unsigned flags);
+extern "C" void OSSetPaneObject(OSObject pane, OSObject object, unsigned flags);
+extern "C" void OSConfigurePane(OSObject pane, size_t gridWidth, size_t gridHeight, unsigned flags);
 extern "C" void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType callbackType, _OSCallback function, void *argument);
 extern "C" void OSLayoutPane(OSObject pane);
 

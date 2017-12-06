@@ -11,8 +11,6 @@ bool Process::SendMessage(OSMessage &_message) {
 	// TODO These really don't need to be allocated on the heap.
 	// TODO Linked list validate (4) bug?
 
-	KernelLog(LOG_VERBOSE, "SendMessage to %x from %x\n", this, _message.targetWindow);
-
 	messageQueueMutex.Acquire();
 	Defer(messageQueueMutex.Release());
 

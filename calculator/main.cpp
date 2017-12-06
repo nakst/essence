@@ -1,46 +1,21 @@
 #include "../api/os.h"
 
 extern "C" void ProgramEntry() {
-	OSObject window = OSCreateWindow((char *) "Calculator", 10, 320, 200, 0);
-
-#if 0
+	OSObject window = OSCreateWindow((char *) "Test Program", 12, 640, 400, 0);
 	OSObject contentPane = OSGetWindowContentPane(window);
-	OSConfigurePane(contentPane, 3, 0, OS_CONFIGURE_PANE_HORIZONTAL);
-	OSConfigurePane(OSGetPane(contentPane, 0), 3, 0, OS_CONFIGURE_PANE_VERTICAL | OS_CONFIGURE_PANE_NO_INDENT);
-	OSConfigurePane(OSGetPane(contentPane, 1), 3, 0, OS_CONFIGURE_PANE_VERTICAL | OS_CONFIGURE_PANE_NO_INDENT);
-	OSConfigurePane(OSGetPane(contentPane, 2), 3, 0, OS_CONFIGURE_PANE_VERTICAL | OS_CONFIGURE_PANE_NO_INDENT);
-
-	for (int i = 0; i < 9; i++) {
-		char buffer[1]; size_t bufferBytes = OSFormatString(buffer, 1, "%d", i + 1);
-
-		OSObject control = OSCreateControl(OS_CONTROL_BUTTON, buffer, bufferBytes, 0);
-		OSSetPaneObject(OSGetPane(OSGetPane(contentPane, i % 3), i / 3), control, OS_OBJECT_CONTROL);
-	}
-#else
-	OSObject contentPane = OSGetWindowContentPane(window);
-	OSConfigurePane(contentPane, 3, 0, OS_CONFIGURE_PANE_VERTICAL);
-
-	char buffer[16];
-
-	{
-		size_t bufferBytes = OSFormatString(buffer, 16, "Button 1");
-		OSObject control = OSCreateControl(OS_CONTROL_BUTTON, buffer, bufferBytes, 0);
-		OSSetPaneObject(OSGetPane(contentPane, 0), control, OS_OBJECT_CONTROL);
-	}
-
-	{
-		size_t bufferBytes = OSFormatString(buffer, 16, "Hello");
-		OSObject control = OSCreateControl(OS_CONTROL_TEXTBOX, buffer, bufferBytes, 0);
-		OSSetPaneObject(OSGetPane(contentPane, 1), control, OS_OBJECT_CONTROL);
-	}
-
-	{
-		size_t bufferBytes = OSFormatString(buffer, 16, "Button 2");
-		OSObject control = OSCreateControl(OS_CONTROL_BUTTON, buffer, bufferBytes, 0);
-		OSSetPaneObject(OSGetPane(contentPane, 2), control, OS_OBJECT_CONTROL);
-	}
-#endif
-
+	OSObject button1 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Button 1", 8, 0);
+	OSObject button2 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Button 2", 8, 0);
+	OSObject button3 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Button 3", 8, 0);
+	OSObject textbox1 = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Textbox 1", 9, 0);
+	OSObject textbox2 = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Textbox 2", 9, 0);
+	OSObject textbox3 = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Textbox 3", 9, 0);
+	OSConfigurePane(contentPane, 2, 3, 0);
+	OSSetPaneObject(OSGetPane(contentPane, 0, 0), button1, OS_SET_PANE_OBJECT_HORIZONTAL_LEFT);
+	OSSetPaneObject(OSGetPane(contentPane, 1, 1), button2, OS_SET_PANE_OBJECT_HORIZONTAL_RIGHT);
+	OSSetPaneObject(OSGetPane(contentPane, 0, 2), button3, OS_SET_PANE_OBJECT_HORIZONTAL_CENTER);
+	OSSetPaneObject(OSGetPane(contentPane, 1, 0), textbox1, 0);
+	OSSetPaneObject(OSGetPane(contentPane, 0, 1), textbox2, 0);
+	OSSetPaneObject(OSGetPane(contentPane, 1, 2), textbox3, 0);
 	OSLayoutPane(contentPane);
 
 	while (true) {
