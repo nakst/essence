@@ -77,6 +77,10 @@ static void OSHeapAddFreeRegion(OSHeapRegion *region) {
 void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	if (!size) return nullptr;
 
+#ifndef KERNEL
+	OSPrint("Allocate: %d\n", size);
+#endif
+
 	size_t originalSize = size;
 
 	size += 0x10; // Region metadata.
@@ -179,6 +183,10 @@ void OSHeapFree(void *address) {
 
 	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);
 	if (region->used != 0xABCD) OS_HEAP_PANIC(region->used);
+
+#ifndef KERNEL
+	OSPrint("Free: %x (%d bytes)\n", address, region->size);
+#endif
 
 	bool expectingSize = expectedSize != 0;
 	expectedSize += 0x10; // Region metadata.

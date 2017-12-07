@@ -227,10 +227,12 @@ void Graphics::UpdateScreen() {
 	frameBuffer.mutex.Acquire();
 	Defer(frameBuffer.mutex.Release());
 
-	// TODO This doesn't work with cursor image offset at the screen edge.
-	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE,
-								cursorY, cursorY + CURSOR_SWAP_SIZE),
-			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
+	OSRectangle sourceRectangle = OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE, cursorY, cursorY + CURSOR_SWAP_SIZE);
+	if (sourceRectangle.left < 0) sourceRectangle.left = 0;
+	if (sourceRectangle.top < 0) sourceRectangle.top = 0;
+	if (sourceRectangle.right > (int) frameBuffer.resX) sourceRectangle.right = frameBuffer.resX;
+	if (sourceRectangle.bottom > (int) frameBuffer.resY) sourceRectangle.bottom = frameBuffer.resY;
+	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), sourceRectangle, false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
 	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + cursorImageWidth,
 						     cursorY, cursorY + cursorImageHeight),
@@ -289,6 +291,7 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 		size_t memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 4 + (resY + 7) / 8;
 		region = sharedMemoryManager.CreateSharedMemory(memoryNeeded);
 		memory = (uint8_t *) kernelVMM.Allocate("Surface", memoryNeeded, vmmMapLazy, vmmRegionShared, 0, VMM_REGION_FLAG_CACHABLE, region);
+		region->handles--; // Shared memory regions are made with an initial handle, but we don't use it...
 		linearBuffer = memory;
 		depthBuffer = nullptr;
 		modifiedScanlines = (ModifiedScanline *) (memory + resX * resY * 4);

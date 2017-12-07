@@ -530,6 +530,10 @@ void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMR
 	region->pageCount -= newRegion->pageCount;
 }
 
+void CloseHandleToSharedMemoryRegionAfterVMMFree(void *argument) {
+	CloseHandleToObject(argument, KERNEL_OBJECT_SHMEM);
+}
+
 OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVirtualAddressSpaceUpdate) {
 	if (!address) {
 		return OS_FATAL_ERROR_INVALID_MEMORY_REGION;
@@ -554,7 +558,9 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 
 	if (region->type == vmmRegionShared) {
 		if (!region->object) KernelPanic("VMM::Free - Object from a freed shared memory region was null.\n");
-		CloseHandleToObject(region->object, KERNEL_OBJECT_SHMEM);
+		scheduler.lock.Acquire();
+		RegisterAsyncTask(CloseHandleToSharedMemoryRegionAfterVMMFree, region->object, kernelProcess, true);
+		scheduler.lock.Release();
 	}
 
 	allocatedVirtualMemory -= region->pageCount * PAGE_SIZE;

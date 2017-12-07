@@ -280,7 +280,9 @@ static void DrawPane(Pane *pane, bool force) {
 	}
 }
 
-void OSSetControlText(Control *control, char *text, size_t textLength) {
+void OSSetControlText(OSObject _control, char *text, size_t textLength) {
+	Control *control = (Control *) _control;
+
 	if (control->text.buffer) {
 		OSHeapFree(control->text.buffer);
 	}
@@ -364,6 +366,16 @@ OSObject OSGetPane(OSObject _pane, uintptr_t gridX, uintptr_t gridY) {
 	}
 
 	return pane->grid + gridX + gridY * pane->gridWidth;
+}
+
+OSObject OSGetControl(OSObject _pane, uintptr_t gridX, uintptr_t gridY) {
+	Pane *pane = (Pane *) _pane;
+
+	if (pane->gridWidth <= gridX || pane->gridHeight <= gridY) {
+		OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_CHILD);
+	}
+
+	return (pane->grid + gridX + gridY * pane->gridWidth)->control;
 }
 
 void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType type, _OSCallback function, void *argument) {
@@ -1039,6 +1051,7 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 			window->width = width;
 			window->height = height;
 
+			window->pane.bounds = OSRectangle(0, width, 0, height);
 			window->pane.grid[0].bounds = OSRectangle(4, width - 4, 30, height - 4);
 			window->pane.grid[1].bounds = OSRectangle(4, width - 4, 4, 28);
 			window->pane.grid[2].bounds = OSRectangle(4, width - 4, 0, 4);

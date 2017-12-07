@@ -78,8 +78,6 @@ struct HandleTable {
 Mutex objectHandleCountChange;
 
 void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
-	KernelLog(LOG_VERBOSE, "Close handle to object %x of type %d\n", object, type);
-
 	switch (type) {
 		case KERNEL_OBJECT_MUTEX: {
 			objectHandleCountChange.Acquire();
@@ -127,7 +125,6 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
 			region->mutex.Acquire();
 			bool destroy = region->handles == 1;
-			KernelLog(LOG_VERBOSE, "Close shmem handle, %d remain\n", region->handles);
 			region->handles--;
 			region->mutex.Release();
 

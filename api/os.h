@@ -595,6 +595,7 @@ extern "C" OSObject OSCreateWindow(char *title, size_t titleBytes, unsigned widt
 extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textBytes, unsigned flags);
 extern "C" OSObject OSGetWindowContentPane(OSObject window);
 extern "C" OSObject OSGetPane(OSObject parent, uintptr_t gridX, uintptr_t gridY);
+extern "C" OSObject OSGetControl(OSObject parent, uintptr_t gridX, uintptr_t gridY);
 
 extern "C" void OSSetPaneObject(OSObject pane, OSObject object, unsigned flags);
 extern "C" void OSConfigurePane(OSObject pane, size_t gridWidth, size_t gridHeight, unsigned flags);
