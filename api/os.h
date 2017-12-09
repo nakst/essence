@@ -354,6 +354,8 @@ enum OSCallbackType {
 	OS_CALLBACK_GET_TEXT,
 	OS_CALLBACK_INSERT_TEXT,
 	OS_CALLBACK_REMOVE_TEXT,
+	OS_CALLBACK_MEASURE_PANE,
+	OS_CALLBACK_LAYOUT_PANE,
 };
 
 struct OSCallbackData {
@@ -373,6 +375,17 @@ struct OSCallbackData {
 		struct {
 			struct OSCaret *caretStart, *caretEnd;
 		} removeText;
+
+		struct {
+#define OS_PUSH_DIMENSION (-1)
+			OSObject pane;
+			int width, height;
+		} measure;
+
+		struct {
+			OSObject pane;
+			OSRectangle bounds;
+		} layout;
 	};
 };
 
@@ -393,6 +406,7 @@ enum OSControlType {
 	OS_CONTROL_TEXTBOX,
 	OS_CONTROL_TITLEBAR,
 	OS_CONTROL_WINDOW_BORDER,
+	OS_CONTROL_MENU,
 };
 
 enum OSControlImageType {
@@ -515,9 +529,12 @@ enum OSObjectType {
 #define OS_OPEN_NODE_DIRECTORY		(0x2000)
 #define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x4000) // Create the directories leading to the file, if they don't already exist.
 
-#define OS_CREATE_WINDOW_NOT_RESIZABLE  (2)
+#define OS_CREATE_WINDOW_WITH_MENU_BAR 	(1)
+#define OS_CREATE_WINDOW_NOT_RESIZABLE  (2) // TODO Currently does nothing.
+#define OS_CREATE_WINDOW_NO_DECORATIONS (4)
 
-#define OS_CONFIGURE_PANE_NO_INDENT  (4)
+#define OS_CONFIGURE_PANE_NO_INDENT_H   (1)
+#define OS_CONFIGURE_PANE_NO_INDENT_V   (2)
 
 #define OS_SET_PANE_OBJECT_HORIZONTAL_RIGHT  (2)
 #define OS_SET_PANE_OBJECT_HORIZONTAL_LEFT   (4)
@@ -594,6 +611,7 @@ extern "C" void OSRedrawAll();
 extern "C" OSObject OSCreateWindow(char *title, size_t titleBytes, unsigned width, unsigned height, unsigned flags);
 extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textBytes, unsigned flags);
 extern "C" OSObject OSGetWindowContentPane(OSObject window);
+extern "C" OSObject OSGetWindowMenuBarPane(OSObject window);
 extern "C" OSObject OSGetPane(OSObject parent, uintptr_t gridX, uintptr_t gridY);
 extern "C" OSObject OSGetControl(OSObject parent, uintptr_t gridX, uintptr_t gridY);
 

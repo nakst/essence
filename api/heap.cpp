@@ -78,7 +78,7 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	if (!size) return nullptr;
 
 #ifndef KERNEL
-	OSPrint("Allocate: %d\n", size);
+	// OSPrint("Allocate: %d\n", size);
 #endif
 
 	size_t originalSize = size;
@@ -185,7 +185,7 @@ void OSHeapFree(void *address) {
 	if (region->used != 0xABCD) OS_HEAP_PANIC(region->used);
 
 #ifndef KERNEL
-	OSPrint("Free: %x (%d bytes)\n", address, region->size);
+	// OSPrint("Free: %x (%d bytes)\n", address, region->size);
 #endif
 
 	bool expectingSize = expectedSize != 0;
