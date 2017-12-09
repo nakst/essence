@@ -356,6 +356,7 @@ enum OSCallbackType {
 	OS_CALLBACK_REMOVE_TEXT,
 	OS_CALLBACK_MEASURE_PANE,
 	OS_CALLBACK_LAYOUT_PANE,
+	OS_CALLBACK_POPULATE_MENU,
 };
 
 struct OSCallbackData {
@@ -386,6 +387,10 @@ struct OSCallbackData {
 			OSObject pane;
 			OSRectangle bounds;
 		} layout;
+
+		struct {
+			OSObject popupMenu;
+		} populateMenu;
 	};
 };
 
@@ -535,6 +540,8 @@ enum OSObjectType {
 
 #define OS_CONFIGURE_PANE_NO_INDENT_H   (1)
 #define OS_CONFIGURE_PANE_NO_INDENT_V   (2)
+#define OS_CONFIGURE_PANE_NO_SPACE_H    (4)
+#define OS_CONFIGURE_PANE_NO_SPACE_V    (8)
 
 #define OS_SET_PANE_OBJECT_HORIZONTAL_RIGHT  (2)
 #define OS_SET_PANE_OBJECT_HORIZONTAL_LEFT   (4)
@@ -611,12 +618,14 @@ extern "C" void OSRedrawAll();
 extern "C" OSObject OSCreateWindow(char *title, size_t titleBytes, unsigned width, unsigned height, unsigned flags);
 extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textBytes, unsigned flags);
 extern "C" OSObject OSGetWindowContentPane(OSObject window);
-extern "C" OSObject OSGetWindowMenuBarPane(OSObject window);
+extern "C" OSObject OSGetWindowMenuBar(OSObject window);
 extern "C" OSObject OSGetPane(OSObject parent, uintptr_t gridX, uintptr_t gridY);
 extern "C" OSObject OSGetControl(OSObject parent, uintptr_t gridX, uintptr_t gridY);
 
 extern "C" void OSSetPaneObject(OSObject pane, OSObject object, unsigned flags);
 extern "C" void OSConfigurePane(OSObject pane, size_t gridWidth, size_t gridHeight, unsigned flags);
+extern "C" void OSSetMenuBarMenus(OSObject menuBar, size_t count);
+extern "C" void OSSetMenuBarMenu(OSObject menuBar, uintptr_t index, OSObject menu);
 extern "C" void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType callbackType, _OSCallback function, void *argument);
 extern "C" void OSLayoutPane(OSObject pane);
 

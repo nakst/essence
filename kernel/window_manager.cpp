@@ -38,11 +38,12 @@ struct WindowManager {
 	void PressKey(unsigned scancode);
 	void RefreshCursor(Window *window);
 	void Redraw(OSPoint position, int width, int height, uint16_t below, Window *except = nullptr);
+	void SetActiveWindow(Window *window);
 
 	Window **windows; // Sorted by z.
 	size_t windowsCount, windowsAllocated;
 
-	Window *focusedWindow, *pressedWindow;
+	Window *focusedWindow, *pressedWindow, *activeWindow;
 
 	Mutex mutex;
 
@@ -176,11 +177,61 @@ int MeasureDistance(int x1, int y1, int x2, int y2) {
 	return dx * dx + dy * dy;
 }
 
+void WindowManager::SetActiveWindow(Window *window) {
+	mutex.AssertLocked();
+
+	if (activeWindow == window) {
+		return;
+	}
+
+	activeWindow = window;
+
+	if (!window) {
+		return;
+	}
+
+	activeWindow->mutex.Acquire();
+	Defer(activeWindow->mutex.Release());
+
+	{
+		graphics.frameBuffer.mutex.Acquire();
+		Defer(graphics.frameBuffer.mutex.Release());
+
+		uint16_t thisWindowDepth = window->z + 1;
+
+		for (uintptr_t y = 0; y < graphics.frameBuffer.resY; y++) {
+			for (uintptr_t x = 0; x < graphics.frameBuffer.resX; x++) {
+				uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
+
+				if (*depth > thisWindowDepth) {
+					*depth = *depth - 1;
+				} else if (*depth == thisWindowDepth) {
+					*depth = windowManager.windowsCount;
+				}
+			}
+		}
+	}
+
+	CopyMemory(windowManager.windows + window->z, windowManager.windows + window->z + 1, sizeof(Window *) * (windowManager.windowsCount - window->z - 1));
+
+	for (uintptr_t index = window->z; index < windowManager.windowsCount - 1; index++) {
+		windowManager.windows[index]->z--;
+	}
+
+	window->z = windowManager.windowsCount - 1;
+	windowManager.windows[window->z] = window;
+
+	windowManager.Redraw(window->position, window->width, window->height, window->z + 1);
+
+	// TODO Send activation and deactivation messages.
+	// TODO Prevent activations clicks interacting with controls in content pane.
+}
+
 void WindowManager::ClickCursor(unsigned buttons) {
 	mutex.Acquire();
-	Defer(mutex.Release());
 
 	unsigned delta = lastButtons ^ buttons;
+	lastButtons = buttons;
 
 	if (delta & LEFT_BUTTON) {
 		// Send a mouse pressed message to the window the cursor is over.
@@ -194,6 +245,8 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 			// The cursor is not in a window.
 		}
+
+		SetActiveWindow(window);
 
 		if (buttons & LEFT_BUTTON) {
 #define CLICK_CHAIN_TIMEOUT (500)
@@ -213,7 +266,6 @@ void WindowManager::ClickCursor(unsigned buttons) {
 		{
 			OSMessage message = {};
 			message.type = (buttons & LEFT_BUTTON) ? OS_MESSAGE_MOUSE_LEFT_PRESSED : OS_MESSAGE_MOUSE_LEFT_RELEASED;
-			Print("message.type = %d\n", message.type);
 
 			if (message.type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 				pressedWindow = window;
@@ -243,7 +295,8 @@ void WindowManager::ClickCursor(unsigned buttons) {
 		}
 	}
 
-	lastButtons = buttons;
+	mutex.Release();
+	graphics.UpdateScreen();
 }
 
 void WindowManager::MoveCursor(int xMovement, int yMovement) {
@@ -365,6 +418,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 
 	window->z = windowsCount;
 	ArrayAdd(windows, window);
+	SetActiveWindow(window);
 
 	return window;
 }
@@ -394,10 +448,12 @@ void Window::ClearImage() {
 		}
 	}
 
-	windowManager.Redraw(position, width, height, z, this);
+	windowManager.Redraw(position, width, height, z + 1, this);
 }
 
 void Window::Move(OSRectangle &rectangle) {
+	// TODO Moving windows that aren't active.
+
 	{
 		windowManager.mutex.Acquire();
 		Defer(windowManager.mutex.Release());
@@ -443,6 +499,7 @@ void Window::Destroy() {
 
 		if (windowManager.focusedWindow == this) windowManager.focusedWindow = nullptr;
 		if (windowManager.pressedWindow == this) windowManager.pressedWindow = nullptr;
+		if (windowManager.activeWindow == this) windowManager.activeWindow = nullptr; // TODO Change the active window to the highest in the Z-order.
 
 		{
 			graphics.frameBuffer.mutex.Acquire();
@@ -502,6 +559,10 @@ void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t bel
 	for (; index >= 0; index--) {
 		Window *window = windows[index];
 
+		if ((int) window->z != index) {
+			KernelPanic("WindowManager::Redraw - Z and index mismatch.\n");
+		}
+
 		if (window == except) {
 			continue;
 		}
@@ -524,11 +585,11 @@ void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t bel
 		}
 
 		if (position.x + width < window->position.x + (int) window->width) {
-			rectangle.right = window->position.x + (int) window->width - position.x - width;
+			rectangle.right = position.x - window->position.x + width;
 		}
 
 		if (position.y + height < window->position.y + (int) window->height) {
-			rectangle.bottom = window->position.y + (int) window->height - position.y - height;
+			rectangle.bottom = position.y - window->position.y + height;
 		}
 
 		window->surface->InvalidateRectangle(rectangle);

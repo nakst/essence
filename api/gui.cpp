@@ -30,6 +30,7 @@ struct Control {
 	OSCallback getText;
 	OSCallback insertText;
 	OSCallback removeText;
+	OSCallback populateMenu;
 
 	// Style:
 	OSRectangle image;
@@ -99,6 +100,11 @@ static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &d
 
 		switch (data.type) {
 			case OS_CALLBACK_ACTION: {
+				if (from->type == OS_CONTROL_MENU) {
+					// Create a popup menu.
+					OSCreateWindow((char *) "", 0, 200, 200, OS_CREATE_WINDOW_NO_DECORATIONS);
+				}
+
 				// We can't really do anything if the program doesn't want to handle the action.
 			} break;
 
@@ -383,7 +389,7 @@ OSObject OSGetWindowContentPane(OSObject _window) {
 	return window->pane.grid;
 }
 
-OSObject OSGetWindowMenuBarPane(OSObject _window) {
+OSObject OSGetWindowMenuBar(OSObject _window) {
 	Window *window = (Window *) _window;
 
 	if (window->flags & OS_CREATE_WINDOW_WITH_MENU_BAR) {
@@ -422,6 +428,11 @@ void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackTyp
 				case OS_CALLBACK_ACTION: {
 					control->action.callback = function;
 					control->action.argument = argument;
+				} break;
+
+				case OS_CALLBACK_POPULATE_MENU: {
+					control->populateMenu.callback = function;
+					control->populateMenu.argument = argument;
 				} break;
 
 				default: { goto unsupported; } break;
@@ -528,7 +539,7 @@ static void MeasurePane(Pane *pane, int &width, int &height) {
 	height = (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_V) ? 0 : 4;
 
 	for (uintptr_t i = 0; i < pane->gridWidth; i++) {
-		width += columnWidths[i] + 4;
+		width += columnWidths[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
 
 		if (columnWidths[i] == PUSH) {
 			width = PUSH;
@@ -537,7 +548,7 @@ static void MeasurePane(Pane *pane, int &width, int &height) {
 	}
 
 	for (uintptr_t j = 0; j < pane->gridHeight; j++) {
-		height += rowHeights[j] + 4;
+		height += rowHeights[j] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_V) ? 0 : 4);
 
 		if (rowHeights[j] == PUSH) {
 			height = PUSH;
@@ -546,11 +557,11 @@ static void MeasurePane(Pane *pane, int &width, int &height) {
 	}
 
 	if (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_H) {
-		if (width) width -= 4;
+		if (width) width -= ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
 	}
 
 	if (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_V) {
-		if (height) height -= 4;
+		if (height) height -= ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_V) ? 0 : 4);
 	}
 }
 
@@ -627,7 +638,7 @@ static void LayoutPane(Pane *pane) {
 
 		for (uintptr_t i = 0; i < pane->gridWidth; i++) {
 			if (columnWidths[i] != PUSH) {
-				usedWidth += columnWidths[i] + 4;
+				usedWidth += columnWidths[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
 			}
 		}
 
@@ -645,7 +656,7 @@ static void LayoutPane(Pane *pane) {
 
 		for (uintptr_t i = 0; i < pane->gridHeight; i++) {
 			if (rowHeights[i] != PUSH) {
-				usedHeight += rowHeights[i] + 4;
+				usedHeight += rowHeights[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
 			}
 		}
 
@@ -667,10 +678,10 @@ static void LayoutPane(Pane *pane) {
 			Pane *cell = (Pane *) OSGetPane(pane, i, j);
 			cell->bounds = OSRectangle(positionX, positionX + columnWidths[i], positionY, positionY + rowHeights[j]);
 			LayoutPane(cell);
-			positionY += rowHeights[j] + 4;
+			positionY += rowHeights[j] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
 		}
 
-		positionX += columnWidths[i] + 4;
+		positionX += columnWidths[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
 	}
 
 	pane->dirty = 2;
@@ -747,9 +758,10 @@ OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsi
 		} break;
 
 		case OS_CONTROL_MENU: {
-			control->preferredWidth = 4 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
-			control->preferredHeight = 14;
-			control->imageType = OS_CONTROL_IMAGE_NONE;
+			control->preferredWidth = 14 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
+			control->preferredHeight = 20;
+			control->imageType = OS_CONTROL_IMAGE_FILL;
+			control->image = OSRectangle(42, 42 + 8, 124, 124 + 17);
 		} break;
 	}
 
@@ -773,6 +785,14 @@ static void InitialisePane(Pane *pane, OSRectangle bounds, Window *window, Pane 
 		control->bounds = bounds;
 		OSInvalidateControl(control);
 	}
+}
+
+void OSSetMenuBarMenus(OSObject menuBar, size_t count) {
+	OSConfigurePane(menuBar, count, 1, OS_CONFIGURE_PANE_NO_INDENT_V | OS_CONFIGURE_PANE_NO_SPACE_H);
+}
+
+void OSSetMenuBarMenu(OSObject menuBar, uintptr_t index, OSObject menu) {
+	OSSetPaneObject(OSGetPane(menuBar, index, 0), menu, OS_SET_PANE_OBJECT_VERTICAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_CENTER);
 }
 
 void LayoutRootPane(OSObject generator, void *argument, OSCallbackData *data) {
