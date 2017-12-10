@@ -406,7 +406,7 @@ void KernelLog(LogLevel level, const char *format, ...) {
 	Defer(printLock.Release());
 
 #define MINIMUM_LOG_LEVEL LOG_VERBOSE
-#define MINIMUM_PRINT_LEVEL LOG_INFO
+#define MINIMUM_PRINT_LEVEL LOG_VERBOSE
 
 	if (level < MINIMUM_LOG_LEVEL) {
 		// Don't log at this level.

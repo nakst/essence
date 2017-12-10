@@ -17,7 +17,7 @@ struct Window {
 	void Resize(size_t newWidth, size_t newHeight);
 	void ClearImage();
 
-	Mutex mutex;
+	Mutex mutex; // Mutex for drawing to the window. Also needed when moving the window.
 	Surface *surface;
 	OSPoint position;
 	size_t width, height;
@@ -37,7 +37,7 @@ struct WindowManager {
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
 	void PressKey(unsigned scancode);
 	void RefreshCursor(Window *window);
-	void Redraw(OSPoint position, int width, int height, uint16_t below, Window *except = nullptr);
+	void Redraw(OSPoint position, int width, int height, Window *except = nullptr);
 	void SetActiveWindow(Window *window);
 
 	Window **windows; // Sorted by z.
@@ -184,14 +184,19 @@ void WindowManager::SetActiveWindow(Window *window) {
 		return;
 	}
 
+	Window *oldActiveWindow = activeWindow;
 	activeWindow = window;
+
+	if (oldActiveWindow) {
+		OSMessage message = {};
+		message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
+		message.targetWindow = oldActiveWindow->apiWindow;
+		oldActiveWindow->owner->SendMessage(message);
+	}
 
 	if (!window) {
 		return;
 	}
-
-	activeWindow->mutex.Acquire();
-	Defer(activeWindow->mutex.Release());
 
 	{
 		graphics.frameBuffer.mutex.Acquire();
@@ -221,9 +226,15 @@ void WindowManager::SetActiveWindow(Window *window) {
 	window->z = windowManager.windowsCount - 1;
 	windowManager.windows[window->z] = window;
 
-	windowManager.Redraw(window->position, window->width, window->height, window->z + 1);
+	windowManager.Redraw(window->position, window->width, window->height);
 
-	// TODO Send activation and deactivation messages.
+	if (window->apiWindow) {
+		OSMessage message = {};
+		message.type = OS_MESSAGE_WINDOW_ACTIVATED;
+		message.targetWindow = window->apiWindow;
+		window->owner->SendMessage(message);
+	}
+
 	// TODO Prevent activations clicks interacting with controls in content pane.
 }
 
@@ -246,9 +257,9 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			// The cursor is not in a window.
 		}
 
-		SetActiveWindow(window);
-
 		if (buttons & LEFT_BUTTON) {
+			SetActiveWindow(window);
+
 #define CLICK_CHAIN_TIMEOUT (500)
 			if (clickChainStartMs + CLICK_CHAIN_TIMEOUT < scheduler.timeMs
 					|| MeasureDistance(cursorX, cursorY, clickChainX, clickChainY) >= 5) {
@@ -384,7 +395,7 @@ void WindowManager::Initialise() {
 	RefreshCursor(nullptr);
 
 	// Draw the background.
-	Redraw(OSPoint(0, 0), graphics.resX, graphics.resY, 0, nullptr);
+	Redraw(OSPoint(0, 0), graphics.resX, graphics.resY);
 	mutex.Release();
 	graphics.UpdateScreen();
 
@@ -448,23 +459,23 @@ void Window::ClearImage() {
 		}
 	}
 
-	windowManager.Redraw(position, width, height, z + 1, this);
+	windowManager.Redraw(position, width, height, this);
 }
 
 void Window::Move(OSRectangle &rectangle) {
 	// TODO Moving windows that aren't active.
 
+	mutex.Acquire();
+	Defer(mutex.Release());
+
 	{
 		windowManager.mutex.Acquire();
 		Defer(windowManager.mutex.Release());
 
-		mutex.Acquire();
-		Defer(mutex.Release());
-
 		size_t newWidth = rectangle.right - rectangle.left;
 		size_t newHeight = rectangle.bottom - rectangle.top;
 
-		if (newWidth < 128 || newHeight < 64 
+		if (newWidth < 16 || newHeight < 16 
 				|| rectangle.left > rectangle.right 
 				|| rectangle.top > rectangle.bottom) return;
 
@@ -483,11 +494,7 @@ void Window::Move(OSRectangle &rectangle) {
 		surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
 	}
 
-	{
-		mutex.Acquire();
-		Defer(mutex.Release());
-		Update();
-	}
+	Update();
 }
 
 void Window::Destroy() {
@@ -527,7 +534,12 @@ void Window::Destroy() {
 			windowManager.windows[index]->z--;
 		}
 
-		windowManager.Redraw(position, width, height, z);
+		OSMessage message = {};
+		message.type = OS_MESSAGE_WINDOW_DESTROYED;
+		message.targetWindow = apiWindow;
+		owner->SendMessage(message); // THe last message sent to the window.
+
+		windowManager.Redraw(position, width, height);
 		CloseHandleToObject(surface, KERNEL_OBJECT_SURFACE);
 		OSHeapFree(this, sizeof(Window));
 	}
@@ -535,7 +547,7 @@ void Window::Destroy() {
 	graphics.UpdateScreen();
 }
 
-void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t below, Window *except) {
+void WindowManager::Redraw(OSPoint position, int width, int height, Window *except) {
 	mutex.AssertLocked();
 
 	{
@@ -553,8 +565,7 @@ void WindowManager::Redraw(OSPoint position, int width, int height, uint16_t bel
 #endif
 	}
 
-	int index = below - 1;
-	if ((unsigned) index >= windowsCount) index = windowsCount - 1;
+	int index = windowsCount - 1;
 
 	for (; index >= 0; index--) {
 		Window *window = windows[index];
@@ -613,9 +624,6 @@ void Window::Update() {
 }
 
 void Window::SetCursorStyle(OSCursorStyle style) {
-	mutex.Acquire();
-	Defer(mutex.Release());
-
 	windowManager.mutex.Acquire();
 	cursorStyle = style;
 	windowManager.RefreshCursor(this);

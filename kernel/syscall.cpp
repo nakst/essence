@@ -858,18 +858,18 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
-			window->mutex.Acquire();
+			windowManager.mutex.Acquire();
 			rectangle->left = window->position.x;
 			rectangle->top = window->position.y;
 			rectangle->right = window->position.x + window->width;
 			rectangle->bottom = window->position.y + window->height;
-			window->mutex.Release();
+			windowManager.mutex.Release();
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_REDRAW_ALL: {
 			windowManager.mutex.Acquire();
-			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, nullptr);
+			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, nullptr);
 			windowManager.mutex.Release();
 			graphics.UpdateScreen();
 			SYSCALL_RETURN(OS_SUCCESS, false);

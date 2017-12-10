@@ -4,6 +4,13 @@
 //	- Actually use the OS_CALLBACK_GET_TEXT callback for everything.
 //	- Heap corruption?
 
+// TODO Menus
+//	- Arrow keys
+//	- Alt sequences
+//	- Checkboxes and radioboxes
+//	- Sub-menus
+//	- Hover to open menus
+
 struct OSCallback {
 	_OSCallback callback;
 	void *argument;
@@ -82,7 +89,9 @@ struct Window {
 	Control *pressedControl;
 	Control *focusedControl;
 
-	bool dirty;
+	Window *popupParent;
+
+	bool dirty, ignoreNextDeactivationMessage;
 	unsigned flags;
 };
 
@@ -91,6 +100,18 @@ struct Window {
 
 #define BORDER_SIZE_X (8)
 #define BORDER_SIZE_Y (34)
+
+static void CreatePopupMenu(Window *parent, int x, int y) {
+	int width = 150;
+	int height = 200;
+
+	Window *window = (Window *) OSCreateWindow((char *) "", 0, width, height, OS_CREATE_WINDOW_NO_DECORATIONS | OS_CREATE_WINDOW_POPUP);
+	window->popupParent = parent;
+	OSMoveWindow(window->handle, OSRectangle(x, x + width, y, y + height));
+	window->pane.image = OSRectangle(10, 19, 114, 120);
+	window->pane.imageBorder = OSRectangle(14, 18, 115, 119);
+	window->pane.dirty = 2;
+}
 
 static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &data) {
 	if (callback.callback) {
@@ -101,8 +122,10 @@ static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &d
 		switch (data.type) {
 			case OS_CALLBACK_ACTION: {
 				if (from->type == OS_CONTROL_MENU) {
-					// Create a popup menu.
-					OSCreateWindow((char *) "", 0, 200, 200, OS_CREATE_WINDOW_NO_DECORATIONS);
+					OSRectangle bounds;
+					OSGetWindowBounds(from->window->handle, &bounds);
+					from->window->ignoreNextDeactivationMessage = true;
+					CreatePopupMenu(from->window, bounds.left + from->bounds.left, bounds.top + from->bounds.bottom - 2);
 				}
 
 				// We can't really do anything if the program doesn't want to handle the action.
@@ -288,10 +311,14 @@ static void DrawControl(Control *control) {
 static void DrawPane(Pane *pane, bool force) {
 	bool drawBackground = true;
 
+	if (!pane || !pane->window) {
+		OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+	}
+
 	if (pane->dirty == false && !force) {
 		return;
 	} else {
-		drawBackground = pane->dirty == 2;
+		drawBackground = pane->dirty == 2 || force;
 		pane->dirty = false;
 	}
 
@@ -307,7 +334,9 @@ static void DrawPane(Pane *pane, bool force) {
 	}
 
 	for (uintptr_t i = 0; i < pane->gridWidth * pane->gridHeight; i++) {
-		DrawPane(pane->grid + i, force);
+		if (pane->grid[i].window) {
+			DrawPane(pane->grid + i, force);
+		}
 	}
 }
 
@@ -930,7 +959,29 @@ OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, un
 	return window;
 }
 
-void RemoveSelectedText(Control *control) {
+static void DestroyPane(Pane *pane) {
+	Control *control = pane->control;
+
+	if (control) {
+		OSHeapFree(control->text.buffer);
+		OSHeapFree(control);
+	}
+
+	for (uintptr_t i = 0; i < pane->gridWidth * pane->gridHeight; i++) {
+		DestroyPane(pane->grid + i);
+	}
+
+	OSHeapFree(pane->grid);
+}
+
+void OSCloseWindow(OSObject _window) {
+	Window *window = (Window *) _window;
+	DestroyPane(&window->pane);
+	OSCloseHandle(window->handle);
+	OSCloseHandle(window->surface);
+}
+
+static void RemoveSelectedText(Control *control) {
 	OSCallbackData callback = {};
 	callback.type = OS_CALLBACK_REMOVE_TEXT;
 
@@ -958,7 +1009,7 @@ enum CharacterType {
 	CHARACTER_OTHER,
 };
 
-CharacterType GetCharacterType(int character) {
+static CharacterType GetCharacterType(int character) {
 	if ((character >= '0' && character <= '9') 
 			|| (character >= 'a' && character <= 'z')
 			|| (character >= 'A' && character <= 'Z')
@@ -974,7 +1025,7 @@ CharacterType GetCharacterType(int character) {
 	return CHARACTER_OTHER;
 }
 
-void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool strongWhitespace = false) {
+static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool strongWhitespace = false) {
 	CharacterType type = CHARACTER_INVALID;
 
 	if (word && right) goto checkCharacterType;
@@ -1401,6 +1452,28 @@ static void ProcessTextboxInput(OSMessage *message, Control *control) {
 	}
 }
 
+static void DeactivateWindow(Window *window) {
+	UpdateMousePosition(window, -1, -1, -1, -1);
+
+	if (window->ignoreNextDeactivationMessage) {
+		window->ignoreNextDeactivationMessage = false;
+	} else {
+		if (!(window->flags & OS_CREATE_WINDOW_NO_DECORATIONS)) {
+			window->pane.grid[1].control->image = OSRectangle(159, 159 + 7, 64, 64 + 24);
+			OSInvalidateControl(window->pane.grid[1].control);
+			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
+					OSRectangle(106, 106 + 9, 42, 77), OSRectangle(106 + 3, 106 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_TRANSPARENT);
+		} else if (window->flags & OS_CREATE_WINDOW_POPUP) {
+			if (window->popupParent) {
+				DeactivateWindow(window->popupParent);
+			}
+
+			OSCloseWindow(window);
+			window = nullptr;
+		}
+	}
+}
+
 OSError OSProcessGUIMessage(OSMessage *message) {
 	// TODO Message security. 
 	// 	How should we tell who sent the message?
@@ -1427,7 +1500,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 				Control *control = window->hoverControl;
 
 				if (control->canHaveFocus) {
-					window->focusedControl = control; // TODO Lose when the window is deactivated.
+					window->focusedControl = control; 
 					FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, (lastClickChainCount = message->mousePressed.clickChainCount));
 				}
 
@@ -1467,6 +1540,10 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 			InvalidatePane(&window->pane);
 		} break;
 
+		case OS_MESSAGE_WINDOW_DESTROYED: {
+			OSHeapFree(window);
+		} break;
+
 		case OS_MESSAGE_WINDOW_BLINK_TIMER: {
 			if (window->focusedControl) {
 				window->focusedControl->caretBlink++;
@@ -1487,12 +1564,25 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 		case OS_MESSAGE_KEY_RELEASED: {
 		} break;
 
+		case OS_MESSAGE_WINDOW_ACTIVATED: {
+			if (!(window->flags & OS_CREATE_WINDOW_NO_DECORATIONS)) {
+				window->pane.grid[1].control->image = OSRectangle(149, 149 + 7, 64, 64 + 24);
+				OSInvalidateControl(window->pane.grid[1].control);
+				OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
+						OSRectangle(96, 96 + 9, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_TRANSPARENT);
+			}
+		} break;
+
+		case OS_MESSAGE_WINDOW_DEACTIVATED: {
+			DeactivateWindow(window);
+		} break;
+
 		default: {
 			return OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI;
 		}
 	}
 
-	if (window->dirty) {
+	if (window && window->dirty) {
 		DrawPane(&window->pane, false);
 		OSUpdateWindow(window);
 		window->dirty = false;

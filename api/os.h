@@ -443,17 +443,20 @@ struct OSCrashReason {
 #define OS_MESSAGE_QUEUE_IPC		(0x10)
 
 enum OSMessageType {
+	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
 	OS_MESSAGE_MOUSE_LEFT_PRESSED 		= 0x1001,
 	OS_MESSAGE_MOUSE_LEFT_RELEASED 		= 0x1002,
+	OS_MESSAGE_KEY_PRESSED			= 0x1003,
+	OS_MESSAGE_KEY_RELEASED			= 0x1004,
+	OS_MESSAGE_WINDOW_CREATED 		= 0x1005,
+	OS_MESSAGE_WINDOW_BLINK_TIMER 		= 0x1006, // Sent periodically to the focused window so it can blink its caret.
+	OS_MESSAGE_WINDOW_ACTIVATED		= 0x1007,
+	OS_MESSAGE_WINDOW_DEACTIVATED		= 0x1008,
+	OS_MESSAGE_WINDOW_DESTROYED 		= 0x1009,
 
-	OS_MESSAGE_KEY_PRESSED			= 0x1401,
-	OS_MESSAGE_KEY_RELEASED			= 0x1402,
-	
-	OS_MESSAGE_WINDOW_CREATED 		= 0x2000,
-	OS_MESSAGE_WINDOW_BLINK_TIMER 		= 0x2001, // Sent periodically to the focused window so it can blink its caret.
-
-	OS_MESSAGE_PROGRAM_CRASH		= 0x3000,
+	// Debugger messages:
+	OS_MESSAGE_PROGRAM_CRASH		= 0x2000,
 };
 
 struct OSMessage {
@@ -492,10 +495,12 @@ struct OSMessage {
 	};
 };
 
+// Determines how the image is scaled.
 enum OSDrawMode {
 	OS_DRAW_MODE_STRECH, // Not implemented yet.
 	OS_DRAW_MODE_REPEAT, // Not implemented yet.
-	OS_DRAW_MODE_REPEAT_FIRST,
+	OS_DRAW_MODE_REPEAT_FIRST, // The first non-bocder pixel is repeated.
+	OS_DRAW_MODE_TRANSPARENT, // Don't draw the non-border pixels.
 };
 
 typedef void (*OSThreadEntryFunction)(void *argument);
@@ -537,6 +542,7 @@ enum OSObjectType {
 #define OS_CREATE_WINDOW_WITH_MENU_BAR 	(1)
 #define OS_CREATE_WINDOW_NOT_RESIZABLE  (2) // TODO Currently does nothing.
 #define OS_CREATE_WINDOW_NO_DECORATIONS (4)
+#define OS_CREATE_WINDOW_POPUP		(8)
 
 #define OS_CONFIGURE_PANE_NO_INDENT_H   (1)
 #define OS_CONFIGURE_PANE_NO_INDENT_V   (2)
@@ -616,6 +622,8 @@ extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 extern "C" void OSRedrawAll();
 
 extern "C" OSObject OSCreateWindow(char *title, size_t titleBytes, unsigned width, unsigned height, unsigned flags);
+extern "C" void OSCloseWindow(OSObject window);
+
 extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textBytes, unsigned flags);
 extern "C" OSObject OSGetWindowContentPane(OSObject window);
 extern "C" OSObject OSGetWindowMenuBar(OSObject window);

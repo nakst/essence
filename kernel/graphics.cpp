@@ -255,6 +255,10 @@ void Graphics::UpdateScreen() {
 }
 
 void Graphics::Initialise() {
+	if (!vesaMode->widthPixels) {
+		KernelPanic("Graphics::Initialise - Booted in an unsupported graphics mode.\n");
+	}
+
 	linearBuffer = (uint8_t *) kernelVMM.Allocate("ScreenBuffer", vesaMode->bytesPerScanlineLinear * vesaMode->heightPixels, vmmMapAll, vmmRegionPhysical, vesaMode->bufferPhysical, 0);
 	resX = vesaMode->widthPixels;
 	resY = vesaMode->heightPixels;
@@ -580,15 +584,16 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 	intptr_t bottomBorderStart = destinationRegion.bottom - (sourceRegion.bottom - borderDimensions.bottom);
 
 	for (intptr_t y = destinationRegion.top; y < destinationRegion.bottom; y++) {
-		// TODO Other draw modes.
-		(void) mode;
-
 		if (y < 0) continue;
 		if (y >= (intptr_t) resY) break;
 
 		intptr_t sy = y - destinationRegion.top + sourceRegion.top;
+		bool inBorderY = true;
 		if (y >= bottomBorderStart) sy = y - bottomBorderStart + borderDimensions.bottom;
-		else if (sy > borderDimensions.top) sy = borderDimensions.top + 1;
+		else if (sy > borderDimensions.top) {
+			sy = borderDimensions.top + 1;
+			inBorderY = false;
+		}
 
 		InvalidateScanline(y, destinationRegion.left < 0 ? 0 : destinationRegion.left, 
 				      destinationRegion.right >= (intptr_t) resX ? (intptr_t) resX : destinationRegion.right);
@@ -599,7 +604,13 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 
 			intptr_t sx = x - destinationRegion.left + sourceRegion.left;
 			if (x >= rightBorderStart) sx = x - rightBorderStart + borderDimensions.right;
-			else if (sx > borderDimensions.left) sx = borderDimensions.left + 1;
+			else if (sx > borderDimensions.left) {
+				sx = borderDimensions.left + 1;
+
+				if (mode == OS_DRAW_MODE_TRANSPARENT && !inBorderY) {
+					continue;
+				}
+			}
 
 			uint32_t *destinationPixel = (uint32_t *) (linearBuffer + x * 4 + y * stride);
 			uint32_t *sourcePixel = (uint32_t *) (source.linearBuffer + sx * 4 + sy * source.stride);
