@@ -1,7 +1,5 @@
 #ifndef IMPLEMENTATION
 
-// TODO Switch to shared memory with surface storage.
-
 #define SCANCODE_KEY_RELEASED (1 << 15)
 #define SCANCODE_KEY_PRESSED  (0 << 15)
 
@@ -43,7 +41,7 @@ struct WindowManager {
 	Window **windows; // Sorted by z.
 	size_t windowsCount, windowsAllocated;
 
-	Window *focusedWindow, *pressedWindow, *activeWindow;
+	Window *pressedWindow, *activeWindow, *hoverWindow;
 
 	Mutex mutex;
 
@@ -157,8 +155,8 @@ void WindowManager::PressKey(unsigned scancode) {
 	if (scancode == OS_SCANCODE_LEFT_ALT) alt = true;
 	if (scancode == (OS_SCANCODE_LEFT_ALT | SCANCODE_KEY_RELEASED)) alt = false;
 
-	if (focusedWindow) {
-		Window *window = focusedWindow;
+	if (activeWindow) {
+		Window *window = activeWindow;
 
 		OSMessage message = {};
 		message.type = (scancode & SCANCODE_KEY_RELEASED) ? OS_MESSAGE_KEY_RELEASED : OS_MESSAGE_KEY_PRESSED;
@@ -280,7 +278,6 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 			if (message.type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 				pressedWindow = window;
-				focusedWindow = window;
 			} else if (message.type == OS_MESSAGE_MOUSE_LEFT_RELEASED) {
 				if (pressedWindow) {
 					// Always send the messages to the pressed window, if there is one.
@@ -342,6 +339,26 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 
 	Window *window = pressedWindow ? pressedWindow : (index ? windows[index - 1] : nullptr);
 
+	if (hoverWindow && hoverWindow != window) {
+		OSMessage message = {};
+		message.type = OS_MESSAGE_MOUSE_EXIT;
+		message.targetWindow = hoverWindow->apiWindow;
+		hoverWindow->owner->SendMessage(message);
+	}
+
+	hoverWindow = window;
+
+	if (hoverWindow != window && window) {
+		OSMessage message = {};
+		message.type = OS_MESSAGE_MOUSE_ENTER;
+		message.mouseEntered.positionX = cursorX - window->position.x;
+		message.mouseEntered.positionY = cursorY - window->position.y;
+		message.mouseEntered.positionXScreen = cursorX;
+		message.mouseEntered.positionYScreen = cursorY;
+		message.targetWindow = hoverWindow->apiWindow;
+		hoverWindow->owner->SendMessage(message);
+	}
+
 	if (window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_MOVED;
@@ -353,7 +370,6 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		message.mouseMoved.oldPositionX = oldCursorX - window->position.x;
 		message.mouseMoved.oldPositionY = oldCursorY - window->position.y;
 		window->owner->SendMessage(message);
-
 	}
 
 	RefreshCursor(window);
@@ -370,7 +386,7 @@ void CaretBlink(WindowManager *windowManager) {
 		timer.Remove();
 
 		windowManager->mutex.Acquire();
-		Window *window = windowManager->focusedWindow;
+		Window *window = windowManager->activeWindow;
 
 		if (window) {
 			OSMessage message = {};
@@ -463,8 +479,6 @@ void Window::ClearImage() {
 }
 
 void Window::Move(OSRectangle &rectangle) {
-	// TODO Moving windows that aren't active.
-
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -504,9 +518,9 @@ void Window::Destroy() {
 
 		KernelLog(LOG_VERBOSE, "Window %x (api %x) is being destroyed...\n", this, apiWindow);
 
-		if (windowManager.focusedWindow == this) windowManager.focusedWindow = nullptr;
 		if (windowManager.pressedWindow == this) windowManager.pressedWindow = nullptr;
-		if (windowManager.activeWindow == this) windowManager.activeWindow = nullptr; // TODO Change the active window to the highest in the Z-order.
+		if (windowManager.activeWindow == this) windowManager.activeWindow = nullptr; 
+		if (windowManager.hoverWindow == this) windowManager.hoverWindow = nullptr; 
 
 		{
 			graphics.frameBuffer.mutex.Acquire();

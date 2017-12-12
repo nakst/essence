@@ -171,6 +171,7 @@ enum OSFatalError {
 	OS_FATAL_ERROR_INVALID_PANE_CHILD,
 	OS_FATAL_ERROR_INVALID_PANE_OBJECT,
 	OS_FATAL_ERROR_UNSUPPORTED_CALLBACK,
+	OS_FATAL_ERROR_MISSING_CALLBACK,
 	OS_FATAL_ERROR_COUNT,
 };
 
@@ -435,7 +436,7 @@ struct OSCrashReason {
 	OSError errorCode;
 };
 
-// TODO Implement separate message queues.
+// TODO Implement separate message queues?
 #define OS_MESSAGE_QUEUE_WINDOW_MANAGER (0x01)
 #define OS_MESSAGE_QUEUE_DEBUGGER	(0x02)
 #define OS_MESSAGE_QUEUE_FILE_IO	(0x04)
@@ -454,6 +455,8 @@ enum OSMessageType {
 	OS_MESSAGE_WINDOW_ACTIVATED		= 0x1007,
 	OS_MESSAGE_WINDOW_DEACTIVATED		= 0x1008,
 	OS_MESSAGE_WINDOW_DESTROYED 		= 0x1009,
+	OS_MESSAGE_MOUSE_EXIT			= 0x100A, // Sent when the mouse leaves the window's bounds.
+	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
 
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x2000,
@@ -482,6 +485,13 @@ struct OSMessage {
 			int positionYScreen;
 			unsigned clickChainCount;
 		} mousePressed;
+
+		struct {
+			int positionX;
+			int positionY;
+			int positionXScreen;
+			int positionYScreen;
+		} mouseEntered;
 
 		struct {
 			unsigned scancode; 
@@ -561,6 +571,8 @@ enum OSObjectType {
 #define OS_SET_PANE_OBJECT_VERTICAL_STRECH (512)
 #define OS_SET_PANE_OBJECT_VERTICAL_PUSH   (1024)
 
+#define OS_CONTROL_MENU_STYLE_BAR (1)
+
 #ifndef KERNEL
 extern "C" void OSInitialiseAPI();
 
@@ -634,6 +646,8 @@ extern "C" void OSSetPaneObject(OSObject pane, OSObject object, unsigned flags);
 extern "C" void OSConfigurePane(OSObject pane, size_t gridWidth, size_t gridHeight, unsigned flags);
 extern "C" void OSSetMenuBarMenus(OSObject menuBar, size_t count);
 extern "C" void OSSetMenuBarMenu(OSObject menuBar, uintptr_t index, OSObject menu);
+extern "C" void OSSetMenuItems(OSObject menu, size_t count);
+extern "C" void OSSetMenuItem(OSObject menu, uintptr_t index, OSObject item);
 extern "C" void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType callbackType, _OSCallback function, void *argument);
 extern "C" void OSLayoutPane(OSObject pane);
 

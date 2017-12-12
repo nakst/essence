@@ -10,7 +10,55 @@ void Test(OSObject generator, void *argument, OSCallbackData *data) {
 	OSPrint("%s\n", bytes, buffer);
 }
 
+enum MenuID {
+	MENU_FILE,
+	MENU_EDIT,
+};
+
+void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
+	(void) generator;
+	(void) data;
+
+	OSObject menu = data->populateMenu.popupMenu;
+
+	switch ((uintptr_t) argument) {
+		case MENU_FILE: {
+			OSObject openItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Open", 4, 0);
+			OSObject saveItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Save", 4, 0);
+
+			OSSetMenuItems(menu, 2);
+			OSSetMenuItem(menu, 0, openItem);
+			OSSetMenuItem(menu, 1, saveItem);
+		} break;
+
+		case MENU_EDIT: {
+			OSObject copyItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Copy", 4, 0);
+			OSObject pasteItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Paste", 5, 0);
+
+			OSSetMenuItems(menu, 2);
+			OSSetMenuItem(menu, 0, copyItem);
+			OSSetMenuItem(menu, 1, pasteItem);
+		} break;
+	}
+}
+
 extern "C" void ProgramEntry() {
+	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 
+			OS_CREATE_WINDOW_WITH_MENU_BAR);
+
+	OSObject menuBar = OSGetWindowMenuBar(window);
+	OSSetMenuBarMenus(menuBar, 2);
+
+	OSObject fileMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "File", 4, OS_CONTROL_MENU_STYLE_BAR);
+	OSObject editMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "Edit", 4, OS_CONTROL_MENU_STYLE_BAR);
+
+	OSSetMenuBarMenu(menuBar, 0, fileMenu);
+	OSSetMenuBarMenu(menuBar, 1, editMenu);
+
+	OSSetObjectCallback(fileMenu, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_FILE);
+	OSSetObjectCallback(editMenu, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_EDIT);
+
+#if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 640, 400, OS_CREATE_WINDOW_WITH_MENU_BAR);
 	contentPane = OSGetWindowContentPane(window);
 	OSObject menuBar = OSGetWindowMenuBar(window);
@@ -37,6 +85,7 @@ extern "C" void ProgramEntry() {
 	OSLayoutPane(contentPane);
 	OSLayoutPane(menuBar);
 	OSSetObjectCallback(button1, OS_OBJECT_CONTROL, OS_CALLBACK_ACTION, Test, nullptr);
+#endif
 
 	while (true) {
 		OSMessage message;

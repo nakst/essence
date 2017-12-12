@@ -11,6 +11,8 @@
 //	- Sub-menus
 //	- Hover to open menus
 
+// TODO Replace Panic() with OSCrashProcess().
+
 struct OSCallback {
 	_OSCallback callback;
 	void *argument;
@@ -53,8 +55,11 @@ struct Control {
 	int fontSize;
 
 	// Misc:
-	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
-	uint8_t resizeRegionIndex;
+	union {
+		struct { OSCaret wordSelectionAnchor, wordSelectionAnchor2; };
+		uint8_t resizeRegionIndex;
+		bool menuOpen;
+	};
 
 	// State:
 
@@ -90,6 +95,8 @@ struct Window {
 	Control *focusedControl;
 
 	Window *popupParent;
+	Control *popupMenuControl, *lastPopupMenuControl;
+	Window *popupChild;
 
 	bool dirty, ignoreNextDeactivationMessage;
 	unsigned flags;
@@ -101,17 +108,7 @@ struct Window {
 #define BORDER_SIZE_X (8)
 #define BORDER_SIZE_Y (34)
 
-static void CreatePopupMenu(Window *parent, int x, int y) {
-	int width = 150;
-	int height = 200;
-
-	Window *window = (Window *) OSCreateWindow((char *) "", 0, width, height, OS_CREATE_WINDOW_NO_DECORATIONS | OS_CREATE_WINDOW_POPUP);
-	window->popupParent = parent;
-	OSMoveWindow(window->handle, OSRectangle(x, x + width, y, y + height));
-	window->pane.image = OSRectangle(10, 19, 114, 120);
-	window->pane.imageBorder = OSRectangle(14, 18, 115, 119);
-	window->pane.dirty = 2;
-}
+static void CreatePopupMenu(Window *parent, OSObject generator, int x, int y, Window *existingWindow);
 
 static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &data) {
 	if (callback.callback) {
@@ -121,13 +118,6 @@ static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &d
 
 		switch (data.type) {
 			case OS_CALLBACK_ACTION: {
-				if (from->type == OS_CONTROL_MENU) {
-					OSRectangle bounds;
-					OSGetWindowBounds(from->window->handle, &bounds);
-					from->window->ignoreNextDeactivationMessage = true;
-					CreatePopupMenu(from->window, bounds.left + from->bounds.left, bounds.top + from->bounds.bottom - 2);
-				}
-
 				// We can't really do anything if the program doesn't want to handle the action.
 			} break;
 
@@ -176,7 +166,7 @@ static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &d
 			} break;
 
 			default: {
-				Panic();
+				OSCrashProcess(OS_FATAL_ERROR_MISSING_CALLBACK);
 			} break;
 		}
 	}
@@ -224,8 +214,8 @@ static void DrawControl(Control *control) {
 	int imageWidth = control->image.right - control->image.left;
 	int imageHeight = control->image.bottom - control->image.top;
 
-	bool isHoverControl = (control == window->hoverControl) || (control == window->focusedControl);
-	bool isPressedControl = (control == window->pressedControl) || (control == window->focusedControl);
+	bool isHoverControl = (control == window->hoverControl) || (control == window->focusedControl) || (control == window->popupMenuControl);
+	bool isPressedControl = (control == window->pressedControl) || (control == window->focusedControl) || (control == window->popupMenuControl);
 
 	if (control->manualImage) {
 		isHoverControl = true;
@@ -368,6 +358,7 @@ void OSSetControlText(OSObject _control, char *text, size_t textLength) {
 void OSInvalidateControl(OSObject _control) {
 	Control *control = (Control *) _control;
 	control->dirty = true;
+	if (!control->window) return;
 
 	Pane *pane = control->pane;
 	while (pane) {
@@ -500,10 +491,14 @@ void OSConfigurePane(OSObject _pane, size_t gridWidth, size_t gridHeight, unsign
 		pane->imageBorder = OSRectangle(85, 86, 107, 108);
 	}
 
-	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, gridWidth, gridHeight, pane->control);
+	InitialisePane(pane, pane->bounds, pane->window, pane->parent, gridWidth, gridHeight, pane->control);
+
+	if (pane->parent) {
+		pane->window = pane->parent->window;
+	}
 
 	for (uintptr_t i = 0; i < gridWidth * gridHeight; i++) {
-		InitialisePane(pane->grid + i, OSRectangle(0, 0, 0, 0), pane->parent->window, pane, 0, 0, nullptr);
+		InitialisePane(pane->grid + i, OSRectangle(0, 0, 0, 0), pane->window, pane, 0, 0, nullptr);
 	}
 }
 
@@ -513,7 +508,7 @@ void OSSetPaneObject(OSObject _pane, OSObject object, unsigned flags) {
 	Pane *pane = (Pane *) _pane;
 	pane->flags = flags;
 
-	InitialisePane(pane, pane->bounds, pane->parent->window, pane->parent, 0, 0, control);
+	InitialisePane(pane, pane->bounds, pane->window, pane->parent, 0, 0, control);
 }
 
 #define PUSH (-1)
@@ -585,12 +580,16 @@ static void MeasurePane(Pane *pane, int &width, int &height) {
 		}
 	}
 
-	if (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_H) {
-		if (width) width -= ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
+	if (pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) {
+		width += 4;
+	} else if (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_H) {
+		if (width) width -= 4;
 	}
 
-	if (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_V) {
-		if (height) height -= ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_V) ? 0 : 4);
+	if (pane->flags & OS_CONFIGURE_PANE_NO_SPACE_V) {
+		height += 4;
+	} else if (pane->flags & OS_CONFIGURE_PANE_NO_INDENT_V) {
+		if (height) height -= 4;
 	}
 }
 
@@ -685,7 +684,7 @@ static void LayoutPane(Pane *pane) {
 
 		for (uintptr_t i = 0; i < pane->gridHeight; i++) {
 			if (rowHeights[i] != PUSH) {
-				usedHeight += rowHeights[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
+				usedHeight += rowHeights[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_V) ? 0 : 4);
 			}
 		}
 
@@ -707,7 +706,7 @@ static void LayoutPane(Pane *pane) {
 			Pane *cell = (Pane *) OSGetPane(pane, i, j);
 			cell->bounds = OSRectangle(positionX, positionX + columnWidths[i], positionY, positionY + rowHeights[j]);
 			LayoutPane(cell);
-			positionY += rowHeights[j] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
+			positionY += rowHeights[j] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_V) ? 0 : 4);
 		}
 
 		positionX += columnWidths[i] + ((pane->flags & OS_CONFIGURE_PANE_NO_SPACE_H) ? 0 : 4);
@@ -738,8 +737,6 @@ void OSLayoutPane(OSObject _pane) {
 }
 
 OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsigned flags) {
-	(void) flags;
-
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	if (!control) return nullptr;
 
@@ -790,7 +787,12 @@ OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsi
 			control->preferredWidth = 14 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
 			control->preferredHeight = 20;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
-			control->image = OSRectangle(42, 42 + 8, 124, 124 + 17);
+
+			if (flags & OS_CONTROL_MENU_STYLE_BAR) {
+				control->image = OSRectangle(42, 42 + 8, 124, 124 + 17);
+			} else {
+				control->image = OSRectangle(42, 42 + 8, 142, 142 + 17);
+			}
 		} break;
 	}
 
@@ -824,6 +826,18 @@ void OSSetMenuBarMenu(OSObject menuBar, uintptr_t index, OSObject menu) {
 	OSSetPaneObject(OSGetPane(menuBar, index, 0), menu, OS_SET_PANE_OBJECT_VERTICAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_CENTER);
 }
 
+void OSSetMenuItems(OSObject menu, size_t count) {
+	OSConfigurePane(menu, 1, count, OS_CONFIGURE_PANE_NO_SPACE_V | OS_CONFIGURE_PANE_NO_INDENT_V | OS_CONFIGURE_PANE_NO_INDENT_H);
+	((Pane *) menu)->image = OSRectangle(84, 87, 106, 109);
+	((Pane *) menu)->imageBorder = OSRectangle(85, 86, 107, 108);
+}
+
+void OSSetMenuItem(OSObject menuBar, uintptr_t index, OSObject menu) {
+	OSSetPaneObject(OSGetPane(menuBar, 0, index), menu, OS_SET_PANE_OBJECT_HORIZONTAL_PUSH);
+	((Control *) menu)->textAlign = OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER;
+	((Control *) menu)->textBoundsBorder = 4;
+}
+
 void LayoutRootPane(OSObject generator, void *argument, OSCallbackData *data) {
 	(void) generator;
 	(void) data;
@@ -833,7 +847,11 @@ void LayoutRootPane(OSObject generator, void *argument, OSCallbackData *data) {
 	int height = pane->window->height;
 	pane->bounds = OSRectangle(0, width, 0, height);
 	if (pane->window->flags & OS_CREATE_WINDOW_NO_DECORATIONS) {
-		pane->grid[0].bounds = pane->bounds;
+		if (pane->window->flags & OS_CREATE_WINDOW_POPUP) {
+			pane->grid[0].bounds = OSRectangle(0 + 5, width - 2, 0 + 2, height - 2);
+		} else {
+			pane->grid[0].bounds = pane->bounds;
+		}
 	} else {
 		pane->grid[0].bounds = OSRectangle(4, width - 4, 30, height - 4);
 		pane->grid[1].bounds = OSRectangle(4, width - 4, 4, 28);
@@ -891,7 +909,7 @@ OSObject OSCreateWindow(char *title, size_t titleLengthBytes, unsigned width, un
 	// Create the root and content panes.
 	InitialisePane(&window->pane, OSRectangle(0, width, 0, height), window, nullptr, 16, 1, nullptr);
 	InitialisePane(window->pane.grid + 0, OSRectangle(4, width - 4, 30, height - 4), window, &window->pane, 0, 0, nullptr);
-	
+
 	if (!(flags & OS_CREATE_WINDOW_NO_DECORATIONS)) {
 		// Draw the window background and border.
 		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, width, 0, height), 
@@ -1174,6 +1192,16 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 		OSSetCursorStyle(window->handle, OS_CURSOR_NORMAL);
 	}
 
+	if (window->hoverControl && window->popupChild && window->hoverControl->type == OS_CONTROL_MENU 
+			&& !window->hoverControl->action.callback && window->popupMenuControl != window->hoverControl) {
+		Control *control = window->hoverControl;
+		OSInvalidateControl(window->popupMenuControl);
+		OSRectangle bounds;
+		OSGetWindowBounds(window->handle, &bounds);
+		control->window->ignoreNextDeactivationMessage = true;
+		CreatePopupMenu(window, control, bounds.left + control->bounds.left, bounds.top + control->bounds.bottom - 2, window->popupChild);
+	}
+
 	if (window->pressedControl) {
 		Control *control = window->pressedControl;
 
@@ -1452,7 +1480,7 @@ static void ProcessTextboxInput(OSMessage *message, Control *control) {
 	}
 }
 
-static void DeactivateWindow(Window *window) {
+static bool DeactivateWindow(Window *window) {
 	UpdateMousePosition(window, -1, -1, -1, -1);
 
 	if (window->ignoreNextDeactivationMessage) {
@@ -1466,12 +1494,18 @@ static void DeactivateWindow(Window *window) {
 		} else if (window->flags & OS_CREATE_WINDOW_POPUP) {
 			if (window->popupParent) {
 				DeactivateWindow(window->popupParent);
+				window->popupParent->popupMenuControl->menuOpen = false;
+				OSInvalidateControl(window->popupParent->popupMenuControl);
+				window->popupParent->popupChild = nullptr;
+				window->popupParent->popupMenuControl = nullptr;
 			}
 
 			OSCloseWindow(window);
 			window = nullptr;
 		}
 	}
+
+	return window;
 }
 
 OSError OSProcessGUIMessage(OSMessage *message) {
@@ -1480,6 +1514,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 	// 	(and that they gave us a valid window?)
 
 	Window *window = (Window *) message->targetWindow;
+	if (!window) return OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI;
 
 	switch (message->type) {
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -1491,6 +1526,12 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
+			UpdateMousePosition(window, 
+					message->mousePressed.positionX, 
+					message->mousePressed.positionY,
+					message->mousePressed.positionXScreen,
+					message->mousePressed.positionYScreen);
+
 			lastClickX = message->mousePressed.positionX;
 			lastClickY = message->mousePressed.positionY;
 			lastClickWindowWidth = window->width;
@@ -1506,6 +1547,17 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 
 				window->pressedControl = control;
 				OSInvalidateControl(control);
+			}
+
+			if (window->pressedControl) {
+				Control *control = window->pressedControl;
+
+				if (control->type == OS_CONTROL_MENU && !control->action.callback && control != window->lastPopupMenuControl) {
+					OSRectangle bounds;
+					OSGetWindowBounds(control->window->handle, &bounds);
+					control->window->ignoreNextDeactivationMessage = true;
+					CreatePopupMenu(control->window, control, bounds.left + control->bounds.left, bounds.top + control->bounds.bottom - 2, window->popupChild);
+				}
 			}
 		} break;
 
@@ -1533,15 +1585,20 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 					OSSetCursorStyle(window->handle, window->hoverControl->cursorStyle);
 				}
 			}
+
+			window->lastPopupMenuControl = window->popupMenuControl;
 		} break;
 
 		case OS_MESSAGE_WINDOW_CREATED: {
 			window->dirty = true;
+			LayoutPane(&window->pane);
 			InvalidatePane(&window->pane);
+			DrawPane(&window->pane, true);
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
 			OSHeapFree(window);
+			window = nullptr;
 		} break;
 
 		case OS_MESSAGE_WINDOW_BLINK_TIMER: {
@@ -1574,7 +1631,13 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_WINDOW_DEACTIVATED: {
-			DeactivateWindow(window);
+			if (!DeactivateWindow(window)) {
+				window = nullptr; // The window closed, so don't try to redraw it!
+			}
+		} break;
+
+		case OS_MESSAGE_MOUSE_EXIT: {
+			UpdateMousePosition(window, -1, -1, -1, -1);
 		} break;
 
 		default: {
@@ -1589,4 +1652,58 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 	}
 
 	return OS_SUCCESS;
+}
+
+static void CreatePopupMenu(Window *parent, OSObject generator, int x, int y, Window *existingWindow) {
+	Pane pane = {};
+	OSCallbackData populateMenu = {};
+	populateMenu.populateMenu.popupMenu = &pane;
+	SendCallback(generator, ((Control *) generator)->populateMenu, populateMenu);
+
+	int width, height;
+	MeasurePane(&pane, width, height);
+	DestroyPane(&pane);
+	
+	if (width < 100) {
+		width = 100;
+	}
+
+	if (height < 20) {
+		height = 20;
+	}
+
+	Window *window = existingWindow;
+
+	if (!window) {
+		window = (Window *) OSCreateWindow((char *) "", 0, width, height, OS_CREATE_WINDOW_NO_DECORATIONS | OS_CREATE_WINDOW_POPUP);
+	} else {
+		window->width = width;
+		window->height = height;
+		DestroyPane(window->pane.grid);
+		OSZeroMemory(window->pane.grid, sizeof(Pane));
+		InitialisePane(window->pane.grid, OSRectangle(0, 0, 0, 0), window, &window->pane, 0, 0, nullptr);
+	}
+
+	window->popupParent = parent;
+	OSMoveWindow(window->handle, OSRectangle(x, x + width, y, y + height));
+	window->pane.image = OSRectangle(10, 19, 114, 120);
+	window->pane.imageBorder = OSRectangle(14, 18, 115, 119);
+	window->pane.dirty = 2;
+
+	{
+		Pane *pane = (Pane *) OSGetWindowContentPane(window);
+		OSCallbackData populateMenu = {};
+		populateMenu.populateMenu.popupMenu = pane;
+		SendCallback(generator, ((Control *) generator)->populateMenu, populateMenu);
+	}
+
+	((Control *) generator)->menuOpen = true;
+	parent->popupMenuControl = (Control *) generator;
+	parent->lastPopupMenuControl = parent->popupMenuControl;
+	parent->popupChild = window;
+
+	window->dirty = true;
+	LayoutPane(&window->pane);
+	InvalidatePane(&window->pane);
+	DrawPane(&window->pane, true);
 }
