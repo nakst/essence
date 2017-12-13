@@ -13,6 +13,7 @@ void Test(OSObject generator, void *argument, OSCallbackData *data) {
 enum MenuID {
 	MENU_FILE,
 	MENU_EDIT,
+	MENU_RECENT,
 };
 
 void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
@@ -25,12 +26,17 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 		case MENU_FILE: {
 			OSObject openItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Open", 4, 0);
 			OSObject saveItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Save", 4, 0);
+			OSObject recentItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Recent", 6, OS_CONTROL_MENU_HAS_CHILDREN);
 
-			OSSetMenuItems(menu, 2);
+			OSSetMenuItems(menu, 3);
 			OSSetMenuItem(menu, 0, openItem);
 			OSSetMenuItem(menu, 1, saveItem);
+			OSSetMenuItem(menu, 2, recentItem);
+
+			OSSetObjectCallback(recentItem, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_RECENT);
 		} break;
 
+		case MENU_RECENT:
 		case MENU_EDIT: {
 			OSObject copyItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Copy", 4, 0);
 			OSObject pasteItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Paste", 5, 0);
@@ -49,8 +55,8 @@ extern "C" void ProgramEntry() {
 	OSObject menuBar = OSGetWindowMenuBar(window);
 	OSSetMenuBarMenus(menuBar, 2);
 
-	OSObject fileMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "File", 4, OS_CONTROL_MENU_STYLE_BAR);
-	OSObject editMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "Edit", 4, OS_CONTROL_MENU_STYLE_BAR);
+	OSObject fileMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "File", 4, OS_CONTROL_MENU_HAS_CHILDREN | OS_CONTROL_MENU_STYLE_BAR);
+	OSObject editMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "Edit", 4, OS_CONTROL_MENU_HAS_CHILDREN | OS_CONTROL_MENU_STYLE_BAR);
 
 	OSSetMenuBarMenu(menuBar, 0, fileMenu);
 	OSSetMenuBarMenu(menuBar, 1, editMenu);

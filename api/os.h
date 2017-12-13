@@ -502,6 +502,10 @@ struct OSMessage {
 			OSCrashReason reason;
 			OSHandle process;
 		} crash;
+
+		struct {
+			OSObject newWindow; // nullptr if the window is not owned by the process.
+		} windowDeactivated;
 	};
 };
 
@@ -572,6 +576,7 @@ enum OSObjectType {
 #define OS_SET_PANE_OBJECT_VERTICAL_PUSH   (1024)
 
 #define OS_CONTROL_MENU_STYLE_BAR (1)
+#define OS_CONTROL_MENU_HAS_CHILDREN (2)
 
 #ifndef KERNEL
 extern "C" void OSInitialiseAPI();

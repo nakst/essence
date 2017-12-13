@@ -8,8 +8,6 @@
 //	- Arrow keys
 //	- Alt sequences
 //	- Checkboxes and radioboxes
-//	- Sub-menus
-//	- Hover to open menus
 
 // TODO Replace Panic() with OSCrashProcess().
 
@@ -58,7 +56,7 @@ struct Control {
 	union {
 		struct { OSCaret wordSelectionAnchor, wordSelectionAnchor2; };
 		uint8_t resizeRegionIndex;
-		bool menuOpen;
+		struct {bool menuHasChildren : 1, menuBar : 1; };
 	};
 
 	// State:
@@ -94,11 +92,11 @@ struct Window {
 	Control *pressedControl;
 	Control *focusedControl;
 
-	Window *popupParent;
-	Control *popupMenuControl, *lastPopupMenuControl;
-	Window *popupChild;
+	Window *popupParent;					// The parent window to this popup.
+	Control *popupMenuControl, *lastPopupMenuControl;	// The control that created the child popup window.
+	Window *popupChild;					// The current child popup window.
 
-	bool dirty, ignoreNextDeactivationMessage;
+	bool dirty;
 	unsigned flags;
 };
 
@@ -108,7 +106,7 @@ struct Window {
 #define BORDER_SIZE_X (8)
 #define BORDER_SIZE_Y (34)
 
-static void CreatePopupMenu(Window *parent, OSObject generator, int x, int y, Window *existingWindow);
+static void CreatePopupMenu(Window *parent, OSObject generator, Window *existingWindow);
 
 static bool SendCallback(OSObject _from, OSCallback &callback, OSCallbackData &data) {
 	if (callback.callback) {
@@ -787,6 +785,8 @@ OSObject OSCreateControl(OSControlType type, char *text, size_t textLength, unsi
 			control->preferredWidth = 14 + MeasureStringWidth(text, textLength, GetGUIFontScale(control->fontSize));
 			control->preferredHeight = 20;
 			control->imageType = OS_CONTROL_IMAGE_FILL;
+			control->menuHasChildren = flags & OS_CONTROL_MENU_HAS_CHILDREN;
+			control->menuBar = flags & OS_CONTROL_MENU_STYLE_BAR;
 
 			if (flags & OS_CONTROL_MENU_STYLE_BAR) {
 				control->image = OSRectangle(42, 42 + 8, 124, 124 + 17);
@@ -1192,14 +1192,17 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 		OSSetCursorStyle(window->handle, OS_CURSOR_NORMAL);
 	}
 
-	if (window->hoverControl && window->popupChild && window->hoverControl->type == OS_CONTROL_MENU 
-			&& !window->hoverControl->action.callback && window->popupMenuControl != window->hoverControl) {
-		Control *control = window->hoverControl;
-		OSInvalidateControl(window->popupMenuControl);
-		OSRectangle bounds;
-		OSGetWindowBounds(window->handle, &bounds);
-		control->window->ignoreNextDeactivationMessage = true;
-		CreatePopupMenu(window, control, bounds.left + control->bounds.left, bounds.top + control->bounds.bottom - 2, window->popupChild);
+	if (window->hoverControl && window->hoverControl->type == OS_CONTROL_MENU && window->popupMenuControl != window->hoverControl) {
+		if ((window->popupChild || !window->hoverControl->menuBar) && window->hoverControl->menuHasChildren) {
+			Control *control = window->hoverControl;
+			if (window->popupMenuControl) OSInvalidateControl(window->popupMenuControl);
+			CreatePopupMenu(window, control, window->popupChild);
+		} else if (window->popupChild && !window->hoverControl->menuBar) {
+			OSCloseWindow(window->popupChild);
+			OSInvalidateControl(window->popupMenuControl);
+			window->popupChild = nullptr;
+			window->popupMenuControl = nullptr;
+		}
 	}
 
 	if (window->pressedControl) {
@@ -1480,29 +1483,39 @@ static void ProcessTextboxInput(OSMessage *message, Control *control) {
 	}
 }
 
-static bool DeactivateWindow(Window *window) {
+static bool DeactivateWindow(Window *window, Window *newWindow) {
+	{
+		Window *window2 = newWindow;
+
+		while (window2) {
+			if (window2 == window) return window;
+			window2 = window2->popupParent;
+		}
+	}
+
 	UpdateMousePosition(window, -1, -1, -1, -1);
 
-	if (window->ignoreNextDeactivationMessage) {
-		window->ignoreNextDeactivationMessage = false;
-	} else {
-		if (!(window->flags & OS_CREATE_WINDOW_NO_DECORATIONS)) {
-			window->pane.grid[1].control->image = OSRectangle(159, 159 + 7, 64, 64 + 24);
-			OSInvalidateControl(window->pane.grid[1].control);
-			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
-					OSRectangle(106, 106 + 9, 42, 77), OSRectangle(106 + 3, 106 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_TRANSPARENT);
-		} else if (window->flags & OS_CREATE_WINDOW_POPUP) {
-			if (window->popupParent) {
-				DeactivateWindow(window->popupParent);
-				window->popupParent->popupMenuControl->menuOpen = false;
+	if (!(window->flags & OS_CREATE_WINDOW_NO_DECORATIONS)) {
+		// If we're drawing decorations, then change the border of the window.
+		window->pane.grid[1].control->image = OSRectangle(159, 159 + 7, 64, 64 + 24);
+		OSInvalidateControl(window->pane.grid[1].control);
+		OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
+				OSRectangle(106, 106 + 9, 42, 77), OSRectangle(106 + 3, 106 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_TRANSPARENT);
+	}
+
+	if (window->flags & OS_CREATE_WINDOW_POPUP) {
+		if (window->popupParent) {
+			if (DeactivateWindow(window->popupParent, newWindow)) {
 				OSInvalidateControl(window->popupParent->popupMenuControl);
 				window->popupParent->popupChild = nullptr;
 				window->popupParent->popupMenuControl = nullptr;
+				DrawPane(&window->popupParent->pane, false);
+				OSUpdateWindow(window->popupParent);
 			}
-
-			OSCloseWindow(window);
-			window = nullptr;
 		}
+
+		OSCloseWindow(window);
+		window = nullptr;
 	}
 
 	return window;
@@ -1552,11 +1565,8 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 			if (window->pressedControl) {
 				Control *control = window->pressedControl;
 
-				if (control->type == OS_CONTROL_MENU && !control->action.callback && control != window->lastPopupMenuControl) {
-					OSRectangle bounds;
-					OSGetWindowBounds(control->window->handle, &bounds);
-					control->window->ignoreNextDeactivationMessage = true;
-					CreatePopupMenu(control->window, control, bounds.left + control->bounds.left, bounds.top + control->bounds.bottom - 2, window->popupChild);
+				if (control->type == OS_CONTROL_MENU && control->menuHasChildren && control != window->lastPopupMenuControl) {
+					CreatePopupMenu(control->window, control, window->popupChild);
 				}
 			}
 		} break;
@@ -1631,7 +1641,7 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_WINDOW_DEACTIVATED: {
-			if (!DeactivateWindow(window)) {
+			if (!DeactivateWindow(window, (Window *) message->windowDeactivated.newWindow)) {
 				window = nullptr; // The window closed, so don't try to redraw it!
 			}
 		} break;
@@ -1654,11 +1664,25 @@ OSError OSProcessGUIMessage(OSMessage *message) {
 	return OS_SUCCESS;
 }
 
-static void CreatePopupMenu(Window *parent, OSObject generator, int x, int y, Window *existingWindow) {
+static void CreatePopupMenu(Window *parent, OSObject generator, Window *existingWindow) {
+	int x, y;
+
+	OSRectangle bounds;
+	Control *control = (Control *) generator;
+	OSGetWindowBounds(parent->handle, &bounds);
+
+	if (control->menuBar) {
+		x = bounds.left + control->bounds.left;
+		y = bounds.top + control->bounds.bottom - 2;
+	} else {
+		x = bounds.left + control->bounds.right;
+		y = bounds.top + control->bounds.top;
+	}
+
 	Pane pane = {};
 	OSCallbackData populateMenu = {};
 	populateMenu.populateMenu.popupMenu = &pane;
-	SendCallback(generator, ((Control *) generator)->populateMenu, populateMenu);
+	SendCallback(generator, (control)->populateMenu, populateMenu);
 
 	int width, height;
 	MeasurePane(&pane, width, height);
@@ -1677,6 +1701,9 @@ static void CreatePopupMenu(Window *parent, OSObject generator, int x, int y, Wi
 	if (!window) {
 		window = (Window *) OSCreateWindow((char *) "", 0, width, height, OS_CREATE_WINDOW_NO_DECORATIONS | OS_CREATE_WINDOW_POPUP);
 	} else {
+		Window *child = existingWindow->popupChild;
+		while (child) if (child->popupChild) child = child->popupChild; else break;
+		if (child) DeactivateWindow(child, existingWindow); 
 		window->width = width;
 		window->height = height;
 		DestroyPane(window->pane.grid);
@@ -1694,16 +1721,17 @@ static void CreatePopupMenu(Window *parent, OSObject generator, int x, int y, Wi
 		Pane *pane = (Pane *) OSGetWindowContentPane(window);
 		OSCallbackData populateMenu = {};
 		populateMenu.populateMenu.popupMenu = pane;
-		SendCallback(generator, ((Control *) generator)->populateMenu, populateMenu);
+		SendCallback(generator, (control)->populateMenu, populateMenu);
 	}
 
-	((Control *) generator)->menuOpen = true;
-	parent->popupMenuControl = (Control *) generator;
+	parent->popupMenuControl = control;
 	parent->lastPopupMenuControl = parent->popupMenuControl;
 	parent->popupChild = window;
 
-	window->dirty = true;
-	LayoutPane(&window->pane);
-	InvalidatePane(&window->pane);
-	DrawPane(&window->pane, true);
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_WINDOW_CREATED;
+		message.targetWindow = window;
+		OSProcessGUIMessage(&message);
+	}
 }

@@ -381,13 +381,11 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
-			Window *window = windowManager.CreateWindow(currentProcess, argument1, argument2);
+			Window *window = windowManager.CreateWindow(currentProcess, argument1, argument2, returnData);
 
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {
-				window->apiWindow = returnData;
-
 				Handle _handle = {};
 
 				_handle.type = KERNEL_OBJECT_WINDOW;

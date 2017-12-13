@@ -29,7 +29,7 @@ struct Window {
 
 struct WindowManager {
 	void Initialise();
-	Window *CreateWindow(Process *process, size_t width, size_t height);
+	Window *CreateWindow(Process *process, size_t width, size_t height, OSObject apiWindow);
 	void MoveCursor(int xMovement, int yMovement);
 	void ClickCursor(unsigned buttons);
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
@@ -189,6 +189,7 @@ void WindowManager::SetActiveWindow(Window *window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
 		message.targetWindow = oldActiveWindow->apiWindow;
+		if (window && window->owner == oldActiveWindow->owner) message.windowDeactivated.newWindow = window->apiWindow;
 		oldActiveWindow->owner->SendMessage(message);
 	}
 
@@ -233,7 +234,7 @@ void WindowManager::SetActiveWindow(Window *window) {
 		window->owner->SendMessage(message);
 	}
 
-	// TODO Prevent activations clicks interacting with controls in content pane.
+	// TODO Prevent activations clicks interacting with controls in content pane?
 }
 
 void WindowManager::ClickCursor(unsigned buttons) {
@@ -419,7 +420,7 @@ void WindowManager::Initialise() {
 	scheduler.SpawnThread((uintptr_t) CaretBlink, (uintptr_t) this, kernelProcess, false);
 }
 
-Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height) {
+Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height, OSObject apiWindow) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -427,6 +428,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 
 	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 	window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
+	window->apiWindow = apiWindow;
 
 	if (!window->surface->Initialise(width, height, false)) {
 		OSHeapFree(window->surface, sizeof(Surface));
