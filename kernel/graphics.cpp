@@ -249,8 +249,11 @@ void Graphics::UpdateScreen() {
 		} break;
 	}
 
+	if (cursorX < 0) cursorX = 0;
+	if (cursorY < 0) cursorY = 0;
 	frameBuffer.Copy(cursorSwap, OSPoint(cursorX, cursorY), 
-			OSRectangle(0, CURSOR_SWAP_SIZE, 0, CURSOR_SWAP_SIZE),
+			OSRectangle(0, sourceRectangle.right - sourceRectangle.left, 
+				0, sourceRectangle.bottom - sourceRectangle.top),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
 }
 
