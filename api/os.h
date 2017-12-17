@@ -505,6 +505,8 @@ struct OSMessage {
 
 		struct {
 			OSObject newWindow; // nullptr if the window is not owned by the process.
+			int positionX; // The cursor coordinates in the new window.
+			int positionY;
 		} windowDeactivated;
 	};
 };

@@ -40,10 +40,14 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 		case MENU_EDIT: {
 			OSObject copyItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Copy", 4, 0);
 			OSObject pasteItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Paste", 5, 0);
+			OSObject recurseItem = OSCreateControl(OS_CONTROL_MENU, (char *) "Recurse", 7, OS_CONTROL_MENU_HAS_CHILDREN);
 
-			OSSetMenuItems(menu, 2);
+			OSSetMenuItems(menu, 3);
 			OSSetMenuItem(menu, 0, copyItem);
 			OSSetMenuItem(menu, 1, pasteItem);
+			OSSetMenuItem(menu, 2, recurseItem);
+
+			OSSetObjectCallback(recurseItem, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_FILE);
 		} break;
 	}
 }

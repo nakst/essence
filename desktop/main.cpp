@@ -3,6 +3,13 @@
 // TODO Move some of this into the kernel?
 // 	- Ideally, the kernel would still allow us to use system calls.
 
+void CloseDialog(OSObject generator, void *argument, OSCallbackData *data) {
+	(void) generator;
+	(void) data;
+	
+	OSCloseWindow((OSObject) argument);
+}
+
 extern "C" void ProgramEntry() {
 	{
 		// Load the UI theme.
@@ -138,6 +145,19 @@ extern "C" void ProgramEntry() {
 				OSTerminateProcess(message.crash.process);
 				OSPauseProcess(message.crash.process, true);
 				OSCloseHandle(message.crash.process);
+
+				OSObject window = OSCreateWindow((char *) "Program Crash", 13, 200, 100, 0);
+				OSObject contentPane = OSGetWindowContentPane(window);
+				OSConfigurePane(contentPane, 1, 2, 0);
+
+				char crashMessage[256];
+				size_t crashMessageLength = OSFormatString(crashMessage, 256, "Error code: %d\n", message.crash.reason.errorCode);
+				OSObject message = OSCreateControl(OS_CONTROL_STATIC, crashMessage, crashMessageLength, 0);
+				OSSetPaneObject(OSGetPane(contentPane, 0, 0), message, 0);
+
+				OSObject button = OSCreateControl(OS_CONTROL_BUTTON, (char *) "OK", 2, 0);
+				OSSetPaneObject(OSGetPane(contentPane, 0, 1), button, 0);
+				OSSetObjectCallback(button, OS_OBJECT_CONTROL, OS_CALLBACK_ACTION, CloseDialog, window);
 			}
 		}
 	}

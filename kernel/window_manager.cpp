@@ -29,7 +29,7 @@ struct Window {
 
 struct WindowManager {
 	void Initialise();
-	Window *CreateWindow(Process *process, size_t width, size_t height, OSObject apiWindow);
+	Window *CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow);
 	void MoveCursor(int xMovement, int yMovement);
 	void ClickCursor(unsigned buttons);
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
@@ -165,7 +165,7 @@ void WindowManager::PressKey(unsigned scancode) {
 		message.keyboard.ctrl = ctrl;
 		message.keyboard.shift = shift;
 		message.keyboard.scancode = scancode & ~SCANCODE_KEY_RELEASED;
-		window->owner->SendMessage(message);
+		window->owner->messageQueue.SendMessage(message);
 	}
 }
 
@@ -178,6 +178,8 @@ int MeasureDistance(int x1, int y1, int x2, int y2) {
 void WindowManager::SetActiveWindow(Window *window) {
 	mutex.AssertLocked();
 
+	KernelLog(LOG_VERBOSE, "SetActiveWindow - from %x to %x\n", activeWindow, window);
+
 	if (activeWindow == window) {
 		return;
 	}
@@ -189,8 +191,17 @@ void WindowManager::SetActiveWindow(Window *window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
 		message.targetWindow = oldActiveWindow->apiWindow;
-		if (window && window->owner == oldActiveWindow->owner) message.windowDeactivated.newWindow = window->apiWindow;
-		oldActiveWindow->owner->SendMessage(message);
+
+		if (window && window->owner == oldActiveWindow->owner) {
+			message.windowDeactivated.newWindow = window->apiWindow;
+			message.windowDeactivated.positionX = cursorX - window->position.x;
+			message.windowDeactivated.positionY = cursorY - window->position.y;
+		} else {
+			message.windowDeactivated.positionX = -1;
+			message.windowDeactivated.positionY = -1;
+		}
+
+		oldActiveWindow->owner->messageQueue.SendMessage(message);
 	}
 
 	if (!window) {
@@ -231,7 +242,7 @@ void WindowManager::SetActiveWindow(Window *window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_ACTIVATED;
 		message.targetWindow = window->apiWindow;
-		window->owner->SendMessage(message);
+		window->owner->messageQueue.SendMessage(message);
 	}
 
 	// TODO Prevent activations clicks interacting with controls in content pane?
@@ -297,7 +308,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 				message.targetWindow = window->apiWindow;
 
 				RefreshCursor(window);
-				window->owner->SendMessage(message);
+				window->owner->messageQueue.SendMessage(message);
 			} else {
 				RefreshCursor(nullptr);
 			}
@@ -344,7 +355,7 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_EXIT;
 		message.targetWindow = hoverWindow->apiWindow;
-		hoverWindow->owner->SendMessage(message);
+		hoverWindow->owner->messageQueue.SendMessage(message);
 	}
 
 	hoverWindow = window;
@@ -357,7 +368,7 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		message.mouseEntered.positionXScreen = cursorX;
 		message.mouseEntered.positionYScreen = cursorY;
 		message.targetWindow = hoverWindow->apiWindow;
-		hoverWindow->owner->SendMessage(message);
+		hoverWindow->owner->messageQueue.SendMessage(message);
 	}
 
 	if (window) {
@@ -370,7 +381,7 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		message.mouseMoved.newPositionYScreen = cursorY;
 		message.mouseMoved.oldPositionX = oldCursorX - window->position.x;
 		message.mouseMoved.oldPositionY = oldCursorY - window->position.y;
-		window->owner->SendMessage(message);
+		window->owner->messageQueue.SendMessage(message);
 	}
 
 	RefreshCursor(window);
@@ -393,7 +404,7 @@ void CaretBlink(WindowManager *windowManager) {
 			OSMessage message = {};
 			message.type = OS_MESSAGE_WINDOW_BLINK_TIMER;
 			message.targetWindow = window->apiWindow;
-			window->owner->SendMessage(message);
+			window->owner->messageQueue.SendMessage(message);
 		}
 
 		windowManager->mutex.Release();
@@ -420,7 +431,7 @@ void WindowManager::Initialise() {
 	scheduler.SpawnThread((uintptr_t) CaretBlink, (uintptr_t) this, kernelProcess, false);
 }
 
-Window *WindowManager::CreateWindow(Process *process, size_t width, size_t height, OSObject apiWindow) {
+Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -430,6 +441,9 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
 	window->apiWindow = apiWindow;
 
+	size_t width = bounds.right - bounds.left;
+	size_t height = bounds.bottom - bounds.top;
+
 	if (!window->surface->Initialise(width, height, false)) {
 		OSHeapFree(window->surface, sizeof(Surface));
 		OSHeapFree(window, sizeof(Window));
@@ -437,7 +451,7 @@ Window *WindowManager::CreateWindow(Process *process, size_t width, size_t heigh
 	}
 
 	window->surface->handles++;
-	window->position = OSPoint(cx += 20, cy += 20);
+	window->position = bounds.left == 0 && bounds.top == 0 ? OSPoint(cx += 20, cy += 20) : OSPoint(bounds.left, bounds.top);
 	window->width = width;
 	window->height = height;
 	window->owner = process;
@@ -459,8 +473,6 @@ void Window::ClearImage() {
 		graphics.frameBuffer.mutex.Acquire();
 		Defer(graphics.frameBuffer.mutex.Release());
 
-		uint16_t thisWindowDepth = z + 1;
-
 		for (int y = position.y; y < position.y + (int) height; y++) {
 			for (int x = position.x; x < position.x + (int) width; x++) {
 				if (x < 0 || x >= (int) graphics.frameBuffer.resX
@@ -469,10 +481,7 @@ void Window::ClearImage() {
 				}
 
 				uint16_t *depth = graphics.frameBuffer.depthBuffer + (graphics.frameBuffer.resX * y + x);
-
-				if (*depth == thisWindowDepth) {
-					*depth = 0;
-				}
+				*depth = 0;
 			}
 		}
 	}
@@ -481,13 +490,14 @@ void Window::ClearImage() {
 }
 
 void Window::Move(OSRectangle &rectangle) {
+	windowManager.mutex.Acquire();
+
+	windowManager.SetActiveWindow(this);
+
 	mutex.Acquire();
 	Defer(mutex.Release());
 
 	{
-		windowManager.mutex.Acquire();
-		Defer(windowManager.mutex.Release());
-
 		size_t newWidth = rectangle.right - rectangle.left;
 		size_t newHeight = rectangle.bottom - rectangle.top;
 
@@ -510,6 +520,7 @@ void Window::Move(OSRectangle &rectangle) {
 		surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
 	}
 
+	windowManager.mutex.Release();
 	Update();
 }
 
@@ -553,7 +564,7 @@ void Window::Destroy() {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DESTROYED;
 		message.targetWindow = apiWindow;
-		owner->SendMessage(message); // THe last message sent to the window.
+		owner->messageQueue.SendMessage(message); // THe last message sent to the window.
 
 		windowManager.Redraw(position, width, height);
 		CloseHandleToObject(surface, KERNEL_OBJECT_SURFACE);

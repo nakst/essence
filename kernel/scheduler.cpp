@@ -114,13 +114,22 @@ struct Thread {
 	volatile bool receivedYieldIPI;
 };
 
-struct Process {
+struct MessageQueue {
 	bool SendMessage(OSMessage &message); // Returns false if the message queue is full.
+	bool GetMessage(OSMessage &message);
+
 #define MESSAGE_QUEUE_MAX_LENGTH 4096
-	LinkedList messageQueue;
-	Mutex messageQueueMutex;
-	Event messageQueueIsNotEmpty;
-	struct Message *messageQueueMouseMovedMessage;
+	OSMessage *messages;
+	size_t count, allocated;
+
+	uintptr_t mouseMovedMessage; // Index + 1, 0 indicates none.
+
+	Mutex mutex;
+	Event notEmpty;
+};
+
+struct Process {
+	MessageQueue messageQueue;
 
 	LinkedItem allItem;
 	LinkedList threads;
@@ -152,12 +161,6 @@ struct Process {
 	bool allThreadsTerminated;
 };
 
-struct Message {
-	LinkedItem item;
-	OSMessage data;
-};
-
-Pool messagePool;
 Process *kernelProcess;
 
 struct Scheduler {
@@ -572,7 +575,6 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 void Scheduler::Initialise() {
 	threadPool.Initialise(sizeof(Thread));
 	processPool.Initialise(sizeof(Process));
-	messagePool.Initialise(sizeof(Message));
 
 	char *kernelProcessPath = (char *) "Kernel";
 	kernelProcess = SpawnProcess(kernelProcessPath, CStringLength(kernelProcessPath), true);
@@ -696,14 +698,7 @@ void Scheduler::RemoveProcess(Process *process) {
 	}
 
 	// Free all the remaining messages in the message queue.
-	LinkedList &messageQueue = process->messageQueue;
-	LinkedItem *item = messageQueue.firstItem;
-	while (item) {
-		Message *message = (Message *) item->thisItem;
-		item = item->nextItem;
-		if (!message) KernelPanic("Scheduler::RemoveProcess - Message was null.\n");
-		messagePool.Remove(message);
-	}
+	OSHeapFree(process->messageQueue.messages);
 
 	// Destroy the virtual memory manager.
 	process->vmm->Destroy();
@@ -752,7 +747,7 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 	message.type = OS_MESSAGE_PROGRAM_CRASH;
 	message.crash.process = handle2;
 	CopyMemory(&message.crash.reason, &crashReason, sizeof(OSCrashReason));
-	desktopProcess->SendMessage(message);
+	desktopProcess->messageQueue.SendMessage(message);
 
 	scheduler.PauseProcess(GetCurrentThread()->process, false);
 

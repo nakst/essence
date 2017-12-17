@@ -7,35 +7,61 @@ uintptr_t DoSyscall(uintptr_t index,
 
 #ifdef IMPLEMENTATION
 
-bool Process::SendMessage(OSMessage &_message) {
-	// TODO These really don't need to be allocated on the heap.
-	// TODO Linked list validate (4) bug?
+bool MessageQueue::SendMessage(OSMessage &_message) {
+	mutex.Acquire();
+	Defer(mutex.Release());
 
-	messageQueueMutex.Acquire();
-	Defer(messageQueueMutex.Release());
-
-	if (messageQueue.count == MESSAGE_QUEUE_MAX_LENGTH) {
+	if (count == MESSAGE_QUEUE_MAX_LENGTH) {
 		return false;
 	}
 
-	Message *message = (Message *) messagePool.Add();
-	CopyMemory(&message->data, &_message, sizeof(OSMessage));
-	message->item.thisItem = message;
-	messageQueue.InsertEnd(&message->item);
-
-	if (message->data.type == OS_MESSAGE_MOUSE_MOVED) {
-		if (messageQueueMouseMovedMessage) {
-			message->data.mouseMoved.oldPositionX = messageQueueMouseMovedMessage->data.mouseMoved.oldPositionX;
-			message->data.mouseMoved.oldPositionY = messageQueueMouseMovedMessage->data.mouseMoved.oldPositionY;
-
-			messageQueue.Remove(&messageQueueMouseMovedMessage->item);
+	if (_message.type == OS_MESSAGE_MOUSE_MOVED) {
+		if (mouseMovedMessage) {
+			CopyMemory(messages + mouseMovedMessage - 1, &_message, sizeof(OSMessage));
+			goto done;
+		} else {
+			mouseMovedMessage = count + 1;
 		}
-
-		messageQueueMouseMovedMessage = message;
 	}
 
-	if (!messageQueueIsNotEmpty.Poll()) {
-		messageQueueIsNotEmpty.Set();
+	if (count + 1 >= allocated) {
+		allocated = (allocated + 8) * 2;
+		OSMessage *old = messages;
+		messages = (OSMessage *) OSHeapAllocate(allocated * sizeof(OSMessage), false);
+		CopyMemory(messages, old, count * sizeof(OSMessage));
+		OSHeapFree(old);
+	}
+
+	CopyMemory(messages + count, &_message, sizeof(OSMessage));
+	count++;
+
+	done:;
+
+	if (!notEmpty.Poll()) {
+		notEmpty.Set();
+	}
+
+	return true;
+}
+
+bool MessageQueue::GetMessage(OSMessage &_message) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (!count) {
+		return false;
+	}
+
+	CopyMemory(&_message, messages, sizeof(OSMessage));
+	CopyMemory(messages, messages + 1, (count - 1) * sizeof(OSMessage));
+	count--;
+
+	if (mouseMovedMessage) {
+		mouseMovedMessage--;
+	}
+
+	if (!count) {
+		notEmpty.Reset();
 	}
 
 	return true;
@@ -315,30 +341,11 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
-			{
-				currentProcess->messageQueueMutex.Acquire();
-				Defer(currentProcess->messageQueueMutex.Release());
-
-				if (currentProcess->messageQueue.count) {
-					Message *message = (Message *) currentProcess->messageQueue.firstItem->thisItem;
-					currentProcess->messageQueue.Remove(currentProcess->messageQueue.firstItem);
-					CopyMemory(returnMessage, &message->data, sizeof(OSMessage));
-
-					if (message == currentProcess->messageQueueMouseMovedMessage) {
-						currentProcess->messageQueueMouseMovedMessage = nullptr;
-					}
-
-					if (!currentProcess->messageQueue.count) {
-						currentProcess->messageQueueIsNotEmpty.Reset();
-					}
-
-					messagePool.Remove(message);
-				} else {
-					SYSCALL_RETURN(OS_ERROR_NO_MESSAGES_AVAILABLE, false);
-				}
+			if (currentProcess->messageQueue.GetMessage(*returnMessage)) {
+				SYSCALL_RETURN(OS_SUCCESS, false);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_NO_MESSAGES_AVAILABLE, false);
 			}
-
-			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_WAIT_MESSAGE: {
@@ -346,30 +353,9 @@ uintptr_t DoSyscall(uintptr_t index,
 				currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 				// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
 				
-				if (!currentProcess->messageQueueIsNotEmpty.Wait(argument0 /*Timeout*/)) {
+				if (!currentProcess->messageQueue.notEmpty.Wait(argument0 /*Timeout*/)) {
 					break;
 				}
-			}
-
-			SYSCALL_RETURN(OS_SUCCESS, false);
-		} break;
-
-		case OS_SYSCALL_SEND_MESSAGE: {
-			OSMessage *message = (OSMessage *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) message, sizeof(OSMessage));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
-
-			KernelObjectType type = KERNEL_OBJECT_PROCESS;
-			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
-
-			{
-				currentProcess->messageQueueMutex.Acquire();
-				Defer(currentProcess->messageQueueMutex.Release());
-
-				SYSCALL_RETURN(process->SendMessage(*message) ? OS_SUCCESS : OS_ERROR_MESSAGE_QUEUE_FULL, false);
 			}
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
@@ -381,7 +367,12 @@ uintptr_t DoSyscall(uintptr_t index,
 			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 			Defer(currentVMM->UnlockRegion(region1));
 
-			Window *window = windowManager.CreateWindow(currentProcess, argument1, argument2, returnData);
+			OSRectangle *bounds = (OSRectangle *) argument1;
+			VMMRegion *region2 = currentVMM->FindAndLockRegion((uintptr_t) bounds, sizeof(OSRectangle));
+			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
+			Defer(currentVMM->UnlockRegion(region2));
+
+			Window *window = windowManager.CreateWindow(currentProcess, *bounds, returnData);
 
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
@@ -399,7 +390,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				OSMessage message = {};
 				message.type = OS_MESSAGE_WINDOW_CREATED;
 				message.targetWindow = window->apiWindow;
-				window->owner->SendMessage(message);
+				window->owner->messageQueue.SendMessage(message);
 
 				SYSCALL_RETURN(OS_SUCCESS, false);
 			}
