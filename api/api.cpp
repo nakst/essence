@@ -6,9 +6,7 @@
 #include "stb_image.h"
 
 void Panic() {
-	// TODO Temporary.
-	OSPrint("OSPanic was called.\n");
-	while (true);
+	OSCrashProcess(OS_FATAL_ERROR_UNKNOWN);
 }
 
 #ifndef CF

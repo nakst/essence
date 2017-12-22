@@ -3,7 +3,8 @@
 
 uintptr_t DoSyscall(uintptr_t index,
 		uintptr_t argument0, uintptr_t argument1,
-		uintptr_t argument2, uintptr_t argument3);
+		uintptr_t argument2, uintptr_t argument3,
+		uintptr_t returnAddress);
 
 #ifdef IMPLEMENTATION
 
@@ -69,7 +70,8 @@ bool MessageQueue::GetMessage(OSMessage &_message) {
 
 uintptr_t DoSyscall(uintptr_t index,
 		uintptr_t argument0, uintptr_t argument1,
-		uintptr_t argument2, uintptr_t argument3) {
+		uintptr_t argument2, uintptr_t argument3,
+		uintptr_t returnAddress) {
 	(void) argument0;
 	(void) argument1;
 	(void) argument2;
@@ -604,11 +606,11 @@ uintptr_t DoSyscall(uintptr_t index,
 			size_t pathLength = (size_t) argument1;
 			uint64_t flags = (uint64_t) argument2;
 
-			Node *node = vfs.OpenNode(path, pathLength, flags);
+			OSError error;
+			Node *node = vfs.OpenNode(path, pathLength, flags, &error);
 
 			if (!node) {
-				// TODO Improve the error reporting in the file I/O API.
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
+				SYSCALL_RETURN(error, false);
 			}
 
 			Handle handle = {};
@@ -878,6 +880,19 @@ uintptr_t DoSyscall(uintptr_t index,
 			KernelLog(LOG_WARNING, "process crash request, reason %d\n", argument0);
 			SYSCALL_RETURN(argument0, true);
 		} break;
+
+		case OS_SYSCALL_POST_MESSAGE: {
+			OSMessage *message = (OSMessage *) argument0;
+			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) message, sizeof(OSMessage));
+			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
+			Defer(currentVMM->UnlockRegion(region1));
+
+			if (currentProcess->messageQueue.SendMessage(*message)) {
+				SYSCALL_RETURN(OS_SUCCESS, false);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_MESSAGE_QUEUE_FULL, false);
+			}
+		} break;
 	}
 
 	end:;
@@ -885,6 +900,7 @@ uintptr_t DoSyscall(uintptr_t index,
 	if (fatalError) {
 		OSCrashReason reason;
 		reason.errorCode = returnValue;
+		KernelLog(LOG_WARNING, "Process crashed during system call, return to %x\n", returnAddress);
 		scheduler.CrashProcess(currentProcess, reason);
 	}
 

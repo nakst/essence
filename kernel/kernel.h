@@ -194,7 +194,6 @@ struct Process *desktopProcess;
 #include "ahci.cpp"
 
 #include "vfs.cpp"
-// #include "ext2.cpp"
 #include "esfs.cpp"
 #include "ps2.cpp"
 #include "devices.cpp"

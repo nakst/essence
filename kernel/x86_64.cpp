@@ -422,10 +422,8 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 }
 
 extern "C" uintptr_t Syscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
-		uintptr_t unused, uintptr_t argument3, uintptr_t argument4) {
-	(void) unused;
-
-	return DoSyscall(argument0, argument1, argument2, argument3, argument4);
+		uintptr_t returnAddress, uintptr_t argument3, uintptr_t argument4) {
+	return DoSyscall(argument0, argument1, argument2, argument3, argument4, returnAddress);
 }
 
 #endif

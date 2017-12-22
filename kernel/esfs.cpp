@@ -15,6 +15,8 @@ struct EsFSVolume {
 
 	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
+	bool CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory);
+
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
 	bool ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock);
 	EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks);
@@ -490,8 +492,7 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 }
 
 Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_directory, uint64_t &flags) {
-	_directory->mutex.Acquire();
-	Defer(_directory->mutex.Release());
+	_directory->mutex.AssertLocked();
 
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
@@ -622,27 +623,130 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 	}
 }
 
+void GenerateUniqueIdentifier(UniqueIdentifier &identifier) {
+	for (int i = 0; i < 16; i++) {
+		identifier.d[i] = GetRandomByte();
+	}
+}
+
+bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory) {
+	if (nameLength >= 256) {
+		return false;
+	}
+
+	_directory->mutex.AssertLocked();
+
+	EsFSFile *eFile = (EsFSFile *) (_directory + 1);
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
+
+	if (!directory) {
+		KernelPanic("EsFSVolume::CreateNode - Directory did not have a directory attribute.\n");
+	}
+
+	if (!data) {
+		KernelPanic("EsFSVolume::CreateNode - Directory did not have a data attribute.\n");
+	}
+
+	uint8_t *entryBuffer = (uint8_t *) OSHeapAllocate(superblock.blockSize, true);
+	Defer(OSHeapFree(entryBuffer));
+	size_t entryBufferPosition = 0;
+
+	{
+		// Step 1: Make the new directory entry.
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (entryBuffer + entryBufferPosition);
+		CopyMemory(entry->signature, (char *) ESFS_DIRECTORY_ENTRY_SIGNATURE, CStringLength((char *) ESFS_DIRECTORY_ENTRY_SIGNATURE));
+		entryBufferPosition += sizeof(EsFSDirectoryEntry);
+
+		char *_n = name;
+		EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) (entryBuffer + entryBufferPosition);
+		name->header.type = ESFS_ATTRIBUTE_DIRECTORY_NAME;
+		name->header.size = nameLength + sizeof(EsFSAttributeDirectoryName);
+		name->nameLength = nameLength;
+		CopyMemory(name + 1, _n, nameLength);
+		entryBufferPosition += name->header.size;
+
+		EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) (entryBuffer + entryBufferPosition);
+		file->header.type = ESFS_ATTRIBUTE_DIRECTORY_FILE;
+		entryBufferPosition += sizeof(EsFSAttributeDirectoryFile);
+		uint64_t temp = entryBufferPosition;
+
+		{
+			// Step 2: Make the new file entry.
+
+			EsFSFileEntry *entry = (EsFSFileEntry *) (entryBuffer + entryBufferPosition);
+			GenerateUniqueIdentifier(entry->identifier);
+			entry->fileType = type;
+			CopyMemory(&entry->signature, (char *) ESFS_FILE_ENTRY_SIGNATURE, CStringLength((char *) ESFS_FILE_ENTRY_SIGNATURE));
+			entryBufferPosition += sizeof(EsFSFileEntry);
+
+			EsFSAttributeFileData *data = (EsFSAttributeFileData *) (entryBuffer + entryBufferPosition);
+			data->header.type = ESFS_ATTRIBUTE_FILE_DATA;
+			data->header.size = sizeof(EsFSAttributeFileData);
+			data->stream = ESFS_STREAM_DEFAULT;
+			data->indirection = ESFS_DATA_DIRECT;
+			entryBufferPosition += data->header.size;
+
+			if (type == ESFS_FILE_TYPE_DIRECTORY) {
+				EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) (entryBuffer + entryBufferPosition);
+				directory->header.type = ESFS_ATTRIBUTE_FILE_DIRECTORY;
+				directory->header.size = sizeof(EsFSAttributeFileDirectory);
+				directory->itemsInDirectory = 0;
+				directory->spaceAvailableInLastBlock = 0;
+				entryBufferPosition += directory->header.size;
+			}
+
+			EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
+			end->type = ESFS_ATTRIBUTE_LIST_END;
+			end->size = sizeof(EsFSAttributeHeader);
+			entryBufferPosition += end->size;
+		}
+
+		file->header.size = sizeof(EsFSAttributeDirectoryFile) + entryBufferPosition - temp;
+
+		EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
+		end->type = ESFS_ATTRIBUTE_LIST_END;
+		end->size = sizeof(EsFSAttributeHeader);
+		entryBufferPosition += end->size;
+
+		if (entryBufferPosition > superblock.blockSize) {
+			KernelPanic("EsFSVolume::CreateNode - Directory entry for new node exceeds block size.\n");
+		}
+	}
+
+	{
+		// Step 3: Store the directory entry.
+		if (directory->spaceAvailableInLastBlock >= entryBufferPosition) {
+			// There is enough space in the last block.
+		} else {
+			// We need to add a new block to the file.
+			ResizeDataStream(data, data->size + superblock.blockSize, true, eFile->containerBlock);
+			directory->spaceAvailableInLastBlock = superblock.blockSize;
+		}
+
+		AccessStream(data, data->size - directory->spaceAvailableInLastBlock, entryBufferPosition, entryBuffer, true);
+		directory->spaceAvailableInLastBlock -= entryBufferPosition;
+
+		directory->itemsInDirectory++;
+	}
+
+	return true;
+}
+
+inline bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *directory) {
+	EsFSVolume *fs = (EsFSVolume *) directory->filesystem->data;
+	return fs->CreateNode(name,  nameLength, type == OS_NODE_DIRECTORY ? ESFS_FILE_TYPE_DIRECTORY : ESFS_FILE_TYPE_FILE, directory);
+}
+
 inline Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags) {
 	EsFSVolume *fs = (EsFSVolume *) directory->filesystem->data;
-#if 0
-	fs->mutex.Acquire();
-	Defer(fs->mutex.Release());
-#endif
-
-	// Mutex is acquired in SearchDirectory.
-	// 	- TODO Move this out into the VFS code.
-
 	Node *node = fs->SearchDirectory(name, nameLength, directory, flags);
 	return node;
 }
 
 inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
-#if 0
-	fs->mutex.Acquire();
-	Defer(fs->mutex.Release());
-#endif
-
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
@@ -651,11 +755,6 @@ inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, No
 
 inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
-#if 0
-	fs->mutex.Acquire();
-	Defer(fs->mutex.Release());
-#endif
-
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
@@ -664,22 +763,12 @@ inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, N
 
 inline void EsFSSync(Node *node) {
 	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
-#if 0
-	fs->mutex.Acquire();
-	Defer(fs->mutex.Release());
-#endif
-
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	fs->AccessBlock(eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
 }
 
 inline bool EsFSResize(Node *file, uint64_t newSize) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
-#if 0
-	fs->mutex.Acquire();
-	Defer(fs->mutex.Release());
-#endif
-
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);

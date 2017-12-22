@@ -67,10 +67,13 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 		| OS_OPEN_NODE_EXCLUSIVE_WRITE
 		| OS_OPEN_NODE_EXCLUSIVE_RESIZE
 		| OS_OPEN_NODE_FAIL_IF_NOT_FOUND;
-	Node *file = vfs.OpenNode(imageName, imageNameLength, fileFlags);
+
+	OSError error;
+	Node *file = vfs.OpenNode(imageName, imageNameLength, fileFlags, &error);
 
 	if (!file) {
 		// We couldn't open the executable.
+		// `error` should contain some more information, but it doesn't really matter.
 		return 0;
 	}
 

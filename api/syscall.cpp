@@ -62,8 +62,8 @@ OSError OSGetMessage(OSMessage *message) {
 	return OSSyscall(OS_SYSCALL_GET_MESSAGE, (uintptr_t) message, 0, 0, 0);
 }
 
-OSError OSSendMessage(OSHandle process, OSMessage *message) {
-	return OSSyscall(OS_SYSCALL_SEND_MESSAGE, process, (uintptr_t) message, 0, 0);
+OSError OSPostMessage(OSMessage *message) {
+	return OSSyscall(OS_SYSCALL_POST_MESSAGE, (uintptr_t) message, 0, 0, 0);
 }
 
 OSError OSWaitMessage(uintptr_t timeoutMs) {

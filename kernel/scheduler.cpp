@@ -743,7 +743,7 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 
 	OSHandle handle2 = desktopProcess->handleTable.OpenHandle(handle);
 
-	OSMessage message;
+	OSMessage message = {};
 	message.type = OS_MESSAGE_PROGRAM_CRASH;
 	message.crash.process = handle2;
 	CopyMemory(&message.crash.reason, &crashReason, sizeof(OSCrashReason));

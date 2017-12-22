@@ -96,7 +96,7 @@ struct VFS {
 	void Initialise();
 	Filesystem *RegisterFilesystem(Node *root, FilesystemType type, void *data, UniqueIdentifier installationID);
 
-	Node *OpenNode(char *name, size_t nameLength, uint64_t flags);
+	Node *OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *error);
 	void CloseNode(Node *node, uint64_t flags);
 
 	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type);
@@ -128,6 +128,7 @@ bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *fi
 void EsFSSync(Node *node);
 Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
 bool EsFSResize(Node *file, uint64_t newSize);
+bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *parent);
 
 bool Node::Resize(uint64_t newSize) {
 	mutex.Acquire();
@@ -138,15 +139,19 @@ bool Node::Resize(uint64_t newSize) {
 
 	modifiedSinceLastSync = true;
 
+	bool success = false;
+
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			return EsFSResize(this, newSize);
-		} break;
-
-		default: {
-			return false;
+			success = EsFSResize(this, newSize);
 		} break;
 	}
+
+	if (success) {
+		data.file.fileSize = newSize;
+	}
+
+	return success;
 }
 
 void Node::Sync() {
@@ -292,23 +297,24 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 	Node *parent = node->parent;
 
 	if (noHandles) {
-		node->Sync();
-
-		if (node->parent) {
+		if (parent) {
 			*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
 		}
-
-		OSHeapFree(node);
 	}
 
 	nodeHashTableMutex.Release();
+
+	if (noHandles) {
+		node->Sync();
+		OSHeapFree(node);
+	}
 
 	if (parent) {
 		CloseNode(parent, DIRECTORY_ACCESS);
 	}
 }
 
-Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
+Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *error) {
 	mountpointsMutex.Acquire();
 
 	LinkedItem *_mountpoint = mountpoints.firstItem;
@@ -331,6 +337,7 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
 
 	if (!longestMatch) {
 		// The requested file was not on any mounted filesystem.
+		*error = OS_ERROR_PATH_NOT_WITHIN_MOUNTED_VOLUME;
 		return nullptr;
 	}
 
@@ -341,9 +348,16 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
 	Filesystem *filesystem = mountpoint->filesystem;
 	uint64_t directoryAccess = DIRECTORY_ACCESS;
 	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY);
+
+	if (!node) {
+		*error = OS_ERROR_PATH_NOT_TRAVERSIBLE;
+		return nullptr;
+	}
+
 	node->filesystem = filesystem;
 
 	uint64_t desiredFlags = flags;
+	bool secondAttempt = false;
 
 	while (nameLength) {
 		char *entry = name;
@@ -362,20 +376,18 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
 
 		bool isFinalNode = !nameLength;
 		Node *parent = node;
+		parent->mutex.Acquire();
+		Defer(parent->mutex.Release());
+
+		tryAgain:;
 
 		if (node->filesystem != filesystem) {
 			KernelPanic("VFS::OpenFile - Incorrect node filesystem.\n");
 		}
 
 		switch (filesystem->type) {
-#if 0
-			case FILESYSTEM_EXT2: {
-				node = Ext2Scan(entry, entryLength, node, isFinalNode ? flags : directoryAccess);
-			} break;
-#endif
-
 			case FILESYSTEM_ESFS: {
-				node = EsFSScan(entry, entryLength, node, isFinalNode ? flags : directoryAccess);
+				node = EsFSScan(entry, entryLength, parent, isFinalNode ? flags : directoryAccess);
 			} break;
 
 			default: {
@@ -384,30 +396,81 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags) {
 		}
 
 		if (!node) {
-			// Close the handles we opened to the parent directories while traversing to this node.
-			CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
+			if (!isFinalNode) {	
+				// We couldn't traverse the directory structure.
 
-			if (!directoryAccess) {
-				// A "directory" in the path wasn't a directory.
-				return nullptr;
+				if (secondAttempt || !(flags & OS_OPEN_NODE_CREATE_DIRECTORIES)) {
+					*error = OS_ERROR_PATH_NOT_TRAVERSIBLE;
+					CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
+					return nullptr;
+				} else {
+					switch (filesystem->type) {
+						case FILESYSTEM_ESFS: {
+							if (!EsFSCreate(entry, entryLength, OS_NODE_DIRECTORY, parent)) {
+							        *error = OS_ERROR_FILE_DOES_NOT_EXIST;
+							        CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
+							        return nullptr;
+							}
+						} break;
+					}
+
+					node = parent;
+					secondAttempt = true;
+					goto tryAgain;
+				}
 			}
 
 			if (desiredFlags != flags) {
 				// We couldn't only the file with the desired access flags.
+				uint64_t difference = desiredFlags ^ flags;
+
+				if (difference & (OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_WRITE | OS_OPEN_NODE_ACCESS_RESIZE)) {
+					*error = OS_ERROR_FILE_IN_EXCLUSIVE_USE;
+				} else if (difference & (OS_OPEN_NODE_EXCLUSIVE_READ | OS_OPEN_NODE_EXCLUSIVE_WRITE | OS_OPEN_NODE_EXCLUSIVE_RESIZE)) {
+					*error = OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE;
+				} else if (difference & (OS_OPEN_NODE_DIRECTORY)) {
+					*error = OS_ERROR_INCORRECT_NODE_TYPE;
+				} else {
+					*error = OS_ERROR_UNKNOWN_OPERATION_FAILURE;
+				}
+
+				CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
 				return nullptr;
 			}
 
-			// TODO If the flag OS_OPEN_NODE_FAIL_IF_NOT_FOUND is clear, 
-			// 	then create the file.
+			// The file does not exist.
 
-			return nullptr;
+			if (secondAttempt || (flags & OS_OPEN_NODE_FAIL_IF_NOT_FOUND)) {
+				*error = OS_ERROR_FILE_DOES_NOT_EXIST;
+				CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
+				return nullptr;
+			} else {
+				switch (filesystem->type) {
+					case FILESYSTEM_ESFS: {
+						if (!EsFSCreate(entry, entryLength, (flags & OS_OPEN_NODE_DIRECTORY) ? OS_NODE_DIRECTORY : OS_NODE_FILE, parent)) {
+							*error = OS_ERROR_FILE_DOES_NOT_EXIST;
+							CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
+							return nullptr;
+						}
+					} break;
+				}
+
+				node = parent;
+				secondAttempt = true;
+				goto tryAgain;
+			}
 		} 
+
+		secondAttempt = false;
 	}
 
 	if (node && (flags & OS_OPEN_NODE_FAIL_IF_FOUND)) {
 		CloseNode(node, flags);
+		*error = OS_ERROR_FILE_ALREADY_EXISTS;
+		return nullptr;
 	}
 
+	*error = OS_SUCCESS;
 	return node;
 }
 

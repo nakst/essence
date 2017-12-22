@@ -1,5 +1,31 @@
 #include "../api/os.h"
 
+char *errorMessages[] = {
+	(char *) "INVALID_BUFFER",
+	(char *) "UNKNOWN_SYSCALL",
+	(char *) "INVALID_MEMORY_REGION",
+	(char *) "MEMORY_REGION_LOCKED_BY_KERNEL",
+	(char *) "PATH_LENGTH_EXCEEDS_LIMIT",
+	(char *) "INVALID_HANDLE",
+	(char *) "MUTEX_NOT_ACQUIRED_BY_THREAD",
+	(char *) "MUTEX_ALREADY_ACQUIRED",
+	(char *) "BUFFER_NOT_ACCESSIBLE",
+	(char *) "SHARED_MEMORY_REGION_TOO_LARGE",
+	(char *) "SHARED_MEMORY_STILL_MAPPED",
+	(char *) "COULD_NOT_LOAD_FONT",
+	(char *) "COULD_NOT_DRAW_FONT",
+	(char *) "COULD_NOT_ALLOCATE_MEMORY",
+	(char *) "INCORRECT_FILE_ACCESS",
+	(char *) "TOO_MANY_WAIT_OBJECTS",
+	(char *) "INCORRECT_NODE_TYPE",
+	(char *) "PROCESSOR_EXCEPTION",
+	(char *) "INVALID_PANE_CHILD",
+	(char *) "INVALID_PANE_OBJECT",
+	(char *) "UNSUPPORTED_CALLBACK",
+	(char *) "MISSING_CALLBACK",
+	(char *) "UNKNOWN",
+};
+
 // TODO Move some of this into the kernel?
 // 	- Ideally, the kernel would still allow us to use system calls.
 
@@ -7,7 +33,7 @@ void CloseDialog(OSObject generator, void *argument, OSCallbackData *data) {
 	(void) generator;
 	(void) data;
 	
-	OSCloseWindow((OSObject) argument);
+	OSCloseWindow((OSObject) argument); // TODO This crashes because we try to return with a closed window.
 }
 
 extern "C" void ProgramEntry() {
@@ -112,7 +138,7 @@ extern "C" void ProgramEntry() {
 	{
 		// Start the calculator test program.
 
-		for (int i = 0; i < 3; i++) {
+		for (int i = 0; i < 1; i++) {
 			const char *path = "/os/calculator";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
@@ -140,23 +166,31 @@ extern "C" void ProgramEntry() {
 			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
 				continue;
 			} else if (message.type == OS_MESSAGE_PROGRAM_CRASH) {
+				int code = message.crash.reason.errorCode;
 				OSPrint("The desktop process received a message that another process crashed.\n");
-				OSPrint("Error code: %d\n", message.crash.reason.errorCode);
+				OSPrint("Error code: %d\n", code);
 				OSTerminateProcess(message.crash.process);
 				OSPauseProcess(message.crash.process, true);
 				OSCloseHandle(message.crash.process);
 
-				OSObject window = OSCreateWindow((char *) "Program Crash", 13, 200, 100, 0);
+				OSObject window = OSCreateWindow((char *) "Program Crash", 13, 300, 70, 0);
 				OSObject contentPane = OSGetWindowContentPane(window);
 				OSConfigurePane(contentPane, 1, 2, 0);
 
 				char crashMessage[256];
-				size_t crashMessageLength = OSFormatString(crashMessage, 256, "Error code: %d\n", message.crash.reason.errorCode);
+				size_t crashMessageLength;
+				
+				if (code < OS_FATAL_ERROR_COUNT) {
+					crashMessageLength = OSFormatString(crashMessage, 256, "Error code: %d (%s)", code, OSCStringLength(errorMessages[code]), errorMessages[code]);
+				} else {
+					crashMessageLength = OSFormatString(crashMessage, 256, "Error code: %d (user error)", message.crash.reason.errorCode);
+				}
+
 				OSObject message = OSCreateControl(OS_CONTROL_STATIC, crashMessage, crashMessageLength, 0);
-				OSSetPaneObject(OSGetPane(contentPane, 0, 0), message, 0);
+				OSSetPaneObject(OSGetPane(contentPane, 0, 0), message, OS_SET_PANE_OBJECT_HORIZONTAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_TOP);
 
 				OSObject button = OSCreateControl(OS_CONTROL_BUTTON, (char *) "OK", 2, 0);
-				OSSetPaneObject(OSGetPane(contentPane, 0, 1), button, 0);
+				OSSetPaneObject(OSGetPane(contentPane, 0, 1), button, OS_SET_PANE_OBJECT_HORIZONTAL_CENTER);
 				OSSetObjectCallback(button, OS_OBJECT_CONTROL, OS_CALLBACK_ACTION, CloseDialog, window);
 			}
 		}

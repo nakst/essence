@@ -53,6 +53,24 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 }
 
 extern "C" void ProgramEntry() {
+	char *path = (char *) "/os/test2.txt";
+	OSNodeInformation node;
+	OSError error = OSOpenNode(path, OSCStringLength(path), 
+			OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_RESIZE | OS_OPEN_NODE_ACCESS_WRITE, &node);
+	OSPrint(":: error = %d\n", error);
+	error = OSResizeFile(node.handle, 8);
+	OSPrint(":: error = %d\n", error);
+	char buffer[8];
+	buffer[0] = 'a';
+	buffer[1] = 'b';
+	OSWriteFileSync(node.handle, 0, 1, buffer);
+	buffer[0] = 'b';
+	buffer[1] = 'c';
+	size_t bytesRead = OSReadFileSync(node.handle, 0, 8, buffer);
+	OSPrint(":: bytesRead = %d\n", bytesRead);
+	OSPrint(":: buffer = %s\n", 8, buffer);
+
+#if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 
 			OS_CREATE_WINDOW_WITH_MENU_BAR);
 
@@ -67,6 +85,7 @@ extern "C" void ProgramEntry() {
 
 	OSSetObjectCallback(fileMenu, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_FILE);
 	OSSetObjectCallback(editMenu, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_EDIT);
+#endif
 
 #if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 640, 400, OS_CREATE_WINDOW_WITH_MENU_BAR);

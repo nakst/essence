@@ -388,7 +388,7 @@ SyscallEntry:
 	push	r12
 	push	rbx
 
-	; Arguments in RDI, RSI, RDX, R8, R9. (RCX is ignored).
+	; Arguments in RDI, RSI, RDX, R8, R9. (RCX contains return address).
 	; Return value in RAX.
 	[extern Syscall]
 	mov	rbx,rsp

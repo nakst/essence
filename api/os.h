@@ -172,6 +172,7 @@ enum OSFatalError {
 	OS_FATAL_ERROR_INVALID_PANE_OBJECT,
 	OS_FATAL_ERROR_UNSUPPORTED_CALLBACK,
 	OS_FATAL_ERROR_MISSING_CALLBACK,
+	OS_FATAL_ERROR_UNKNOWN,
 	OS_FATAL_ERROR_COUNT,
 };
 
@@ -179,13 +180,16 @@ enum OSFatalError {
 #define OS_ERROR_NO_MESSAGES_AVAILABLE		(-9)
 #define OS_ERROR_MESSAGE_QUEUE_FULL		(-10)
 #define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
+#define OS_ERROR_PATH_NOT_WITHIN_MOUNTED_VOLUME	(-14)
+#define OS_ERROR_PATH_NOT_TRAVERSIBLE		(-15)
 #define OS_ERROR_FILE_ALREADY_EXISTS		(-19)
 #define OS_ERROR_FILE_DOES_NOT_EXIST		(-20)
-#define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21)
-#define OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS	(-22)
+#define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21) // TODO Implement
+#define OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS	(-22) // TODO Implement
 #define OS_ERROR_FILE_PERMISSION_NOT_GRANTED	(-23)
 #define OS_ERROR_FILE_IN_EXCLUSIVE_USE		(-24)
 #define OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE	(-25)
+#define OS_ERROR_INCORRECT_NODE_TYPE		(-26)
 #define OS_ERROR_EVENT_NOT_SET			(-27)
 #define OS_ERROR_TIMEOUT_REACHED		(-29)
 #define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
@@ -206,7 +210,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_COPY_SURFACE			(11)
 #define OS_SYSCALL_CLEAR_MODIFIED_REGION	(12)
 #define OS_SYSCALL_GET_MESSAGE			(13)
-#define OS_SYSCALL_SEND_MESSAGE			(14)
+#define OS_SYSCALL_POST_MESSAGE			(14)
 #define OS_SYSCALL_WAIT_MESSAGE			(15)
 #define OS_SYSCALL_CREATE_WINDOW		(16)
 #define OS_SYSCALL_OPEN_WINDOW_SURFACE		(17)
@@ -458,6 +462,9 @@ enum OSMessageType {
 	OS_MESSAGE_MOUSE_EXIT			= 0x100A, // Sent when the mouse leaves the window's bounds.
 	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
 
+	// Internal messages:
+	OS_MESSAGE_CLOSE_WINDOW			= 0x1100,
+
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x2000,
 };
@@ -544,14 +551,11 @@ enum OSObjectType {
 #define OS_OPEN_NODE_ACCESS_READ	(0x1)
 #define OS_OPEN_NODE_ACCESS_WRITE	(0x2)
 #define OS_OPEN_NODE_ACCESS_RESIZE	(0x4)
-
 #define OS_OPEN_NODE_EXCLUSIVE_READ	(0x10)
 #define OS_OPEN_NODE_EXCLUSIVE_WRITE	(0x20)
 #define OS_OPEN_NODE_EXCLUSIVE_RESIZE	(0x40)
-
 #define OS_OPEN_NODE_FAIL_IF_FOUND	(0x100)
 #define OS_OPEN_NODE_FAIL_IF_NOT_FOUND	(0x200)
-
 #define OS_OPEN_NODE_DIRECTORY		(0x2000)
 #define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x4000) // Create the directories leading to the file, if they don't already exist.
 
@@ -635,7 +639,7 @@ extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *
 extern "C" OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
 
 extern "C" OSError OSGetMessage(OSMessage *message);
-extern "C" OSError OSSendMessage(OSHandle process, OSMessage *message);
+extern "C" OSError OSPostMessage(OSMessage *message);
 extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
 
 extern "C" void OSRedrawAll();
