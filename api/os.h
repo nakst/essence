@@ -184,8 +184,8 @@ enum OSFatalError {
 #define OS_ERROR_PATH_NOT_TRAVERSIBLE		(-15)
 #define OS_ERROR_FILE_ALREADY_EXISTS		(-19)
 #define OS_ERROR_FILE_DOES_NOT_EXIST		(-20)
-#define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21) // TODO Implement
-#define OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS	(-22) // TODO Implement
+#define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21) 
+#define OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS	(-22) 
 #define OS_ERROR_FILE_PERMISSION_NOT_GRANTED	(-23)
 #define OS_ERROR_FILE_IN_EXCLUSIVE_USE		(-24)
 #define OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE	(-25)
@@ -244,6 +244,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_GET_CRASH_MESSAGE		(45)
 #define OS_SYSCALL_PAUSE_PROCESS		(46)
 #define OS_SYSCALL_CRASH_PROCESS		(47)
+#define OS_SYSCALL_GET_THREAD_ID		(48)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -600,6 +601,7 @@ extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, s
 extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
+extern "C" void OSRefreshNodeInformation(OSNodeInformation *information);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
@@ -607,6 +609,8 @@ extern "C" OSError OSTerminateThisProcess();
 
 extern "C" void OSPauseProcess(OSHandle process, bool resume);
 extern "C" void OSCrashProcess(OSError error);
+
+extern "C" uintptr_t OSGetThreadID(OSHandle thread);
 
 extern "C" OSError OSReleaseMutex(OSHandle mutex);
 extern "C" OSError OSAcquireMutex(OSHandle mutex);

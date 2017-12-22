@@ -82,7 +82,7 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	bool s;
 
 	ElfHeader header;
-	s = file->Read(0, sizeof(ElfHeader), (uint8_t *) &header);
+	s = file->Read(0, sizeof(ElfHeader), (uint8_t *) &header, &error);
 	if (!s) return 0;
 
 	size_t programHeaderEntrySize = header.programHeaderEntrySize;
@@ -97,7 +97,7 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	ElfProgramHeader *programHeaders = (ElfProgramHeader *) OSHeapAllocate(programHeaderEntrySize * header.programHeaderEntries, false);
 	Defer(OSHeapFree(programHeaders));
 
-	s = file->Read(header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders);
+	s = file->Read(header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders, &error);
 	if (!s) return 0;
 
 	for (uintptr_t i = 0; i < header.programHeaderEntries; i++) {
@@ -115,7 +115,7 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 		}
 
 		// TODO Memory-map the file.
-		s = file->Read(header->fileOffset, header->dataInFile, (uint8_t *) segment);
+		s = file->Read(header->fileOffset, header->dataInFile, (uint8_t *) segment, &error);
 		if (!s) return 0;
 	}
 

@@ -53,10 +53,10 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 }
 
 extern "C" void ProgramEntry() {
-	char *path = (char *) "/os/test2.txt";
+	char *path = (char *) "/os/new_dir/test2.txt";
 	OSNodeInformation node;
 	OSError error = OSOpenNode(path, OSCStringLength(path), 
-			OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_RESIZE | OS_OPEN_NODE_ACCESS_WRITE, &node);
+			OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_RESIZE | OS_OPEN_NODE_ACCESS_WRITE | OS_OPEN_NODE_CREATE_DIRECTORIES, &node);
 	OSPrint(":: error = %d\n", error);
 	error = OSResizeFile(node.handle, 8);
 	OSPrint(":: error = %d\n", error);
@@ -69,6 +69,9 @@ extern "C" void ProgramEntry() {
 	size_t bytesRead = OSReadFileSync(node.handle, 0, 8, buffer);
 	OSPrint(":: bytesRead = %d\n", bytesRead);
 	OSPrint(":: buffer = %s\n", 8, buffer);
+	OSRefreshNodeInformation(&node);
+	OSPrint(":: length = %d\n", node.fileSize);
+	OSPrint(":: TID = %d\n", OSGetThreadID(OS_CURRENT_THREAD));
 
 #if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 

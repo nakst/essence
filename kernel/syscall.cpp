@@ -639,8 +639,9 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentVMM->UnlockRegion(region));
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
-				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3);
-				SYSCALL_RETURN(bytesRead, false);
+				OSError error;
+				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
+				SYSCALL_RETURN(bytesRead ? bytesRead : error, false);
 			} else {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
@@ -660,8 +661,9 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentVMM->UnlockRegion(region));
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
-				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3);
-				SYSCALL_RETURN(bytesWritten, false);
+				OSError error;
+				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3, &error);
+				SYSCALL_RETURN(bytesWritten ? bytesWritten : error, false);
 			} else {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
@@ -892,6 +894,15 @@ uintptr_t DoSyscall(uintptr_t index,
 			} else {
 				SYSCALL_RETURN(OS_ERROR_MESSAGE_QUEUE_FULL, false);
 			}
+		} break;
+
+		case OS_SYSCALL_GET_THREAD_ID: {
+			KernelObjectType type = KERNEL_OBJECT_THREAD;
+			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!thread) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
+
+			SYSCALL_RETURN(thread->id, false);
 		} break;
 	}
 

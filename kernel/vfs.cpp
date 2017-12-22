@@ -43,8 +43,8 @@ struct NodeData {
 
 struct Node {
 	// Files:
-	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
-	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer);
+	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error);
+	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error);
 	bool Resize(uint64_t newSize);
 
 	// Directories:
@@ -193,9 +193,11 @@ void Node::CopyInformation(OSNodeInformation *information) {
 	}
 }
 
-size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error) {
 	mutex.Acquire();
 	Defer(mutex.Release());
+
+	*error = OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
 
 	if (offsetBytes > data.file.fileSize) {
 		return 0;
@@ -214,7 +216,10 @@ size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
 			bool fail = EsFSWrite(offsetBytes, sizeBytes, buffer, this);
-			if (!fail) return 0;
+			if (!fail) {
+				*error = OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
+				return 0;
+			}
 		} break;
 
 		default: {
@@ -226,9 +231,11 @@ size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 	return sizeBytes;
 }
 
-size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
+size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error) {
 	mutex.Acquire();
 	Defer(mutex.Release());
+
+	*error = OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
 
 	if (offsetBytes > data.file.fileSize) {
 		return 0;
@@ -252,7 +259,10 @@ size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer) {
 
 		case FILESYSTEM_ESFS: {
 			bool fail = EsFSRead(offsetBytes, sizeBytes, buffer, this);
-			if (!fail) return 0;
+			if (!fail) {
+				*error = OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
+				return 0;
+			}
 		} break;
 
 		default: {

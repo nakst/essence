@@ -195,8 +195,8 @@ uintptr_t OSWait(OSHandle *handles, size_t count, uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT, (uintptr_t) handles, count, timeoutMs, 0);
 }
 
-OSError OSRefreshNodeInformation(OSNodeInformation *information) {
-	return OSSyscall(OS_SYSCALL_REFRESH_NODE_INFORMATION, (uintptr_t) information, 0, 0, 0);
+void OSRefreshNodeInformation(OSNodeInformation *information) {
+	OSSyscall(OS_SYSCALL_REFRESH_NODE_INFORMATION, (uintptr_t) information, 0, 0, 0);
 }
 
 void OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
@@ -221,4 +221,8 @@ void OSPauseProcess(OSHandle process, bool resume) {
 
 void OSCrashProcess(OSError error) {
 	OSSyscall(OS_SYSCALL_CRASH_PROCESS, error, 0, 0, 0);
+}
+
+uintptr_t OSGetThreadID(OSHandle thread) {
+	return OSSyscall(OS_SYSCALL_GET_THREAD_ID, thread, 0, 0, 0);
 }
