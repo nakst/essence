@@ -123,7 +123,7 @@ struct Mutex {
 
 	size_t handles;
 
-	LinkedList blockedThreads;
+	LinkedList<struct Thread> blockedThreads;
 };
 
 struct Spinlock {

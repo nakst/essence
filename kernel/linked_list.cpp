@@ -1,26 +1,32 @@
+template <class T>
+struct LinkedList;
+
+template <class T>
 struct LinkedItem {
-	struct LinkedItem *previousItem;
-	void *thisItem;
-	struct LinkedItem *nextItem;
-	struct LinkedList *list;
+	struct LinkedItem<T> *previousItem;
+	T *thisItem;
+	struct LinkedItem<T> *nextItem;
+	struct LinkedList<T> *list;
 };
 
+template <class T>
 struct LinkedList {
-	void InsertStart(LinkedItem *item);
-	void InsertEnd(LinkedItem *item);
-	void Remove(LinkedItem *item);
+	void InsertStart(LinkedItem<T> *item);
+	void InsertEnd(LinkedItem<T> *item);
+	void Remove(LinkedItem<T> *item);
 
 	void Validate(int from); // TODO Don't do this on release builds.
 
-	LinkedItem *firstItem;
-	LinkedItem *lastItem;
+	LinkedItem<T> *firstItem;
+	LinkedItem<T> *lastItem;
 
 	size_t count;
 
 	bool modCheck;
 };
 
-void LinkedList::InsertStart(LinkedItem *item) {
+template <class T>
+void LinkedList<T>::InsertStart(LinkedItem<T> *item) {
 	if (modCheck) KernelPanic("LinkedList::InsertStart - Concurrent modification\n");
 	modCheck = true; Defer({modCheck = false;});
 
@@ -42,7 +48,8 @@ void LinkedList::InsertStart(LinkedItem *item) {
 	Validate(0);
 }
 
-void LinkedList::InsertEnd(LinkedItem *item) {
+template <class T>
+void LinkedList<T>::InsertEnd(LinkedItem<T> *item) {
 	if (modCheck) KernelPanic("LinkedList::InsertEnd - Concurrent modification\n");
 	modCheck = true; Defer({modCheck = false;});
 
@@ -64,7 +71,8 @@ void LinkedList::InsertEnd(LinkedItem *item) {
 	Validate(1);
 }
 
-void LinkedList::Remove(LinkedItem *item) {
+template <class T>
+void LinkedList<T>::Remove(LinkedItem<T> *item) {
 	if (modCheck) KernelPanic("LinkedList::Remove - Concurrent modification\n");
 	modCheck = true; Defer({modCheck = false;});
 
@@ -89,7 +97,8 @@ void LinkedList::Remove(LinkedItem *item) {
 	Validate(2);
 }
 
-void LinkedList::Validate(int from) {
+template <class T>
+void LinkedList<T>::Validate(int from) {
 #ifdef DEBUG_BUILD
 	if (count == 0) {
 		if (firstItem || lastItem) {
@@ -111,7 +120,7 @@ void LinkedList::Validate(int from) {
 		}
 
 		{
-			LinkedItem *item = firstItem;
+			LinkedItem<T> *item = firstItem;
 			size_t index = count;
 
 			while (--index) {
@@ -128,7 +137,7 @@ void LinkedList::Validate(int from) {
 		}
 
 		{
-			LinkedItem *item = lastItem;
+			LinkedItem<T> *item = lastItem;
 			size_t index = count;
 
 			while (--index) {

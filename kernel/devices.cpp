@@ -30,7 +30,7 @@ struct Device {
 	DeviceType type;
 #define DEVICE_PARENT_ROOT (nullptr)
 	Device *parent;
-	LinkedItem item;
+	LinkedItem<Device> item;
 	uintptr_t id;
 
 	union {
@@ -45,13 +45,13 @@ struct DeviceManager {
 	Mutex lock;
 
 	uintptr_t nextDeviceID;
-	LinkedList deviceList;
+	LinkedList<Device> deviceList;
 	Pool devicePool;
 };
 
 struct IOPacket {
 	void Execute();
-	LinkedItem item;
+	LinkedItem<IOPacket> item;
 };
 
 struct IOManager {
@@ -59,7 +59,7 @@ struct IOManager {
 	void Work();
 	void AddPacket(IOPacket *packet);
 
-	LinkedList packets;
+	LinkedList<IOPacket> packets;
 	Mutex mutex;
 	Event packetsAvailable;
 };
@@ -197,9 +197,9 @@ void IOManager::Work() {
 		mutex.Acquire();
 
 		if (packets.count) {
-			LinkedItem *packetItem = packets.firstItem;
+			LinkedItem<IOPacket> *packetItem = packets.firstItem;
 			packets.Remove(packetItem);
-			packet = (IOPacket *) packetItem->thisItem;
+			packet = packetItem->thisItem;
 		}
 
 		if (!packets.count) {

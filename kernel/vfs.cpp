@@ -71,8 +71,8 @@ struct Node {
 struct Filesystem {
 	FilesystemType type;
 	Node *root;
-	LinkedList mountpoints;
-	LinkedItem allFilesystemsItem;
+	LinkedList<struct Mountpoint> mountpoints;
+	LinkedItem<Filesystem> allFilesystemsItem;
 	void *data;
 };
 
@@ -83,8 +83,8 @@ struct Mountpoint {
 	Node *root;
 	Filesystem *filesystem;
 
-	LinkedItem filesystemMountpointsItem;
-	LinkedItem allMountpointsItem;
+	LinkedItem<Mountpoint> filesystemMountpointsItem;
+	LinkedItem<Mountpoint> allMountpointsItem;
 };
 
 struct VFS {
@@ -97,7 +97,8 @@ struct VFS {
 	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type);
 	Node *FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem);
 
-	LinkedList filesystems, mountpoints;
+	LinkedList<Filesystem> filesystems;
+	LinkedList<Mountpoint> mountpoints;
 	Mutex filesystemsMutex, mountpointsMutex;
 
 	bool foundBootFilesystem;
@@ -332,11 +333,11 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *error) {
 	mountpointsMutex.Acquire();
 
-	LinkedItem *_mountpoint = mountpoints.firstItem;
+	LinkedItem<Mountpoint> *_mountpoint = mountpoints.firstItem;
 	Mountpoint *longestMatch = nullptr;
 
 	while (_mountpoint) {
-		Mountpoint *mountpoint = (Mountpoint *) _mountpoint->thisItem;
+		Mountpoint *mountpoint = _mountpoint->thisItem;
 		size_t pathLength = mountpoint->pathLength;
 
 		if (nameLength < pathLength) goto next;

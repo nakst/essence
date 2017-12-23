@@ -63,6 +63,8 @@ static void TerminalCallback(int character, void *data) {
 	}
 }
 
+#if 0
+
 int ReadScancode() {
 	while (!(ProcessorIn8(0x64) & 1));
 
@@ -351,6 +353,8 @@ void EnterDebugger() {
 	}
 }
 
+#endif
+
 void KernelPanic(const char *format, ...) {
 	ProcessorDisableInterrupts();
 	scheduler.panic = true;
@@ -373,7 +377,8 @@ void KernelPanic(const char *format, ...) {
 		((uint8_t *) TERMINAL_ADDRESS)[i * 2 + 1] = 0x4F;
 	}
 
-	EnterDebugger();
+	while (true);
+	// EnterDebugger();
 	ProcessorHalt();
 }
 

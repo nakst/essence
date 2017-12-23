@@ -23,7 +23,7 @@ struct Event {
 	volatile uintptr_t state;
 	volatile size_t handles;
 
-	LinkedList blockedThreads;
+	LinkedList<Thread> blockedThreads;
 };
 
 struct Timer {
@@ -31,7 +31,7 @@ struct Timer {
 	void Remove();
 
 	Event event;
-	LinkedItem item;
+	LinkedItem<Timer> item;
 	uint64_t triggerTimeMs;
 };
 
@@ -70,9 +70,9 @@ enum ThreadTerminatableState {
 };
 
 struct Thread {
-	LinkedItem item[OS_MAX_WAIT_COUNT];	// Entry in relevent thread queue or blockedThreads list.
-	LinkedItem allItem; 			// Entry in the allThreads list.
-	LinkedItem processItem; 		// Entry in the process's list of threads.
+	LinkedItem<Thread> item[OS_MAX_WAIT_COUNT];	// Entry in relevent thread queue or blockedThreads list.
+	LinkedItem<Thread> allItem; 			// Entry in the allThreads list.
+	LinkedItem<Thread> processItem; 		// Entry in the process's list of threads.
 
 	struct Process *process;
 
@@ -131,8 +131,8 @@ struct MessageQueue {
 struct Process {
 	MessageQueue messageQueue;
 
-	LinkedItem allItem;
-	LinkedList threads;
+	LinkedItem<Process> allItem;
+	LinkedList<Thread> threads;
 
 	VMM *vmm;
 	VMM _vmm;
@@ -187,14 +187,14 @@ struct Scheduler {
 
 	void WaitMutex(Mutex *mutex);
 	uintptr_t WaitEvents(Event **events, size_t count); // Returns index of notified object.
-	void NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLocked = false, bool unblockAll = false);
+	void NotifyObject(LinkedList<Thread> *blockedThreads, bool schedulerAlreadyLocked = false, bool unblockAll = false);
 	void UnblockThread(Thread *unblockedThread);
 
 	Pool threadPool, processPool;
-	LinkedList activeThreads, pausedThreads;
-	LinkedList activeTimers;
-	LinkedList allThreads;
-	LinkedList allProcesses;
+	LinkedList<Thread>  activeThreads, pausedThreads;
+	LinkedList<Timer>   activeTimers;
+	LinkedList<Thread>  allThreads;
+	LinkedList<Process> allProcesses;
 	Spinlock lock;
 
 	uintptr_t nextThreadID;
@@ -427,10 +427,10 @@ void Scheduler::TerminateProcess(Process *process) {
 	bool isCurrentProcess = process == currentThread->process;
 	bool foundCurrentThread = false;
 
-	LinkedItem *thread = process->threads.firstItem;
+	LinkedItem<Thread> *thread = process->threads.firstItem;
 
 	while (thread) {
-		Thread *threadObject = (Thread *) thread->thisItem;
+		Thread *threadObject = thread->thisItem;
 		thread = thread->nextItem;
 
 		if (threadObject != currentThread) {
@@ -814,10 +814,10 @@ void Scheduler::PauseProcess(Process *process, bool resume) {
 		scheduler.lock.Acquire();
 		Defer(scheduler.lock.Release());
 
-		LinkedItem *thread = process->threads.firstItem;
+		LinkedItem<Thread> *thread = process->threads.firstItem;
 
 		while (thread) {
-			Thread *threadObject = (Thread *) thread->thisItem;
+			Thread *threadObject = thread->thisItem;
 			thread = thread->nextItem;
 
 			if (threadObject != currentThread) {
@@ -1002,11 +1002,11 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	// Notify any triggered timers.
 	
-	LinkedItem *_timer = activeTimers.firstItem;
+	LinkedItem<Timer> *_timer = activeTimers.firstItem;
 
 	while (_timer) {
-		Timer *timer = (Timer *) _timer->thisItem;
-		LinkedItem *next = _timer->nextItem;
+		Timer *timer = _timer->thisItem;
+		LinkedItem<Timer> *next = _timer->nextItem;
 
 		if (timer->triggerTimeMs <= timeMs) {
 			activeTimers.Remove(_timer);
@@ -1017,7 +1017,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	}
 
 	// Get a thread from the start of the list.
-	LinkedItem *firstThreadItem = activeThreads.firstItem;
+	LinkedItem<Thread> *firstThreadItem = activeThreads.firstItem;
 	Thread *newThread;
 	bool newThreadIsAsyncTask = false;
 
@@ -1150,11 +1150,11 @@ void Scheduler::UnblockThread(Thread *unblockedThread) {
 	} 
 }
 
-void Scheduler::NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLocked, bool unblockAll) {
+void Scheduler::NotifyObject(LinkedList<Thread> *blockedThreads, bool schedulerAlreadyLocked, bool unblockAll) {
 	if (schedulerAlreadyLocked == false) lock.Acquire();
 	lock.AssertLocked();
 
-	LinkedItem *unblockedItem = blockedThreads->firstItem;
+	LinkedItem<Thread> *unblockedItem = blockedThreads->firstItem;
 
 	if (!unblockedItem) {
 		if (schedulerAlreadyLocked == false) lock.Release();
@@ -1164,9 +1164,9 @@ void Scheduler::NotifyObject(LinkedList *blockedThreads, bool schedulerAlreadyLo
 	}
 
 	do {
-		LinkedItem *nextUnblockedItem = unblockedItem->nextItem;
+		LinkedItem<Thread> *nextUnblockedItem = unblockedItem->nextItem;
 		blockedThreads->Remove(unblockedItem);
-		Thread *unblockedThread = (Thread *) unblockedItem->thisItem;
+		Thread *unblockedThread = unblockedItem->thisItem;
 		UnblockThread(unblockedThread);
 		unblockedItem = nextUnblockedItem;
 	} while (unblockAll && unblockedItem);
