@@ -201,3 +201,7 @@ struct Process *desktopProcess;
 
 #include "window_manager.cpp"
 #include "syscall.cpp"
+
+#ifdef IMPLEMENTATION
+#include "../api/syscall.cpp"
+#endif

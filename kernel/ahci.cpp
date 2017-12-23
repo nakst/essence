@@ -436,7 +436,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 							// Is the command finished?
 							if (commandsFinished & (1 << i)) {
 								if (drive->completeCommands[i].state) {
-									KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected.\n");
+									KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected.\n"); // TODO Are we doing this right?
 								} else {
 									drive->completeCommands[i].Set();
 

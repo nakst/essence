@@ -4,7 +4,7 @@
 uintptr_t DoSyscall(uintptr_t index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3,
-		uintptr_t returnAddress);
+		bool fromKernel);
 
 #ifdef IMPLEMENTATION
 
@@ -71,7 +71,7 @@ bool MessageQueue::GetMessage(OSMessage &_message) {
 uintptr_t DoSyscall(uintptr_t index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3,
-		uintptr_t returnAddress) {
+		bool fromKernel) {
 	(void) argument0;
 	(void) argument1;
 	(void) argument2;
@@ -91,29 +91,33 @@ uintptr_t DoSyscall(uintptr_t index,
 		ProcessorFakeTimerInterrupt();
 	}
 
-	if (currentThread->isKernelThread) {
-		KernelPanic("DoSyscall - Current thread %x was a kernel thread.\n", 
-				currentThread);
-	}
+	if (!fromKernel) {
+		if (currentThread->terminatableState != THREAD_TERMINATABLE) {
+			KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d).\n", 
+					currentThread, currentThread->terminatableState);
+		}
 
-	if (currentThread->terminatableState != THREAD_TERMINATABLE) {
-		KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d).\n", 
-				currentThread, currentThread->terminatableState);
+		currentThread->terminatableState = THREAD_IN_SYSCALL;
+	} else {
+		currentProcess = kernelProcess;
 	}
-
-	currentThread->terminatableState = THREAD_IN_SYSCALL;
-	// KernelLog(LOG_VERBOSE, "Thread %x now in syscall\n", currentThread);
 
 	OSError returnValue = OS_FATAL_ERROR_UNKNOWN_SYSCALL;
 	bool fatalError = true;
 
 #define SYSCALL_RETURN(value, fatal) {returnValue = value; fatalError = fatal; goto end;}
 
+#define SYSCALL_BUFFER(address, length, index) \
+	VMMRegion *region ## index = currentVMM->FindAndLockRegion((address), (length)); \
+	if (!region ## index && !fromKernel) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true); \
+	Defer(if (region ## index) currentVMM->UnlockRegion(region ## index));
+#define SYSCALL_BUFFER_ALLOW_NULL(address, length, index) \
+	VMMRegion *region ## index = currentVMM->FindAndLockRegion((address), (length)); \
+	Defer(if (region ## index) currentVMM->UnlockRegion(region ## index));
+
 	switch (index) {
 		case OS_SYSCALL_PRINT: {
-			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region));
+			SYSCALL_BUFFER(argument0, argument1, 1);
 			Print("%s", argument1, argument0);
 			SYSCALL_RETURN(OS_SUCCESS, false);
 	     	} break;
@@ -131,13 +135,8 @@ uintptr_t DoSyscall(uintptr_t index,
 		case OS_SYSCALL_CREATE_PROCESS: {
 			if (argument1 > MAX_PATH) SYSCALL_RETURN(OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT, true);
 
-			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
-
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(OSProcessInformation));
-			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region2));
+			SYSCALL_BUFFER(argument0, argument1, 1);
+			SYSCALL_BUFFER(argument2, sizeof(OSProcessInformation), 2);
 
 			OSProcessInformation *process = (OSProcessInformation *) argument2;
 			Process *processObject = scheduler.SpawnProcess((char *) argument0, argument1, false, (void *) argument3);
@@ -197,7 +196,6 @@ uintptr_t DoSyscall(uintptr_t index,
 			Handle _handle = {};
 			_handle.type = KERNEL_OBJECT_SURFACE;
 			_handle.object = surface;
-			// TODO Prevent the program from deallocating the surface's linear buffer.
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(_handle), true);
 		} break;
 
@@ -208,9 +206,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSLinearBuffer *linearBuffer = (OSLinearBuffer *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) linearBuffer, sizeof(OSLinearBuffer));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument1, sizeof(OSLinearBuffer), 1);
 
 			surface->region->mutex.Acquire();
 			surface->region->handles++;
@@ -236,9 +232,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 1);
 
 			surface->InvalidateRectangle(*rectangle);
 
@@ -252,9 +246,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSPoint *point = (OSPoint *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) point, sizeof(OSPoint));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument1, sizeof(OSPoint), 1);
 
 			graphics.frameBuffer.Copy(*surface, *point, OSRectangle(0, surface->resX, 0, surface->resY), true, (uint16_t) argument2);
 
@@ -268,9 +260,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			_OSRectangleAndColor *arg = (_OSRectangleAndColor *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) arg, sizeof(_OSRectangleAndColor));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument1, sizeof(_OSRectangleAndColor), 1);
 
 			surface->FillRectangle(arg->rectangle, arg->color);
 
@@ -294,9 +284,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			OSPoint *point = (OSPoint *) argument2;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) point, sizeof(OSPoint));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument2, sizeof(OSPoint), 1);
 
 			destination->Copy(*source, *point, OSRectangle(0, source->resX, 0, source->resY), true, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
@@ -315,9 +303,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			_OSDrawSurfaceArguments *arguments = (_OSDrawSurfaceArguments *) argument2;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) arguments, sizeof(_OSDrawSurfaceArguments));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument2, sizeof(_OSDrawSurfaceArguments), 1);
 
 			destination->Draw(*source, arguments->destination, arguments->source, arguments->border, (OSDrawMode) argument3);
 
@@ -339,9 +325,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_GET_MESSAGE: {
 			OSMessage *returnMessage = (OSMessage *) argument0;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) returnMessage, sizeof(OSMessage));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument0, sizeof(OSMessage), 1);
 
 			if (currentProcess->messageQueue.GetMessage(*returnMessage)) {
 				SYSCALL_RETURN(OS_SUCCESS, false);
@@ -365,14 +349,10 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_CREATE_WINDOW: {
 			OSHandle *returnData = (OSHandle *) argument0;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) returnData, sizeof(OSHandle) * 2);
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument0, sizeof(OSHandle) * 2, 1);
 
 			OSRectangle *bounds = (OSRectangle *) argument1;
-			VMMRegion *region2 = currentVMM->FindAndLockRegion((uintptr_t) bounds, sizeof(OSRectangle));
-			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region2));
+			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 2);
 
 			Window *window = windowManager.CreateWindow(currentProcess, *bounds, returnData);
 
@@ -489,9 +469,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_CREATE_THREAD: {
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument2, sizeof(OSThreadInformation));
-			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region2));
+			SYSCALL_BUFFER(argument2, sizeof(OSThreadInformation), 1);
 
 			OSThreadInformation *thread = (OSThreadInformation *) argument2;
 			Thread *threadObject = scheduler.SpawnThread(argument0, argument3, currentProcess, true, true);
@@ -522,9 +500,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			if (argument1 && !argument2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
 
-			VMMRegion *region1 = argument1 ? currentVMM->FindAndLockRegion(argument1, argument2) : nullptr;
-			if (!region1 && argument1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(if (region1) currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER_ALLOW_NULL(argument1, argument2, 1);
 
 			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0, (char *) argument1, argument2);
 			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE, false);
@@ -580,9 +556,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				SYSCALL_RETURN(OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT, true);
 			}
 
-			VMMRegion *region1 = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument0, argument1, 1);
 
 			SharedMemoryRegion *region = sharedMemoryManager.LookupSharedMemory((char *) argument0, argument1);
 			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE, false);
@@ -594,13 +568,8 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_OPEN_NODE: {
-			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region));
-
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument3, sizeof(OSNodeInformation));
-			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region2));
+			SYSCALL_BUFFER(argument0, argument1, 1);
+			SYSCALL_BUFFER(argument3, sizeof(OSNodeInformation), 2);
 
 			char *path = (char *) argument0;
 			size_t pathLength = (size_t) argument1;
@@ -634,9 +603,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
 
-			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region));
+			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
 				OSError error;
@@ -656,9 +623,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
 
-			VMMRegion *region = currentVMM->FindAndLockRegion(argument3, argument2);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region));
+			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
 				OSError error;
@@ -721,9 +686,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				SYSCALL_RETURN(OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS, true);
 			}
 
-			VMMRegion *region = currentVMM->FindAndLockRegion(argument0, argument1 * sizeof(OSHandle));
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region));
+			SYSCALL_BUFFER(argument0, argument1 * sizeof(OSHandle), 1);
 
 			OSHandle *_handles = (OSHandle *) argument0;
 			volatile OSHandle handles[OS_MAX_WAIT_COUNT];
@@ -799,9 +762,7 @@ uintptr_t DoSyscall(uintptr_t index,
 		} break;
 
 		case OS_SYSCALL_REFRESH_NODE_INFORMATION: {
-			VMMRegion *region2 = currentVMM->FindAndLockRegion(argument0, sizeof(OSNodeInformation));
-			if (!region2) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region2));
+			SYSCALL_BUFFER(argument0, sizeof(OSNodeInformation), 1);
 
 			OSNodeInformation *information = (OSNodeInformation *) argument0;
 
@@ -832,9 +793,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 1);
 
 			window->Move(*rectangle);
 			SYSCALL_RETURN(OS_SUCCESS, false);
@@ -847,9 +806,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) rectangle, sizeof(OSRectangle));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 1);
 
 			windowManager.mutex.Acquire();
 			rectangle->left = window->position.x;
@@ -885,9 +842,7 @@ uintptr_t DoSyscall(uintptr_t index,
 
 		case OS_SYSCALL_POST_MESSAGE: {
 			OSMessage *message = (OSMessage *) argument0;
-			VMMRegion *region1 = currentVMM->FindAndLockRegion((uintptr_t) message, sizeof(OSMessage));
-			if (!region1) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true);
-			Defer(currentVMM->UnlockRegion(region1));
+			SYSCALL_BUFFER(argument0, sizeof(OSMessage), 1);
 
 			if (currentProcess->messageQueue.SendMessage(*message)) {
 				SYSCALL_RETURN(OS_SUCCESS, false);
@@ -904,6 +859,25 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			SYSCALL_RETURN(thread->id, false);
 		} break;
+
+		case OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN: {
+			KernelObjectType type = KERNEL_OBJECT_NODE;
+			Node *node = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!node) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(node, argument0));
+			
+			if (node->data.type != OS_NODE_DIRECTORY) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
+
+			SYSCALL_BUFFER(argument1, argument2 * sizeof(OSDirectoryChild), 1);
+
+			bool success = node->EnumerateChildren((OSDirectoryChild *) argument1, argument2);
+
+			if (success) {
+				SYSCALL_RETURN(OS_SUCCESS, false);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_BUFFER_TOO_SMALL, false);
+			}
+		} break;
 	}
 
 	end:;
@@ -911,12 +885,13 @@ uintptr_t DoSyscall(uintptr_t index,
 	if (fatalError) {
 		OSCrashReason reason;
 		reason.errorCode = returnValue;
-		KernelLog(LOG_WARNING, "Process crashed during system call, return to %x\n", returnAddress);
+		KernelLog(LOG_WARNING, "Process crashed during system call\n");
 		scheduler.CrashProcess(currentProcess, reason);
 	}
 
-	currentThread->terminatableState = THREAD_TERMINATABLE;
-	// KernelLog(LOG_VERBOSE, "Thread %x finished syscall\n", currentThread);
+	if (!fromKernel) {
+		currentThread->terminatableState = THREAD_TERMINATABLE;
+	}
 
 	if (currentThread->terminating) {
 		// The thread has been terminated.

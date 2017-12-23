@@ -176,12 +176,13 @@ enum OSFatalError {
 	OS_FATAL_ERROR_COUNT,
 };
 
+#define OS_ERROR_BUFFER_TOO_SMALL		(-2)
 #define OS_ERROR_UNKNOWN_OPERATION_FAILURE 	(-7)
 #define OS_ERROR_NO_MESSAGES_AVAILABLE		(-9)
 #define OS_ERROR_MESSAGE_QUEUE_FULL		(-10)
 #define OS_ERROR_MESSAGE_NOT_HANDLED_BY_GUI	(-13)
 #define OS_ERROR_PATH_NOT_WITHIN_MOUNTED_VOLUME	(-14)
-#define OS_ERROR_PATH_NOT_TRAVERSIBLE		(-15)
+#define OS_ERROR_PATH_NOT_TRAVERSABLE		(-15)
 #define OS_ERROR_FILE_ALREADY_EXISTS		(-19)
 #define OS_ERROR_FILE_DOES_NOT_EXIST		(-20)
 #define OS_ERROR_DRIVE_ERROR_FILE_DAMAGED	(-21) 
@@ -245,6 +246,7 @@ typedef intptr_t OSError;
 #define OS_SYSCALL_PAUSE_PROCESS		(46)
 #define OS_SYSCALL_CRASH_PROCESS		(47)
 #define OS_SYSCALL_GET_THREAD_ID		(48)
+#define OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN	(49)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -280,10 +282,15 @@ struct OSUniqueIdentifier {
 enum OSNodeType {
 	OS_NODE_FILE,
 	OS_NODE_DIRECTORY,
+	OS_NODE_INVALID,
 };
 
 struct OSNodeInformation {
-	OSHandle handle;
+	union {
+		OSHandle handle;
+		bool present; // From OSEnumerateDirectoryChildren.
+	};
+
 	OSUniqueIdentifier identifier;
 	OSNodeType type;
 
@@ -291,6 +298,13 @@ struct OSNodeInformation {
 		uint64_t fileSize;
 		uint64_t directoryChildren;
 	};
+};
+
+struct OSDirectoryChild {
+#define OS_MAX_DIRECTORY_CHILD_NAME_LENGTH (256)
+	char name[OS_MAX_DIRECTORY_CHILD_NAME_LENGTH];
+	size_t nameLengthBytes;
+	OSNodeInformation information; 
 };
 
 struct OSPoint {
@@ -585,7 +599,6 @@ enum OSObjectType {
 #define OS_CONTROL_MENU_STYLE_BAR (1)
 #define OS_CONTROL_MENU_HAS_CHILDREN (2)
 
-#ifndef KERNEL
 extern "C" void OSInitialiseAPI();
 
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
@@ -602,6 +615,7 @@ extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, vo
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 extern "C" void OSRefreshNodeInformation(OSNodeInformation *information);
+extern "C" OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
@@ -676,6 +690,7 @@ extern "C" OSError OSProcessGUIMessage(OSMessage *message);
 extern "C" void OSMoveWindow(OSHandle window, OSRectangle rectangle);
 extern "C" void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle);
 
+#ifndef KERNEL
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);
 

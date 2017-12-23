@@ -68,22 +68,21 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 		| OS_OPEN_NODE_EXCLUSIVE_RESIZE
 		| OS_OPEN_NODE_FAIL_IF_NOT_FOUND;
 
-	OSError error;
-	Node *file = vfs.OpenNode(imageName, imageNameLength, fileFlags, &error);
+	OSNodeInformation node;
+	OSError error = OSOpenNode(imageName, imageNameLength, fileFlags, &node);
 
-	if (!file) {
+	if (error != OS_SUCCESS) {
 		// We couldn't open the executable.
 		// `error` should contain some more information, but it doesn't really matter.
 		return 0;
 	}
 
-	Defer(vfs.CloseNode(file, fileFlags));
-
-	bool s;
+	Defer(OSCloseHandle(node.handle));
 
 	ElfHeader header;
-	s = file->Read(0, sizeof(ElfHeader), (uint8_t *) &header, &error);
-	if (!s) return 0;
+	size_t bytesRead;
+	bytesRead = OSReadFileSync(node.handle, 0, sizeof(ElfHeader), (uint8_t *) &header);
+	if (bytesRead != sizeof(ElfHeader)) return 0;
 
 	size_t programHeaderEntrySize = header.programHeaderEntrySize;
 
@@ -97,8 +96,8 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	ElfProgramHeader *programHeaders = (ElfProgramHeader *) OSHeapAllocate(programHeaderEntrySize * header.programHeaderEntries, false);
 	Defer(OSHeapFree(programHeaders));
 
-	s = file->Read(header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders, &error);
-	if (!s) return 0;
+	bytesRead = OSReadFileSync(node.handle, header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders);
+	if (bytesRead != programHeaderEntrySize * header.programHeaderEntries) return 0;
 
 	for (uintptr_t i = 0; i < header.programHeaderEntries; i++) {
 		ElfProgramHeader *header = (ElfProgramHeader *) ((uint8_t *) programHeaders + programHeaderEntrySize * i);
@@ -115,8 +114,8 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 		}
 
 		// TODO Memory-map the file.
-		s = file->Read(header->fileOffset, header->dataInFile, (uint8_t *) segment, &error);
-		if (!s) return 0;
+		bytesRead = OSReadFileSync(node.handle, header->fileOffset, header->dataInFile, (uint8_t *) segment);
+		if (bytesRead != header->dataInFile) return 0;
 	}
 
 	return header.entry;

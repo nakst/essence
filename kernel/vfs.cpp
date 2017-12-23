@@ -49,20 +49,18 @@ struct Node {
 
 	// Directories:
 	Node *OpenChild();
-	size_t EnumerateChildren(size_t count, struct NodeData *output);
+	bool EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount);
 
 	void CopyInformation(OSNodeInformation *information);
 	void Sync();
 	bool modifiedSinceLastSync;
 
-	// "Read" on a directory -> enumerate/search files
-	// "Write" on a directory -> add/remove files 
 	size_t countRead, countWrite, countResize;
 	bool exclusiveRead, exclusiveWrite, exclusiveResize;
 
 	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
-	volatile size_t handles;
+	volatile size_t handles; // Every node handle also implies a handle to its parent.
 
 	struct Node *nextNodeInHashTableSlot;
 	struct Node **pointerToThisNodeInHashTableSlot;
@@ -129,6 +127,7 @@ void EsFSSync(Node *node);
 Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
 bool EsFSResize(Node *file, uint64_t newSize);
 bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *parent);
+void EsFSEnumerate(Node *directory, OSDirectoryChild *buffer);
 
 bool Node::Resize(uint64_t newSize) {
 	mutex.Acquire();
@@ -178,6 +177,28 @@ void Node::Sync() {
 	}
 }
 
+bool Node::EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (bufferCount < data.directory.entryCount) {
+		return false;
+	}
+
+	if (bufferCount > data.directory.entryCount) {
+		buffer[data.directory.entryCount].information.present = false;
+	}
+
+	switch (filesystem->type) {
+		case FILESYSTEM_ESFS: {
+			EsFSEnumerate(this, buffer);
+			return true;
+		} break;
+	}
+
+	return false;
+}
+
 void Node::CopyInformation(OSNodeInformation *information) {
 	CopyMemory(&information->identifier, &identifier, sizeof(UniqueIdentifier));
 	information->type = data.type;
@@ -190,10 +211,15 @@ void Node::CopyInformation(OSNodeInformation *information) {
 		case OS_NODE_DIRECTORY: {
 			information->directoryChildren = data.directory.entryCount;
 		} break;
+
+		case OS_NODE_INVALID: {
+		} break;
 	}
 }
 
 size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error) {
+	// TODO Ensure that the buffer is not swapped.
+
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -232,6 +258,8 @@ size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSEr
 }
 
 size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error) {
+	// TODO Ensure that the buffer is not swapped.
+	
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -360,7 +388,7 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY);
 
 	if (!node) {
-		*error = OS_ERROR_PATH_NOT_TRAVERSIBLE;
+		*error = OS_ERROR_PATH_NOT_TRAVERSABLE;
 		return nullptr;
 	}
 
@@ -382,6 +410,11 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 			}
 
 			entryLength++;
+		}
+
+		if (entryLength > OS_MAX_DIRECTORY_CHILD_NAME_LENGTH) {
+			*error = OS_ERROR_PATH_NOT_TRAVERSABLE;
+			return nullptr;
 		}
 
 		bool isFinalNode = !nameLength;
@@ -410,7 +443,7 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 				// We couldn't traverse the directory structure.
 
 				if (secondAttempt || !(flags & OS_OPEN_NODE_CREATE_DIRECTORIES)) {
-					*error = OS_ERROR_PATH_NOT_TRAVERSIBLE;
+					*error = OS_ERROR_PATH_NOT_TRAVERSABLE;
 					CloseHandleToObject(parent, KERNEL_OBJECT_NODE, directoryAccess);
 					return nullptr;
 				} else {

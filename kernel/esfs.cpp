@@ -16,6 +16,7 @@ struct EsFSVolume {
 	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
 	bool CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory);
+	void Enumerate(Node *_directory, OSDirectoryChild *childBuffer);
 
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
 	bool ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock);
@@ -491,6 +492,77 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	return true;
 }
 
+void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
+	_directory->mutex.AssertLocked();
+
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
+
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
+
+	if (!directory) {
+		KernelPanic("EsFSVolume::SearchDirectory - Directory did not have a directory attribute.\n");
+	}
+
+	if (!data) {
+		KernelPanic("EsFSVolume::SearchDirectory - Directory did not have a data attribute.\n");
+	}
+
+	uint8_t *directoryBuffer = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
+	Defer(OSHeapFree(directoryBuffer));
+	uint64_t blockPosition = 0, blockIndex = 0;
+	uint64_t lastAccessedActualBlock = 0;
+	AccessStream(data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+
+	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
+		if (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
+			// We're reached the end of the block.
+			// The next directory entry will be at the start of the next block.
+			blockPosition = 0;
+			blockIndex++;
+			AccessStream(data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+		}
+
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
+
+		if (CompareBytes(entry->signature, (void *) ESFS_DIRECTORY_ENTRY_SIGNATURE, CStringLength((char *) ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
+			KernelPanic("EsFSVolume::SearchDirectory - Directory entry had invalid signature.\n");
+		}
+
+		EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_NAME, entry + 1);
+
+		OSDirectoryChild *child = childBuffer + i;
+		CopyMemory(childBuffer[i].name, name + 1, child->nameLengthBytes = name->nameLength);
+		child->information.present = true;
+
+		EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, entry + 1);
+		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (file + 1);
+
+		if (file) {
+			CopyMemory(&child->information.identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
+
+			EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
+			EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+
+			if (fileEntry->fileType == ESFS_FILE_TYPE_DIRECTORY && directory) {
+				child->information.type = OS_NODE_DIRECTORY;
+				child->information.directoryChildren = directory->itemsInDirectory;
+			} else if (fileEntry->fileType == ESFS_FILE_TYPE_FILE && data) {
+				child->information.type = OS_NODE_FILE;
+				child->information.fileSize = data->size;
+			} else {
+				child->information.type = OS_NODE_INVALID;
+			}
+		} else {
+			// There isn't a file associated with this directory entry.
+			child->information.type = OS_NODE_INVALID;
+		}
+
+		EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
+		blockPosition += end->size + (uintptr_t) end - (uintptr_t) entry;
+	}
+}
+
 Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_directory, uint64_t &flags) {
 	_directory->mutex.AssertLocked();
 
@@ -773,6 +845,11 @@ inline bool EsFSResize(Node *file, uint64_t newSize) {
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 	return fs->ResizeDataStream(data, newSize, false, eFile->containerBlock);
+}
+
+inline void EsFSEnumerate(Node *node, OSDirectoryChild *buffer) {
+	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
+	fs->Enumerate(node, buffer);
 }
 
 #endif

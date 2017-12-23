@@ -1,3 +1,11 @@
+#ifdef KERNEL
+uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
+		uintptr_t unused, uintptr_t argument3, uintptr_t argument4) {
+	(void) unused;
+	return DoSyscall(argument0, argument1, argument2, argument3, argument4, true);
+}
+#endif
+
 void *OSAllocate(size_t size) {
 	intptr_t result = OSSyscall(OS_SYSCALL_ALLOCATE, size, 0, 0, 0);
 
@@ -70,9 +78,11 @@ OSError OSWaitMessage(uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT_MESSAGE, timeoutMs, 0, 0, 0);
 }
 
+#ifndef KERNEL
 void OSUpdateWindow(OSObject window) {
 	OSSyscall(OS_SYSCALL_UPDATE_WINDOW, ((Window *) window)->handle, 0, 0, 0);
 }
+#endif
 
 OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode) {
 	_OSDrawSurfaceArguments arg;
@@ -225,4 +235,8 @@ void OSCrashProcess(OSError error) {
 
 uintptr_t OSGetThreadID(OSHandle thread) {
 	return OSSyscall(OS_SYSCALL_GET_THREAD_ID, thread, 0, 0, 0);
+}
+
+OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t size) {
+	return OSSyscall(OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN, directory, (uintptr_t) buffer, size, 0);
 }

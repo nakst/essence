@@ -719,11 +719,15 @@ void Scheduler::RemoveThread(Thread *thread) {
 }
 
 void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
+	process->crashMutex.Acquire();
+
+	if (process == kernelProcess) {
+		KernelPanic("Scheduler::CrashProcess - Kernel process has crashed (%d).\n", crashReason.errorCode);
+	}
+
 	if (GetCurrentThread()->process != process) {
 		KernelPanic("Scheduler::CrashProcess - Attempt to crash process from different process.\n");
 	}
-
-	process->crashMutex.Acquire();
 
 	if (process == desktopProcess) {
 		KernelPanic("Scheduler::CrashProcess - Desktop process has crashed (%d).\n", crashReason.errorCode);

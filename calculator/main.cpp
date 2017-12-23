@@ -73,6 +73,19 @@ extern "C" void ProgramEntry() {
 	OSPrint(":: length = %d\n", node.fileSize);
 	OSPrint(":: TID = %d\n", OSGetThreadID(OS_CURRENT_THREAD));
 
+	{
+		char *path = (char *) "/os/sample_images";
+		OSNodeInformation node;
+		OSError error = OSOpenNode(path, OSCStringLength(path), OS_OPEN_NODE_DIRECTORY, &node);
+		OSDirectoryChild buffer[16];
+
+		if (error == OS_SUCCESS) {
+			error = OSEnumerateDirectoryChildren(node.handle, buffer, 16);
+		}
+
+		OSPrint("error = %d\n", error);
+	}
+
 #if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 
 			OS_CREATE_WINDOW_WITH_MENU_BAR);
