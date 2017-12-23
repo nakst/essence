@@ -8,6 +8,7 @@
 
 void KernelInitilisation() {
 	vfs.Initialise();
+	ioManager.Initialise();
 	deviceManager.Initialise();
 	graphics.Initialise(); 
 	windowManager.Initialise();

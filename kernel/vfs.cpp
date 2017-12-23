@@ -18,9 +18,6 @@
 #define DIRECTORY_ACCESS (OS_OPEN_NODE_DIRECTORY)
 
 enum FilesystemType {
-#if 0
-	FILESYSTEM_EXT2,
-#endif
 	FILESYSTEM_ESFS,
 };
 
@@ -115,19 +112,6 @@ VFS vfs;
 #endif
 
 #ifdef IMPLEMENTATION
-
-#if 0
-bool Ext2Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
-Node *Ext2Scan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
-#endif
-
-bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
-bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
-void EsFSSync(Node *node);
-Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
-bool EsFSResize(Node *file, uint64_t newSize);
-bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *parent);
-void EsFSEnumerate(Node *directory, OSDirectoryChild *buffer);
 
 bool Node::Resize(uint64_t newSize) {
 	mutex.Acquire();
@@ -278,13 +262,6 @@ size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSErr
 	}
 
 	switch (filesystem->type) {
-#if 0
-		case FILESYSTEM_EXT2: {
-			bool fail = Ext2Read(offsetBytes, sizeBytes, buffer, this);
-			if (!fail) return 0;
-		} break;
-#endif
-
 		case FILESYSTEM_ESFS: {
 			bool fail = EsFSRead(offsetBytes, sizeBytes, buffer, this);
 			if (!fail) {
@@ -673,6 +650,61 @@ Filesystem *VFS::RegisterFilesystem(Node *root, FilesystemType type, void *data,
 
 	end:;
 	return filesystem;
+}
+
+void DetectFilesystem(Device *device) {
+	uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 32, false);
+	Defer(OSHeapFree(information));
+
+	// Load the first 16KB of the drive to identify its filesystem.
+	bool success = device->block.Access(0, 16384, DRIVE_ACCESS_READ, information);
+
+	if (!success) {
+		// We could not access the block device.
+		return;
+	}
+
+	if (0) {
+	} else if (((uint32_t *) information)[2048] == 0x65737345) {
+		EsFSRegister(device);
+	} else if (information[510] == 0x55 && information[511] == 0xAA && !device->block.sectorOffset /*Must be at start of drive*/) {
+		// Check each partition in the table.
+		for (uintptr_t i = 0; i < 4; i++) {
+			for (uintptr_t j = 0; j < 0x10; j++) {
+				if (information[j + 0x1BE + i * 0x10]) {
+					goto partitionExists;
+				}
+			}
+
+			continue;
+			partitionExists:
+
+			uint32_t offset = ((uint32_t) information[0x1BE + i * 0x10 + 8 ] << 0 )
+				+ ((uint32_t) information[0x1BE + i * 0x10 + 9 ] << 8 )
+				+ ((uint32_t) information[0x1BE + i * 0x10 + 10] << 16)
+				+ ((uint32_t) information[0x1BE + i * 0x10 + 11] << 24);
+			uint32_t count  = ((uint32_t) information[0x1BE + i * 0x10 + 12] << 0 )
+				+ ((uint32_t) information[0x1BE + i * 0x10 + 13] << 8 )
+				+ ((uint32_t) information[0x1BE + i * 0x10 + 14] << 16)
+				+ ((uint32_t) information[0x1BE + i * 0x10 + 15] << 24);
+
+			if (offset + count > device->block.sectorCount) {
+				// The MBR is invalid.
+				goto unknownFilesystem;
+			}
+
+			Device child;
+			CopyMemory(&child, device, sizeof(Device));
+			child.item = {};
+			child.parent = device;
+			child.block.sectorOffset += offset;
+			child.block.sectorCount = count;
+			deviceManager.Register(&child);
+		}
+	} else {
+		unknownFilesystem:
+		KernelLog(LOG_WARNING, "DeviceManager::Register - Could not detect filesystem or partition table on block device %d.\n", device->id);
+	}
 }
 
 #endif

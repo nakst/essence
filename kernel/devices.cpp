@@ -49,7 +49,23 @@ struct DeviceManager {
 	Pool devicePool;
 };
 
+struct IOPacket {
+	void Execute();
+	LinkedItem item;
+};
+
+struct IOManager {
+	void Initialise();
+	void Work();
+	void AddPacket(IOPacket *packet);
+
+	LinkedList packets;
+	Mutex mutex;
+	Event packetsAvailable;
+};
+
 extern DeviceManager deviceManager;
+extern IOManager ioManager;
 void ATARegisterController(struct PCIDevice *device);
 void AHCIRegisterController(struct PCIDevice *device);
 
@@ -58,6 +74,7 @@ void AHCIRegisterController(struct PCIDevice *device);
 #ifdef IMPLEMENTATION
 
 DeviceManager deviceManager;
+IOManager ioManager;
 
 Mutex tempMutex;
 
@@ -126,25 +143,7 @@ void DeviceManager::Initialise() {
 	devicePool.Initialise(sizeof(Device));
 
 #ifdef ARCH_X86_64
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 0);
-	osRandomByteSeed += ProcessorIn8(0x71) << 0;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 2);
-	osRandomByteSeed += ProcessorIn8(0x71) << 1;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 4);
-	osRandomByteSeed += ProcessorIn8(0x71) << 2;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 6);
-	osRandomByteSeed += ProcessorIn8(0x71) << 3;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 7);
-	osRandomByteSeed += ProcessorIn8(0x71) << 4;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 8);
-	osRandomByteSeed += ProcessorIn8(0x71) << 5;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 9);
-	osRandomByteSeed += ProcessorIn8(0x71) << 6;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 10);
-	osRandomByteSeed += ProcessorIn8(0x71) << 7;
-	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 11);
-	osRandomByteSeed += ProcessorIn8(0x71) << 8;
-
+	InitialiseRandomSeed();
 	pci.Enumerate();
 	ps2.Initialise();
 #endif
@@ -166,82 +165,63 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 	lock.Release();
 
 	if (device->type == DEVICE_TYPE_BLOCK) {
-		uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 32, false);
-		Defer(OSHeapFree(information));
-
-		// Load the first 16KB of the drive to identify its filesystem.
-		// Why don't we do this in vfs.cpp? Because C++ headers are driving me insane!!
-		bool success = device->block.Access(0, 16384, DRIVE_ACCESS_READ, information);
-
-		if (!success) {
-			// We could not access the block device.
-			return nullptr;
-		}
-
-		if (0) {
-
-#if 0
-		} else if (information[1080] == 0x53 && information[1081] == 0xEF) {
-			UniqueIdentifier installationID = {}; // You can't boot from a Ext2 filesystem.
-			Ext2FS *filesystem = (Ext2FS *) OSHeapAllocate(sizeof(Ext2FS), true);
-			File *root = filesystem->Initialise(device);
-			if (root) {
-				filesystem->filesystem = vfs.RegisterFilesystem(root, FILESYSTEM_EXT2, filesystem, installationID);
-			} else {
-				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid ext2 filesystem.\n", device->id);
-				OSHeapFree(filesystem);
-			}
-#endif
-		} else if (((uint32_t *) information)[2048] == 0x65737345) {
-			EsFSVolume *volume = (EsFSVolume *) OSHeapAllocate(sizeof(EsFSVolume), true);
-			Node *root = volume->Initialise(device);
-			if (root) {
-				volume->filesystem = vfs.RegisterFilesystem(root, FILESYSTEM_ESFS, volume, volume->superblock.osInstallation);
-			} else {
-				KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid EssenceFS volume.\n", device->id);
-				OSHeapFree(volume);
-			}
-		} else if (information[510] == 0x55 && information[511] == 0xAA && !device->block.sectorOffset /*Must be at start of drive*/) {
-			// Check each partition in the table.
-			for (uintptr_t i = 0; i < 4; i++) {
-				for (uintptr_t j = 0; j < 0x10; j++) {
-					if (information[j + 0x1BE + i * 0x10]) {
-						goto partitionExists;
-					}
-				}
-
-				continue;
-				partitionExists:
-
-				uint32_t offset = ((uint32_t) information[0x1BE + i * 0x10 + 8 ] << 0 )
-					+ ((uint32_t) information[0x1BE + i * 0x10 + 9 ] << 8 )
-					+ ((uint32_t) information[0x1BE + i * 0x10 + 10] << 16)
-					+ ((uint32_t) information[0x1BE + i * 0x10 + 11] << 24);
-				uint32_t count  = ((uint32_t) information[0x1BE + i * 0x10 + 12] << 0 )
-					+ ((uint32_t) information[0x1BE + i * 0x10 + 13] << 8 )
-					+ ((uint32_t) information[0x1BE + i * 0x10 + 14] << 16)
-					+ ((uint32_t) information[0x1BE + i * 0x10 + 15] << 24);
-
-				if (offset + count > device->block.sectorCount) {
-					// The MBR is invalid.
-					goto unknownFilesystem;
-				}
-
-				Device child;
-				CopyMemory(&child, device, sizeof(Device));
-				child.item = {};
-				child.parent = device;
-				child.block.sectorOffset += offset;
-				child.block.sectorCount = count;
-				Register(&child);
-			}
-		} else {
-			unknownFilesystem:
-			KernelLog(LOG_WARNING, "DeviceManager::Register - Could not detect filesystem or partition table on block device %d.\n", device->id);
-		}
+		DetectFilesystem(device);
 	}
 
 	return device;
+}
+
+void IOPacket::Execute() {
+	// TODO
+}
+
+void IOManager::AddPacket(IOPacket *packet) {
+	mutex.Acquire();
+
+	if (packets.count == 0) {
+		packetsAvailable.Set();
+	}
+
+	packet->item.thisItem = packet;
+	packets.InsertEnd(&packet->item);
+
+	mutex.Release();
+}
+
+void IOManager::Work() {
+	while (true) {
+		packetsAvailable.Wait(OS_WAIT_NO_TIMEOUT);
+
+		IOPacket *packet = nullptr;
+
+		mutex.Acquire();
+
+		if (packets.count) {
+			LinkedItem *packetItem = packets.firstItem;
+			packets.Remove(packetItem);
+			packet = (IOPacket *) packetItem->thisItem;
+		}
+
+		if (!packets.count) {
+			packetsAvailable.Reset();
+		}
+
+		mutex.Release();
+
+		if (packet) {
+			packet->Execute();
+			OSHeapFree(packet); // Deallocate the packet.
+		}
+	}
+}
+
+void _IOManagerWorkerThread() {
+	ioManager.Work();
+}
+
+void IOManager::Initialise() {
+	packetsAvailable.autoReset = false;
+	scheduler.SpawnThread((uintptr_t) _IOManagerWorkerThread, 0, kernelProcess, false);
 }
 
 #endif

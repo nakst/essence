@@ -427,4 +427,25 @@ extern "C" uintptr_t Syscall(uintptr_t argument0, uintptr_t argument1, uintptr_t
 	return DoSyscall(argument0, argument1, argument2, argument3, argument4, false);
 }
 
+void InitialiseRandomSeed() {
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 0);
+	osRandomByteSeed += ProcessorIn8(0x71) << 0;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 2);
+	osRandomByteSeed += ProcessorIn8(0x71) << 1;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 4);
+	osRandomByteSeed += ProcessorIn8(0x71) << 2;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 6);
+	osRandomByteSeed += ProcessorIn8(0x71) << 3;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 7);
+	osRandomByteSeed += ProcessorIn8(0x71) << 4;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 8);
+	osRandomByteSeed += ProcessorIn8(0x71) << 5;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 9);
+	osRandomByteSeed += ProcessorIn8(0x71) << 6;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 10);
+	osRandomByteSeed += ProcessorIn8(0x71) << 7;
+	for (int i = 0; i < 10; i++) ProcessorOut8(0x70, 11);
+	osRandomByteSeed += ProcessorIn8(0x71) << 8;
+}
+
 #endif

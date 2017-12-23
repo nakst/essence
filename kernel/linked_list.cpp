@@ -1,11 +1,11 @@
-typedef struct LinkedItem {
+struct LinkedItem {
 	struct LinkedItem *previousItem;
 	void *thisItem;
 	struct LinkedItem *nextItem;
 	struct LinkedList *list;
-} LinkedItem;
+};
 
-typedef struct LinkedList {
+struct LinkedList {
 	void InsertStart(LinkedItem *item);
 	void InsertEnd(LinkedItem *item);
 	void Remove(LinkedItem *item);
@@ -18,7 +18,7 @@ typedef struct LinkedList {
 	size_t count;
 
 	bool modCheck;
-} LinkedList;
+};
 
 void LinkedList::InsertStart(LinkedItem *item) {
 	if (modCheck) KernelPanic("LinkedList::InsertStart - Concurrent modification\n");

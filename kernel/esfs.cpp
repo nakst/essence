@@ -1,4 +1,12 @@
-// TODO Think more about locking.
+bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
+bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
+void EsFSSync(Node *node);
+Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
+bool EsFSResize(Node *file, uint64_t newSize);
+bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *parent);
+void EsFSEnumerate(Node *directory, OSDirectoryChild *buffer);
+
+void EsFSRegister(Device *device);
 
 #ifdef IMPLEMENTATION
 
@@ -850,6 +858,17 @@ inline bool EsFSResize(Node *file, uint64_t newSize) {
 inline void EsFSEnumerate(Node *node, OSDirectoryChild *buffer) {
 	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
 	fs->Enumerate(node, buffer);
+}
+
+inline void EsFSRegister(Device *device) {
+	EsFSVolume *volume = (EsFSVolume *) OSHeapAllocate(sizeof(EsFSVolume), true);
+	Node *root = volume->Initialise(device);
+	if (root) {
+		volume->filesystem = vfs.RegisterFilesystem(root, FILESYSTEM_ESFS, volume, volume->superblock.osInstallation);
+	} else {
+		KernelLog(LOG_WARNING, "DeviceManager::Register - Block device %d contains invalid EssenceFS volume.\n", device->id);
+		OSHeapFree(volume);
+	}
 }
 
 #endif
