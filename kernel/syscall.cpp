@@ -606,8 +606,22 @@ uintptr_t DoSyscall(uintptr_t index,
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
+#if 0
 				OSError error;
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
+#else
+				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				request->type = IO_REQUEST_READ;
+				request->node = file;
+				request->offset = argument1;
+				request->count = argument2;
+				request->buffer = (void *) argument3;
+				ioManager.AddRequest(request);
+				request->complete.Wait(OS_WAIT_NO_TIMEOUT);
+				size_t bytesRead = request->doneCount;
+				OSError error = request->error;
+				OSHeapFree(request);
+#endif
 				SYSCALL_RETURN(bytesRead ? bytesRead : error, false);
 			} else {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);

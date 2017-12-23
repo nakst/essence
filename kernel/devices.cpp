@@ -50,14 +50,33 @@ struct DeviceManager {
 };
 
 struct IOPacket {
-	void Execute();
+	void Process();
 	LinkedItem<IOPacket> item;
+	struct IORequest *request;
+};
+
+enum IORequestType {
+	IO_REQUEST_READ,
+	IO_REQUEST_WRITE,
+};
+
+struct IORequest {
+	void Complete();
+
+	IORequestType type;
+	Node *node;
+	void *buffer;
+	uint64_t offset, count; // In.
+	uint64_t doneCount; // Out.
+	OSError error;
+	Event complete;
 };
 
 struct IOManager {
 	void Initialise();
 	void Work();
 	void AddPacket(IOPacket *packet);
+	void AddRequest(IORequest *request);
 
 	LinkedList<IOPacket> packets;
 	Mutex mutex;
@@ -171,8 +190,23 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 	return device;
 }
 
-void IOPacket::Execute() {
-	// TODO
+void IOPacket::Process() {
+	switch (request->type) {
+		case IO_REQUEST_READ: {
+			request->doneCount = request->node->Read(request->offset, request->count, (uint8_t *) request->buffer, &request->error);
+		} break;
+
+		case IO_REQUEST_WRITE: {
+			request->doneCount = request->node->Read(request->offset, request->count, (uint8_t *) request->buffer, &request->error);
+		} break;
+	}
+
+	request->Complete();
+}
+
+void IORequest::Complete() {
+	complete.Set();
+	kernelVMM.Free(buffer);
 }
 
 void IOManager::AddPacket(IOPacket *packet) {
@@ -186,6 +220,17 @@ void IOManager::AddPacket(IOPacket *packet) {
 	packets.InsertEnd(&packet->item);
 
 	mutex.Release();
+}
+
+void IOManager::AddRequest(IORequest *request) {
+	request->error = OS_SUCCESS;
+	request->complete.autoReset = false;
+	request->complete.state = 0;
+	request->buffer = kernelVMM.Allocate("IOCopy", request->count, vmmMapAll, vmmRegionCopy, (uintptr_t) request->buffer);
+
+	IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+	packet->request = request;
+	AddPacket(packet);
 }
 
 void IOManager::Work() {
@@ -209,7 +254,7 @@ void IOManager::Work() {
 		mutex.Release();
 
 		if (packet) {
-			packet->Execute();
+			packet->Process();
 			OSHeapFree(packet); // Deallocate the packet.
 		}
 	}

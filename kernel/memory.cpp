@@ -62,6 +62,7 @@ enum VMMRegionType {
 	vmmRegionStandard, // Allocate and zero on write
 	vmmRegionPhysical,
 	vmmRegionShared,  
+	vmmRegionCopy, // Copy the mappings from another address; should only be used by IO manager.
 };
 
 enum VMMMapPolicy {
@@ -117,7 +118,7 @@ struct VMM {
 
 	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
-	bool HandlePageFault(uintptr_t address);
+	bool HandlePageFault(uintptr_t address, bool all = false);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
 	void UnlockRegion(VMMRegion *region);
 
@@ -129,7 +130,7 @@ struct VMM {
 
 	bool AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object);
 	uintptr_t AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated);
-	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region);
+	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, bool all = false);
 	VMMRegion *FindRegion(uintptr_t address, VMMRegion *array, size_t arrayCount);
 	void MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t &arrayCount);
 	void SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayCount, size_t &arrayAllocated);
@@ -423,6 +424,18 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
+	if (type == vmmRegionCopy) {
+		if (this != &kernelVMM) {
+			KernelPanic("VMM::Allocate - Attempt to allocate a copy region in a user VMM.\n");
+		}
+
+		Process *currentProcess = GetCurrentThread()->process;
+		VMM *vmm = currentProcess->vmm;
+		vmm->lock.Acquire();
+		Defer(vmm->lock.Release());
+		vmm->HandlePageFault(offset, true);
+	}
+
 	lock.Acquire();
 	Defer(lock.Release());
 
@@ -593,6 +606,10 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 						// This memory will be freed when the last handle to the shared memory region is closed.
 					} break;
 
+					case vmmRegionCopy: {
+						// Do nothing.
+					} break;
+
 					default: {
 						KernelPanic("VMM::Free - Cannot free VMMRegion of type %d\n", region->type);
 					} break;
@@ -621,7 +638,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	return OS_SUCCESS;
 }
 
-bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region) {
+bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, bool all) {
 	lock.AssertLocked();
 	virtualAddressSpace.lock.AssertLocked();
 
@@ -631,19 +648,21 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region) {
 			// If we need to map all pages in now, then do that.
 			// Otherwise, just map in this page and any in the following 16 that haven't been mapped already.
 			// (But make sure we don't go outside the region).
-			(region->mapPolicy == vmmMapAll || i < 16) && pageInRegion + i < region->pageCount; 
+			(region->mapPolicy == vmmMapAll || all || i < 16) && pageInRegion + i < region->pageCount; 
 			address += PAGE_SIZE, i++) {
+		if ((address == page && !all) || !virtualAddressSpace.Get(address)) {
+			// This page needs mapping.
+		} else {
+			// Skip the page.
+			continue;
+		}
 
 		switch (region->type) {
 			case vmmRegionStandard: {
-				if (address == page || !virtualAddressSpace.Get(address)) {
-					uintptr_t physicalPage = pmm.AllocatePage();
-					allocatedPhysicalMemory += PAGE_SIZE;
-					virtualAddressSpace.Map(physicalPage, address, region->flags);
-					ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
-				} else {
-					// Ignore pages that have already been mapped.
-				}
+				uintptr_t physicalPage = pmm.AllocatePage();
+				allocatedPhysicalMemory += PAGE_SIZE;
+				virtualAddressSpace.Map(physicalPage, address, region->flags);
+				ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
 			} break;
 
 			case vmmRegionPhysical: {
@@ -651,25 +670,27 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region) {
 			} break;
 
 			case vmmRegionShared: {
-				if (address == page || !virtualAddressSpace.Get(address)) {
-					SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
-					sharedRegion->mutex.AssertLocked();
-					uintptr_t *volatile addresses = (uintptr_t *) (sharedRegion + 1);
-					uintptr_t index = (address - region->baseAddress + region->offset) >> PAGE_BITS;
+				SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
+				sharedRegion->mutex.AssertLocked();
+				uintptr_t *volatile addresses = (uintptr_t *) (sharedRegion + 1);
+				uintptr_t index = (address - region->baseAddress + region->offset) >> PAGE_BITS;
 
-					if (addresses[index]) {
-						virtualAddressSpace.Map(addresses[index], address, region->flags);
-					} else {
-						// NOTE Duplicated from above.
-						uintptr_t physicalPage = pmm.AllocatePage();
-						allocatedPhysicalMemory += PAGE_SIZE;
-						virtualAddressSpace.Map(physicalPage, address, region->flags);
-						ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
-						addresses[index] = physicalPage;
-					}
+				if (addresses[index]) {
+					virtualAddressSpace.Map(addresses[index], address, region->flags);
 				} else {
-					// Ignore pages that have already been mapped.
+					// NOTE Duplicated from above.
+					uintptr_t physicalPage = pmm.AllocatePage();
+					allocatedPhysicalMemory += PAGE_SIZE;
+					virtualAddressSpace.Map(physicalPage, address, region->flags);
+					ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
+					addresses[index] = physicalPage;
 				}
+			} break;
+
+			case vmmRegionCopy: {
+				uintptr_t virtualAddress = virtualAddressSpace.Get(address - region->baseAddress + region->offset);
+				if (!virtualAddress) KernelPanic("VMM::HandlePageFaultInRegion - Copy region page was unmapped.\n");
+				virtualAddressSpace.Map(virtualAddress, address, region->flags);
 			} break;
 
 			default: {
@@ -736,21 +757,20 @@ void VMM::UnlockRegion(VMMRegion *region) {
 	region->lock--;
 }
 
-bool VMM::HandlePageFault(uintptr_t address) {
+bool VMM::HandlePageFault(uintptr_t address, bool all) {
 	lock.AssertLocked();
 
 	uintptr_t page = address & ~(PAGE_SIZE - 1);
 	VMMRegion *region = FindRegion(address, lookupRegions, lookupRegionsCount);
 
 	if (region) {
-
 		if (region->type == vmmRegionShared) {
 			SharedMemoryRegion *_region = (SharedMemoryRegion *) region->object;
 			_region->mutex.Acquire();
 		}
 
 		virtualAddressSpace.lock.Acquire();
-		bool result = HandlePageFaultInRegion(page, region);
+		bool result = HandlePageFaultInRegion(page, region, all);
 		virtualAddressSpace.lock.Release();
 
 		if (region->type == vmmRegionShared) {
