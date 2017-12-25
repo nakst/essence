@@ -118,7 +118,7 @@ struct VMM {
 
 	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
-	bool HandlePageFault(uintptr_t address, bool all = false);
+	bool HandlePageFault(uintptr_t address, size_t limit = 0);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
 	void UnlockRegion(VMMRegion *region);
 
@@ -130,7 +130,7 @@ struct VMM {
 
 	bool AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object);
 	uintptr_t AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated);
-	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, bool all = false);
+	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit = 0);
 	VMMRegion *FindRegion(uintptr_t address, VMMRegion *array, size_t arrayCount);
 	void MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t &arrayCount);
 	void SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayCount, size_t &arrayAllocated);
@@ -424,6 +424,9 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
+	size_t pageCount = size >> PAGE_BITS;
+	if (size & (PAGE_SIZE - 1)) pageCount++;
+
 	if (type == vmmRegionCopy) {
 		if (this != &kernelVMM) {
 			KernelPanic("VMM::Allocate - Attempt to allocate a copy region in a user VMM.\n");
@@ -433,7 +436,7 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 		VMM *vmm = currentProcess->vmm;
 		vmm->lock.Acquire();
 		Defer(vmm->lock.Release());
-		vmm->HandlePageFault(offset, true);
+		vmm->HandlePageFault(offset, pageCount);
 	}
 
 	lock.Acquire();
@@ -450,9 +453,6 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 	ValidateCurrentVMM(this);
 
 	if (!size) return nullptr;
-
-	size_t pageCount = size >> PAGE_BITS;
-	if (size & (PAGE_SIZE - 1)) pageCount++;
 
 	// TODO Should we look for the smallest/largest/first/last/etc. region?
 	uintptr_t i = 0;
@@ -477,7 +477,7 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 	if (!success) return nullptr;
 	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1)));
 
-	// KernelLog(LOG_VERBOSE, "Allocated %x -> %x (%d bytes)\n", baseAddress, baseAddress + size, size);
+	// KernelLog(LOG_VERBOSE, "Allocated %x %d bytes, %s\n", baseAddress, size, CStringLength(reason), reason);
 	return address;
 }
 
@@ -564,6 +564,8 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		return OS_FATAL_ERROR_INVALID_MEMORY_REGION;
 	} else if (region->lock) {
 		return OS_FATAL_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL;
+	} else if (region->type == vmmRegionFree) {
+		KernelPanic("VMM::Free - Trying to free region that has already been freed.\n");
 	}
 
 	if (object) *object = region->object;
@@ -638,7 +640,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	return OS_SUCCESS;
 }
 
-bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, bool all) {
+bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit) {
 	lock.AssertLocked();
 	virtualAddressSpace.lock.AssertLocked();
 
@@ -648,9 +650,9 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, bool all) {
 			// If we need to map all pages in now, then do that.
 			// Otherwise, just map in this page and any in the following 16 that haven't been mapped already.
 			// (But make sure we don't go outside the region).
-			(region->mapPolicy == vmmMapAll || all || i < 16) && pageInRegion + i < region->pageCount; 
+			(region->mapPolicy == vmmMapAll || limit || i < 16) && pageInRegion + i < region->pageCount && (!limit || i < limit); 
 			address += PAGE_SIZE, i++) {
-		if ((address == page && !all) || !virtualAddressSpace.Get(address)) {
+		if (!virtualAddressSpace.Get(address)) {
 			// This page needs mapping.
 		} else {
 			// Skip the page.
@@ -757,7 +759,7 @@ void VMM::UnlockRegion(VMMRegion *region) {
 	region->lock--;
 }
 
-bool VMM::HandlePageFault(uintptr_t address, bool all) {
+bool VMM::HandlePageFault(uintptr_t address, size_t limit) {
 	lock.AssertLocked();
 
 	uintptr_t page = address & ~(PAGE_SIZE - 1);
@@ -770,7 +772,7 @@ bool VMM::HandlePageFault(uintptr_t address, bool all) {
 		}
 
 		virtualAddressSpace.lock.Acquire();
-		bool result = HandlePageFaultInRegion(page, region, all);
+		bool result = HandlePageFaultInRegion(page, region, limit);
 		virtualAddressSpace.lock.Release();
 
 		if (region->type == vmmRegionShared) {
@@ -1056,7 +1058,10 @@ void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 		if (Get(virtualAddress)) {
 			uintptr_t indexL1 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0);
 			PAGE_TABLE_L1[indexL1] = 0;
-			ProcessorInvalidatePage((i << PAGE_BITS) + virtualAddressU);
+
+			uint64_t invalidateAddress = (i << PAGE_BITS) + virtualAddressU;
+
+			ProcessorInvalidatePage(invalidateAddress);
 		}
 	}
 
@@ -1087,6 +1092,7 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 		KernelPanic("VirtualAddressSpace::Map - Attempt to map page into other address space.\n");
 	}
 
+	uintptr_t oldVirtualAddress = virtualAddress;
 	physicalAddress &= 0xFFFFFFFFFFFFF000;
 	virtualAddress  &= 0x0000FFFFFFFFF000;
 
@@ -1117,6 +1123,8 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 
 	uintptr_t value = physicalAddress | (userland ? 7 : 0x103) | (flags & VMM_REGION_FLAG_CACHABLE ? 0 : 24);
 	PAGE_TABLE_L1[indexL1] = value;
+
+	ProcessorInvalidatePage(oldVirtualAddress);
 }
 #endif
 

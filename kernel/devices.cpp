@@ -104,10 +104,6 @@ bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint
 		}
 
 		offset += sectorOffset * sectorSize;
-
-		if (operation == DRIVE_ACCESS_WRITE) {
-			Print("Write to drive.....\n");
-		}
 	}
 
 	if (operation == DRIVE_ACCESS_WRITE && ((offset % sectorSize) || (countBytes % sectorSize))) {
@@ -142,20 +138,24 @@ bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint
 		return true;
 	}
 
+	bool result;
+
 	switch (driver) {
 		case BLOCK_DEVICE_DRIVER_ATA: {
-			return ata.Access(driveID, offset, countBytes, operation, buffer);
+			result = ata.Access(driveID, offset, countBytes, operation, buffer);
 		} break;
 
 		case BLOCK_DEVICE_DRIVER_AHCI: {
-			return ahci.Access(driveID, offset, countBytes, operation, buffer);
+			result = ahci.Access(driveID, offset, countBytes, operation, buffer);
 		} break;
 
 		default: {
 			KernelPanic("BlockDevice::Access - Invalid BlockDeviceDriver %d\n", driver);
-			return false;
+			result = false;
 		} break;
 	}
+
+	return result;
 }
 
 void DeviceManager::Initialise() {
@@ -197,7 +197,7 @@ void IOPacket::Process() {
 		} break;
 
 		case IO_REQUEST_WRITE: {
-			request->doneCount = request->node->Read(request->offset, request->count, (uint8_t *) request->buffer, &request->error);
+			request->doneCount = request->node->Write(request->offset, request->count, (uint8_t *) request->buffer, &request->error);
 		} break;
 	}
 
@@ -205,8 +205,9 @@ void IOPacket::Process() {
 }
 
 void IORequest::Complete() {
-	complete.Set();
 	kernelVMM.Free(buffer);
+	complete.Set();
+	// The IORequest can now be deallocated.
 }
 
 void IOManager::AddPacket(IOPacket *packet) {

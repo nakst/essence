@@ -1,6 +1,5 @@
 // Timing problems:
 // 	- Qemu's timer (sometimes) runs too slow
-//	- Bochs' timer (always)    runs too fast
 
 #include "kernel.h"
 #define IMPLEMENTATION

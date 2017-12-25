@@ -224,8 +224,10 @@ const char *exceptionInformation[] = {
 };
 
 void ContextSanityCheck(InterruptContext *context) {
-	if (context->cs > 0x100 || context->ds > 0x100 || context->ss > 0x100 || context->rip == 0) {
-		KernelPanic("InterruptHandler - Corrupt context (%x/%x/%x)\nRIP = %x, RSP = %x\n", context->cs, context->ds, context->ss, context->rip, context->rsp);
+	if (context->cs > 0x100 || context->ds > 0x100 || context->ss > 0x100 || context->rip == 0 || (context->rip >= 0x1000000000000 && context->rip < 0xFFFF000000000000)) {
+		ProcessorInvalidatePage((uintptr_t) context);
+		KernelLog(LOG_ERROR, "CS check failed.\n");
+		KernelPanic("InterruptHandler - Corrupt context (%x/%x/%x/%x)\nRIP = %x, RSP = %x\n", context, context->cs, context->ds, context->ss, context->rip, context->rsp);
 	}
 }
 
@@ -400,7 +402,7 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 	*local->acpiProcessor->kernelStack = kernelStack;
 
 	if (local->currentThread->timeSlices == 1) {
-		// KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
+		KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
 	}
 
 	acpi.lapic.EndOfInterrupt();

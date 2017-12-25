@@ -70,6 +70,8 @@ extern "C" void ProgramEntry() {
 			OSHeapFree(loadedFile);
 			OSFree(bitmap);
 		}
+
+		OSRedrawAll();
 	}
 
 	{

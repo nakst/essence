@@ -67,6 +67,7 @@ extern "C" void ProgramEntry() {
 	buffer[0] = 'b';
 	buffer[1] = 'c';
 	size_t bytesRead = OSReadFileSync(node.handle, 0, 8, buffer);
+	if (buffer[0] != 'a' || buffer[1] != 0) OSCrashProcess(101);
 	OSPrint(":: bytesRead = %d\n", bytesRead);
 	OSPrint(":: buffer = %s\n", 8, buffer);
 	OSRefreshNodeInformation(&node);
@@ -84,6 +85,7 @@ extern "C" void ProgramEntry() {
 		}
 
 		OSPrint("error = %d\n", error);
+		if (error != OS_SUCCESS) OSCrashProcess(100);
 	}
 
 #if 0
