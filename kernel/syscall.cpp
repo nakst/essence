@@ -605,8 +605,10 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
+#define NEW_FILE_IO
+
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
-#if 0
+#ifndef NEW_FILE_IO
 				OSError error;
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
 #else
@@ -639,7 +641,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
-#if 0
+#ifndef NEW_FILE_IO
 				OSError error;
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3, &error);
 #else

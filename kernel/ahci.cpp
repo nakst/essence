@@ -365,6 +365,8 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 		if (timeout->event.Poll()) return false;
 	}
 
+	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Issuing command %d.\n", commandIndex);
+
 	// Issue the command.
 	drive->completeCommands[commandIndex].Reset();
 	port->commandIssue = 1 << commandIndex; 
@@ -377,6 +379,8 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive %d (1/%d).\n", _drive, timeout);
 		return false;
 	}
+
+	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Command %d complete.\n", commandIndex);
 
 	drive->mutex.Acquire();
 
@@ -416,6 +420,11 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 
 	bool switchThread = false;
 
+	if (pendingInterrupts == 0) {
+		KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected (1).\n"); 
+		return false;
+	}
+
 	for (uint32_t i = 0; i < 32; i++) {
 		if (pendingInterrupts & (1 << i)) {
 			uint32_t portIndex = i;
@@ -432,12 +441,17 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 					if (drive->port == portIndex) {
 						uint16_t commandsFinished = (~port->commandIssue) & (drive->commandsInUse);
 
+						if (!commandsFinished) {
+							KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected (3).\n"); 
+						}
+
 						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
 							// Is the command finished?
 							if (commandsFinished & (1 << i)) {
 								if (drive->completeCommands[i].state) {
-									KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected.\n"); // TODO Are we doing this right?
+									KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected for operation %d (2).\n", i); // TODO Are we doing this right?
 								} else {
+									// KernelLog(LOG_VERBOSE, "AHCIIRQHandler - Received interrupt to complete operation %d.\n", i);
 									drive->completeCommands[i].Set();
 
 									if (drive->completeCommands[i].blockedThreads.count) {
@@ -468,7 +482,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 		GetLocalStorage()->irqSwitchThread = true; 
 	}
 
-	return pendingInterrupts;
+	return true;
 }
 
 void AHCIDriver::Initialise() {

@@ -74,6 +74,8 @@ bool ATAAccessDrive(uintptr_t drive, uint64_t sector, size_t count, int operatio
 }
 
 bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
+	// Print("Access: %d, %d, %d, %d, %x\n", drive, offset, countBytes, operation, _buffer);
+
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
 	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;

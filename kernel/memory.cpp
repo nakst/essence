@@ -1049,6 +1049,8 @@ uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force) {
 void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 	lock.AssertLocked();
 
+	// Print("Remove, %x -> %x\n", _virtualAddress, _virtualAddress + (pageCount << 12));
+
 	uintptr_t virtualAddressU = _virtualAddress;
 	_virtualAddress &= 0x0000FFFFFFFFF000;
 
@@ -1091,6 +1093,8 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 			&& ProcessorReadCR3() != cr3) {
 		KernelPanic("VirtualAddressSpace::Map - Attempt to map page into other address space.\n");
 	}
+
+	// Print("Map, %x -> %x\n", virtualAddress, physicalAddress);
 
 	uintptr_t oldVirtualAddress = virtualAddress;
 	physicalAddress &= 0xFFFFFFFFFFFFF000;
