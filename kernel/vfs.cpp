@@ -40,9 +40,10 @@ struct NodeData {
 
 struct Node {
 	// Files:
-	size_t Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error);
-	size_t Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error);
+	OSError Read(struct IORequest *request, struct IOPacket *packet);
+	OSError Write(struct IORequest *request, struct IOPacket *packet);
 	bool Resize(uint64_t newSize);
+	void Complete(struct IORequest *request, struct IOPacket *packet);
 
 	// Directories:
 	Node *OpenChild();
@@ -66,6 +67,9 @@ struct Node {
 
 	NodeData data;
 	Node *parent;
+
+	IOPacket *controllingPacket;
+	LinkedList<IOPacket> blockedPackets;
 };
 
 struct Filesystem {
@@ -202,73 +206,94 @@ void Node::CopyInformation(OSNodeInformation *information) {
 	}
 }
 
-size_t Node::Write(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error) {
-	// TODO Ensure that the buffer is not swapped.
+void Node::Complete(IORequest *request, IOPacket *packet) {
+	if (request->node->controllingPacket != packet) {
+		KernelPanic("Node::Complete - Incorrect packet.\n");
+	}
+
+	request->node->mutex.Release();
+	request->node->controllingPacket = nullptr;
+
+	LinkedItem<IOPacket> *item = blockedPackets.firstItem;
+
+	while (item) {
+		IOPacket *packet = item->thisItem;
+		item = item->nextItem;
+
+		blockedPackets.Remove(item);
+		ioManager.AddPacket(packet, true);
+	}
+}
+
+OSError Node::Write(IORequest *request, IOPacket *_packet) {
+	if (controllingPacket) {
+		_packet->blocker = &blockedPackets;
+		return REQUEST_BLOCKED;
+	}
 
 	mutex.Acquire();
-	Defer(mutex.Release());
+	controllingPacket = _packet;
 
-	*error = OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
-
-	if (offsetBytes > data.file.fileSize) {
-		return 0;
+	if (request->offset > data.file.fileSize) {
+		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
 	}
 
-	if (offsetBytes + sizeBytes > data.file.fileSize) {
-		sizeBytes = data.file.fileSize - offsetBytes;
+	if (request->offset + request->count > data.file.fileSize) {
+		request->count = data.file.fileSize - request->offset;
 	}
 
-	if (sizeBytes > data.file.fileSize) {
-		return 0;
+	if (request->count > data.file.fileSize) {
+		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
 	}
 
 	modifiedSinceLastSync = true;
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			bool fail = EsFSWrite(offsetBytes, sizeBytes, buffer, this);
-			if (!fail) {
-				*error = OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
-				return 0;
-			}
+			IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+			packet->request = request;
+			packet->type = IO_PACKET_WRITE_ESFS;
+			packet->parent = _packet;
+			ioManager.AddPacket(packet);
 		} break;
 
 		default: {
 			// The filesystem driver is read-only.
-			return 0;
+			return OS_ERROR_FILE_ON_READ_ONLY_VOLUME;
 		} break;
 	}
 
-	return sizeBytes;
+	return REQUEST_INCOMPLETE;
 }
 
-size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSError *error) {
-	// TODO Ensure that the buffer is not swapped.
-	
+OSError Node::Read(IORequest *request, IOPacket *_packet) {
+	if (controllingPacket) {
+		_packet->blocker = &blockedPackets;
+		return REQUEST_BLOCKED;
+	}
+
 	mutex.Acquire();
-	Defer(mutex.Release());
+	controllingPacket = _packet;
 
-	*error = OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
-
-	if (offsetBytes > data.file.fileSize) {
-		return 0;
+	if (request->offset > data.file.fileSize) {
+		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
 	}
 
-	if (offsetBytes + sizeBytes > data.file.fileSize) {
-		sizeBytes = data.file.fileSize - offsetBytes;
+	if (request->offset + request->count > data.file.fileSize) {
+		request->count = data.file.fileSize - request->offset;
 	}
 
-	if (sizeBytes > data.file.fileSize) {
-		return 0;
+	if (request->count > data.file.fileSize) {
+		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
 	}
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			bool fail = EsFSRead(offsetBytes, sizeBytes, buffer, this);
-			if (!fail) {
-				*error = OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
-				return 0;
-			}
+			IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+			packet->request = request;
+			packet->type = IO_PACKET_READ_ESFS;
+			packet->parent = _packet;
+			ioManager.AddPacket(packet);
 		} break;
 
 		default: {
@@ -276,7 +301,7 @@ size_t Node::Read(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, OSErr
 		} break;
 	}
 
-	return sizeBytes;
+	return REQUEST_INCOMPLETE;
 }
 
 void VFS::Initialise() {

@@ -194,6 +194,7 @@ enum OSFatalError {
 #define OS_ERROR_EVENT_NOT_SET			(-27)
 #define OS_ERROR_TIMEOUT_REACHED		(-29)
 #define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
+#define OS_ERROR_FILE_ON_READ_ONLY_VOLUME	(-32)
 
 typedef intptr_t OSError;
 

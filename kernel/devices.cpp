@@ -49,10 +49,25 @@ struct DeviceManager {
 	Pool devicePool;
 };
 
+enum IOPacketType {
+	IO_PACKET_READ_VFS,
+	IO_PACKET_WRITE_VFS,
+	IO_PACKET_READ_ESFS,
+	IO_PACKET_WRITE_ESFS,
+};
+
 struct IOPacket {
-	void Process();
+	void Process(OSError &error);
+	void Complete(OSError error);
+
+	IOPacketType type;
+
 	LinkedItem<IOPacket> item;
+
 	struct IORequest *request;
+	IOPacket *parent;
+	LinkedList<IOPacket> *blocker;
+	size_t pendingChildren;
 };
 
 enum IORequestType {
@@ -61,13 +76,12 @@ enum IORequestType {
 };
 
 struct IORequest {
-	void Complete();
+	void Complete(OSError error);
 
 	IORequestType type;
 	Node *node;
 	void *buffer;
-	uint64_t offset, count; // In.
-	uint64_t doneCount; // Out.
+	uint64_t offset, count; 
 	OSError error;
 	Event complete;
 };
@@ -75,7 +89,7 @@ struct IORequest {
 struct IOManager {
 	void Initialise();
 	void Work();
-	void AddPacket(IOPacket *packet);
+	void AddPacket(IOPacket *packet, bool fromBlocked = false);
 	void AddRequest(IORequest *request);
 
 	LinkedList<IOPacket> packets;
@@ -87,6 +101,9 @@ extern DeviceManager deviceManager;
 extern IOManager ioManager;
 void ATARegisterController(struct PCIDevice *device);
 void AHCIRegisterController(struct PCIDevice *device);
+
+#define REQUEST_INCOMPLETE (0)
+#define REQUEST_BLOCKED (1)
 
 #endif
 
@@ -190,28 +207,67 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 	return device;
 }
 
-void IOPacket::Process() {
-	switch (request->type) {
-		case IO_REQUEST_READ: {
-			request->doneCount = request->node->Read(request->offset, request->count, (uint8_t *) request->buffer, &request->error);
+void IOPacket::Process(OSError &error) {
+	switch (type) {
+		case IO_PACKET_READ_VFS: {
+			error = request->node->Read(request, this);
 		} break;
 
-		case IO_REQUEST_WRITE: {
-			request->doneCount = request->node->Write(request->offset, request->count, (uint8_t *) request->buffer, &request->error);
+		case IO_PACKET_WRITE_VFS: {
+			error = request->node->Write(request, this);
+		} break;
+
+		case IO_PACKET_READ_ESFS: {
+			bool success = EsFSRead(request->offset, request->count, (uint8_t *) request->buffer, request->node);
+			error = success ? OS_SUCCESS : OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
+		} break;
+
+		case IO_PACKET_WRITE_ESFS: {
+			bool success = EsFSWrite(request->offset, request->count, (uint8_t *) request->buffer, request->node);
+			error = success ? OS_SUCCESS : OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
+		} break;
+	}
+}
+
+void IOPacket::Complete(OSError error) {
+	switch (type) {
+		case IO_PACKET_READ_VFS: {
+			request->node->Complete(request, this);
+		} break;
+
+		case IO_PACKET_WRITE_VFS: {
+			request->node->Complete(request, this);
+		} break;
+
+		default: {
+			// No cleanup is necessary.
 		} break;
 	}
 
-	request->Complete();
+	if (parent) {
+		parent->pendingChildren--;
+
+		if (!parent->pendingChildren) {
+			parent->Complete(error);
+		}
+	} else {
+		request->Complete(error);
+	}
+
+	OSHeapFree(this);
 }
 
-void IORequest::Complete() {
+void IORequest::Complete(OSError _error) {
+	error = _error;
 	kernelVMM.Free(buffer);
 	complete.Set();
 	// The IORequest can now be deallocated.
 }
 
-void IOManager::AddPacket(IOPacket *packet) {
-	mutex.Acquire();
+void IOManager::AddPacket(IOPacket *packet, bool fromBlocked) {
+	if (!fromBlocked) {
+		mutex.Acquire();
+	}
 
 	if (packets.count == 0) {
 		packetsAvailable.Set();
@@ -220,7 +276,13 @@ void IOManager::AddPacket(IOPacket *packet) {
 	packet->item.thisItem = packet;
 	packets.InsertEnd(&packet->item);
 
-	mutex.Release();
+	if (packet->parent && !fromBlocked) {
+		packet->parent->pendingChildren++;
+	}
+
+	if (!fromBlocked) {
+		mutex.Release();
+	}
 }
 
 void IOManager::AddRequest(IORequest *request) {
@@ -230,6 +292,7 @@ void IOManager::AddRequest(IORequest *request) {
 	request->buffer = kernelVMM.Allocate("IOCopy", request->count, vmmMapAll, vmmRegionCopy, (uintptr_t) request->buffer);
 
 	IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+	packet->type = request->type == IO_REQUEST_READ ? IO_PACKET_READ_VFS : IO_PACKET_WRITE_VFS;
 	packet->request = request;
 	AddPacket(packet);
 }
@@ -255,8 +318,20 @@ void IOManager::Work() {
 		mutex.Release();
 
 		if (packet) {
-			packet->Process();
-			OSHeapFree(packet); // Deallocate the packet.
+			OSError error;
+			packet->Process(error);
+
+			mutex.Acquire();
+
+			if (error == REQUEST_INCOMPLETE) {
+				// Do nothing.
+			} else if (error == REQUEST_BLOCKED) {
+				packet->blocker->InsertEnd(&packet->item);
+			} else {
+				packet->Complete(error);
+			}
+
+			mutex.Release();
 		}
 	}
 }

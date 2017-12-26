@@ -319,7 +319,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				{
 					CPULocalStorage *storage = GetLocalStorage();
 
-					if (storage && storage->spinlockCount && context->cr2 >= 0xFFFF900000000000 && context->cr2 < 0xFFFFF00000000000) {
+					if (storage && storage->spinlockCount && ((context->cr2 >= 0xFFFF900000000000 && context->cr2 < 0xFFFFF00000000000) || context->cr2 < 0x8000000000000000)) {
 						KernelPanic("HandlePageFault - Page fault occurred in critical section at %x (CR2 = %x).\n", context->rip, context->cr2);
 					}
 				}

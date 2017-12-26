@@ -605,10 +605,8 @@ uintptr_t DoSyscall(uintptr_t index,
 
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
-#define NEW_FILE_IO
-
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
-#ifndef NEW_FILE_IO
+#ifdef OLD_FILE_IO
 				OSError error;
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
 #else
@@ -620,7 +618,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				request.buffer = (void *) argument3;
 				ioManager.AddRequest(&request);
 				request.complete.Wait(OS_WAIT_NO_TIMEOUT);
-				size_t bytesRead = request.doneCount;
+				size_t bytesRead = request.count;
 				OSError error = request.error;
 #endif
 				SYSCALL_RETURN(bytesRead ? bytesRead : error, false);
@@ -641,7 +639,7 @@ uintptr_t DoSyscall(uintptr_t index,
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
-#ifndef NEW_FILE_IO
+#ifdef OLD_FILE_IO
 				OSError error;
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3, &error);
 #else
@@ -653,7 +651,7 @@ uintptr_t DoSyscall(uintptr_t index,
 				request.buffer = (void *) argument3;
 				ioManager.AddRequest(&request);
 				request.complete.Wait(OS_WAIT_NO_TIMEOUT);
-				size_t bytesWritten = request.doneCount;
+				size_t bytesWritten = request.count;
 				OSError error = request.error;
 #endif
 				SYSCALL_RETURN(bytesWritten ? bytesWritten : error, false);

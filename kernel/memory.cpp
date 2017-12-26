@@ -822,7 +822,7 @@ bool HandlePageFault(uintptr_t page) {
 		return true;
 	} else if (page >= 0xFFFF900000000000 && page < 0xFFFFF00000000000) {
 		if (GetLocalStorage()->spinlockCount)
-			KernelPanic("HandlePageFault - Page fault occurred in critical section.\n");
+			KernelPanic("HandlePageFault - Page fault (%x) occurred in critical section.\n", page);
 
 		kernelVMM.lock.Acquire();
 		Defer(kernelVMM.lock.Release());
@@ -841,7 +841,7 @@ bool HandlePageFault(uintptr_t page) {
 		VMM *vmm = currentProcess->vmm;
 
 		if (GetLocalStorage()->spinlockCount)
-			KernelPanic("HandlePageFault - Page fault occurred in critical section.\n");
+			KernelPanic("HandlePageFault - Page fault (%x) occurred in critical section.\n", page);
 
 		vmm->lock.Acquire();
 		Defer(vmm->lock.Release());
