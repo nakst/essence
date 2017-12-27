@@ -204,7 +204,7 @@ bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uin
 
 		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
 			if (data->indirect2[i]) {
-				if (!AccessBlock(packet, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
+				if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 					return false;
 				}
 			}

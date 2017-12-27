@@ -424,8 +424,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
-	size_t pageCount = size >> PAGE_BITS;
-	if (size & (PAGE_SIZE - 1)) pageCount++;
+	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;
 
 	if (type == vmmRegionCopy) {
 		if (this != &kernelVMM) {

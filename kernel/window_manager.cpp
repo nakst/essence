@@ -178,7 +178,7 @@ int MeasureDistance(int x1, int y1, int x2, int y2) {
 void WindowManager::SetActiveWindow(Window *window) {
 	mutex.AssertLocked();
 
-	KernelLog(LOG_VERBOSE, "SetActiveWindow - from %x to %x\n", activeWindow, window);
+	// KernelLog(LOG_VERBOSE, "SetActiveWindow - from %x to %x\n", activeWindow, window);
 
 	if (activeWindow == window) {
 		return;

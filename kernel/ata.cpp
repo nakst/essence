@@ -70,9 +70,6 @@ void ATADriver::SetDrive(int bus, int slave, int extra) {
 }
 
 bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offsetIntoSector, size_t sectorsNeededToLoad, size_t countBytes, int operation, uint8_t *_buffer) {
-	// Lock the bus.
-	locks[bus].Acquire();
-
 	uint16_t *buffer = (uint16_t *) _buffer;
 
 	bool pio48 = false;
@@ -170,6 +167,9 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
 	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
+	uintptr_t bus = drive >> 1;
+	uintptr_t slave = drive & 1;
+	Event *event = irqs + bus;
 
 	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
 	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);
@@ -177,15 +177,14 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 	if (sector > sectorCount[drive] || (sector + sectorsNeededToLoad) > sectorCount[drive]) KernelPanic("ATADriver::Access - Attempt to access sector %d when drive only has %d sectors.\n", sector, sectorCount[drive]);
 	if (sectorsNeededToLoad > 64) KernelPanic("ATADriver::Access - Attempt to read more than 64 consecutive sectors in 1 function call.\n");
 
-	uintptr_t bus = drive >> 1;
-	uintptr_t slave = drive & 1;
+	// Lock the bus.
+	locks[bus].Acquire();
 
 	if (!AccessStart(bus, slave, sector, offsetIntoSector, sectorsNeededToLoad, countBytes, operation, _buffer)) {
 		locks[bus].Release();
 		return false;
 	}
 
-	Event *event = irqs + bus;
 	// Wait for the command to complete.
 	event->Wait(ATA_TIMEOUT);
 

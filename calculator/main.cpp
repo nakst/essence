@@ -88,6 +88,31 @@ extern "C" void ProgramEntry() {
 		if (error != OS_SUCCESS) OSCrashProcess(100);
 	}
 
+	{
+		char *path = (char *) "/os/test.txt";
+		OSNodeInformation node;
+		OSError error = OSOpenNode(path, OSCStringLength(path), 
+				OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_RESIZE | OS_OPEN_NODE_ACCESS_WRITE,
+				&node);
+		if (error != OS_SUCCESS) OSCrashProcess(102);
+		error = OSResizeFile(node.handle, 2048);
+		if (error != OS_SUCCESS) OSCrashProcess(103);
+		uint16_t buffer[1024];
+		for (int i = 0; i < 1024; i++) buffer[i] = i;
+		OSPrint("!!!!Starting tests!!!!!\n");
+		OSWriteFileSync(node.handle, 0, 2048, buffer);
+		for (int i = 0; i < 1024; i++) buffer[i] = i + 1024;
+		OSWriteFileSync(node.handle, 256, 2048 - 256 - 256, buffer + 128);
+		for (int i = 0; i < 1024; i++) buffer[i] = i + 2048;
+		OSReadFileSync(node.handle, 0, 2048, buffer);
+		for (int i = 0; i < 128; i++) if (buffer[i] != i) OSCrashProcess(107);
+		for (int i = 1024 - 128; i < 1024; i++) if (buffer[i] != i) OSCrashProcess(108);
+		for (int i = 128; i < 1024 - 128; i++) if (buffer[i] == i) OSCrashProcess(110); else if (buffer[i] != i + 1024) OSCrashProcess(109);
+		OSPrint("Tests were a success!\n");
+
+		OSCreateWindow((char *) "Test Program", 12, 320, 200, 0);
+	}
+
 #if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 
 			OS_CREATE_WINDOW_WITH_MENU_BAR);

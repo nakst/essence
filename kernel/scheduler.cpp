@@ -1075,7 +1075,9 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 	thread->state = THREAD_WAITING_MUTEX;
 	thread->blockingMutex = mutex;
 
-	bool spin = mutex && mutex->owner && mutex->owner->executing;
+	// TODO Why doesn't this work?
+	// bool spin = mutex && mutex->owner && mutex->owner->executing;
+	bool spin = false;
 
 	lock.Release();
 
