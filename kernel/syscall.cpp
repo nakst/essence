@@ -610,16 +610,18 @@ uintptr_t DoSyscall(uintptr_t index,
 				OSError error;
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
 #else
-				IORequest request = {};
-				request.type = IO_REQUEST_READ;
-				request.node = file;
-				request.offset = argument1;
-				request.count = argument2;
-				request.buffer = (void *) argument3;
-				ioManager.AddRequest(&request);
-				request.complete.Wait(OS_WAIT_NO_TIMEOUT);
-				size_t bytesRead = request.count;
-				OSError error = request.error;
+				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				request->handles = 1;
+				request->type = IO_REQUEST_READ;
+				request->node = file;
+				request->offset = argument1;
+				request->count = argument2;
+				request->buffer = (void *) argument3;
+				request->Start();
+				request->complete.Wait(OS_WAIT_NO_TIMEOUT);
+				size_t bytesRead = request->count;
+				OSError error = request->error;
+				CloseHandleToObject(request, KERNEL_OBJECT_IO_REQUEST);
 #endif
 				SYSCALL_RETURN(bytesRead ? bytesRead : error, false);
 			} else {
@@ -643,16 +645,18 @@ uintptr_t DoSyscall(uintptr_t index,
 				OSError error;
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3, &error);
 #else
-				IORequest request = {};
-				request.type = IO_REQUEST_WRITE;
-				request.node = file;
-				request.offset = argument1;
-				request.count = argument2;
-				request.buffer = (void *) argument3;
-				ioManager.AddRequest(&request);
-				request.complete.Wait(OS_WAIT_NO_TIMEOUT);
-				size_t bytesWritten = request.count;
-				OSError error = request.error;
+				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				request->handles = 1;
+				request->type = IO_REQUEST_WRITE;
+				request->node = file;
+				request->offset = argument1;
+				request->count = argument2;
+				request->buffer = (void *) argument3;
+				request->Start();
+				request->complete.Wait(OS_WAIT_NO_TIMEOUT);
+				size_t bytesWritten = request->count;
+				OSError error = request->error;
+				CloseHandleToObject(request, KERNEL_OBJECT_IO_REQUEST);
 #endif
 				SYSCALL_RETURN(bytesWritten ? bytesWritten : error, false);
 			} else {

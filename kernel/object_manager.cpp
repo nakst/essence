@@ -3,17 +3,18 @@
 #define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
 		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
 		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE | KERNEL_OBJECT_EVENT \
-		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW))
+		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_IO_REQUEST))
 
 enum KernelObjectType {
-	KERNEL_OBJECT_PROCESS 	= 0x00000001,
-	KERNEL_OBJECT_THREAD	= 0x00000002,
-	KERNEL_OBJECT_SURFACE	= 0x00000004,
-	KERNEL_OBJECT_WINDOW	= 0x00000008,
-	KERNEL_OBJECT_MUTEX	= 0x00000010,
-	KERNEL_OBJECT_SHMEM	= 0x00000020,
-	KERNEL_OBJECT_NODE	= 0x00000040,
-	KERNEL_OBJECT_EVENT	= 0x00000080,
+	KERNEL_OBJECT_PROCESS 		= 0x00000001,
+	KERNEL_OBJECT_THREAD		= 0x00000002,
+	KERNEL_OBJECT_SURFACE		= 0x00000004,
+	KERNEL_OBJECT_WINDOW		= 0x00000008,
+	KERNEL_OBJECT_MUTEX		= 0x00000010,
+	KERNEL_OBJECT_SHMEM		= 0x00000020,
+	KERNEL_OBJECT_NODE		= 0x00000040,
+	KERNEL_OBJECT_EVENT		= 0x00000080,
+	KERNEL_OBJECT_IO_REQUEST	= 0x00000100,
 };
 
 struct Handle {
@@ -160,6 +161,17 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			if (destroy) {
 				Print("destroying window...\n");
 				window->Destroy();
+			}
+		} break;
+
+		case KERNEL_OBJECT_IO_REQUEST: {
+			IORequest *request = (IORequest *) object;
+			request->mutex.Acquire();
+			bool destroy = request->CloseHandle();
+			request->mutex.Release();
+
+			if (destroy) {
+				OSHeapFree(request, sizeof(IORequest));
 			}
 		} break;
 

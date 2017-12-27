@@ -1,5 +1,5 @@
-bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
-bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file);
+bool EsFSRead(IOPacket *packet);
+bool EsFSWrite(IOPacket *packet);
 void EsFSSync(Node *node);
 Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
 bool EsFSResize(Node *file, uint64_t newSize);
@@ -21,8 +21,8 @@ struct EsFSVolume {
 	Node *LoadRootDirectory();
 	Node *SearchDirectory(char *name, size_t nameLength, Node *directory, uint64_t &flags);
 
-	bool AccessBlock(uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
-	bool AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
+	bool AccessBlock(IOPacket *packet, uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
+	bool AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
 	bool CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory);
 	void Enumerate(Node *_directory, OSDirectoryChild *childBuffer);
 
@@ -60,8 +60,8 @@ uint64_t EsFSVolume::BlocksNeededToStore(uint64_t size) {
 	return blocks;
 }
 
-bool EsFSVolume::AccessBlock(uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
-	bool result = drive->block.Access(block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
+bool EsFSVolume::AccessBlock(IOPacket *packet, uint64_t block, uint64_t countBytes, int operation, void *buffer, uint64_t offsetIntoBlock) {
+	bool result = drive->block.Access(packet, block * sectorsPerBlock * drive->block.sectorSize + offsetIntoBlock, countBytes, operation, (uint8_t *) buffer);
 
 	if (!result) {
 		// TODO Bad block handling.
@@ -105,7 +105,7 @@ Node *EsFSVolume::LoadRootDirectory() {
 	void *root = OSHeapAllocate(superblock.blockSize * superblock.rootDirectoryFileEntry.count, false);
 	Defer(OSHeapFree(root));
 
-	if (!AccessBlock(superblock.rootDirectoryFileEntry.offset, superblock.blockSize, DRIVE_ACCESS_READ, root, 0)) {
+	if (!AccessBlock(nullptr, superblock.rootDirectoryFileEntry.offset, superblock.blockSize, DRIVE_ACCESS_READ, root, 0)) {
 		return nullptr;
 	}
 
@@ -134,7 +134,7 @@ Node *EsFSVolume::Initialise(Device *_drive) {
 	
 	// Load the superblock.
 	EsFSSuperblockP *superblockP = (EsFSSuperblockP *) OSHeapAllocate(sizeof(EsFSSuperblockP), false);
-	if (!drive->block.Access(8192, 8192, DRIVE_ACCESS_READ, (uint8_t *) superblockP)) return nullptr;
+	if (!drive->block.Access(nullptr, 8192, 8192, DRIVE_ACCESS_READ, (uint8_t *) superblockP)) return nullptr;
 	CopyMemory(&superblock, &superblockP->d, sizeof(EsFSSuperblock));
 	Defer(OSHeapFree(superblockP));
 
@@ -172,13 +172,13 @@ Node *EsFSVolume::Initialise(Device *_drive) {
 
 	// Read the group descriptor table.
 	groupDescriptorTable = (EsFSGroupDescriptorP *) OSHeapAllocate(superblock.gdt.count * superblock.blockSize, false);
-	AccessBlock(superblock.gdt.offset, superblock.gdt.count * superblock.blockSize, DRIVE_ACCESS_READ, groupDescriptorTable, 0);
+	AccessBlock(nullptr, superblock.gdt.offset, superblock.gdt.count * superblock.blockSize, DRIVE_ACCESS_READ, groupDescriptorTable, 0);
 
 	KernelLog(LOG_INFO, "Initialising EssenceFS volume %s\n", ESFS_MAXIMUM_VOLUME_NAME_LENGTH, superblock.volumeName);
 	return LoadRootDirectory();
 }
 
-bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
+bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
 	if (!size) return true;
 
 	if (data->indirection == ESFS_DATA_DIRECT) {
@@ -204,7 +204,7 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 
 		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
 			if (data->indirect2[i]) {
-				if (!AccessBlock(data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
+				if (!AccessBlock(packet, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 					return false;
 				}
 			}
@@ -291,7 +291,7 @@ bool EsFSVolume::AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint
 
 		if (lastAccessedActualBlock) *lastAccessedActualBlock = globalBlock;
 
-		if (!AccessBlock(globalBlock, dataToTransfer, write ? DRIVE_ACCESS_WRITE : DRIVE_ACCESS_READ, buffer, offsetIntoBlock)) {
+		if (!AccessBlock(packet, globalBlock, dataToTransfer, write ? DRIVE_ACCESS_WRITE : DRIVE_ACCESS_READ, buffer, offsetIntoBlock)) {
 			return false; // Drive error.
 		}
 
@@ -336,7 +336,7 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 
 			// The table is saved at the end of the function.
 		} else {
-			AccessBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_READ, extentTableBuffer, 0);
+			AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_READ, extentTableBuffer, 0);
 		}
 
 		uint16_t largestSeenIndex = 0;
@@ -376,7 +376,7 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 		descriptor->blocksUsed += extent.count;
 		superblock.blocksUsed += extent.count;
 
-		AccessBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
+		AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
 
 		return extent;
 	}
@@ -429,7 +429,7 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 			void *zeroData = OSHeapAllocate(superblock.blockSize * newExtent.count, true);
 			Defer(OSHeapFree(zeroData));
 
-			if (!AccessBlock(newExtent.offset, superblock.blockSize * newExtent.count, DRIVE_ACCESS_WRITE, zeroData, 0)) {
+			if (!AccessBlock(nullptr, newExtent.offset, superblock.blockSize * newExtent.count, DRIVE_ACCESS_WRITE, zeroData, 0)) {
 				return false;
 			}
 		}
@@ -458,7 +458,7 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 
 					firstModifiedExtentListBlock = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) - 1;
 
-					if (!AccessBlock(data->indirect2[firstModifiedExtentListBlock], superblock.blockSize, DRIVE_ACCESS_READ, 
+					if (!AccessBlock(nullptr, data->indirect2[firstModifiedExtentListBlock], superblock.blockSize, DRIVE_ACCESS_READ, 
 							newExtentList + firstModifiedExtentListBlock * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 						return false;
 					}
@@ -484,7 +484,7 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 				if (!extent.count) return false;
 			}
 
-			if (!AccessBlock(data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_WRITE, newExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
+			if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_WRITE, newExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 				return false;
 			}
 		}
@@ -492,7 +492,7 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 
 	if (wasDirect && oldSize) {
 		// Copy the direct data into the new blocks.
-		if (!AccessStream(data, 0, oldSize, directTemporary, true)) {
+		if (!AccessStream(nullptr, data, 0, oldSize, directTemporary, true)) {
 			return false;
 		}
 	}
@@ -520,7 +520,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	Defer(OSHeapFree(directoryBuffer));
 	uint64_t blockPosition = 0, blockIndex = 0;
 	uint64_t lastAccessedActualBlock = 0;
-	AccessStream(data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+	AccessStream(nullptr, data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
 		if (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
@@ -528,7 +528,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 			// The next directory entry will be at the start of the next block.
 			blockPosition = 0;
 			blockIndex++;
-			AccessStream(data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+			AccessStream(nullptr, data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 		}
 
 		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
@@ -599,7 +599,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 	Defer(OSHeapFree(directoryBuffer));
 	uint64_t blockPosition = 0, blockIndex = 0;
 	uint64_t lastAccessedActualBlock = 0;
-	AccessStream(data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+	AccessStream(nullptr, data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 
 	size_t fileEntryLength;
 	EsFSFileEntry *returnValue = nullptr;
@@ -610,7 +610,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 			// The next directory entry will be at the start of the next block.
 			blockPosition = 0;
 			blockIndex++;
-			AccessStream(data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+			AccessStream(nullptr, data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 		}
 
 		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
@@ -805,7 +805,7 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 			directory->spaceAvailableInLastBlock = superblock.blockSize;
 		}
 
-		AccessStream(data, data->size - directory->spaceAvailableInLastBlock, entryBufferPosition, entryBuffer, true);
+		AccessStream(nullptr, data, data->size - directory->spaceAvailableInLastBlock, entryBufferPosition, entryBuffer, true);
 		directory->spaceAvailableInLastBlock -= entryBufferPosition;
 
 		directory->itemsInDirectory++;
@@ -825,26 +825,34 @@ inline Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &
 	return node;
 }
 
-inline bool EsFSRead(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
+inline bool EsFSRead(IOPacket *packet) {
+	Node *file = (Node *) packet->object;
+	uint64_t offsetBytes = packet->offset;
+	uint64_t sizeBytes = packet->count;
+	void *buffer = packet->buffer;
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
-	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, false);
+	return fs->AccessStream(packet, data, offsetBytes, sizeBytes, buffer, false);
 }
 
-inline bool EsFSWrite(uint64_t offsetBytes, size_t sizeBytes, uint8_t *buffer, Node *file) {
+inline bool EsFSWrite(IOPacket *packet) {
+	Node *file = (Node *) packet->object;
+	uint64_t offsetBytes = packet->offset;
+	uint64_t sizeBytes = packet->count;
+	void *buffer = packet->buffer;
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (file + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
-	return fs->AccessStream(data, offsetBytes, sizeBytes, buffer, true);
+	return fs->AccessStream(packet, data, offsetBytes, sizeBytes, buffer, true);
 }
 
 inline void EsFSSync(Node *node) {
 	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
-	fs->AccessBlock(eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
+	fs->AccessBlock(nullptr, eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
 }
 
 inline bool EsFSResize(Node *file, uint64_t newSize) {

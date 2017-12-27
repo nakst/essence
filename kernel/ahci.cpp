@@ -365,7 +365,7 @@ bool AHCIDriver::Access(uintptr_t _drive, uint64_t offset, size_t countBytes, in
 		if (timeout->event.Poll()) return false;
 	}
 
-	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Issuing command %d.\n", commandIndex);
+	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Issuing command %d (%d).\n", commandIndex, header->prdEntryCount);
 
 	// Issue the command.
 	drive->completeCommands[commandIndex].Reset();
@@ -446,17 +446,26 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 						}
 
 						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
-							// Is the command finished?
-							if (commandsFinished & (1 << i)) {
-								if (drive->completeCommands[i].state) {
-									KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected for operation %d (2).\n", i); // TODO Are we doing this right?
-								} else {
-									// KernelLog(LOG_VERBOSE, "AHCIIRQHandler - Received interrupt to complete operation %d.\n", i);
-									drive->completeCommands[i].Set();
+							if (!(drive->commandsInUse & (1 << i))) {
+								continue;
+							}
 
-									if (drive->completeCommands[i].blockedThreads.count) {
-										switchThread = true;
-									}
+							// Is the command finished?
+							if (port->commandIssue & (1 << i)) {
+								continue;
+							}
+
+							if (drive->completeCommands[i].state) {
+								// Hmmm... 
+								// I think this means we finished multiple commands in a previous interrupt,
+								// even though multiple interrupts were sent.
+								// So I don't think this matters?
+							} else {
+								// KernelLog(LOG_VERBOSE, "AHCIIRQHandler - Received interrupt to complete operation %d.\n", i);
+								drive->completeCommands[i].Set();
+
+								if (drive->completeCommands[i].blockedThreads.count) {
+									switchThread = true;
 								}
 							}
 						}

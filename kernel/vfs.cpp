@@ -40,10 +40,10 @@ struct NodeData {
 
 struct Node {
 	// Files:
-	OSError Read(struct IORequest *request, struct IOPacket *packet);
-	OSError Write(struct IORequest *request, struct IOPacket *packet);
+	void Read(struct IOPacket *packet);
+	void Write(struct IOPacket *packet);
 	bool Resize(uint64_t newSize);
-	void Complete(struct IORequest *request, struct IOPacket *packet);
+	void Complete(struct IOPacket *packet);
 
 	// Directories:
 	Node *OpenChild();
@@ -67,9 +67,6 @@ struct Node {
 
 	NodeData data;
 	Node *parent;
-
-	IOPacket *controllingPacket;
-	LinkedList<IOPacket> blockedPackets;
 };
 
 struct Filesystem {
@@ -206,36 +203,18 @@ void Node::CopyInformation(OSNodeInformation *information) {
 	}
 }
 
-void Node::Complete(IORequest *request, IOPacket *packet) {
-	if (request->node->controllingPacket != packet) {
-		KernelPanic("Node::Complete - Incorrect packet.\n");
-	}
-
-	request->node->mutex.Release();
-	request->node->controllingPacket = nullptr;
-
-	LinkedItem<IOPacket> *item = blockedPackets.firstItem;
-
-	while (item) {
-		IOPacket *packet = item->thisItem;
-		item = item->nextItem;
-
-		blockedPackets.Remove(item);
-		ioManager.AddPacket(packet, true);
-	}
+void Node::Complete(IOPacket *packet) {
+	packet->request->node->mutex.Release();
 }
 
-OSError Node::Write(IORequest *request, IOPacket *_packet) {
-	if (controllingPacket) {
-		_packet->blocker = &blockedPackets;
-		return REQUEST_BLOCKED;
-	}
-
+void Node::Write(IOPacket *packet) {
 	mutex.Acquire();
-	controllingPacket = _packet;
+
+	IORequest *request = packet->request;
 
 	if (request->offset > data.file.fileSize) {
-		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
+		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
+		return;
 	}
 
 	if (request->offset + request->count > data.file.fileSize) {
@@ -243,40 +222,40 @@ OSError Node::Write(IORequest *request, IOPacket *_packet) {
 	}
 
 	if (request->count > data.file.fileSize) {
-		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
+		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
+		return;
 	}
 
 	modifiedSinceLastSync = true;
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
-			packet->request = request;
-			packet->type = IO_PACKET_WRITE_ESFS;
-			packet->parent = _packet;
-			ioManager.AddPacket(packet);
+			IOPacket *fsPacket = packet->request->AddPacket(packet);
+			fsPacket->type = IO_PACKET_ESFS;
+			fsPacket->object = request->node;
+			fsPacket->count = request->count;
+			fsPacket->offset = request->offset;
+			fsPacket->buffer = request->buffer;
+			EsFSWrite(fsPacket);
+			fsPacket->QueuedChildren();
 		} break;
 
 		default: {
 			// The filesystem driver is read-only.
-			return OS_ERROR_FILE_ON_READ_ONLY_VOLUME;
+			request->Cancel(OS_ERROR_FILE_ON_READ_ONLY_VOLUME);
+			return;
 		} break;
 	}
-
-	return REQUEST_INCOMPLETE;
 }
 
-OSError Node::Read(IORequest *request, IOPacket *_packet) {
-	if (controllingPacket) {
-		_packet->blocker = &blockedPackets;
-		return REQUEST_BLOCKED;
-	}
-
+void Node::Read(IOPacket *packet) {
 	mutex.Acquire();
-	controllingPacket = _packet;
+
+	IORequest *request = packet->request;
 
 	if (request->offset > data.file.fileSize) {
-		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
+		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
+		return;
 	}
 
 	if (request->offset + request->count > data.file.fileSize) {
@@ -284,24 +263,26 @@ OSError Node::Read(IORequest *request, IOPacket *_packet) {
 	}
 
 	if (request->count > data.file.fileSize) {
-		return OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS;
+		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
+		return;
 	}
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
-			packet->request = request;
-			packet->type = IO_PACKET_READ_ESFS;
-			packet->parent = _packet;
-			ioManager.AddPacket(packet);
+			IOPacket *fsPacket = packet->request->AddPacket(packet);
+			fsPacket->type = IO_PACKET_ESFS;
+			fsPacket->object = request->node;
+			fsPacket->count = request->count;
+			fsPacket->offset = request->offset;
+			fsPacket->buffer = request->buffer;
+			EsFSRead(fsPacket);
+			fsPacket->QueuedChildren();
 		} break;
 
 		default: {
 			KernelPanic("Node::Read - Unsupported filesystem.\n");
 		} break;
 	}
-
-	return REQUEST_INCOMPLETE;
 }
 
 void VFS::Initialise() {
@@ -683,7 +664,7 @@ void DetectFilesystem(Device *device) {
 	Defer(OSHeapFree(information));
 
 	// Load the first 16KB of the drive to identify its filesystem.
-	bool success = device->block.Access(0, 16384, DRIVE_ACCESS_READ, information);
+	bool success = device->block.Access(nullptr, 0, 16384, DRIVE_ACCESS_READ, information);
 
 	if (!success) {
 		// We could not access the block device.

@@ -16,7 +16,7 @@ enum BlockDeviceDriver {
 };
 
 struct BlockDevice {
-	bool Access(uint64_t sector, size_t count, int operation, uint8_t *buffer, bool alreadyInCorrectPartition = false);
+	bool Access(IOPacket *packet, uint64_t offset, size_t count, int operation, uint8_t *buffer, bool alreadyInCorrectPartition = false);
 
 	uintptr_t driveID;
 	size_t sectorSize;
@@ -49,56 +49,60 @@ struct DeviceManager {
 	Pool devicePool;
 };
 
-enum IOPacketType {
-	IO_PACKET_READ_VFS,
-	IO_PACKET_WRITE_VFS,
-	IO_PACKET_READ_ESFS,
-	IO_PACKET_WRITE_ESFS,
-};
-
-struct IOPacket {
-	void Process(OSError &error);
-	void Complete(OSError error);
-
-	IOPacketType type;
-
-	LinkedItem<IOPacket> item;
-
-	struct IORequest *request;
-	IOPacket *parent;
-	LinkedList<IOPacket> *blocker;
-	size_t pendingChildren;
-};
-
 enum IORequestType {
 	IO_REQUEST_READ,
 	IO_REQUEST_WRITE,
 };
 
-struct IORequest {
+enum IOPacketType {
+	IO_PACKET_NODE,
+	IO_PACKET_ESFS,
+	IO_PACKET_BLOCK_DEVICE,
+	IO_PACKET_AHCI,
+	IO_PACKET_ATA,
+};
+
+struct IOPacket {
 	void Complete(OSError error);
+	void QueuedChildren();
+
+	bool cancelled;
+	IOPacketType type;
+	struct IORequest *request;
+
+	IOPacket *parent;
+	LinkedItem<IOPacket> treeItem, driverItem;
+	LinkedList<IOPacket> children;
+	size_t remaining;
+
+	void *object;
+	void *buffer;
+	uint64_t offset, count; 
+	void *parameter;
+};
+
+struct IORequest {
+	void Start();
+	void Cancel(OSError error);
+	void Complete();
+	bool CloseHandle();
+	IOPacket *AddPacket(IOPacket *parent);
 
 	IORequestType type;
+	OSError error;
+	Event complete;
+	IOPacket *root;
+
 	Node *node;
 	void *buffer;
 	uint64_t offset, count; 
-	OSError error;
-	Event complete;
-};
 
-struct IOManager {
-	void Initialise();
-	void Work();
-	void AddPacket(IOPacket *packet, bool fromBlocked = false);
-	void AddRequest(IORequest *request);
-
-	LinkedList<IOPacket> packets;
 	Mutex mutex;
-	Event packetsAvailable;
+	size_t handles;
 };
 
 extern DeviceManager deviceManager;
-extern IOManager ioManager;
+
 void ATARegisterController(struct PCIDevice *device);
 void AHCIRegisterController(struct PCIDevice *device);
 
@@ -110,11 +114,8 @@ void AHCIRegisterController(struct PCIDevice *device);
 #ifdef IMPLEMENTATION
 
 DeviceManager deviceManager;
-IOManager ioManager;
 
-Mutex tempMutex;
-
-bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, bool alreadyInCorrectPartition) {
+bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, bool alreadyInCorrectPartition) {
 	if (!alreadyInCorrectPartition) {
 		if (offset / sectorSize > sectorCount || (offset + countBytes) / sectorSize > sectorCount || countBytes / sectorSize > maxAccessSectorCount) {
 			KernelPanic("BlockDevice::Access - Access out of bounds on drive %d.\n", driveID);
@@ -124,46 +125,77 @@ bool BlockDevice::Access(uint64_t offset, size_t countBytes, int operation, uint
 	}
 
 	if (operation == DRIVE_ACCESS_WRITE && ((offset % sectorSize) || (countBytes % sectorSize))) {
+		KernelPanic("BlockDevice::Access - Partial writes not yet implemented.\n");
+
 		uint64_t currentSector = offset / sectorSize;
 		uint64_t sectorCount = (offset + countBytes) / sectorSize - currentSector;
 
 		uint8_t *temp = (uint8_t *) OSHeapAllocate(sectorSize, false);
 		Defer(OSHeapFree(temp));
 
-		if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp, true)) return false;
+		if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp, true)) return false;
 		size_t size = sectorSize - (offset - currentSector * sectorSize);
 		CopyMemory(temp + (offset - currentSector * sectorSize), buffer, size > countBytes ? countBytes : size);
-		if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_WRITE, temp, true)) return false;
+		if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_WRITE, temp, true)) return false;
 		buffer += sectorSize - (offset - currentSector * sectorSize);
 		countBytes -= sectorSize - (offset - currentSector * sectorSize);
 		currentSector++;
 
 		if (sectorCount > 1) {
-			if (!Access(currentSector * sectorSize, sectorCount - 1, DRIVE_ACCESS_WRITE, buffer, true)) return false;
+			if (!Access(packet, currentSector * sectorSize, sectorCount - 1, DRIVE_ACCESS_WRITE, buffer, true)) return false;
 			buffer += sectorSize * (sectorCount - 1);
 			currentSector += sectorCount - 1;
 			countBytes -= sectorSize * (sectorCount - 1);
 		}
 
 		if (sectorCount) {
-			if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp, true)) return false;
+			if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp, true)) return false;
 			size_t size = sectorSize - (offset - currentSector * sectorSize);
 			CopyMemory(temp + (offset - currentSector * sectorSize), buffer, size > countBytes ? countBytes : size);
-			if (!Access(currentSector * sectorSize, sectorSize, DRIVE_ACCESS_WRITE, temp, true)) return false;
+			if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_WRITE, temp, true)) return false;
 		}
 
 		return true;
+	}
+
+	IOPacket *driverPacket = nullptr;
+	
+	if (packet) {
+		// Make a new packet for the driver, if we're using the asynchronous API.
+		driverPacket = packet->request->AddPacket(packet);
+		driverPacket->buffer = buffer;
+		driverPacket->offset = offset;
+		driverPacket->count = countBytes;
+		driverPacket->object = (void *) driveID;
 	}
 
 	bool result;
 
 	switch (driver) {
 		case BLOCK_DEVICE_DRIVER_ATA: {
-			result = ata.Access(driveID, offset, countBytes, operation, buffer);
+			if (driverPacket) driverPacket->type = IO_PACKET_ATA;
+			result = ata.Access(driverPacket, driveID, offset, countBytes, operation, buffer);
+
+			if (driverPacket) {
+				if (result) {
+					driverPacket->Complete(OS_SUCCESS);
+				} else {
+					driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				}
+			}
 		} break;
 
 		case BLOCK_DEVICE_DRIVER_AHCI: {
-			result = ahci.Access(driveID, offset, countBytes, operation, buffer);
+			if (driverPacket) driverPacket->type = IO_PACKET_AHCI;
+			result = ahci.Access(/*driverPacket, */driveID, offset, countBytes, operation, buffer);
+
+			if (driverPacket) {
+				if (result) {
+					driverPacket->Complete(OS_SUCCESS);
+				} else {
+					driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+				}
+			}
 		} break;
 
 		default: {
@@ -207,142 +239,129 @@ Device *DeviceManager::Register(Device *deviceSpec) {
 	return device;
 }
 
-void IOPacket::Process(OSError &error) {
+IOPacket *IORequest::AddPacket(IOPacket *parent) {
+	mutex.AssertLocked();
+	handles++;
+	
+	IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+	packet->parent = parent;
+	packet->request = this;
+	packet->treeItem.thisItem = packet;
+	packet->driverItem.thisItem = packet;
+	packet->remaining = 1; // First event is removed when all children have been queued.
+
+	if (parent) {
+		parent->children.InsertEnd(&packet->treeItem);
+		parent->remaining++;
+	}
+
+	return packet;
+}
+
+void IORequest::Start() {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	buffer = kernelVMM.Allocate("IOCopy", count, vmmMapAll, vmmRegionCopy, (uintptr_t) buffer);
+
+	if (handles < 1) {
+		KernelPanic("IORequest::Start - Invalid handle count.\n");
+	}
+
+	root = AddPacket(nullptr);
+	root->type = IO_PACKET_NODE;
+
 	switch (type) {
-		case IO_PACKET_READ_VFS: {
-			error = request->node->Read(request, this);
+		case IO_REQUEST_READ: {
+			node->Read(root);
 		} break;
 
-		case IO_PACKET_WRITE_VFS: {
-			error = request->node->Write(request, this);
-		} break;
-
-		case IO_PACKET_READ_ESFS: {
-			bool success = EsFSRead(request->offset, request->count, (uint8_t *) request->buffer, request->node);
-			error = success ? OS_SUCCESS : OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
-		} break;
-
-		case IO_PACKET_WRITE_ESFS: {
-			bool success = EsFSWrite(request->offset, request->count, (uint8_t *) request->buffer, request->node);
-			error = success ? OS_SUCCESS : OS_ERROR_DRIVE_ERROR_FILE_DAMAGED;
+		case IO_REQUEST_WRITE: {
+			node->Write(root);
 		} break;
 	}
+
+	root->QueuedChildren();
 }
 
 void IOPacket::Complete(OSError error) {
-	switch (type) {
-		case IO_PACKET_READ_VFS: {
-			request->node->Complete(request, this);
-		} break;
+	request->mutex.AssertLocked();
+		
+	if (!cancelled) {
+		bool success = error == OS_SUCCESS;
+		if (!success) cancelled = true;
 
-		case IO_PACKET_WRITE_VFS: {
-			request->node->Complete(request, this);
-		} break;
+		switch (type) {
+			case IO_PACKET_NODE: {
+				request->node->Complete(this);
+				if (success) request->Complete();
+			} break;
 
-		default: {
-			// No cleanup is necessary.
-		} break;
-	}
+			case IO_PACKET_ESFS: {
+			} break;
 
-	if (parent) {
-		parent->pendingChildren--;
+			case IO_PACKET_BLOCK_DEVICE: {
+			} break;
 
-		if (!parent->pendingChildren) {
-			parent->Complete(error);
-		}
-	} else {
-		request->Complete(error);
-	}
+			case IO_PACKET_AHCI: {
+			} break;
 
-	OSHeapFree(this);
-}
-
-void IORequest::Complete(OSError _error) {
-	error = _error;
-	kernelVMM.Free(buffer);
-	complete.Set();
-	// The IORequest can now be deallocated.
-}
-
-void IOManager::AddPacket(IOPacket *packet, bool fromBlocked) {
-	if (!fromBlocked) {
-		mutex.Acquire();
-	}
-
-	if (packets.count == 0) {
-		packetsAvailable.Set();
-	}
-
-	packet->item.thisItem = packet;
-	packets.InsertEnd(&packet->item);
-
-	if (packet->parent && !fromBlocked) {
-		packet->parent->pendingChildren++;
-	}
-
-	if (!fromBlocked) {
-		mutex.Release();
-	}
-}
-
-void IOManager::AddRequest(IORequest *request) {
-	request->error = OS_SUCCESS;
-	request->complete.autoReset = false;
-	request->complete.state = 0;
-	request->buffer = kernelVMM.Allocate("IOCopy", request->count, vmmMapAll, vmmRegionCopy, (uintptr_t) request->buffer);
-
-	IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
-	packet->type = request->type == IO_REQUEST_READ ? IO_PACKET_READ_VFS : IO_PACKET_WRITE_VFS;
-	packet->request = request;
-	AddPacket(packet);
-}
-
-void IOManager::Work() {
-	while (true) {
-		packetsAvailable.Wait(OS_WAIT_NO_TIMEOUT);
-
-		IOPacket *packet = nullptr;
-
-		mutex.Acquire();
-
-		if (packets.count) {
-			LinkedItem<IOPacket> *packetItem = packets.firstItem;
-			packets.Remove(packetItem);
-			packet = packetItem->thisItem;
+			case IO_PACKET_ATA: {
+			} break;
 		}
 
-		if (!packets.count) {
-			packetsAvailable.Reset();
+		if (success && parent) {
+			parent->remaining--;
+			parent->children.Remove(&treeItem);
+
+			if (parent->remaining == 0) {
+				parent->Complete(error);
+			}
 		}
 
-		mutex.Release();
+		if (!success) {
+			LinkedItem<IOPacket> *child = children.firstItem;
 
-		if (packet) {
-			OSError error;
-			packet->Process(error);
-
-			mutex.Acquire();
-
-			if (error == REQUEST_INCOMPLETE) {
-				// Do nothing.
-			} else if (error == REQUEST_BLOCKED) {
-				packet->blocker->InsertEnd(&packet->item);
-			} else {
+			while (child) {
+				IOPacket *packet = (IOPacket *) child->thisItem;
+				child = child->nextItem;
 				packet->Complete(error);
 			}
-
-			mutex.Release();
 		}
+	}
+
+	if (request->CloseHandle()) {
+		OSHeapFree(request, sizeof(IORequest));
+	}
+
+	OSHeapFree(this, sizeof(IOPacket));
+}
+
+void IOPacket::QueuedChildren() {
+	request->mutex.AssertLocked();
+	remaining--;
+
+	if (!remaining) {
+		Complete(OS_SUCCESS);
 	}
 }
 
-void _IOManagerWorkerThread() {
-	ioManager.Work();
+void IORequest::Cancel(OSError _error) {
+	mutex.AssertLocked();
+	error = _error;
+	root->Complete(error);
+	Complete();
 }
 
-void IOManager::Initialise() {
-	packetsAvailable.autoReset = false;
-	scheduler.SpawnThread((uintptr_t) _IOManagerWorkerThread, 0, kernelProcess, false);
+void IORequest::Complete() {
+	mutex.AssertLocked();
+	kernelVMM.Free(buffer);
+	complete.Set();
+}
+
+bool IORequest::CloseHandle() {
+	mutex.AssertLocked();
+	return --handles == 0;
 }
 
 #endif

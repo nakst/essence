@@ -1075,7 +1075,13 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 	thread->state = THREAD_WAITING_MUTEX;
 	thread->blockingMutex = mutex;
 
+	bool spin = mutex && mutex->owner && mutex->owner->executing;
+
 	lock.Release();
+
+	if (!spin) {
+		ProcessorFakeTimerInterrupt();
+	}
 
 	// Early exit if this is a user request to block the thread and the thread is terminating.
 	while ((!thread->terminating || thread->terminatableState != THREAD_USER_BLOCK_REQUEST) && thread->blockingMutex->owner) {

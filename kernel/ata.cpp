@@ -40,7 +40,9 @@ struct PRD {
 
 struct ATADriver {
 	void Initialise();
-	bool Access(uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *buffer); // Returns true on success.
+	bool Access(IOPacket *packet, uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *buffer); // Returns true on success.
+	bool AccessStart(int bus, int slave, uint64_t sector, uintptr_t offsetIntoSector, size_t sectorsNeededToLoad, size_t countBytes, int operation, uint8_t *buffer);
+	bool AccessEnd(Event *event, int bus, uintptr_t offsetIntoSector, size_t countBytes, int operation, uint8_t *buffer);
 
 	void SetDrive(int bus, int slave, int extra = 0);
 	bool foundController;
@@ -58,8 +60,6 @@ struct ATADriver {
 	PCIDevice *device;
 
 	uint16_t identifyData[ATA_SECTOR_SIZE / 2];
-
-	size_t accessCount;
 };
 
 ATADriver ata;
@@ -69,29 +69,9 @@ void ATADriver::SetDrive(int bus, int slave, int extra) {
 	for (int i = 0; i < 4; i++) ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS));
 }
 
-bool ATAAccessDrive(uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *buffer) {
-	return ata.Access(drive, sector, count, operation, buffer);
-}
-
-bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
-	// Print("Access: %d, %d, %d, %d, %x\n", drive, offset, countBytes, operation, _buffer);
-
-	uint64_t sector = offset / 512;
-	uint64_t offsetIntoSector = offset % 512;
-	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
-
-	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
-	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);
-	if (!sectorCount[drive]) KernelPanic("ATADriver::Access - Drive %d is invalid.\n", drive);
-	if (sector > sectorCount[drive] || (sector + sectorsNeededToLoad) > sectorCount[drive]) KernelPanic("ATADriver::Access - Attempt to access sector %d when drive only has %d sectors.\n", sector, sectorCount[drive]);
-	if (sectorsNeededToLoad > 64) KernelPanic("ATADriver::Access - Attempt to read more than 64 consecutive sectors in 1 function call.\n");
-
-	uintptr_t bus = drive >> 1;
-	uintptr_t slave = drive & 1;
-
+bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offsetIntoSector, size_t sectorsNeededToLoad, size_t countBytes, int operation, uint8_t *_buffer) {
 	// Lock the bus.
 	locks[bus].Acquire();
-	Defer(locks[bus].Release());
 
 	uint16_t *buffer = (uint16_t *) _buffer;
 
@@ -103,6 +83,7 @@ bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int 
 	Defer(timeout->Remove());
 
 	while ((ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 0x80) && !timeout->event.Poll());
+
 	if (timeout->event.Poll()) return false;
 
 	if (sector >= 0x10000000) {
@@ -152,6 +133,7 @@ bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int 
 
 	// Wait for the DRQ bit to set.
 	while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 3)) && !timeout->event.Poll());
+
 	if (timeout->event.Poll()) return false;
 
 	// Start the transfer.
@@ -159,9 +141,10 @@ bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int 
 	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
 	if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
 
-	// Wait for the command to complete.
-	event->Wait(ATA_TIMEOUT);
+	return true;
+}
 
+bool ATADriver::AccessEnd(Event *event, int bus, uintptr_t offsetIntoSector, size_t countBytes, int operation, uint8_t *buffer) {
 	// Check if the command has completed.
 	if (!event->Poll())
 		return false;
@@ -176,37 +159,42 @@ bool ATADriver::Access(uintptr_t drive, uint64_t offset, size_t countBytes, int 
 
 	// Copy the data that we read.
 	if (operation == DRIVE_ACCESS_READ && buffer) CopyMemory(buffer, (uint8_t *) buffers[bus] + offsetIntoSector, countBytes);
-	
-#if 0
-	else {
-		Event *event = irqs + bus;
-		event->autoReset = true;
-		event->Reset();
 
-		// Issue the command.
-		if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_PIO_48 : ATA_WRITE_PIO_48);
-		else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_PIO :    ATA_WRITE_PIO   );
+	return true;
+}
 
-		// Receive the data.
+bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
+	(void) packet;
+	// Print("Access: %d, %d, %d, %d, %x\n", drive, offset, countBytes, operation, _buffer);
 
-		for (uintptr_t sectorIndex = 0; sectorIndex < count; sectorIndex++) {
-			if (!event->Wait(ATA_TIMEOUT)) return false;
-			if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+	uint64_t sector = offset / 512;
+	uint64_t offsetIntoSector = offset % 512;
+	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
 
-			if (operation == DRIVE_ACCESS_READ) {
-				for (uintptr_t i = 0; i < 256; i++) {
-					buffer[i + 256 * sectorIndex] = ProcessorIn16(ATA_REGISTER(bus, ATA_DATA));
-				}
-			} else {
-				for (uintptr_t i = 0; i < 256; i++) {
-					ProcessorOut16(ATA_REGISTER(bus, ATA_DATA), buffer[i + 256 * sectorIndex]);
-				}
-			}
-		}
+	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
+	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);
+	if (!sectorCount[drive]) KernelPanic("ATADriver::Access - Drive %d is invalid.\n", drive);
+	if (sector > sectorCount[drive] || (sector + sectorsNeededToLoad) > sectorCount[drive]) KernelPanic("ATADriver::Access - Attempt to access sector %d when drive only has %d sectors.\n", sector, sectorCount[drive]);
+	if (sectorsNeededToLoad > 64) KernelPanic("ATADriver::Access - Attempt to read more than 64 consecutive sectors in 1 function call.\n");
+
+	uintptr_t bus = drive >> 1;
+	uintptr_t slave = drive & 1;
+
+	if (!AccessStart(bus, slave, sector, offsetIntoSector, sectorsNeededToLoad, countBytes, operation, _buffer)) {
+		locks[bus].Release();
+		return false;
 	}
-#endif
 
-	accessCount++;
+	Event *event = irqs + bus;
+	// Wait for the command to complete.
+	event->Wait(ATA_TIMEOUT);
+
+	if (!AccessEnd(event, bus, offsetIntoSector, countBytes, operation, _buffer)) {
+		locks[bus].Release();
+		return false;
+	}
+
+	locks[bus].Release();
 
 	return true;
 }
