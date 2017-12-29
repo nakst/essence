@@ -423,6 +423,7 @@ void IOPacket::QueuedChildren() {
 
 void IORequest::Cancel(OSError _error) {
 	mutex.AssertLocked();
+	Print("Cancel IORequest, error = %d\n", _error);
 	error = _error;
 	root->Complete(error);
 	Complete();

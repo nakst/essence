@@ -118,7 +118,7 @@ struct VMM {
 
 	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
-	bool HandlePageFault(uintptr_t address, size_t limit = 0);
+	bool HandlePageFault(uintptr_t address, size_t limit = 0, bool lookupRegionsOnly = true);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
 	void UnlockRegion(VMMRegion *region);
 
@@ -335,9 +335,6 @@ void VMM::Destroy() {
 	kernelVMM.Free(pageTable);
 #endif
 
-	// TODO Work out why enabling this can cause triple faults?
-	// 	It looks like the VAS may still be used causing fetch PFs?
-	// 	--> On async task threads??!?
 #if ARCH_X86_64
 	scheduler.lock.Acquire();
 	RegisterAsyncTask(CleanupVirtualAddressSpace, (void *) virtualAddressSpace.cr3, kernelProcess, true);
@@ -432,10 +429,15 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 		}
 
 		Process *currentProcess = GetCurrentThread()->process;
-		VMM *vmm = currentProcess->vmm;
+#ifdef ARCH_X86_64
+		VMM *vmm = offset >= 0xFFFF800000000000 ? &kernelVMM : currentProcess->vmm;
+#endif
 		vmm->lock.Acquire();
 		Defer(vmm->lock.Release());
-		vmm->HandlePageFault(offset, pageCount);
+
+		if (!vmm->HandlePageFault(offset, pageCount, false)) {
+			KernelPanic("VMM::Allocate - Could not page fault copy source region %x in VMM %x.\n", offset, vmm);
+		}
 	}
 
 	lock.Acquire();
@@ -476,7 +478,6 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 	if (!success) return nullptr;
 	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1)));
 
-	// KernelLog(LOG_VERBOSE, "Allocated %x %d bytes, %s\n", baseAddress, size, CStringLength(reason), reason);
 	return address;
 }
 
@@ -609,6 +610,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 
 					case vmmRegionCopy: {
 						// Do nothing.
+						// KernelLog(LOG_VERBOSE, "vmmRegionCopy: Deallocate %x from %x.\n", mappedAddress, address);
 					} break;
 
 					default: {
@@ -655,6 +657,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 			// This page needs mapping.
 		} else {
 			// Skip the page.
+			// if (limit) KernelLog(LOG_VERBOSE, "vmmRegionCopy: am %x\n", virtualAddressSpace.Get(address));
 			continue;
 		}
 
@@ -664,6 +667,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 				allocatedPhysicalMemory += PAGE_SIZE;
 				virtualAddressSpace.Map(physicalPage, address, region->flags);
 				ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
+				// if (limit) KernelLog(LOG_VERBOSE, "vmmRegionCopy: fm %x\n", physicalPage);
 			} break;
 
 			case vmmRegionPhysical: {
@@ -689,13 +693,15 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 			} break;
 
 			case vmmRegionCopy: {
-				uintptr_t virtualAddress = virtualAddressSpace.Get(address - region->baseAddress + region->offset);
-				if (!virtualAddress) KernelPanic("VMM::HandlePageFaultInRegion - Copy region page was unmapped.\n");
-				virtualAddressSpace.Map(virtualAddress, address, region->flags);
+				uintptr_t physicalAddress = virtualAddressSpace.Get(address - region->baseAddress + region->offset);
+				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x\n", physicalAddress);
+				if (!physicalAddress) KernelPanic("VMM::HandlePageFaultInRegion - Copy region page (%x/%x) was unmapped.\n", address, address - region->baseAddress + region->offset);
+				virtualAddressSpace.Map(physicalAddress, address, region->flags);
+				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x (from %x) -> %x\n", physicalAddress, address - region->baseAddress + region->offset, address);
 			} break;
 
 			default: {
-				 return false;
+				return false;
 			} break;
 		}
 	}
@@ -758,11 +764,17 @@ void VMM::UnlockRegion(VMMRegion *region) {
 	region->lock--;
 }
 
-bool VMM::HandlePageFault(uintptr_t address, size_t limit) {
+bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnly) {
 	lock.AssertLocked();
 
 	uintptr_t page = address & ~(PAGE_SIZE - 1);
-	VMMRegion *region = FindRegion(address, lookupRegions, lookupRegionsCount);
+	VMMRegion *region;
+
+	if (lookupRegionsOnly) {
+		region = FindRegion(address, lookupRegions, lookupRegionsCount);
+	} else {
+		region = FindRegion(address, regions, regionsCount);
+	}
 
 	if (region) {
 		if (region->type == vmmRegionShared) {
@@ -780,7 +792,16 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit) {
 		}
 
 		return result;
-	} else return false;
+	} else {
+#if 0
+		Print("Could not find region, lookupRegionsOnly = %d\n", lookupRegionsOnly);
+		for (uintptr_t i = 0; i < regionsCount; i++) {
+			Print("region %d, from %x %d pages type %d\n", i, regions[i].baseAddress, regions[i].pageCount, regions[i].type);
+		} 
+#endif
+
+		return false;
+	}
 }
 
 #ifdef ARCH_X86_64
@@ -1073,7 +1094,7 @@ void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 	//	...actually I think we might not bother doing this.
 	if (scheduler.processors > 1) {
 		ipiLock.Acquire();
-		tlbShootdownVirtualAddress = _virtualAddress;
+		tlbShootdownVirtualAddress = virtualAddressU;
 		tlbShootdownPageCount = pageCount;
 		tlbShootdownRemainingProcessors = scheduler.processors - 1;
 		ProcessorSendIPI(TLB_SHOOTDOWN_IPI);
@@ -1296,7 +1317,7 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	KernelLog(LOG_VERBOSE, "SharedMemoryManager::CreateSharedMemory - %d bytes\n", sizeBytes);
+	// KernelLog(LOG_VERBOSE, "SharedMemoryManager::CreateSharedMemory - %d bytes\n", sizeBytes);
 
 	NamedSharedMemoryRegion *namedRegion = nullptr;
 
@@ -1371,7 +1392,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 	uintptr_t *addresses = (uintptr_t *) (region + 1);
 
-	KernelLog(LOG_VERBOSE, "Freeing shared memory region.... (%d bytes)\n", region->sizeBytes);
+	// KernelLog(LOG_VERBOSE, "Freeing shared memory region.... (%d bytes)\n", region->sizeBytes);
 
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < pages; i++) {

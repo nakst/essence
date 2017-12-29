@@ -370,7 +370,7 @@ void KernelPanic(const char *format, ...) {
 	va_end(arguments);
 
 	Print("Current thread = %x\n", GetCurrentThread());
-	Print("Trace: %x\n", __builtin_return_address(1));
+	Print("Trace: %x, %x\n", __builtin_return_address(0), __builtin_return_address(1));
 	Print("Press <ENTER> to enter the kernel debugger...\n");
 
 	for (int i = 0; i < 80 * 25; i++) {

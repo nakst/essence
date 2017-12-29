@@ -363,7 +363,7 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 
 Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveThreads) {
 	Thread *thread = (Thread *) threadPool.Add();
-	KernelLog(LOG_VERBOSE, "Created thread, %x\n", thread);
+	// KernelLog(LOG_VERBOSE, "Created thread, %x to start at %x\n", thread, startAddress);
 	thread->isKernelThread = !userland;
 
 	// 2 handles to the thread:
@@ -689,7 +689,7 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 }
 
 void Scheduler::RemoveProcess(Process *process) {
-	KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
+	// KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
 	// At this point, no pointers to the process (should) remain (I think).
 
@@ -713,7 +713,7 @@ void Scheduler::RemoveThread(Thread *thread) {
 	// The last handle to the thread has been closed,
 	// so we can finally deallocate the thread.
 
-	KernelLog(LOG_INFO, "Removing thread %d.\n", thread->id);
+	// KernelLog(LOG_INFO, "Removing thread %d.\n", thread->id);
 
 	scheduler.threadPool.Remove(thread);
 }
@@ -848,7 +848,7 @@ void CloseHandleToProcess(void *_process) {
 
 	bool deallocate = !process->handles;
 
-	KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
+	// KernelLog(LOG_VERBOSE, "Handles left to process %x: %d\n", process, process->handles);
 
 	scheduler.lock.Release();
 
@@ -869,7 +869,7 @@ void CloseHandleToThread(void *_thread) {
 	}
 	thread->handles--;
 	bool removeThread = thread->handles == 0;
-	KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
+	// KernelLog(LOG_VERBOSE, "Handles left to thread %x: %d\n", thread, thread->handles);
 	scheduler.lock.Release();
 
 	if (removeThread) {
@@ -884,10 +884,10 @@ void KillThread(void *_thread) {
 	scheduler.allThreads.Remove(&thread->allItem);
 	thread->process->threads.Remove(&thread->processItem);
 
-	KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
+	// KernelLog(LOG_VERBOSE, "Killing thread %x...\n", _thread);
 
 	if (thread->process->threads.count == 0) {
-		KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
+		// KernelLog(LOG_VERBOSE, "Killing process %x...\n", thread->process);
 
 		thread->process->allThreadsTerminated = true;
 

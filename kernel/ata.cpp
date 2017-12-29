@@ -3,7 +3,7 @@
 #define ATA_BUSES 2
 #define ATA_DRIVES (ATA_BUSES * 2)
 #define ATA_SECTOR_SIZE (512)
-#define ATA_TIMEOUT (1000)
+#define ATA_TIMEOUT (10000)
 
 #define ATA_REGISTER(_bus, _reg) (_reg != -1 ? ((_bus ? 0x170 : 0x1F0) + _reg) : (_bus ? 0x376 : 0x3F6))
 #define ATA_IRQ(_bus) (_bus ? 15 : 14)
@@ -56,6 +56,7 @@ struct ATADriver {
 	Mutex locks[ATA_BUSES]; 
 	Event irqs[ATA_BUSES];
 	Timer timeouts[ATA_BUSES];
+	bool useDMA[ATA_BUSES];
 
 	PCIDevice *device;
 
@@ -112,39 +113,89 @@ bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offse
 	event->autoReset = false;
 	event->Reset();
 
-	// Prepare the PRDT and buffer
-	prdts[bus]->size = sectorsNeededToLoad * ATA_SECTOR_SIZE;
-	if (operation == DRIVE_ACCESS_WRITE) CopyMemory((uint8_t *) buffers[bus] + offsetIntoSector, buffer, countBytes);
+	if (useDMA[bus * 2 + slave]) {
+		// Make sure the previous request has completed.
+		ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS));
+		device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS));
 
-	// Set the mode.
-	device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 0 : 8);
-	device->WriteBAR8(DMA_REGISTER(bus, DMA_STATUS), 6);
+		// Prepare the PRDT and buffer
+		prdts[bus]->size = sectorsNeededToLoad * ATA_SECTOR_SIZE;
+		if (operation == DRIVE_ACCESS_WRITE) CopyMemory((uint8_t *) buffers[bus] + offsetIntoSector, buffer, countBytes);
 
-	// Wait for the RDY bit to set.
-	while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 6)) && !timeout->event.Poll());
-	if (timeout->event.Poll()) return false;
+		// Set the mode.
+		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 0 : 8);
+		device->WriteBAR8(DMA_REGISTER(bus, DMA_STATUS), 6);
 
-	// Issue the command.
-	if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA_48 : ATA_WRITE_DMA_48);
-	else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA :    ATA_WRITE_DMA   );
+		// Wait for the RDY bit to set.
+		while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 6)) && !timeout->event.Poll());
+		if (timeout->event.Poll()) return false;
 
-	// Wait for the DRQ bit to set.
-	while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 3)) && !timeout->event.Poll());
+		// Issue the command.
+		if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA_48 : ATA_WRITE_DMA_48);
+		else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_DMA :    ATA_WRITE_DMA   );
 
-	if (timeout->event.Poll()) return false;
+		// Wait for the DRQ bit to set.
+		while (!(ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & (1 << 3)) && !timeout->event.Poll());
 
-	// Start the transfer.
-	device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 1 : 9);
-	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
-	if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+		if (timeout->event.Poll()) return false;
+
+		// Start the transfer.
+		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 1 : 9);
+		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
+		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+	} else {
+		event->autoReset = true;
+
+		// Issue the command.
+		if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_PIO_48 : ATA_WRITE_PIO_48);
+		else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_PIO :    ATA_WRITE_PIO   );
+
+		// Receive the data.
+
+		bool reading = false;
+		uintptr_t index = 0;
+
+		for (uintptr_t sectorIndex = 0; sectorIndex < sectorsNeededToLoad; sectorIndex++) {
+			if (!event->Wait(ATA_TIMEOUT)) return false;
+			if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+
+			if (operation == DRIVE_ACCESS_READ) {
+				for (uintptr_t i = 0; i < 256; i++) {
+					uint16_t word = ProcessorIn16(ATA_REGISTER(bus, ATA_DATA));
+
+					for (uintptr_t j = 0; j < 2; j++) {
+						uint8_t byte = (word >> (j * 8)) & 0xFF;
+
+						if (offsetIntoSector == i * 2 + j) {
+							reading = true;
+						}
+
+						if (reading) {
+							_buffer[index++] = byte;
+							countBytes--;
+
+							if (!countBytes) {
+								reading = false;
+							}
+						}
+					}
+				}
+			} else {
+				for (uintptr_t i = 0; i < 256; i++) {
+					ProcessorOut16(ATA_REGISTER(bus, ATA_DATA), buffer[i + 256 * sectorIndex]);
+				}
+			}
+		}
+	}
 
 	return true;
 }
 
 bool ATADriver::AccessEnd(Event *event, int bus, uintptr_t offsetIntoSector, size_t countBytes, int operation, uint8_t *buffer) {
 	// Check if the command has completed.
-	if (!event->Poll())
+	if (!event->Poll()) {
 		return false;
+	}
 
 	// Check for error.
 	if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
@@ -162,7 +213,6 @@ bool ATADriver::AccessEnd(Event *event, int bus, uintptr_t offsetIntoSector, siz
 
 bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
 	(void) packet;
-	// Print("Access: %d, %d, %d, %d, %x\n", drive, offset, countBytes, operation, _buffer);
 
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
@@ -170,6 +220,7 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 	uintptr_t bus = drive >> 1;
 	uintptr_t slave = drive & 1;
 	Event *event = irqs + bus;
+	(void) event;
 
 	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
 	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);
@@ -185,12 +236,14 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 		return false;
 	}
 
-	// Wait for the command to complete.
-	event->Wait(ATA_TIMEOUT);
+	if (useDMA[drive]) {
+		// Wait for the command to complete.
+		event->Wait(ATA_TIMEOUT);
 
-	if (!AccessEnd(event, bus, offsetIntoSector, countBytes, operation, _buffer)) {
-		locks[bus].Release();
-		return false;
+		if (!AccessEnd(event, bus, offsetIntoSector, countBytes, operation, _buffer)) {
+			locks[bus].Release();
+			return false;
+		}
 	}
 
 	locks[bus].Release();
@@ -311,6 +364,7 @@ void ATADriver::Initialise() {
 			bool supportsLBA48 = lba48Sectors && (identifyData[83] & 0x40);
 			uint64_t sectors = supportsLBA48 ? lba48Sectors : lba28Sectors;
 			sectorCount[slave + bus * 2] = sectors;
+			useDMA[slave + bus * 2] = true;
 
 			KernelLog(LOG_INFO, "ATADriver::Initialise - Found ATA%z drive: %d/%d\n", isATAPI[slave + bus * 2] ? "PI" : "" ,bus, slave);
 			KernelLog(LOG_INFO, "ATADriver::Initialise - Sectors: %x\n", sectors);
@@ -345,6 +399,17 @@ void ATADriver::Initialise() {
 				// Disable the drives on this bus.
 				sectorCount[bus * 2 + 0] = 0;
 				sectorCount[bus * 2 + 1] = 0;
+			}
+		}
+
+		for (uintptr_t slave = 0; slave < 2; slave++) {
+			if (sectorCount[slave + bus * 2]) {
+				bool success = Access(nullptr, bus * 2 + slave, 0, 512, DRIVE_ACCESS_READ, (uint8_t *) identifyData);
+
+				if (!success) {
+					useDMA[slave + bus * 2] = false;
+					KernelLog(LOG_WARNING, "ATADriver::Initialise - Could not perform test DMA read on drive.\n");
+				}
 			}
 		}
 	}

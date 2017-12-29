@@ -224,7 +224,7 @@ const char *exceptionInformation[] = {
 };
 
 void ContextSanityCheck(InterruptContext *context) {
-	if (context->cs > 0x100 || context->ds > 0x100 || context->ss > 0x100 || context->rip == 0 || (context->rip >= 0x1000000000000 && context->rip < 0xFFFF000000000000)) {
+	if (!context || context->cs > 0x100 || context->ds > 0x100 || context->ss > 0x100 || context->rip == 0 || (context->rip >= 0x1000000000000 && context->rip < 0xFFFF000000000000)) {
 		ProcessorInvalidatePage((uintptr_t) context);
 		KernelLog(LOG_ERROR, "CS check failed.\n");
 		KernelPanic("InterruptHandler - Corrupt context (%x/%x/%x/%x)\nRIP = %x, RSP = %x\n", context, context->cs, context->ds, context->ss, context->rip, context->rsp);
@@ -320,7 +320,8 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					CPULocalStorage *storage = GetLocalStorage();
 
 					if (storage && storage->spinlockCount && ((context->cr2 >= 0xFFFF900000000000 && context->cr2 < 0xFFFFF00000000000) || context->cr2 < 0x8000000000000000)) {
-						KernelPanic("HandlePageFault - Page fault occurred in critical section at %x (CR2 = %x).\n", context->rip, context->cr2);
+						KernelPanic("HandlePageFault - Page fault occurred in critical section at %x (S = %x, B = %x, LG = %x) (CR2 = %x).\n", 
+								context->rip, context->rsp, context->rbp, storage->currentThread->lastKnownExecutionAddress, context->cr2);
 					}
 				}
 
@@ -343,6 +344,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 		// Spurious interrupt (PIC), ignore.
 	} else if (interrupt >= 0xF0 && interrupt < 0xFE) {
 		// IPI.
+		// Warning: This code executes at a special IRQL! Do not acquire spinlocks!!
 
 		if (ipiVector == TLB_SHOOTDOWN_IPI) {
 			uintptr_t page = tlbShootdownVirtualAddress;
@@ -410,7 +412,8 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 	*local->acpiProcessor->kernelStack = kernelStack;
 
 	if (local->currentThread->timeSlices == 1) {
-		KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
+		ContextSanityCheck(context);
+		// KernelLog(LOG_VERBOSE, "Executing new thread %x at %x\n", local->currentThread, context->rip);
 	}
 
 	acpi.lapic.EndOfInterrupt();
