@@ -63,7 +63,7 @@ struct Node {
 	struct Node *nextNodeInHashTableSlot;
 	struct Node **pointerToThisNodeInHashTableSlot;
 
-	Mutex mutex; // Lock the node during an operation.
+	Semaphore semaphore; 
 
 	NodeData data;
 	Node *parent;
@@ -116,11 +116,11 @@ VFS vfs;
 #ifdef IMPLEMENTATION
 
 bool Node::Resize(uint64_t newSize) {
-	mutex.Acquire();
-	Defer(mutex.Release());
+	semaphore.Take();
+	Defer(semaphore.Return());
 
-	parent->mutex.Acquire();
-	Defer(parent->mutex.Release());
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
 
 	modifiedSinceLastSync = true;
 
@@ -140,15 +140,15 @@ bool Node::Resize(uint64_t newSize) {
 }
 
 void Node::Sync() {
-	mutex.Acquire();
-	Defer(mutex.Release());
+	semaphore.Take();
+	Defer(semaphore.Return());
 
 	if (!modifiedSinceLastSync) {
 		return;
 	}
 
-	parent->mutex.Acquire();
-	Defer(parent->mutex.Release());
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
 
 	modifiedSinceLastSync = false;
 
@@ -164,8 +164,8 @@ void Node::Sync() {
 }
 
 bool Node::EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount) {
-	mutex.Acquire();
-	Defer(mutex.Release());
+	semaphore.Take();
+	Defer(semaphore.Return());
 
 	if (bufferCount < data.directory.entryCount) {
 		return false;
@@ -204,11 +204,11 @@ void Node::CopyInformation(OSNodeInformation *information) {
 }
 
 void Node::Complete(IOPacket *packet) {
-	packet->request->node->mutex.Release();
+	packet->request->node->semaphore.Return();
 }
 
 void Node::Write(IOPacket *packet) {
-	mutex.Acquire();
+	semaphore.Take();
 
 	IORequest *request = packet->request;
 
@@ -249,7 +249,7 @@ void Node::Write(IOPacket *packet) {
 }
 
 void Node::Read(IOPacket *packet) {
-	mutex.Acquire();
+	semaphore.Take();
 
 	IORequest *request = packet->request;
 
@@ -403,8 +403,8 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 
 		bool isFinalNode = !nameLength;
 		Node *parent = node;
-		parent->mutex.Acquire();
-		Defer(parent->mutex.Release());
+		parent->semaphore.Take();
+		Defer(parent->semaphore.Return());
 
 		tryAgain:;
 
@@ -558,6 +558,10 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 	if (flags & OS_OPEN_NODE_EXCLUSIVE_READ)   existingNode->exclusiveRead = true;
 	if (flags & OS_OPEN_NODE_EXCLUSIVE_WRITE)  existingNode->exclusiveWrite = true;
 	if (flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) existingNode->exclusiveResize = true;
+
+	if (!existingNode->handles) {
+		existingNode->semaphore.Return(1);
+	}
 
 	existingNode->handles++;
 

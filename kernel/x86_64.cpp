@@ -308,7 +308,24 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			if (interrupt == 14) {
-				if (interrupt == 14 && (context->errorCode & (1 << 3))) {
+#if 0
+				Print("err, %x\n", context->errorCode);
+				Print("cr3 = %x\n", ProcessorReadCR3());
+
+				{
+					uintptr_t indexL4 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 3);
+					uintptr_t indexL3 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 2);
+					uintptr_t indexL2 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 1);
+					uintptr_t indexL1 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0);
+					uintptr_t prev = context->cr2;
+					if (prev) Print("l4 %d, %x\n", indexL4, prev = PAGE_TABLE_L4[indexL4]);
+					if (prev) Print("l3, %x\n", prev = PAGE_TABLE_L3[indexL3]);
+					if (prev) Print("l2, %x\n", prev = PAGE_TABLE_L2[indexL2]);
+					if (prev) Print("l1, %x\n", prev = PAGE_TABLE_L1[indexL1]);
+				}
+#endif
+
+				if ((context->errorCode & (1 << 3)) || context->cr2 > 0xFFFFFF8000000000) {
 					goto fault;
 				}
 
@@ -437,7 +454,7 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 extern "C" uintptr_t Syscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 		uintptr_t returnAddress, uintptr_t argument3, uintptr_t argument4) {
 	(void) returnAddress;
-	return DoSyscall(argument0, argument1, argument2, argument3, argument4, false);
+	return DoSyscall((OSSyscallType) argument0, argument1, argument2, argument3, argument4, false);
 }
 
 void InitialiseRandomSeed() {

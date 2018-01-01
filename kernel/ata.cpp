@@ -1,3 +1,6 @@
+// TODO ATA DMA and writing broken on Bochs.
+// TODO Asynchronous timeout.
+
 #ifdef IMPLEMENTATION
 
 #define ATA_BUSES 2
@@ -38,22 +41,43 @@ struct PRD {
 	volatile uint16_t end;
 };
 
+struct ATAOperation {
+	void *buffer;
+	uintptr_t offsetIntoSector, readIndex;
+	size_t countBytes, sectorsNeededToLoad;
+	uint8_t operation, isDMA, readingData, bus, slave;
+	IOPacket *packet;
+};
+
+struct ATABlockedOperation {
+	IOPacket *packet;
+	uintptr_t drive;
+	uint64_t offset;
+	size_t countBytes;
+	int operation;
+	uint8_t *_buffer;
+
+	LinkedItem<ATABlockedOperation> item;
+};
+
 struct ATADriver {
 	void Initialise();
 	bool Access(IOPacket *packet, uintptr_t drive, uint64_t sector, size_t count, int operation, uint8_t *buffer); // Returns true on success.
 	bool AccessStart(int bus, int slave, uint64_t sector, uintptr_t offsetIntoSector, size_t sectorsNeededToLoad, size_t countBytes, int operation, uint8_t *buffer);
-	bool AccessEnd(Event *event, int bus, uintptr_t offsetIntoSector, size_t countBytes, int operation, uint8_t *buffer);
+	bool AccessEnd(int bus, int slave);
 
 	void SetDrive(int bus, int slave, int extra = 0);
+	void Unblock();
 	bool foundController;
 
 	uint64_t sectorCount[ATA_DRIVES];
 	bool isATAPI[ATA_DRIVES];
 	Device *devmanDevices[ATA_DRIVES];
 
+	Semaphore semaphore; 
+
 	PRD *prdts[ATA_BUSES];
 	void *buffers[ATA_BUSES];
-	Mutex locks[ATA_BUSES]; 
 	Event irqs[ATA_BUSES];
 	Timer timeouts[ATA_BUSES];
 	bool useDMA[ATA_BUSES];
@@ -61,6 +85,11 @@ struct ATADriver {
 	PCIDevice *device;
 
 	uint16_t identifyData[ATA_SECTOR_SIZE / 2];
+
+	volatile ATAOperation op;
+	
+	LinkedList<ATABlockedOperation> blockedPackets;
+	Mutex blockedPacketsMutex;
 };
 
 ATADriver ata;
@@ -113,6 +142,16 @@ bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offse
 	event->autoReset = false;
 	event->Reset();
 
+	// Save the operation information.
+	op.buffer = buffer;
+	op.offsetIntoSector = offsetIntoSector;
+	op.countBytes = countBytes;
+	op.operation = operation;
+	op.isDMA = useDMA[bus * 2 + slave];
+	op.readingData = false;
+	op.readIndex = 0;
+	op.sectorsNeededToLoad = sectorsNeededToLoad;
+
 	if (useDMA[bus * 2 + slave]) {
 		// Make sure the previous request has completed.
 		ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS));
@@ -149,78 +188,67 @@ bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offse
 		// Issue the command.
 		if (pio48) 	ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_PIO_48 : ATA_WRITE_PIO_48);
 		else		ProcessorOut8(ATA_REGISTER(bus, ATA_COMMAND), operation == DRIVE_ACCESS_READ ? ATA_READ_PIO :    ATA_WRITE_PIO   );
-
-		// Receive the data.
-
-		bool reading = false;
-		uintptr_t index = 0;
-
-		for (uintptr_t sectorIndex = 0; sectorIndex < sectorsNeededToLoad; sectorIndex++) {
-			if (!event->Wait(ATA_TIMEOUT)) return false;
-			if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
-
-			if (operation == DRIVE_ACCESS_READ) {
-				for (uintptr_t i = 0; i < 256; i++) {
-					uint16_t word = ProcessorIn16(ATA_REGISTER(bus, ATA_DATA));
-
-					for (uintptr_t j = 0; j < 2; j++) {
-						uint8_t byte = (word >> (j * 8)) & 0xFF;
-
-						if (offsetIntoSector == i * 2 + j) {
-							reading = true;
-						}
-
-						if (reading) {
-							_buffer[index++] = byte;
-							countBytes--;
-
-							if (!countBytes) {
-								reading = false;
-							}
-						}
-					}
-				}
-			} else {
-				for (uintptr_t i = 0; i < 256; i++) {
-					ProcessorOut16(ATA_REGISTER(bus, ATA_DATA), buffer[i + 256 * sectorIndex]);
-				}
-			}
-		}
 	}
 
 	return true;
 }
 
-bool ATADriver::AccessEnd(Event *event, int bus, uintptr_t offsetIntoSector, size_t countBytes, int operation, uint8_t *buffer) {
-	// Check if the command has completed.
-	if (!event->Poll()) {
-		return false;
+bool ATADriver::AccessEnd(int bus, int slave) {
+	Event *event = irqs + bus;
+	int drive = bus * 2 + slave;
+
+	if (useDMA[drive]) {
+		// Wait for the command to complete.
+		event->Wait(ATA_TIMEOUT);
+
+		// Check if the command has completed.
+		if (!event->Poll()) {
+			return false;
+		}
+
+		// Check for error.
+		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 3) return false;
+
+		return true;
+	} else {
+		// Wait for the command to complete.
+		if (!event->Wait(ATA_TIMEOUT)) return false;
+
+		// Check for error.
+		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
+
+		return true;
+	}
+}
+
+void ATADriver::Unblock() {
+	ATABlockedOperation *operation = nullptr;
+
+	blockedPacketsMutex.Acquire();
+	semaphore.Return(1);
+
+	if (blockedPackets.firstItem) {
+		operation = blockedPackets.firstItem->thisItem;
+		blockedPackets.Remove(blockedPackets.firstItem);
+		operation->packet->driverTemp = nullptr;
 	}
 
-	// Check for error.
-	if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
-	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
+	blockedPacketsMutex.Release();
 
-	// Stop the transfer.
-	device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), 0);
-	if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 3) return false;
+	if (operation && !Access(operation->packet, operation->drive, operation->offset, operation->countBytes, operation->operation, operation->_buffer)) {
+		operation->packet->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+	}
 
-	// Copy the data that we read.
-	if (operation == DRIVE_ACCESS_READ && buffer) CopyMemory(buffer, (uint8_t *) buffers[bus] + offsetIntoSector, countBytes);
-
-	return true;
+	OSHeapFree(operation);
 }
 
 bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_t countBytes, int operation, uint8_t *_buffer) {
-	(void) packet;
-
 	uint64_t sector = offset / 512;
 	uint64_t offsetIntoSector = offset % 512;
 	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
 	uintptr_t bus = drive >> 1;
 	uintptr_t slave = drive & 1;
-	Event *event = irqs + bus;
-	(void) event;
 
 	if (drive >= ATA_DRIVES) KernelPanic("ATADriver::Access - Drive %d exceedes the maximum number of ATA driver (%d).\n", drive, ATA_DRIVES);
 	if (isATAPI[drive]) KernelPanic("ATADriver::Access - Drive %d is an ATAPI drive. ATAPI read/write operations are currently not supported.\n", drive);
@@ -228,27 +256,171 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 	if (sector > sectorCount[drive] || (sector + sectorsNeededToLoad) > sectorCount[drive]) KernelPanic("ATADriver::Access - Attempt to access sector %d when drive only has %d sectors.\n", sector, sectorCount[drive]);
 	if (sectorsNeededToLoad > 64) KernelPanic("ATADriver::Access - Attempt to read more than 64 consecutive sectors in 1 function call.\n");
 
-	// Lock the bus.
-	locks[bus].Acquire();
+	// Lock the driver.
+	if (packet) {
+		packet->driverRunning = true;
+		blockedPacketsMutex.Acquire();
+		if (semaphore.units == 0) {
+			ATABlockedOperation *op = (ATABlockedOperation *) OSHeapAllocate(sizeof(ATABlockedOperation), true);
+			packet->driverTemp = op;
+			op->packet = packet;
+			op->drive = drive;
+			op->offset = offset;
+			op->countBytes = countBytes;
+			op->operation = operation;
+			op->_buffer = _buffer;
+			op->item.thisItem = op;
+			blockedPackets.InsertEnd(&op->item);
+			blockedPacketsMutex.Release();
+			return true;
+		} else {
+			semaphore.Take(1);
+		}
+		blockedPacketsMutex.Release();
+	} else {
+		while (true) {
+			semaphore.available.Wait(OS_WAIT_NO_TIMEOUT);
+			blockedPacketsMutex.Acquire();
+			if (semaphore.units) {
+				semaphore.Take(1);
+				break;
+			}
+			blockedPacketsMutex.Release();
+		}
+		blockedPacketsMutex.Release();
+	}
+
+	op.packet = packet;
+	op.bus = bus;
+	op.slave = slave;
 
 	if (!AccessStart(bus, slave, sector, offsetIntoSector, sectorsNeededToLoad, countBytes, operation, _buffer)) {
-		locks[bus].Release();
+		semaphore.Return(1);
 		return false;
 	}
 
-	if (useDMA[drive]) {
-		// Wait for the command to complete.
-		event->Wait(ATA_TIMEOUT);
+#if 0
+	bool result = AccessEnd(bus, slave);
+	semaphore.Return(1);
+	if (result && packet) packet->Complete(OS_SUCCESS);
+	return result;
+#else
+	if (!packet) {
+		bool result = AccessEnd(bus, slave);
+		Unblock();
+		return result;
+	} else {
+		return true; // The command has been successfully queued.
+	}
+#endif
+}
 
-		if (!AccessEnd(event, bus, offsetIntoSector, countBytes, operation, _buffer)) {
-			locks[bus].Release();
-			return false;
+void ATAIRQHandler2(void *argument) {
+	(void) argument;
+
+	ATAOperation *op = (ATAOperation *) &ata.op;
+	bool cancelled = false;
+
+	if (op->packet) {
+		op->packet->request->mutex.Acquire();
+		cancelled = op->packet->cancelled;
+	}
+
+	ProcessorIn8(ATA_REGISTER(op->bus, ATA_STATUS));
+	ata.device->ReadBAR8(DMA_REGISTER(op->bus, DMA_STATUS));
+
+	if (op->isDMA) {
+		if (!(ata.device->ReadBAR8(DMA_REGISTER(op->bus, DMA_STATUS)) & 4)) {
+			// The interrupt bit was not set, so the IRQ must have been generated by a different device.
+		} else {
+			Event *event = ata.irqs + op->bus;
+
+			if (!event->state) {
+				// Copy the data that we read.
+				if (op->buffer && op->operation == DRIVE_ACCESS_READ && !cancelled) {
+					CopyMemory((void *) op->buffer, (uint8_t *) ata.buffers[op->bus] + op->offsetIntoSector, op->countBytes);
+				}
+
+				// Stop the transfer.
+				ata.device->WriteBAR8(DMA_REGISTER(op->bus, DMA_COMMAND), 0);
+
+				event->Set();
+				goto requestDone;
+			} else {
+				KernelLog(LOG_WARNING, "ATAIRQHandler - Received more interrupts than expected.\n");
+			}
+		}
+	} else {
+		Event *event = ata.irqs + op->bus;
+		bool error = ProcessorIn8(ATA_REGISTER(op->bus, ATA_STATUS)) & 33;
+
+		if (!error && op->sectorsNeededToLoad) {
+			if (op->operation == DRIVE_ACCESS_READ) {
+				for (uintptr_t i = 0; i < 256; i++) {
+					uint16_t word = ProcessorIn16(ATA_REGISTER(op->bus, ATA_DATA));
+
+					for (uintptr_t j = 0; j < 2; j++) {
+						uint8_t byte = (word >> (j * 8)) & 0xFF;
+
+						if (op->offsetIntoSector == i * 2 + j) {
+							op->readingData = true;
+						}
+
+						if (op->readingData) {
+							if (!cancelled) ((uint8_t *) op->buffer)[op->readIndex++] = byte;
+							op->countBytes--;
+
+							if (!op->countBytes) {
+								op->readingData = false;
+							}
+						}
+					}
+				}
+			} else {
+				uint16_t *buffer = (uint16_t *) op->buffer;
+
+				for (uintptr_t i = 0; i < 256; i++) {
+					ProcessorOut16(ATA_REGISTER(op->bus, ATA_DATA), cancelled ? 0 : buffer[op->readIndex++]);
+				}
+			}
+
+			op->sectorsNeededToLoad--;
+		}
+
+		if (error || !op->sectorsNeededToLoad) {
+			if (!event->state) {
+				event->Set();
+				goto requestDone;
+			} else {
+				KernelLog(LOG_WARNING, "ATAIRQHandler - Received more interrupts than expected.\n");
+			}
 		}
 	}
 
-	locks[bus].Release();
+	goto done;
+	requestDone:;
 
-	return true;
+	if (op->packet) {
+		IOPacket *packet = op->packet;
+		bool result = ata.AccessEnd(op->bus, op->slave);
+		ata.Unblock();
+		packet->driverRunning = false;
+
+		if (!result) {
+			packet->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+		}
+
+		packet->Complete(result ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+		packet->request->mutex.Release();
+
+		return;
+	}
+
+	done:;
+
+	if (op->packet) {
+		op->packet->request->mutex.Release();
+	}
 }
 
 bool ATAIRQHandler(uintptr_t interruptIndex) {
@@ -256,28 +428,29 @@ bool ATAIRQHandler(uintptr_t interruptIndex) {
 
 	// Acknowledge the interrupt.
 	ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS));
+	ata.device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS));
 
-	if (!(ata.device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 4)) {
-		// The interrupt bit was not set, so the IRQ must have been generated by a different device.
+	if (!ata.op.buffer) {
 		return false;
-	} else {
-		Event *event = ata.irqs + bus;
-
-		if (!event->state) {
-			event->Set();
-		} else {
-			KernelLog(LOG_WARNING, "ATAIRQHandler - Received more interrupts than expected.\n");
-		}
-
-		if (event->blockedThreads.count) {
-			GetLocalStorage()->irqSwitchThread = true; 
-		}
 	}
+
+#ifdef ARCH_X86_64
+	if (ata.op.buffer < (void *) 0xFFFF800000000000) {
+		KernelPanic("ATAIRQHandler - Copy buffer (%x) not in kernel address space.\n", ata.op.buffer);
+	}
+#endif
+
+	scheduler.lock.Acquire();
+	RegisterAsyncTask(ATAIRQHandler2, nullptr, nullptr, true);
+	scheduler.lock.Release();
+	GetLocalStorage()->irqSwitchThread = true; 
 
 	return true;
 }
 
 void ATADriver::Initialise() {
+	semaphore.Return(1);
+
 	Device *controller;
 
 	{

@@ -2,8 +2,9 @@
 
 enum VideoColorMode {
 	// Little-endian.
-	VIDEO_COLOR_24_RGB,
+	VIDEO_COLOR_24_RGB, // byte[0] = blue, byte[1] = green, byte[2] = red
 	VIDEO_COLOR_32_XRGB,
+	VIDEO_COLOR_VGA_PLANES,
 };
 
 struct ModifiedScanline {
@@ -86,10 +87,11 @@ struct Graphics {
 
 	void UpdateScreen();
 	void UpdateScreen_VIDEO_COLOR_24_RGB();
+	void VGAUpdateScreen();
 	Mutex updateScreenMutex;
 
 	uint8_t *linearBuffer; 
-	size_t resX, resY; 
+        size_t resX, resY; 
 	uintptr_t strideY, strideX;
 	VideoColorMode colorMode;
 
@@ -211,10 +213,6 @@ void Graphics::UpdateScreen_VIDEO_COLOR_24_RGB() {
 }
 
 void Graphics::UpdateScreen() {
-	if (!linearBuffer) {
-		return;
-	}
-
 	windowManager.mutex.Acquire();
 	int cursorX = windowManager.cursorX + windowManager.cursorImageOffsetX, cursorY = windowManager.cursorY + windowManager.cursorImageOffsetY;
 	int cursorImageX = windowManager.cursorImageX, cursorImageY = windowManager.cursorImageY;
@@ -243,6 +241,10 @@ void Graphics::UpdateScreen() {
 		case VIDEO_COLOR_24_RGB: {
 			UpdateScreen_VIDEO_COLOR_24_RGB();
 		} break;
+
+		case VIDEO_COLOR_VGA_PLANES: {
+			VGAUpdateScreen();
+		} break;
 					 
 		default: {
 			KernelPanic("Graphics::UpdateScreen - Unsupported color mode.\n");
@@ -258,16 +260,23 @@ void Graphics::UpdateScreen() {
 }
 
 void Graphics::Initialise() {
-	if (!vesaMode->widthPixels) {
-		KernelPanic("Graphics::Initialise - Booted in an unsupported graphics mode.\n");
-	}
+	if (vesaMode->widthPixels) {
+		linearBuffer = (uint8_t *) kernelVMM.Allocate("ScreenBuffer", vesaMode->bytesPerScanlineLinear * vesaMode->heightPixels, vmmMapAll, vmmRegionPhysical, vesaMode->bufferPhysical, 0);
+		resX = vesaMode->widthPixels;
+		resY = vesaMode->heightPixels;
+		strideX = vesaMode->bitsPerPixel >> 3;
+		strideY = vesaMode->bytesPerScanlineLinear;
+		colorMode = VIDEO_COLOR_24_RGB; // TODO Other color modes.
+	} else {
+		VGASetMode();
+		resX = 640;
+		resY = 480;
+		colorMode = VIDEO_COLOR_VGA_PLANES;
 
-	linearBuffer = (uint8_t *) kernelVMM.Allocate("ScreenBuffer", vesaMode->bytesPerScanlineLinear * vesaMode->heightPixels, vmmMapAll, vmmRegionPhysical, vesaMode->bufferPhysical, 0);
-	resX = vesaMode->widthPixels;
-	resY = vesaMode->heightPixels;
-	strideX = vesaMode->bitsPerPixel >> 3;
-	strideY = vesaMode->bytesPerScanlineLinear;
-	colorMode = VIDEO_COLOR_24_RGB; // TODO Other color modes.
+#if 0
+		KernelPanic("Graphics::Initialise - Booted in an unsupported graphics mode.\n");
+#endif
+	}
 
 	surfacePool.Initialise(sizeof(Surface));
 

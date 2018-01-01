@@ -1,3 +1,5 @@
+// TODO Reduce heap allocations made by the IO manager.
+
 #ifndef IMPLEMENTATION
 
 enum DeviceType {
@@ -73,7 +75,7 @@ struct IOPacket {
 	struct IORequest *request;
 
 	IOPacket *parent;
-	LinkedItem<IOPacket> treeItem, driverItem;
+	LinkedItem<IOPacket> treeItem;
 	LinkedList<IOPacket> children;
 	size_t remaining;
 
@@ -81,13 +83,16 @@ struct IOPacket {
 	void *buffer;
 	uint64_t offset, count; 
 	void *parameter1, *parameter2;
+	
+	bool driverRunning;
+	void *driverTemp;
 };
 
 struct IORequest {
 	void Start();
 	void Cancel(OSError error);
 	void Complete();
-	bool CloseHandle();
+	bool CloseHandle(bool cancelIfNotFinished = false);
 	void PrintTree();
 	IOPacket *AddPacket(IOPacket *parent);
 
@@ -100,8 +105,10 @@ struct IORequest {
 	void *buffer;
 	uint64_t offset, count; 
 
+	bool cancelled;
+
 	Mutex mutex;
-	size_t handles;
+	volatile size_t handles;
 };
 
 extern DeviceManager deviceManager;
@@ -229,9 +236,10 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 
 			if (driverPacket) {
 				if (result) {
-					driverPacket->Complete(OS_SUCCESS);
+					// The packet has been queued.
 				} else {
 					driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+					driverPacket->Complete(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 				}
 			}
 		} break;
@@ -239,12 +247,14 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 		case BLOCK_DEVICE_DRIVER_AHCI: {
 			if (driverPacket) driverPacket->type = IO_PACKET_AHCI;
 			result = ahci.Access(/*driverPacket, */driveID, offset, countBytes, operation, buffer);
+			// TODO Asynchronous access.
 
 			if (driverPacket) {
 				if (result) {
 					driverPacket->Complete(OS_SUCCESS);
 				} else {
 					driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+					driverPacket->Complete(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 				}
 			}
 		} break;
@@ -295,10 +305,10 @@ IOPacket *IORequest::AddPacket(IOPacket *parent) {
 	handles++;
 
 	IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+	packet->cancelled = false;
 	packet->parent = parent;
 	packet->request = this;
 	packet->treeItem.thisItem = packet;
-	packet->driverItem.thisItem = packet;
 	packet->remaining = 1; // First event is removed when all children have been queued.
 
 	if (parent) {
@@ -369,9 +379,13 @@ void IOPacket::Complete(OSError error) {
 			} break;
 
 			case IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE: {
-				BlockDevice *device = (BlockDevice *) object;
-				CopyMemory(parameter2, parameter1, count);
-				device->Access(parent, offset, device->sectorSize, DRIVE_ACCESS_WRITE, (uint8_t *) buffer, true, true);
+				if (success) {
+					BlockDevice *device = (BlockDevice *) object;
+					CopyMemory(parameter2, parameter1, count);
+					device->Access(parent, offset, device->sectorSize, DRIVE_ACCESS_WRITE, (uint8_t *) buffer, true, true);
+				} else {
+					OSHeapFree(buffer);
+				}
 			} break;
 
 			case IO_PACKET_BLOCK_DEVICE_FREE_BUFFER: {
@@ -379,9 +393,32 @@ void IOPacket::Complete(OSError error) {
 			} break;
 
 			case IO_PACKET_AHCI: {
+				// TODO If unsuccessful, add block to damaged list in EsFS.
 			} break;
 
 			case IO_PACKET_ATA: {
+				if (!success) {
+					bool cont = true;
+					ata.blockedPacketsMutex.Acquire();
+
+					if (driverRunning) {
+						if (driverTemp) {
+							ATABlockedOperation *op = (ATABlockedOperation *) driverTemp;
+							ata.blockedPackets.Remove(&op->item);
+						} else {
+							// We need to wait for the driver to finish with this packet.
+							// They will send a Complete() when it is done.
+							// Because the packet has already been cancelled, 
+							// this will just free the packet and close the request's handle.
+							cont = false;
+						}
+					}
+
+					ata.blockedPacketsMutex.Release();
+					if (!cont) return; 
+				}
+
+				// TODO If unsuccessful, add block to damaged list in EsFS.
 			} break;
 		}
 
@@ -423,6 +460,7 @@ void IOPacket::QueuedChildren() {
 
 void IORequest::Cancel(OSError _error) {
 	mutex.AssertLocked();
+	if (cancelled) return; else cancelled = true;
 	Print("Cancel IORequest, error = %d\n", _error);
 	error = _error;
 	root->Complete(error);
@@ -435,8 +473,13 @@ void IORequest::Complete() {
 	complete.Set();
 }
 
-bool IORequest::CloseHandle() {
+bool IORequest::CloseHandle(bool cancelIfNotFinished) {
 	mutex.AssertLocked();
+
+	if (cancelIfNotFinished && !complete.state) {
+		Cancel(OS_ERROR_REQUEST_CLOSED_BEFORE_COMPLETE);
+	}
+
 	return --handles == 0;
 }
 

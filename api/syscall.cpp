@@ -2,7 +2,7 @@
 uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 		uintptr_t unused, uintptr_t argument3, uintptr_t argument4) {
 	(void) unused;
-	return DoSyscall(argument0, argument1, argument2, argument3, argument4, true);
+	return DoSyscall((OSSyscallType) argument0, argument1, argument2, argument3, argument4, true);
 }
 #endif
 
@@ -194,6 +194,16 @@ size_t OSReadFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffe
 
 size_t OSWriteFileSync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
 	intptr_t result = OSSyscall(OS_SYSCALL_WRITE_FILE_SYNC, handle, offset, size, (uintptr_t) buffer);
+	return result;
+}
+
+OSHandle OSReadFileAsync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
+	intptr_t result = OSSyscall(OS_SYSCALL_READ_FILE_ASYNC, handle, offset, size, (uintptr_t) buffer);
+	return result;
+}
+
+OSHandle OSWriteFileAsync(OSHandle handle, uint64_t offset, size_t size, void *buffer) {
+	intptr_t result = OSSyscall(OS_SYSCALL_WRITE_FILE_ASYNC, handle, offset, size, (uintptr_t) buffer);
 	return result;
 }
 

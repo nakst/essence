@@ -1,7 +1,7 @@
 // TODO Replace OS_ERROR_UNKNOWN_OPERATION_FAILURE with proper errors.
 // TODO Clean up the return values for system calls; with FATAL_ERRORs there should need to be less error codes returned.
 
-uintptr_t DoSyscall(uintptr_t index,
+uintptr_t DoSyscall(OSSyscallType index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3,
 		bool fromKernel);
@@ -68,7 +68,7 @@ bool MessageQueue::GetMessage(OSMessage &_message) {
 	return true;
 }
 
-uintptr_t DoSyscall(uintptr_t index,
+uintptr_t DoSyscall(OSSyscallType index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3,
 		bool fromKernel) {
@@ -664,6 +664,64 @@ uintptr_t DoSyscall(uintptr_t index,
 			}
 		} break;
 
+		case OS_SYSCALL_READ_FILE_ASYNC: {
+			KernelObjectType type = KERNEL_OBJECT_NODE;
+			Handle *handleData;
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
+
+			SYSCALL_BUFFER(argument3, argument2, 1);
+
+			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
+				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				request->handles = 1;
+				request->type = IO_REQUEST_READ;
+				request->node = file;
+				request->offset = argument1;
+				request->count = argument2;
+				request->buffer = (void *) argument3;
+				request->Start();
+				Handle handle = {};
+				handle.type = KERNEL_OBJECT_IO_REQUEST;
+				handle.object = request;
+				SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
+			} else {
+				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
+			}
+		} break;
+
+		case OS_SYSCALL_WRITE_FILE_ASYNC: {
+			KernelObjectType type = KERNEL_OBJECT_NODE;
+			Handle *handleData;
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
+
+			SYSCALL_BUFFER(argument3, argument2, 1);
+
+			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
+				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				request->handles = 1;
+				request->type = IO_REQUEST_WRITE;
+				request->node = file;
+				request->offset = argument1;
+				request->count = argument2;
+				request->buffer = (void *) argument3;
+				request->Start();
+				Handle handle = {};
+				handle.type = KERNEL_OBJECT_IO_REQUEST;
+				handle.object = request;
+				SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
+			} else {
+				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
+			}
+		} break;
+
 		case OS_SYSCALL_RESIZE_FILE: {
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
@@ -725,9 +783,11 @@ uintptr_t DoSyscall(uintptr_t index,
 			Event *events[OS_MAX_WAIT_COUNT];
 			void *objects[OS_MAX_WAIT_COUNT];
 
-			KernelObjectType waitableObjectTypes = (KernelObjectType) (KERNEL_OBJECT_PROCESS
+			KernelObjectType waitableObjectTypes = (KernelObjectType) 
+								 (KERNEL_OBJECT_PROCESS
 								| KERNEL_OBJECT_THREAD
-								| KERNEL_OBJECT_EVENT);
+								| KERNEL_OBJECT_EVENT
+								| KERNEL_OBJECT_IO_REQUEST);
 
 			for (uintptr_t i = 0; i < argument1; i++) {
 				KernelObjectType type = waitableObjectTypes;
@@ -754,6 +814,10 @@ uintptr_t DoSyscall(uintptr_t index,
 
 					case KERNEL_OBJECT_EVENT: {
 						events[i] = (Event *) object;
+					} break;
+
+					case KERNEL_OBJECT_IO_REQUEST: {
+						events[i] = &((IORequest *) object)->complete;
 					} break;
 
 					default: {

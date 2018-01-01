@@ -160,7 +160,7 @@ struct CPULocalStorage {
 
 #define MAX_ASYNC_TASKS (256)
 	volatile AsyncTask asyncTasks[MAX_ASYNC_TASKS];
-	volatile size_t asyncTasksCount;
+	volatile uint8_t asyncTasksRead, asyncTasksWrite;
 };
 
 struct UniqueIdentifier {
@@ -178,6 +178,7 @@ struct Process *desktopProcess;
 #include "object_manager.cpp"
 #include "scheduler.cpp"
 #include "terminal.cpp"
+#include "vga.cpp"
 #include "graphics.cpp"
 #include "acpi.cpp"
 

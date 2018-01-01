@@ -167,7 +167,7 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 		case KERNEL_OBJECT_IO_REQUEST: {
 			IORequest *request = (IORequest *) object;
 			request->mutex.Acquire();
-			bool destroy = request->CloseHandle();
+			bool destroy = request->CloseHandle(true /* Cancel the request; processes can only have 1 handle to an IO request. */);
 			request->mutex.Release();
 
 			if (destroy) {

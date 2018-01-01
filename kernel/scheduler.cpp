@@ -26,6 +26,15 @@ struct Event {
 	LinkedList<Thread> blockedThreads;
 };
 
+struct Semaphore {
+	void Take(uintptr_t units = 1);
+	void Return(uintptr_t units = 1);
+
+	Event available;
+	Mutex mutex;
+	volatile uintptr_t units;
+};
+
 struct Timer {
 	void Set(uint64_t triggerInMs, bool autoReset);
 	void Remove();
@@ -226,12 +235,6 @@ void Spinlock::Acquire() {
 
 	bool _interruptsEnabled = ProcessorAreInterruptsEnabled();
 	ProcessorDisableInterrupts();
-
-#if 0
-	if (_interruptsEnabled && this == &scheduler.lock) {
-		Print("!\n");
-	}
-#endif
 
 	CPULocalStorage *storage = GetLocalStorage();
 
@@ -539,9 +542,11 @@ void NewProcess() {
 }
 
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
+	// Print("spawning process, %s\n", imagePathLength, imagePath);
+
 	// Process initilisation.
 	Process *process = (Process *) processPool.Add();
-	// KernelLog(LOG_VERBOSE, "Created process, %x -> %x\n", process, process + 1);
+	KernelLog(LOG_VERBOSE, "Created process, %x\n", process);
 	process->allItem.thisItem = process;
 	process->vmm = &process->_vmm;
 	process->handles = 1;
@@ -588,39 +593,22 @@ unsigned currentProcessorID = 0;
 void AsyncTaskThread() {
 	CPULocalStorage *local = GetLocalStorage();
 
-	if (!local->asyncTasksCount) {
-		KernelPanic("AsyncTaskThread - Thread started with no async tasks to execute.\n");
-	}
-
 	while (true) {
-		uintptr_t i = 0;
-		while (true) {
-			volatile AsyncTask *task = local->asyncTasks + i;
+		if (local->asyncTasksRead == local->asyncTasksWrite) {
+			ProcessorFakeTimerInterrupt();
+		} else {
+			volatile AsyncTask *task = local->asyncTasks + local->asyncTasksRead;
 
 			if (task->addressSpace) {
 				local->currentThread->asyncTempAddressSpace = task->addressSpace;
 				ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(task->addressSpace));
-			} else {
-				local->currentThread->asyncTempAddressSpace = nullptr;
-				ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(&kernelVMM.virtualAddressSpace));
 			}
 
 			task->callback(task->argument);
-			i++;
-
 			local->currentThread->asyncTempAddressSpace = nullptr;
 			ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(&kernelVMM.virtualAddressSpace));
 
-			// If that was the last task, exit.
-			if (i == __sync_val_compare_and_swap(&local->asyncTasksCount, i, 0)) {
-				break;
-			}
-		}
-			
-		ProcessorFakeTimerInterrupt();
-
-		if (local->asyncTasksCount == 0) {
-			KernelPanic("AsyncTaskThread - ProcessorFakeTimerInterrupt returned with no async tasks to execute.\n");
+			local->asyncTasksRead++;
 		}
 	}
 }
@@ -664,13 +652,20 @@ void Scheduler::InitialiseAP() {
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targetProcess, bool needed) {
 	scheduler.lock.AssertLocked();
 
+	if (targetProcess == nullptr) {
+		targetProcess = kernelProcess;
+	}
+
 	CPULocalStorage *local = GetLocalStorage();
 
-	if (local->asyncTasksCount >= MAX_ASYNC_TASKS / 2 && !needed) {
+	int difference = local->asyncTasksWrite - local->asyncTasksRead;
+	if (difference < 0) difference += MAX_ASYNC_TASKS;
+
+	if (difference >= MAX_ASYNC_TASKS / 2 && !needed) {
 		return;
 	}
 
-	if (local->asyncTasksCount == MAX_ASYNC_TASKS) {
+	if (difference == MAX_ASYNC_TASKS - 1) {
 		KernelPanic("RegisterAsyncTask - Maximum number of queued asynchronous tasks reached.\n");
 	}
 
@@ -681,11 +676,11 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 	}
 #endif
 
-	volatile AsyncTask *task = local->asyncTasks + local->asyncTasksCount;
+	volatile AsyncTask *task = local->asyncTasks + local->asyncTasksWrite;
 	task->callback = callback;
 	task->argument = argument;
 	task->addressSpace = &targetProcess->vmm->virtualAddressSpace;
-	local->asyncTasksCount++;
+	local->asyncTasksWrite++;
 }
 
 void Scheduler::RemoveProcess(Process *process) {
@@ -1021,7 +1016,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	Thread *newThread;
 	bool newThreadIsAsyncTask = false;
 
-	if (local->asyncTasksCount && local->asyncTaskThread->state == THREAD_ACTIVE) {
+	if (local->asyncTasksRead != local->asyncTasksWrite && local->asyncTaskThread->state == THREAD_ACTIVE) {
 		firstThreadItem = nullptr;
 		newThread = local->currentThread = local->asyncTaskThread;
 		newThreadIsAsyncTask = true;
@@ -1272,6 +1267,24 @@ void Mutex::AssertLocked() {
 				currentThread, owner, this, __builtin_return_address(0), __builtin_return_address(1), 
 				acquireAddress, releaseAddress);
 	}
+}
+
+void Semaphore::Take(uintptr_t u) {
+	while (u) {
+		available.Wait(OS_WAIT_NO_TIMEOUT);
+
+		mutex.Acquire();
+		if (units) { units--; u--; }
+		if (!units && available.state) available.Reset();
+		mutex.Release();
+	}
+}
+
+void Semaphore::Return(uintptr_t u) {
+	mutex.Acquire();
+	if (!available.state) available.Set();
+	units += u;
+	mutex.Release();
 }
 
 void Event::Set(bool schedulerAlreadyLocked) {

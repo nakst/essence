@@ -92,11 +92,11 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
-#if 0
+#if 1
 	{
 		// Load the wallpaper.
 
-		char *wallpaperPath = (char *) "/os/sample_images/Nebula.jpg";
+		char *wallpaperPath = (char *) "/os/sample_images/Flower.jpg";
 		size_t fileSize;
 		uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(wallpaperPath, OSCStringLength(wallpaperPath), &fileSize);
 
@@ -134,6 +134,11 @@ extern "C" void ProgramEntry() {
 
 		OSRedrawAll();
 	}
+#else
+	OSHandle surface = OS_SURFACE_WALLPAPER;
+	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
+	OSFillRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height), OSColor(0, 128, 128));
+	OSRedrawAll();
 #endif
 
 #if 1
@@ -150,7 +155,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 1
+#if 0
 	{
 		// Start the Odin test program.
 

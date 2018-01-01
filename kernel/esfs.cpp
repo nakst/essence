@@ -501,8 +501,6 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 }
 
 void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
-	_directory->mutex.AssertLocked();
-
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
 	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
@@ -572,8 +570,6 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 }
 
 Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_directory, uint64_t &flags) {
-	_directory->mutex.AssertLocked();
-
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
 	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
@@ -713,8 +709,6 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 	if (nameLength >= 256) {
 		return false;
 	}
-
-	_directory->mutex.AssertLocked();
 
 	EsFSFile *eFile = (EsFSFile *) (_directory + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);

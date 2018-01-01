@@ -398,6 +398,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsCount);
 	}
 
+
 	// Map the first few pages in to reduce the number of initial page faults.
 	if (type != vmmRegionFree) {
 		if (type == vmmRegionShared) {
@@ -421,6 +422,8 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
+	// Print("allocating memory, %d bytes\n", size);
+
 	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;
 
 	if (type == vmmRegionCopy) {
@@ -806,6 +809,8 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 
 #ifdef ARCH_X86_64
 bool HandlePageFault(uintptr_t page) {
+	// Print("HandlePageFault, %x\n", page);
+
 	// FFFF_8000_0000_0000 -> FFFF_8100_0000_0000	kernel image
 	// FFFF_8E00_0000_0000 -> FFFF_8F00_0000_0000	kernel heap
 	// FFFF_8F00_0000_0000 -> FFFF_9000_0000_0000	kernel VMM
@@ -1008,7 +1013,7 @@ void PMM::Initialise() {
 
 	for (uintptr_t i = 0x100; i < 0x200; i++) {
 		if (PAGE_TABLE_L4[i] == 0) {
-			PAGE_TABLE_L4[i] = pmm.AllocatePage() | 0x103;
+			PAGE_TABLE_L4[i] = pmm.AllocatePage() | 3;
 			ZeroMemory((void *) (PAGE_TABLE_L3 + (i << ENTRIES_PER_PAGE_TABLE_BITS)), PAGE_SIZE);
 		}
 	}
@@ -1127,16 +1132,19 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 
 	if ((PAGE_TABLE_L4[indexL4] & 1) == 0) {
 		PAGE_TABLE_L4[indexL4] = pmm.AllocatePage() | 7;
+		ProcessorInvalidatePage((uintptr_t) (PAGE_TABLE_L3 + indexL3));
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L3 + indexL3) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}
 
 	if ((PAGE_TABLE_L3[indexL3] & 1) == 0) {
 		PAGE_TABLE_L3[indexL3] = pmm.AllocatePage() | 7;
+		ProcessorInvalidatePage((uintptr_t) (PAGE_TABLE_L2 + indexL2));
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L2 + indexL2) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}
 
 	if ((PAGE_TABLE_L2[indexL2] & 1) == 0) {
 		PAGE_TABLE_L2[indexL2] = pmm.AllocatePage() | 7;
+		ProcessorInvalidatePage((uintptr_t) (PAGE_TABLE_L1 + indexL1));
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L1 + indexL1) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}
 

@@ -79,6 +79,8 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 
 #ifndef KERNEL
 	// OSPrint("Allocate: %d\n", size);
+#else
+	// Print("Allocate: %d\n", size);
 #endif
 
 	size_t originalSize = size;
