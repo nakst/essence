@@ -250,3 +250,11 @@ uintptr_t OSGetThreadID(OSHandle thread) {
 OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t size) {
 	return OSSyscall(OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN, directory, (uintptr_t) buffer, size, 0);
 }
+
+void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer) {
+	OSSyscall(OS_SYSCALL_GET_IO_REQUEST_PROGRESS, ioRequest, (uintptr_t) buffer, 0, 0);
+}
+
+void OSCancelIORequest(OSHandle ioRequest) {
+	OSSyscall(OS_SYSCALL_CANCEL_IO_REQUEST, ioRequest, 0, 0, 0);
+}

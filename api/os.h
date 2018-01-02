@@ -196,60 +196,63 @@ enum OSFatalError {
 #define OS_ERROR_REQUEST_CLOSED_BEFORE_COMPLETE (-30)
 #define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
 #define OS_ERROR_FILE_ON_READ_ONLY_VOLUME	(-32)
+#define OS_ERROR_USER_CANCELED_IO		(-33)
 
 typedef intptr_t OSError;
 
 enum OSSyscallType {
-	OS_SYSCALL_PRINT			,
-	OS_SYSCALL_ALLOCATE 			,
-	OS_SYSCALL_FREE 			,
-	OS_SYSCALL_CREATE_PROCESS 		,
-	OS_SYSCALL_GET_CREATION_ARGUMENT	,
-	OS_SYSCALL_CREATE_SURFACE		,
-	OS_SYSCALL_GET_LINEAR_BUFFER		,
-	OS_SYSCALL_INVALIDATE_RECTANGLE		,
-	OS_SYSCALL_COPY_TO_SCREEN		,
-	OS_SYSCALL_FORCE_SCREEN_UPDATE		,
-	OS_SYSCALL_FILL_RECTANGLE		,
-	OS_SYSCALL_COPY_SURFACE			,
-	OS_SYSCALL_CLEAR_MODIFIED_REGION	,
-	OS_SYSCALL_GET_MESSAGE			,
-	OS_SYSCALL_POST_MESSAGE			,
-	OS_SYSCALL_WAIT_MESSAGE			,
-	OS_SYSCALL_CREATE_WINDOW		,
-	OS_SYSCALL_UPDATE_WINDOW		,
-	OS_SYSCALL_DRAW_SURFACE			,
-	OS_SYSCALL_CREATE_MUTEX			,
-	OS_SYSCALL_ACQUIRE_MUTEX		,
-	OS_SYSCALL_RELEASE_MUTEX		,
-	OS_SYSCALL_CLOSE_HANDLE			,
-	OS_SYSCALL_TERMINATE_THREAD		,
-	OS_SYSCALL_CREATE_THREAD		,
-	OS_SYSCALL_WAIT				,
-	OS_SYSCALL_CREATE_SHARED_MEMORY		,
-	OS_SYSCALL_SHARE_MEMORY			,
-	OS_SYSCALL_MAP_SHARED_MEMORY		,
-	OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY	,
-	OS_SYSCALL_TERMINATE_PROCESS		,
-	OS_SYSCALL_OPEN_NODE			,
-	OS_SYSCALL_READ_FILE_SYNC		,
-	OS_SYSCALL_WRITE_FILE_SYNC		,
-	OS_SYSCALL_RESIZE_FILE			,
-	OS_SYSCALL_CREATE_EVENT			,
-	OS_SYSCALL_SET_EVENT			,
-	OS_SYSCALL_RESET_EVENT			,
-	OS_SYSCALL_POLL_EVENT			,
-	OS_SYSCALL_REFRESH_NODE_INFORMATION	,
-	OS_SYSCALL_SET_CURSOR_STYLE		,
-	OS_SYSCALL_MOVE_WINDOW			,
-	OS_SYSCALL_GET_WINDOW_BOUNDS 		,
-	OS_SYSCALL_REDRAW_ALL			,
-	OS_SYSCALL_PAUSE_PROCESS		,
-	OS_SYSCALL_CRASH_PROCESS		,
-	OS_SYSCALL_GET_THREAD_ID		,
-	OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN	,
-	OS_SYSCALL_READ_FILE_ASYNC		,
-	OS_SYSCALL_WRITE_FILE_ASYNC		,
+	OS_SYSCALL_PRINT,
+	OS_SYSCALL_ALLOCATE,
+	OS_SYSCALL_FREE,
+	OS_SYSCALL_CREATE_PROCESS,
+	OS_SYSCALL_GET_CREATION_ARGUMENT,
+	OS_SYSCALL_CREATE_SURFACE,
+	OS_SYSCALL_GET_LINEAR_BUFFER,
+	OS_SYSCALL_INVALIDATE_RECTANGLE,
+	OS_SYSCALL_COPY_TO_SCREEN,
+	OS_SYSCALL_FORCE_SCREEN_UPDATE,
+	OS_SYSCALL_FILL_RECTANGLE,
+	OS_SYSCALL_COPY_SURFACE,
+	OS_SYSCALL_CLEAR_MODIFIED_REGION,
+	OS_SYSCALL_GET_MESSAGE,
+	OS_SYSCALL_POST_MESSAGE,
+	OS_SYSCALL_WAIT_MESSAGE,
+	OS_SYSCALL_CREATE_WINDOW,
+	OS_SYSCALL_UPDATE_WINDOW,
+	OS_SYSCALL_DRAW_SURFACE,
+	OS_SYSCALL_CREATE_MUTEX,
+	OS_SYSCALL_ACQUIRE_MUTEX,
+	OS_SYSCALL_RELEASE_MUTEX,
+	OS_SYSCALL_CLOSE_HANDLE,
+	OS_SYSCALL_TERMINATE_THREAD,
+	OS_SYSCALL_CREATE_THREAD,
+	OS_SYSCALL_WAIT,
+	OS_SYSCALL_CREATE_SHARED_MEMORY,
+	OS_SYSCALL_SHARE_MEMORY,
+	OS_SYSCALL_MAP_SHARED_MEMORY,
+	OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY,
+	OS_SYSCALL_TERMINATE_PROCESS,
+	OS_SYSCALL_OPEN_NODE,
+	OS_SYSCALL_READ_FILE_SYNC,
+	OS_SYSCALL_WRITE_FILE_SYNC,
+	OS_SYSCALL_RESIZE_FILE,
+	OS_SYSCALL_CREATE_EVENT,
+	OS_SYSCALL_SET_EVENT,
+	OS_SYSCALL_RESET_EVENT,
+	OS_SYSCALL_POLL_EVENT,
+	OS_SYSCALL_REFRESH_NODE_INFORMATION,
+	OS_SYSCALL_SET_CURSOR_STYLE,
+	OS_SYSCALL_MOVE_WINDOW,
+	OS_SYSCALL_GET_WINDOW_BOUNDS ,
+	OS_SYSCALL_REDRAW_ALL,
+	OS_SYSCALL_PAUSE_PROCESS,
+	OS_SYSCALL_CRASH_PROCESS,
+	OS_SYSCALL_GET_THREAD_ID,
+	OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN,
+	OS_SYSCALL_READ_FILE_ASYNC,
+	OS_SYSCALL_WRITE_FILE_ASYNC,
+	OS_SYSCALL_GET_IO_REQUEST_PROGRESS,
+	OS_SYSCALL_CANCEL_IO_REQUEST,
 };
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -459,6 +462,13 @@ struct OSCrashReason {
 	OSError errorCode;
 };
 
+struct OSIORequestProgress {
+	uint64_t accessed;
+	uint64_t progress; 
+	bool completed, cancelled;
+	OSError error;
+};
+
 // TODO Implement separate message queues?
 #define OS_MESSAGE_QUEUE_WINDOW_MANAGER (0x01)
 #define OS_MESSAGE_QUEUE_DEBUGGER	(0x02)
@@ -618,10 +628,12 @@ extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, s
 extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 extern "C" OSHandle OSReadFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); 
-extern "C" OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Async API: message on completion, get completion status/error, cancel
+extern "C" OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Async API: message on completion, cancel
 extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 extern "C" void OSRefreshNodeInformation(OSNodeInformation *information);
 extern "C" OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
+extern "C" void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);
+extern "C" void OSCancelIORequest(OSHandle ioRequest);
 
 extern "C" OSError OSTerminateThread(OSHandle thread);
 extern "C" OSError OSTerminateProcess(OSHandle thread);
@@ -640,6 +652,7 @@ extern "C" OSError OSResetEvent(OSHandle event);
 extern "C" OSError OSPollEvent(OSHandle event);
 
 extern "C" uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t timeoutMs);
+#define OSWaitSingle(object) OSWait(&object, 1, OS_WAIT_NO_TIMEOUT)
 
 extern "C" OSHandle OSCreateSharedMemory(size_t size, char *name, size_t nameLength);
 extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);

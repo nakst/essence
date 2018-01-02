@@ -623,7 +623,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				OSError error = request->error;
 				CloseHandleToObject(request, KERNEL_OBJECT_IO_REQUEST);
 #endif
-				SYSCALL_RETURN(bytesRead ? bytesRead : error, false);
+				SYSCALL_RETURN(error != OS_SUCCESS ? error : bytesRead, false);
 			} else {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
@@ -658,7 +658,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				OSError error = request->error;
 				CloseHandleToObject(request, KERNEL_OBJECT_IO_REQUEST);
 #endif
-				SYSCALL_RETURN(bytesWritten ? bytesWritten : error, false);
+				SYSCALL_RETURN(error != OS_SUCCESS ? error : bytesWritten, false);
 			} else {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
 			}
@@ -971,6 +971,37 @@ uintptr_t DoSyscall(OSSyscallType index,
 			} else {
 				SYSCALL_RETURN(OS_ERROR_BUFFER_TOO_SMALL, false);
 			}
+		} break;
+
+		case OS_SYSCALL_GET_IO_REQUEST_PROGRESS: {
+			KernelObjectType type = KERNEL_OBJECT_IO_REQUEST;
+			IORequest *request = (IORequest *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!request) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(request, argument0));
+
+			SYSCALL_BUFFER(argument1, sizeof(OSIORequestProgress), 1);
+
+			OSIORequestProgress *buffer = (OSIORequestProgress *) argument1;
+			buffer->accessed = request->count;
+			buffer->progress = request->progress < request->count ? request->progress : request->count;
+			buffer->completed = request->complete.state;
+			buffer->cancelled = request->cancelled;
+			buffer->error = request->error;
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_CANCEL_IO_REQUEST: {
+			KernelObjectType type = KERNEL_OBJECT_IO_REQUEST;
+			IORequest *request = (IORequest *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!request) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(request, argument0));
+
+			request->mutex.Acquire();
+			request->Cancel(OS_ERROR_USER_CANCELED_IO);
+			request->mutex.Release();
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 	}
 

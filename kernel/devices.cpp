@@ -19,7 +19,7 @@ enum BlockDeviceDriver {
 
 struct BlockDevice {
 	bool Access(IOPacket *packet, uint64_t offset, size_t count, int operation, uint8_t *buffer, 
-			bool alreadyInCorrectPartition = false, bool freeBuffer = false);
+			bool alreadyInCorrectPartition = false, bool freeBuffer = false, bool makesProgress = true);
 
 	uintptr_t driveID;
 	size_t sectorSize;
@@ -79,6 +79,8 @@ struct IOPacket {
 	LinkedList<IOPacket> children;
 	size_t remaining;
 
+	bool makesProgress;
+
 	void *object;
 	void *buffer;
 	uint64_t offset, count; 
@@ -103,7 +105,7 @@ struct IORequest {
 
 	Node *node;
 	void *buffer;
-	uint64_t offset, count; 
+	uint64_t offset, count, progress; 
 
 	bool cancelled;
 
@@ -125,7 +127,8 @@ void AHCIRegisterController(struct PCIDevice *device);
 
 DeviceManager deviceManager;
 
-bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, bool alreadyInCorrectPartition, bool freeBuffer) {
+bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, 
+		bool alreadyInCorrectPartition, bool freeBuffer, bool makesProgress) {
 	if (!packet && freeBuffer) {
 		KernelPanic("BlockDevice::Access - `freeBuffer` set but `packet` was nullptr.\n");
 	}
@@ -159,7 +162,7 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 				continuePacket->type = IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE;
 				continuePacket->parameter1 = buffer;
 				continuePacket->parameter2 = temp1 + (offset - currentSector * sectorSize);
-				Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp1, true);
+				Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp1, true, false, true);
 				continuePacket->QueuedChildren();
 			} else {
 				if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp1, true)) return false;
@@ -194,7 +197,7 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 				continuePacket->type = IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE;
 				continuePacket->parameter1 = buffer;
 				continuePacket->parameter2 = temp2;
-				Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp2, true);
+				Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp2, true, false, true);
 				continuePacket->QueuedChildren();
 			} else {
 				if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp2, true)) return false;
@@ -221,6 +224,7 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 		driverPacket->offset = offset;
 		driverPacket->count = countBytes;
 		driverPacket->object = (void *) driveID;
+		driverPacket->makesProgress = makesProgress;
 
 		if (freeBuffer) {
 			packet->QueuedChildren();
@@ -348,6 +352,7 @@ void IORequest::Start() {
 
 	root = AddPacket(nullptr);
 	root->type = IO_PACKET_NODE;
+	error = OS_SUCCESS;
 
 	switch (type) {
 		case IO_REQUEST_READ: {
@@ -382,7 +387,7 @@ void IOPacket::Complete(OSError error) {
 				if (success) {
 					BlockDevice *device = (BlockDevice *) object;
 					CopyMemory(parameter2, parameter1, count);
-					device->Access(parent, offset, device->sectorSize, DRIVE_ACCESS_WRITE, (uint8_t *) buffer, true, true);
+					device->Access(parent, offset, device->sectorSize, DRIVE_ACCESS_WRITE, (uint8_t *) buffer, true, true, false);
 				} else {
 					OSHeapFree(buffer);
 				}
@@ -416,6 +421,10 @@ void IOPacket::Complete(OSError error) {
 
 					ata.blockedPacketsMutex.Release();
 					if (!cont) return; 
+				} else {
+					if (makesProgress) {
+						request->progress += count;
+					}
 				}
 
 				// TODO If unsuccessful, add block to damaged list in EsFS.

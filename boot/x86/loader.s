@@ -46,23 +46,26 @@ enable_video_mode:
 	xor	di,di
 	mov	ax,0x4F01
 ;%define video_mode 274
-;%define video_mode 277
+%define video_mode 277
 ; 1024x768
-%define video_mode 280
+;%define video_mode 280
 ; 1280x1024
-;%define video_mode 283
+; %define video_mode 283
 ;%define video_mode 287
 	mov	cx,video_mode | (1 << 14)
 	int	0x10
-	mov	si,error_could_not_set_video_mode
+;	mov	si,error_could_not_set_video_mode
 	cmp	ax,0x4F
-	jne	error
+;	jne	error
+	jne	.fail
 	mov	ax,0x4F02
 	mov	bx,video_mode | (1 << 14)
 	int	0x10
 	cmp	ax,0x4F
-	mov	si,error_could_not_set_video_mode
-	jne	error
+;	mov	si,error_could_not_set_video_mode
+;	jne	error
+	jne	.fail
+	.fail:
 
 check_cpuid:
 	; Check the CPU has CPUID

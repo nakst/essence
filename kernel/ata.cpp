@@ -402,16 +402,20 @@ void ATAIRQHandler2(void *argument) {
 
 	if (op->packet) {
 		IOPacket *packet = op->packet;
+		IORequest *request = packet->request;
+
 		bool result = ata.AccessEnd(op->bus, op->slave);
 		ata.Unblock();
 		packet->driverRunning = false;
 
 		if (!result) {
-			packet->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			// `packet` has been deallocated.
+		} else {
+			packet->Complete(result ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 		}
 
-		packet->Complete(result ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE);
-		packet->request->mutex.Release();
+		request->mutex.Release();
 
 		return;
 	}
@@ -440,9 +444,19 @@ bool ATAIRQHandler(uintptr_t interruptIndex) {
 	}
 #endif
 
-	scheduler.lock.Acquire();
-	RegisterAsyncTask(ATAIRQHandler2, nullptr, nullptr, true);
-	scheduler.lock.Release();
+	if (ata.op.packet) {
+		scheduler.lock.Acquire();
+		RegisterAsyncTask(ATAIRQHandler2, nullptr, nullptr, true);
+		scheduler.lock.Release();
+	} else {
+		// If we're using synchronous IO, then *don't* queue an asynchronous task.
+		// First of all, we don't need to (it's slower),
+		// and secondly, we need to Sync() nodes we're closing during process handle table termination,
+		// which takes place in the asynchronous task thread. (Meaning we'd get deadlock).
+		// TODO Is there a better way to do this, preventing similar bugs in the future?
+		ATAIRQHandler2(nullptr);
+	}
+
 	GetLocalStorage()->irqSwitchThread = true; 
 
 	return true;

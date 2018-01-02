@@ -154,6 +154,7 @@ void Node::Sync() {
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
+			Print("Syncing node...\n");
 			EsFSSync(this);
 		} break;
 
