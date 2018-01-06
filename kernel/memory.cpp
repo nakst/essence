@@ -435,11 +435,21 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 #ifdef ARCH_X86_64
 		VMM *vmm = offset >= 0xFFFF800000000000 ? &kernelVMM : currentProcess->vmm;
 #endif
-		vmm->lock.Acquire();
-		Defer(vmm->lock.Release());
 
-		if (!vmm->HandlePageFault(offset, pageCount, false)) {
-			KernelPanic("VMM::Allocate - Could not page fault copy source region %x in VMM %x.\n", offset, vmm);
+		{
+			vmm->lock.Acquire();
+			Defer(vmm->lock.Release());
+
+			if (!vmm->HandlePageFault(offset, pageCount, false)) {
+				KernelPanic("VMM::Allocate - Could not page fault copy source region %x in VMM %x.\n", offset, vmm);
+			}
+		}
+
+		object = vmm->FindAndLockRegion(offset, size);
+
+		if (!object) {
+			KernelLog(LOG_WARNING, "VMM::Allocate - Could not lock copy buffer.\n");
+			return nullptr;
 		}
 	}
 
@@ -579,6 +589,9 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		scheduler.lock.Acquire();
 		RegisterAsyncTask(CloseHandleToSharedMemoryRegionAfterVMMFree, region->object, kernelProcess, true);
 		scheduler.lock.Release();
+	} else if (region->type == vmmRegionCopy) {
+		VMMRegion *region2 = (VMMRegion *) region->object;
+		__sync_fetch_and_sub(&region2->lock, 1);
 	}
 
 	allocatedVirtualMemory -= region->pageCount * PAGE_SIZE;
@@ -750,21 +763,18 @@ VMMRegion *VMM::FindAndLockRegion(uintptr_t address, size_t size) {
 		return nullptr;
 	}
 
-	region->lock++;
+	__sync_fetch_and_add(&region->lock, 1);
 	return region;
 }
 
 void VMM::UnlockRegion(VMMRegion *region) {
 	if (!region) return;
 
-	lock.Acquire();
-	Defer(lock.Release());
-
 	if (!region->lock) {
 		KernelPanic("VMM::UnlockRegion - Region not locked.\n");
 	}
 
-	region->lock--;
+	__sync_fetch_and_sub(&region->lock, 1);
 }
 
 bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnly) {

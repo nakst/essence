@@ -46,9 +46,9 @@ enable_video_mode:
 	xor	di,di
 	mov	ax,0x4F01
 ;%define video_mode 274
-%define video_mode 277
+; %define video_mode 277
 ; 1024x768
-;%define video_mode 280
+%define video_mode 280
 ; 1280x1024
 ; %define video_mode 283
 ;%define video_mode 287

@@ -349,6 +349,10 @@ void IORequest::Start() {
 
 	buffer = kernelVMM.Allocate("IOCopy", count, vmmMapAll, vmmRegionCopy, (uintptr_t) buffer);
 
+	if (!buffer) {
+		return;
+	}
+
 	if (handles < 1) {
 		KernelPanic("IORequest::Start - Invalid handle count.\n");
 	}
