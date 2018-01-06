@@ -454,7 +454,7 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 extern "C" uintptr_t Syscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 		uintptr_t returnAddress, uintptr_t argument3, uintptr_t argument4) {
 	(void) returnAddress;
-	return DoSyscall((OSSyscallType) argument0, argument1, argument2, argument3, argument4, false);
+	return DoSyscall((OSSyscallType) argument0, argument1, argument2, argument3, argument4, false, nullptr);
 }
 
 void InitialiseRandomSeed() {

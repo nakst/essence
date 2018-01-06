@@ -75,6 +75,17 @@ extern "C" void ProgramEntry() {
 	OSPrint(":: TID = %d\n", OSGetThreadID(OS_CURRENT_THREAD));
 
 	{
+		OSBatchCall calls[2] = {
+			{ OS_SYSCALL_PRINT, true, (uintptr_t) "Test", 4, 0, 0, },
+			{ OS_SYSCALL_OPEN_NODE, false, 0, 0, 0, 0, },
+		};
+
+		uintptr_t returnValues[2];
+
+		OSBatch(calls, returnValues, 1);
+	}
+
+	{
 		char *path = (char *) "/os/sample_images";
 		OSNodeInformation node;
 		OSError error = OSOpenNode(path, OSCStringLength(path), OS_OPEN_NODE_DIRECTORY, &node);

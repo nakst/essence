@@ -253,6 +253,7 @@ enum OSSyscallType {
 	OS_SYSCALL_WRITE_FILE_ASYNC,
 	OS_SYSCALL_GET_IO_REQUEST_PROGRESS,
 	OS_SYSCALL_CANCEL_IO_REQUEST,
+	OS_SYSCALL_BATCH,
 };
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -270,6 +271,12 @@ enum OSSyscallType {
 
 typedef uintptr_t OSHandle;
 typedef void *OSObject;
+
+struct OSBatchCall {
+	OSSyscallType index; 
+	bool stopBatchIfError;
+	uintptr_t argument0, argument1, argument2, argument3;
+};
 
 struct OSThreadInformation {
 	OSHandle handle;
@@ -614,6 +621,8 @@ enum OSObjectType {
 #define OS_CONTROL_MENU_HAS_CHILDREN (2)
 
 extern "C" void OSInitialiseAPI();
+
+extern "C" void OSBatch(OSBatchCall *calls, uintptr_t *returnValues, size_t count); 
 
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);

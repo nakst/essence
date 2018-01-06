@@ -2,7 +2,7 @@
 uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 		uintptr_t unused, uintptr_t argument3, uintptr_t argument4) {
 	(void) unused;
-	return DoSyscall((OSSyscallType) argument0, argument1, argument2, argument3, argument4, true);
+	return DoSyscall((OSSyscallType) argument0, argument1, argument2, argument3, argument4, true, nullptr);
 }
 #endif
 
@@ -257,4 +257,15 @@ void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer) {
 
 void OSCancelIORequest(OSHandle ioRequest) {
 	OSSyscall(OS_SYSCALL_CANCEL_IO_REQUEST, ioRequest, 0, 0, 0);
+}
+
+void OSBatch(OSBatchCall *calls, uintptr_t *returnValues, size_t count) {
+#if 0
+	for (uintptr_t i = 0; i < count; i++) {
+		OSBatchCall *call = calls + i;
+		// ... modify system call for version changes ... 
+	}
+#endif
+
+	OSSyscall(OS_SYSCALL_BATCH, (uintptr_t) calls, (uintptr_t) returnValues, count, 0);
 }

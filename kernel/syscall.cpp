@@ -4,7 +4,10 @@
 uintptr_t DoSyscall(OSSyscallType index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3,
-		bool fromKernel);
+		uint64_t flags, bool *fatal);
+
+#define DO_SYSCALL_FROM_KERNEL  (1)
+#define DO_SYSCALL_BATCHED 	(2)
 
 #ifdef IMPLEMENTATION
 
@@ -71,11 +74,14 @@ bool MessageQueue::GetMessage(OSMessage &_message) {
 uintptr_t DoSyscall(OSSyscallType index,
 		uintptr_t argument0, uintptr_t argument1,
 		uintptr_t argument2, uintptr_t argument3,
-		bool fromKernel) {
+		uint64_t flags, bool *fatal) {
 	(void) argument0;
 	(void) argument1;
 	(void) argument2;
 	(void) argument3;
+
+	bool fromKernel = flags & DO_SYSCALL_FROM_KERNEL;
+	bool batched = flags & DO_SYSCALL_BATCHED;
 
 	// Interrupts need to be enabled during system calls,
 	// because many of them block on mutexes or events.
@@ -85,21 +91,23 @@ uintptr_t DoSyscall(OSSyscallType index,
 	Process *currentProcess = currentThread->process;
 	VMM *currentVMM = currentProcess->vmm;
 
-	if (currentThread->terminating) {
-		// The thread has been terminated.
-		// Yield the scheduler so it can be removed.
-		ProcessorFakeTimerInterrupt();
-	}
-
-	if (!fromKernel) {
-		if (currentThread->terminatableState != THREAD_TERMINATABLE) {
-			KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d).\n", 
-					currentThread, currentThread->terminatableState);
+	if (!batched) {
+		if (currentThread->terminating) {
+			// The thread has been terminated.
+			// Yield the scheduler so it can be removed.
+			ProcessorFakeTimerInterrupt();
 		}
 
-		currentThread->terminatableState = THREAD_IN_SYSCALL;
-	} else {
-		currentProcess = kernelProcess;
+		if (!fromKernel) {
+			if (currentThread->terminatableState != THREAD_TERMINATABLE) {
+				KernelPanic("DoSyscall - Current thread %x was not terminatable (was %d).\n", 
+						currentThread, currentThread->terminatableState);
+			}
+
+			currentThread->terminatableState = THREAD_IN_SYSCALL;
+		} else {
+			currentProcess = kernelProcess;
+		}
 	}
 
 	OSError returnValue = OS_FATAL_ERROR_UNKNOWN_SYSCALL;
@@ -1003,25 +1011,61 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_BATCH: {
+			if (fromKernel) {
+				KernelPanic("DoSyscall - Cannot run OSBatch from kernel.\n");
+			}
+
+			if (batched) {
+				// I'm not sure about this. I think it'll work?
+				// TODO Test recursive batching.
+			}
+
+			SYSCALL_BUFFER(argument0, sizeof(OSBatchCall) * argument2, 1);
+			SYSCALL_BUFFER(argument1, sizeof(uintptr_t) * argument2, 2);
+
+			OSBatchCall *calls = (OSBatchCall *) argument0;
+			uintptr_t *returnValues = (uintptr_t *) argument1;
+			size_t count = argument2;
+
+			for (uintptr_t i = 0; i < count; i++) {
+				OSBatchCall call = calls[i];
+				bool fatal;
+				uintptr_t _returnValue = returnValues[i] = DoSyscall(call.index, call.argument0, call.argument1, call.argument2, call.argument3, DO_SYSCALL_BATCHED, &fatal);
+				if (fatal) SYSCALL_RETURN(_returnValue, true);
+				if (calls->stopBatchIfError && OS_CHECK_ERROR(_returnValue)) break;
+			}
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
 	}
 
 	end:;
 
+	if (fatal) *fatal = false;
+
 	if (fatalError) {
-		OSCrashReason reason;
-		reason.errorCode = returnValue;
-		KernelLog(LOG_WARNING, "Process crashed during system call\n");
-		scheduler.CrashProcess(currentProcess, reason);
+		if (fatal) {
+			*fatal = true;
+		} else {
+			OSCrashReason reason;
+			reason.errorCode = returnValue;
+			KernelLog(LOG_WARNING, "Process crashed during system call\n");
+			scheduler.CrashProcess(currentProcess, reason);
+		}
 	}
 
-	if (!fromKernel) {
-		currentThread->terminatableState = THREAD_TERMINATABLE;
-	}
+	if (!batched) {
+		if (!fromKernel) {
+			currentThread->terminatableState = THREAD_TERMINATABLE;
+		}
 
-	if (currentThread->terminating) {
-		// The thread has been terminated.
-		// Yield the scheduler so it can be removed.
-		ProcessorFakeTimerInterrupt();
+		if (currentThread->terminating) {
+			// The thread has been terminated.
+			// Yield the scheduler so it can be removed.
+			ProcessorFakeTimerInterrupt();
+		}
 	}
 	
 	return returnValue;
