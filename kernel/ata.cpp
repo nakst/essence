@@ -290,6 +290,8 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 		blockedPacketsMutex.Release();
 	}
 
+	// Print("ATA Access (%z)\n", operation == DRIVE_ACCESS_READ ? "read" : "write");
+
 	op.packet = packet;
 	op.bus = bus;
 	op.slave = slave;
@@ -428,6 +430,7 @@ void ATAIRQHandler2(void *argument) {
 }
 
 bool ATAIRQHandler(uintptr_t interruptIndex) {
+	// Print("ATA IRQ\n");
 	int bus = interruptIndex - ATA_IRQ(0);
 
 	// Acknowledge the interrupt.

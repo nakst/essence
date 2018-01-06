@@ -103,7 +103,7 @@ extern "C" void ProgramEntry() {
 		OSWriteFileSync(node.handle, 0, 2048, buffer);
 		for (int i = 0; i < 1024; i++) buffer[i] = i + 1024;
 		OSHandle handle = OSWriteFileAsync(node.handle, 256, 2048 - 256 - 256, buffer + 128);
-		OSCancelIORequest(handle);
+		// OSCancelIORequest(handle);
 		OSWaitSingle(handle);
 		OSIORequestProgress progress;
 		OSGetIORequestProgress(handle, &progress);

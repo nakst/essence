@@ -250,12 +250,11 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 
 		case BLOCK_DEVICE_DRIVER_AHCI: {
 			if (driverPacket) driverPacket->type = IO_PACKET_AHCI;
-			result = ahci.Access(/*driverPacket, */driveID, offset, countBytes, operation, buffer);
-			// TODO Asynchronous access.
+			result = ahci.Access(driverPacket, driveID, offset, countBytes, operation, buffer);
 
 			if (driverPacket) {
 				if (result) {
-					driverPacket->Complete(OS_SUCCESS);
+					// The packet has been queued.
 				} else {
 					driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 					driverPacket->Complete(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
@@ -344,6 +343,10 @@ void IORequest::Start() {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
+	if (GetCurrentThread()->type == THREAD_ASYNC_TASK) {
+		KernelPanic("IORequest::Start - Performing asynchronous IO on the asynchronous task thread.\n");
+	}
+
 	buffer = kernelVMM.Allocate("IOCopy", count, vmmMapAll, vmmRegionCopy, (uintptr_t) buffer);
 
 	if (handles < 1) {
@@ -374,6 +377,12 @@ void IOPacket::Complete(OSError error) {
 		bool success = error == OS_SUCCESS;
 		if (!success) cancelled = true;
 
+		else {
+			if (makesProgress) {
+				request->progress += count;
+			}
+		}
+
 		switch (type) {
 			case IO_PACKET_NODE: {
 				request->node->Complete(this);
@@ -398,6 +407,27 @@ void IOPacket::Complete(OSError error) {
 			} break;
 
 			case IO_PACKET_AHCI: {
+				if (!success) {
+					bool cont = true;
+					ahci.blockedPacketsMutex.Acquire();
+
+					if (driverRunning) {
+						if (driverTemp) {
+							AHCIBlockedOperation *op = (AHCIBlockedOperation *) driverTemp;
+							op->item.list->Remove(&op->item);
+						} else {
+							// We need to wait for the driver to finish with this packet.
+							// They will send a Complete() when it is done.
+							// Because the packet has already been cancelled, 
+							// this will just free the packet and close the request's handle.
+							cont = false;
+						}
+					}
+
+					ahci.blockedPacketsMutex.Release();
+					if (!cont) return; 
+				}
+
 				// TODO If unsuccessful, add block to damaged list in EsFS.
 			} break;
 
@@ -421,10 +451,6 @@ void IOPacket::Complete(OSError error) {
 
 					ata.blockedPacketsMutex.Release();
 					if (!cont) return; 
-				} else {
-					if (makesProgress) {
-						request->progress += count;
-					}
 				}
 
 				// TODO If unsuccessful, add block to damaged list in EsFS.
@@ -469,8 +495,8 @@ void IOPacket::QueuedChildren() {
 
 void IORequest::Cancel(OSError _error) {
 	mutex.AssertLocked();
+	if (complete.state) return;
 	if (cancelled) return; else cancelled = true;
-	Print("Cancel IORequest, error = %d\n", _error);
 	error = _error;
 	root->Complete(error);
 	Complete();
@@ -487,6 +513,10 @@ bool IORequest::CloseHandle(bool cancelIfNotFinished) {
 
 	if (cancelIfNotFinished && !complete.state) {
 		Cancel(OS_ERROR_REQUEST_CLOSED_BEFORE_COMPLETE);
+	}
+
+	if (!handles) {
+		KernelPanic("IORequest::CloseHandle - No handles.\n");
 	}
 
 	return --handles == 0;
