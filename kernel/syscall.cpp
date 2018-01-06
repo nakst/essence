@@ -1022,17 +1022,15 @@ uintptr_t DoSyscall(OSSyscallType index,
 				// TODO Test recursive batching.
 			}
 
-			SYSCALL_BUFFER(argument0, sizeof(OSBatchCall) * argument2, 1);
-			SYSCALL_BUFFER(argument1, sizeof(uintptr_t) * argument2, 2);
+			SYSCALL_BUFFER(argument0, sizeof(OSBatchCall) * argument1, 1);
 
 			OSBatchCall *calls = (OSBatchCall *) argument0;
-			uintptr_t *returnValues = (uintptr_t *) argument1;
-			size_t count = argument2;
+			size_t count = argument1;
 
 			for (uintptr_t i = 0; i < count; i++) {
 				OSBatchCall call = calls[i];
 				bool fatal;
-				uintptr_t _returnValue = returnValues[i] = DoSyscall(call.index, call.argument0, call.argument1, call.argument2, call.argument3, DO_SYSCALL_BATCHED, &fatal);
+				uintptr_t _returnValue = calls[i].returnValue = DoSyscall(call.index, call.argument0, call.argument1, call.argument2, call.argument3, DO_SYSCALL_BATCHED, &fatal);
 				if (fatal) SYSCALL_RETURN(_returnValue, true);
 				if (calls->stopBatchIfError && OS_CHECK_ERROR(_returnValue)) break;
 			}

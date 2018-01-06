@@ -75,14 +75,13 @@ extern "C" void ProgramEntry() {
 	OSPrint(":: TID = %d\n", OSGetThreadID(OS_CURRENT_THREAD));
 
 	{
-		OSBatchCall calls[2] = {
-			{ OS_SYSCALL_PRINT, true, (uintptr_t) "Test", 4, 0, 0, },
-			{ OS_SYSCALL_OPEN_NODE, false, 0, 0, 0, 0, },
+		OSBatchCall calls[] = {
+			{ OS_SYSCALL_PRINT, /*Return immediately on error?*/ true, /*Argument 0 and return value*/ (uintptr_t) "Hello ",    /*Argument 1*/ 6, /*Argument 2*/ 0, /*Argument 3*/ 0, },
+			{ OS_SYSCALL_PRINT, /*Return immediately on error?*/ true, /*Argument 0 and return value*/ (uintptr_t) "batched",   /*Argument 1*/ 7, /*Argument 2*/ 0, /*Argument 3*/ 0, },
+			{ OS_SYSCALL_PRINT, /*Return immediately on error?*/ true, /*Argument 0 and return value*/ (uintptr_t) " world!\n", /*Argument 1*/ 8, /*Argument 2*/ 0, /*Argument 3*/ 0, },
 		};
 
-		uintptr_t returnValues[2];
-
-		OSBatch(calls, returnValues, 1);
+		OSBatch(calls, sizeof(calls) / sizeof(OSBatchCall));
 	}
 
 	{

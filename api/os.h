@@ -275,7 +275,8 @@ typedef void *OSObject;
 struct OSBatchCall {
 	OSSyscallType index; 
 	bool stopBatchIfError;
-	uintptr_t argument0, argument1, argument2, argument3;
+	union { uintptr_t argument0, returnValue; };
+	uintptr_t argument1, argument2, argument3;
 };
 
 struct OSThreadInformation {
@@ -622,7 +623,7 @@ enum OSObjectType {
 
 extern "C" void OSInitialiseAPI();
 
-extern "C" void OSBatch(OSBatchCall *calls, uintptr_t *returnValues, size_t count); 
+extern "C" void OSBatch(OSBatchCall *calls, size_t count); 
 
 extern "C" OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 extern "C" OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);

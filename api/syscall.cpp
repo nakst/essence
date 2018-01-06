@@ -259,7 +259,7 @@ void OSCancelIORequest(OSHandle ioRequest) {
 	OSSyscall(OS_SYSCALL_CANCEL_IO_REQUEST, ioRequest, 0, 0, 0);
 }
 
-void OSBatch(OSBatchCall *calls, uintptr_t *returnValues, size_t count) {
+void OSBatch(OSBatchCall *calls, size_t count) {
 #if 0
 	for (uintptr_t i = 0; i < count; i++) {
 		OSBatchCall *call = calls + i;
@@ -267,5 +267,5 @@ void OSBatch(OSBatchCall *calls, uintptr_t *returnValues, size_t count) {
 	}
 #endif
 
-	OSSyscall(OS_SYSCALL_BATCH, (uintptr_t) calls, (uintptr_t) returnValues, count, 0);
+	OSSyscall(OS_SYSCALL_BATCH, (uintptr_t) calls, count, 0, 0);
 }
