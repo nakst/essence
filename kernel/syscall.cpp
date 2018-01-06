@@ -1018,8 +1018,8 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 
 			if (batched) {
-				// I'm not sure about this. I think it'll work?
-				// TODO Test recursive batching.
+				// This could cause a stack overflow, so it's a fatal error.
+				SYSCALL_RETURN(OS_FATAL_ERROR_RECURSIVE_BATCH, true);
 			}
 
 			SYSCALL_BUFFER(argument0, sizeof(OSBatchCall) * argument1, 1);
@@ -1033,6 +1033,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				uintptr_t _returnValue = calls[i].returnValue = DoSyscall(call.index, call.argument0, call.argument1, call.argument2, call.argument3, DO_SYSCALL_BATCHED, &fatal);
 				if (fatal) SYSCALL_RETURN(_returnValue, true);
 				if (calls->stopBatchIfError && OS_CHECK_ERROR(_returnValue)) break;
+				if (currentThread->terminating) break;
 			}
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
