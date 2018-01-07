@@ -6,6 +6,7 @@
 #include "kernel.h"
 
 void KernelInitilisation() {
+	InitialiseObjectManager();
 	vfs.Initialise();
 	deviceManager.Initialise();
 	graphics.Initialise(); 

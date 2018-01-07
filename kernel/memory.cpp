@@ -57,21 +57,26 @@ struct PMM {
 
 extern PMM pmm;
 
+// TODO Why are these in lowercase?!
+
 enum VMMRegionType {
 	vmmRegionFree,
 	vmmRegionStandard, // Allocate and zero on write
 	vmmRegionPhysical,
 	vmmRegionShared,  
 	vmmRegionCopy, // Copy the mappings from another address; should only be used by IO manager.
+	vmmRegionHandleTable, // A special mapping type for per-process handle tables.
 };
 
 enum VMMMapPolicy {
 	vmmMapLazy,
 	vmmMapAll, // These are not stored in the region lookup array
+	vmmMapStrict,
 };
 
 #define VMM_REGION_FLAG_NOT_CACHABLE (0)
 #define VMM_REGION_FLAG_CACHABLE (1)
+#define VMM_REGION_FLAG_SUPERVISOR (32)
 
 struct VMMRegion {
 	uintptr_t baseAddress;
@@ -398,9 +403,8 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsCount);
 	}
 
-
 	// Map the first few pages in to reduce the number of initial page faults.
-	if (type != vmmRegionFree) {
+	if (type != vmmRegionFree && mapPolicy != vmmMapStrict) {
 		if (type == vmmRegionShared) {
 			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
 			region->mutex.Acquire();
@@ -450,6 +454,12 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 		if (!object) {
 			KernelLog(LOG_WARNING, "VMM::Allocate - Could not lock copy buffer.\n");
 			return nullptr;
+		}
+	} else if (type == vmmRegionHandleTable) {
+		if (!(flags & VMM_REGION_FLAG_SUPERVISOR)) {
+			KernelPanic("VMM::Allocate - Expected supervisor flag for handle table region.\n");
+		} else if (mapPolicy != vmmMapStrict) {
+			KernelPanic("VMM::Allocate - Expected strict map policy for handle table region.\n");
 		}
 	}
 
@@ -629,6 +639,10 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 						// KernelLog(LOG_VERBOSE, "vmmRegionCopy: Deallocate %x from %x.\n", mappedAddress, address);
 					} break;
 
+					case vmmRegionHandleTable: {
+						// Do nothing.
+					} break;
+
 					default: {
 						KernelPanic("VMM::Free - Cannot free VMMRegion of type %d\n", region->type);
 					} break;
@@ -667,7 +681,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 			// If we need to map all pages in now, then do that.
 			// Otherwise, just map in this page and any in the following 16 that haven't been mapped already.
 			// (But make sure we don't go outside the region).
-			(region->mapPolicy == vmmMapAll || limit || i < 16) && pageInRegion + i < region->pageCount && (!limit || i < limit); 
+			(region->mapPolicy == vmmMapAll || limit || i < (region->mapPolicy == vmmMapStrict ? 1 : 16)) && pageInRegion + i < region->pageCount && (!limit || i < limit); 
 			address += PAGE_SIZE, i++) {
 		if (!virtualAddressSpace.Get(address)) {
 			// This page needs mapping.
@@ -714,6 +728,11 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 				if (!physicalAddress) KernelPanic("VMM::HandlePageFaultInRegion - Copy region page (%x/%x) was unmapped.\n", address, address - region->baseAddress + region->offset);
 				virtualAddressSpace.Map(physicalAddress, address, region->flags);
 				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x (from %x) -> %x\n", physicalAddress, address - region->baseAddress + region->offset, address);
+			} break;
+
+			case vmmRegionHandleTable: {
+				// This means we're trying to access an invalid handle.
+				virtualAddressSpace.Map(emptyHandlePage, address, region->flags);
 			} break;
 
 			default: {
@@ -1163,7 +1182,7 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 				physicalAddress, virtualAddress, ProcessorReadCR3(), PAGE_TABLE_L1[indexL1] & (~(PAGE_SIZE - 1)));
 	}
 
-	uintptr_t value = physicalAddress | (userland ? 7 : 0x103) | (flags & VMM_REGION_FLAG_CACHABLE ? 0 : 24);
+	uintptr_t value = physicalAddress | ((userland && !(flags & VMM_REGION_FLAG_SUPERVISOR)) ? 7 : 0x103) | (flags & VMM_REGION_FLAG_CACHABLE ? 0 : 24);
 	PAGE_TABLE_L1[indexL1] = value;
 
 	ProcessorInvalidatePage(oldVirtualAddress);

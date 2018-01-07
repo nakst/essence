@@ -555,6 +555,8 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 	CopyMemory((process->executablePath = (char *) OSHeapAllocate(imagePathLength, false)), imagePath, imagePathLength);
 	process->executablePathLength = imagePathLength;
 
+	process->handleTable.process = process;
+
 	lock.Acquire();
 
 	process->id = nextProcessID++;

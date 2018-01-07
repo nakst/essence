@@ -39,12 +39,12 @@ enum ResolveHandleReason {
 };
 
 struct HandleTableL3 {
-#define HANDLE_TABLE_L3_ENTRIES 512
+#define HANDLE_TABLE_L3_ENTRIES 2048
 	Handle t[HANDLE_TABLE_L3_ENTRIES];
 };
 
 struct HandleTableL2 {
-#define HANDLE_TABLE_L2_ENTRIES 512
+#define HANDLE_TABLE_L2_ENTRIES 64
 	HandleTableL3 *t[HANDLE_TABLE_L2_ENTRIES];
 	size_t u[HANDLE_TABLE_L2_ENTRIES];
 };
@@ -57,8 +57,9 @@ struct HandleTableL1 {
 
 struct HandleTable {
 	HandleTableL1 l1r;
-
+	Handle *linear;
 	Mutex lock;
+	Process *process;
 
 	OSHandle OpenHandle(Handle &handle);
 	void CloseHandle(OSHandle handle);
@@ -70,6 +71,9 @@ struct HandleTable {
 
 	void Destroy(); 
 };
+
+void InitialiseObjectManager();
+uintptr_t emptyHandlePage; // When we get a page fault in the linear handle list, use this to generate the fatal error.
 
 #endif
 
@@ -213,6 +217,11 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 		return nullptr;
 	}
 
+	if (!linear) {
+		// We haven't opened any handles yet!
+		return nullptr;
+	}
+
 	// Special handles.
 	if (reason == RESOLVE_HANDLE_TO_USE) { // We can't close these handles.
 		if (handle == OS_CURRENT_THREAD && (type & KERNEL_OBJECT_THREAD)) {
@@ -233,6 +242,7 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 	lock.Acquire();
 	Defer(lock.Release());
 
+#if 0
 	uintptr_t l1Index = ((handle / HANDLE_TABLE_L3_ENTRIES) / HANDLE_TABLE_L2_ENTRIES);
 	uintptr_t l2Index = ((handle / HANDLE_TABLE_L3_ENTRIES) % HANDLE_TABLE_L2_ENTRIES);
 	uintptr_t l3Index = ((handle % HANDLE_TABLE_L3_ENTRIES));
@@ -244,6 +254,9 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 	if (!l3) return nullptr;
 
 	Handle *_handle = l3->t + l3Index;
+#endif
+
+	Handle *_handle = linear + handle;
 
 	if ((_handle->type & type) && (_handle->object)) {
 		// Increment the handle's lock, so it cannot be closed until the system call has completed.
@@ -286,6 +299,7 @@ void HandleTable::CompleteHandle(void *object, OSHandle handle) {
 	lock.Acquire();
 	Defer(lock.Release());
 	
+#if 0
 	uintptr_t l1Index = ((handle / HANDLE_TABLE_L3_ENTRIES) / HANDLE_TABLE_L2_ENTRIES);
 	uintptr_t l2Index = ((handle / HANDLE_TABLE_L3_ENTRIES) % HANDLE_TABLE_L2_ENTRIES);
 	uintptr_t l3Index = ((handle % HANDLE_TABLE_L3_ENTRIES));
@@ -297,6 +311,8 @@ void HandleTable::CompleteHandle(void *object, OSHandle handle) {
 	HandleTableL3 *l3 = l2->t[l2Index];
 
 	Handle *_handle = l3->t + l3Index;
+#endif
+	Handle *_handle = linear + handle;
 	_handle->lock--;
 }
 
@@ -306,6 +322,11 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 
 	if (!handle.object) {
 		KernelPanic("HandleTable::OpenHandle - Invalid object.\n");
+	}
+
+	if (!linear) {
+		linear = (Handle *) kernelVMM.Allocate("HTL", HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES * sizeof(Handle),
+				vmmMapStrict, vmmRegionHandleTable, 0, VMM_REGION_FLAG_SUPERVISOR, this);
 	}
 
 	handle.closing = false;
@@ -345,8 +366,11 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 		KernelPanic("HandleTable::OpenHandle - Unexpected lack of free handles.\n");
 	}
 
+	bool mapHL3 = false;
+
 	if (!l2->t[l2Index]) {
-		l2->t[l2Index] = (HandleTableL3 *) OSHeapAllocate(sizeof(HandleTableL3), true);
+		l2->t[l2Index] = (HandleTableL3 *) kernelVMM.Allocate("HL3", sizeof(HandleTableL3), vmmMapAll);
+		mapHL3 = true;
 	}
 
 	HandleTableL3 *l3 = l2->t[l2Index];
@@ -367,6 +391,21 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 	*_handle = handle;
 
 	OSHandle index = (l3Index) + (l2Index * HANDLE_TABLE_L3_ENTRIES) + (l1Index * HANDLE_TABLE_L3_ENTRIES * HANDLE_TABLE_L2_ENTRIES);
+
+	if (mapHL3) {
+		size_t count = sizeof(HandleTableL3) / PAGE_SIZE;
+
+		for (uintptr_t i = 0; i < count; i++) {
+			VirtualAddressSpace &kernelAddressSpace = kernelVMM.virtualAddressSpace;
+			kernelAddressSpace.lock.Acquire();
+			uintptr_t n = kernelAddressSpace.Get((uintptr_t) l3 + i * PAGE_SIZE);
+			kernelAddressSpace.lock.Release();
+			VirtualAddressSpace &addressSpace = process->vmm->virtualAddressSpace;
+			addressSpace.lock.Acquire();
+			addressSpace.Map(n, (uintptr_t) (linear + (l2Index * HANDLE_TABLE_L3_ENTRIES) + (l1Index * HANDLE_TABLE_L3_ENTRIES * HANDLE_TABLE_L2_ENTRIES)) + i * PAGE_SIZE, VMM_REGION_FLAG_SUPERVISOR);
+			addressSpace.lock.Release();
+		}
+	}
 
 	__sync_fetch_and_add(&totalHandleCount, 1);
 
@@ -403,7 +442,7 @@ void HandleTable::Destroy() {
 						}
 					}
 
-					OSHeapFree(l3, sizeof(HandleTableL3));
+					kernelVMM.Free(l3);
 				}
 			}
 
@@ -412,6 +451,10 @@ void HandleTable::Destroy() {
 	}
 
 	Print("--- Handle table destroyed.\n");
+}
+
+void InitialiseObjectManager() {
+	emptyHandlePage = pmm.AllocatePage();
 }
 
 #endif
