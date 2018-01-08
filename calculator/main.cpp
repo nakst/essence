@@ -153,7 +153,7 @@ extern "C" void ProgramEntry() {
 				OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS,
 				&node);
 		if (error != OS_SUCCESS) OSCrashProcess(102);
-		error = OSResizeFile(node.handle, 2048);
+		// error = OSResizeFile(node.handle, 2048);
 		if (error != OS_SUCCESS) OSCrashProcess(103);
 		uint16_t buffer[1024];
 		for (int i = 0; i < 1024; i++) buffer[i] = i;

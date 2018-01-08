@@ -660,7 +660,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				request->offset = argument1;
 				request->count = argument2;
 				request->buffer = (void *) argument3;
-				request->Start();
+				request->Start(handleData->flags & OS_OPEN_NODE_RESIZE_ACCESS);
 				request->complete.Wait(OS_WAIT_NO_TIMEOUT);
 				size_t bytesWritten = request->count;
 				OSError error = request->error;
@@ -720,7 +720,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				request->offset = argument1;
 				request->count = argument2;
 				request->buffer = (void *) argument3;
-				request->Start();
+				request->Start(handleData->flags & OS_OPEN_NODE_RESIZE_ACCESS);
 				Handle handle = {};
 				handle.type = KERNEL_OBJECT_IO_REQUEST;
 				handle.object = request;

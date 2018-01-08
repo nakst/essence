@@ -91,7 +91,7 @@ struct IOPacket {
 };
 
 struct IORequest {
-	void Start();
+	void Start(bool canResize = false);
 	void Cancel(OSError error);
 	void Complete();
 	bool CloseHandle(bool cancelIfNotFinished = false);
@@ -339,7 +339,7 @@ void IORequest::PrintTree() {
 	Print("\n");
 }
 
-void IORequest::Start() {
+void IORequest::Start(bool canResize) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -367,7 +367,7 @@ void IORequest::Start() {
 		} break;
 
 		case IO_REQUEST_WRITE: {
-			node->Write(root);
+			node->Write(root, canResize);
 		} break;
 	}
 

@@ -1401,6 +1401,8 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 
 	// Allocate enough space for the SharedMemoryRegion itself,
 	// and the list of physical addresses.
+	// TODO Sparse, tiered storage of the physical addresses.
+	// TODO Track which pages in the region are dirty for MMIO (i.e. a cached write).
 	SharedMemoryRegion *region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), true);
 	region->sizeBytes = sizeBytes;
 

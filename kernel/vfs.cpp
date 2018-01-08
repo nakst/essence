@@ -41,8 +41,8 @@ struct NodeData {
 struct Node {
 	// Files:
 	void Read(struct IOPacket *packet);
-	void Write(struct IOPacket *packet);
-	bool Resize(uint64_t newSize);
+	void Write(struct IOPacket *packet, bool canResize);
+	bool Resize(uint64_t newSize, bool alreadyTakenSemaphore = false);
 	void Complete(struct IOPacket *packet);
 
 	// Directories:
@@ -115,9 +115,9 @@ VFS vfs;
 
 #ifdef IMPLEMENTATION
 
-bool Node::Resize(uint64_t newSize) {
-	semaphore.Take();
-	Defer(semaphore.Return());
+bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
+	if (!alreadyTakenSemaphore) semaphore.Take();
+	Defer(if (!alreadyTakenSemaphore) semaphore.Return());
 
 	parent->semaphore.Take();
 	Defer(parent->semaphore.Return());
@@ -208,10 +208,14 @@ void Node::Complete(IOPacket *packet) {
 	packet->request->node->semaphore.Return();
 }
 
-void Node::Write(IOPacket *packet) {
+void Node::Write(IOPacket *packet, bool canResize) {
 	semaphore.Take();
 
 	IORequest *request = packet->request;
+
+	if (request->offset + request->count > data.file.fileSize && canResize) {
+		Resize(request->offset + request->count, true);
+	}
 
 	if (request->offset > data.file.fileSize) {
 		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
