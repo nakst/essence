@@ -56,7 +56,7 @@ extern "C" void ProgramEntry() {
 	char *path = (char *) "/os/new_dir/test2.txt";
 	OSNodeInformation node;
 	OSError error = OSOpenNode(path, OSCStringLength(path), 
-			OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_RESIZE | OS_OPEN_NODE_ACCESS_WRITE | OS_OPEN_NODE_CREATE_DIRECTORIES, &node);
+			OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_CREATE_DIRECTORIES, &node);
 	OSPrint(":: error = %d\n", error);
 	error = OSResizeFile(node.handle, 8);
 	OSPrint(":: error = %d\n", error);
@@ -99,10 +99,58 @@ extern "C" void ProgramEntry() {
 	}
 
 	{
+		char *path = (char *) "/os/act.txt";
+
+		OSNodeInformation node1, node2, node3;
+
+		OSError error1 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_ACCESS, &node1);
+		if (error1 != OS_SUCCESS) OSCrashProcess(120);
+
+		OSError error2 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_ACCESS, &node2);
+		if (error2 != OS_SUCCESS) OSCrashProcess(121);
+
+		OSError error3 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_BLOCK, &node3);
+		if (error3 != OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE) OSCrashProcess(122);
+
+		OSCloseHandle(node1.handle);
+		OSCloseHandle(node2.handle);
+
+		OSError error6 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_BLOCK, &node1);
+		if (error6 != OS_SUCCESS) OSCrashProcess(125);
+
+		OSError error7 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_BLOCK, &node2);
+		if (error7 != OS_SUCCESS) OSCrashProcess(126);
+
+		OSCloseHandle(node1.handle);
+		OSCloseHandle(node2.handle);
+
+		OSError error8 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_EXCLUSIVE, &node1);
+		if (error8 != OS_SUCCESS) OSCrashProcess(127);
+
+		OSError error9 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_BLOCK, &node2);
+		if (error9 != OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE) OSCrashProcess(128);
+
+		OSError error10 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_EXCLUSIVE, &node2);
+		if (error10 != OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE) OSCrashProcess(129);
+
+		OSError error11 = OSOpenNode(path, OSCStringLength(path),
+				OS_OPEN_NODE_READ_ACCESS, &node2);
+		if (error11 != OS_ERROR_FILE_IN_EXCLUSIVE_USE) OSCrashProcess(130);
+	}
+
+	{
 		char *path = (char *) "/os/test.txt";
 		OSNodeInformation node;
 		OSError error = OSOpenNode(path, OSCStringLength(path), 
-				OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_RESIZE | OS_OPEN_NODE_ACCESS_WRITE,
+				OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS,
 				&node);
 		if (error != OS_SUCCESS) OSCrashProcess(102);
 		error = OSResizeFile(node.handle, 2048);

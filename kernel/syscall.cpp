@@ -613,7 +613,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
-			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
+			if (handleData->flags & OS_OPEN_NODE_READ_ACCESS) {
 #ifdef OLD_FILE_IO
 				OSError error;
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
@@ -648,7 +648,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
-			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
+			if (handleData->flags & OS_OPEN_NODE_WRITE_ACCESS) {
 #ifdef OLD_FILE_IO
 				OSError error;
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3, &error);
@@ -683,7 +683,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
-			if (handleData->flags & OS_OPEN_NODE_ACCESS_READ) {
+			if (handleData->flags & OS_OPEN_NODE_READ_ACCESS) {
 				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
 				request->handles = 1;
 				request->type = IO_REQUEST_READ;
@@ -712,7 +712,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
-			if (handleData->flags & OS_OPEN_NODE_ACCESS_WRITE) {
+			if (handleData->flags & OS_OPEN_NODE_WRITE_ACCESS) {
 				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
 				request->handles = 1;
 				request->type = IO_REQUEST_WRITE;
@@ -739,7 +739,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
 
-			if (handleData->flags & OS_OPEN_NODE_ACCESS_RESIZE) {
+			if (handleData->flags & OS_OPEN_NODE_RESIZE_ACCESS) {
 				bool success = file->Resize(argument1);
 				SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
 			} else {

@@ -63,9 +63,9 @@ typedef struct {
 uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	Process *thisProcess = GetCurrentThread()->process;
 
-	uint64_t fileFlags = OS_OPEN_NODE_ACCESS_READ
-		| OS_OPEN_NODE_EXCLUSIVE_WRITE
-		| OS_OPEN_NODE_EXCLUSIVE_RESIZE
+	uint64_t fileFlags = OS_OPEN_NODE_READ_ACCESS
+		| OS_OPEN_NODE_WRITE_BLOCK
+		| OS_OPEN_NODE_RESIZE_BLOCK
 		| OS_OPEN_NODE_FAIL_IF_NOT_FOUND;
 
 	OSNodeInformation node;

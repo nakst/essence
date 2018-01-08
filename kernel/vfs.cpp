@@ -55,7 +55,6 @@ struct Node {
 
 	size_t countRead, countWrite, countResize;
 	size_t blockRead, blockWrite, blockResize;
-	bool exclusiveRead, exclusiveWrite, exclusiveResize;
 
 	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
@@ -308,17 +307,12 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	bool noHandles = node->handles == 0;
 
-	if (flags & OS_OPEN_NODE_ACCESS_READ)      node->countRead--;
-	if (flags & OS_OPEN_NODE_ACCESS_WRITE)     node->countWrite--;
-	if (flags & OS_OPEN_NODE_ACCESS_RESIZE)    node->countResize--;
-
-	if (flags & OS_OPEN_NODE_BLOCK_READ)       node->blockRead--;
-	if (flags & OS_OPEN_NODE_BLOCK_WRITE)      node->blockWrite--;
-	if (flags & OS_OPEN_NODE_BLOCK_RESIZE)     node->blockResize--;
-
-	if (flags & OS_OPEN_NODE_EXCLUSIVE_READ)   node->exclusiveRead = false;
-	if (flags & OS_OPEN_NODE_EXCLUSIVE_WRITE)  node->exclusiveWrite = false;
-	if (flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) node->exclusiveResize = false;
+	if ((flags & OS_OPEN_NODE_READ_BLOCK)   ) { node->blockRead--; }
+	if ((flags & OS_OPEN_NODE_READ_ACCESS)  ) { node->countRead--; }
+	if ((flags & OS_OPEN_NODE_WRITE_BLOCK)  ) { node->blockWrite--; }
+	if ((flags & OS_OPEN_NODE_WRITE_ACCESS) ) { node->countWrite--; }
+	if ((flags & OS_OPEN_NODE_RESIZE_BLOCK) ) { node->blockResize--; }
+	if ((flags & OS_OPEN_NODE_RESIZE_ACCESS)) { node->countResize--; }
 
 	// TODO Notify anyone waiting for the file to be accessible.
 
@@ -457,11 +451,9 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 				// We couldn't only the file with the desired access flags.
 				uint64_t difference = desiredFlags ^ flags;
 
-				if (difference & (OS_OPEN_NODE_ACCESS_READ | OS_OPEN_NODE_ACCESS_WRITE | OS_OPEN_NODE_ACCESS_RESIZE)) {
+				if (difference & (OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS)) {
 					*error = OS_ERROR_FILE_IN_EXCLUSIVE_USE;
-				} else if (difference & (OS_OPEN_NODE_EXCLUSIVE_READ | OS_OPEN_NODE_EXCLUSIVE_WRITE | OS_OPEN_NODE_EXCLUSIVE_RESIZE)) {
-					*error = OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE;
-				} else if (difference & (OS_OPEN_NODE_BLOCK_READ | OS_OPEN_NODE_BLOCK_WRITE | OS_OPEN_NODE_BLOCK_RESIZE)) {
+				} else if (difference & (OS_OPEN_NODE_READ_BLOCK | OS_OPEN_NODE_WRITE_BLOCK | OS_OPEN_NODE_RESIZE_BLOCK)) {
 					*error = OS_ERROR_FILE_CANNOT_GET_EXCLUSIVE_USE;
 				} else if (difference & (OS_OPEN_NODE_DIRECTORY)) {
 					*error = OS_ERROR_INCORRECT_NODE_TYPE;
@@ -519,50 +511,12 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 	nodeHashTableMutex.Acquire();
 	Defer(nodeHashTableMutex.Release());
 
-	if ((flags & OS_OPEN_NODE_ACCESS_READ) && (existingNode->exclusiveRead || existingNode->blockRead)) {
-		flags &= ~(OS_OPEN_NODE_ACCESS_READ);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_ACCESS_WRITE) && (existingNode->exclusiveWrite || existingNode->blockWrite)) {
-		flags &= ~(OS_OPEN_NODE_ACCESS_WRITE);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_ACCESS_RESIZE) && (existingNode->exclusiveResize || existingNode->blockResize)) {
-		flags &= ~(OS_OPEN_NODE_ACCESS_RESIZE);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_EXCLUSIVE_READ) && (existingNode->countRead || existingNode->exclusiveRead || existingNode->blockRead)) {
-		flags &= ~(OS_OPEN_NODE_EXCLUSIVE_READ);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_EXCLUSIVE_WRITE) && (existingNode->countWrite || existingNode->exclusiveWrite || existingNode->blockWrite)) {
-		flags &= ~(OS_OPEN_NODE_EXCLUSIVE_WRITE);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) && (existingNode->countResize || existingNode->exclusiveResize || existingNode->blockResize)) {
-		flags &= ~(OS_OPEN_NODE_EXCLUSIVE_RESIZE);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_BLOCK_READ) && (existingNode->countRead || existingNode->exclusiveRead || (flags & OS_OPEN_NODE_ACCESS_READ))) {
-		flags &= ~(OS_OPEN_NODE_BLOCK_READ);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_BLOCK_WRITE) && (existingNode->countWrite || existingNode->exclusiveWrite || (flags & OS_OPEN_NODE_ACCESS_WRITE))) {
-		flags &= ~(OS_OPEN_NODE_BLOCK_WRITE);
-		return nullptr;
-	}
-
-	if ((flags & OS_OPEN_NODE_BLOCK_RESIZE) && (existingNode->countResize || existingNode->exclusiveResize || (flags & OS_OPEN_NODE_ACCESS_RESIZE))) {
-		flags &= ~(OS_OPEN_NODE_BLOCK_RESIZE);
-		return nullptr;
-	}
+	if ((flags & OS_OPEN_NODE_READ_BLOCK)    && (existingNode->countRead))   { flags ^= OS_OPEN_NODE_READ_BLOCK;    return nullptr; }
+	if ((flags & OS_OPEN_NODE_READ_ACCESS)   && (existingNode->blockRead))   { flags ^= OS_OPEN_NODE_READ_ACCESS;   return nullptr; }
+	if ((flags & OS_OPEN_NODE_WRITE_BLOCK)   && (existingNode->countWrite))  { flags ^= OS_OPEN_NODE_WRITE_BLOCK;   return nullptr; }
+	if ((flags & OS_OPEN_NODE_WRITE_ACCESS)  && (existingNode->blockWrite))  { flags ^= OS_OPEN_NODE_WRITE_ACCESS;  return nullptr; }
+	if ((flags & OS_OPEN_NODE_RESIZE_BLOCK)  && (existingNode->countResize)) { flags ^= OS_OPEN_NODE_RESIZE_BLOCK;  return nullptr; }
+	if ((flags & OS_OPEN_NODE_RESIZE_ACCESS) && (existingNode->blockResize)) { flags ^= OS_OPEN_NODE_RESIZE_ACCESS; return nullptr; }
 
 	if ((flags & OS_OPEN_NODE_DIRECTORY) && type != OS_NODE_DIRECTORY) {
 		flags &= ~(OS_OPEN_NODE_DIRECTORY);
@@ -574,17 +528,12 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 		return nullptr;
 	}
 
-	if (flags & OS_OPEN_NODE_ACCESS_READ)      existingNode->countRead++;
-	if (flags & OS_OPEN_NODE_ACCESS_WRITE)     existingNode->countWrite++;
-	if (flags & OS_OPEN_NODE_ACCESS_RESIZE)    existingNode->countResize++;
-
-	if (flags & OS_OPEN_NODE_BLOCK_READ)       existingNode->blockRead++;
-	if (flags & OS_OPEN_NODE_BLOCK_WRITE)      existingNode->blockWrite++;
-	if (flags & OS_OPEN_NODE_BLOCK_RESIZE)     existingNode->blockResize++;
-
-	if (flags & OS_OPEN_NODE_EXCLUSIVE_READ)   existingNode->exclusiveRead = true;
-	if (flags & OS_OPEN_NODE_EXCLUSIVE_WRITE)  existingNode->exclusiveWrite = true;
-	if (flags & OS_OPEN_NODE_EXCLUSIVE_RESIZE) existingNode->exclusiveResize = true;
+	if ((flags & OS_OPEN_NODE_READ_BLOCK)   ) { existingNode->blockRead++; }
+	if ((flags & OS_OPEN_NODE_READ_ACCESS)  ) { existingNode->countRead++; }
+	if ((flags & OS_OPEN_NODE_WRITE_BLOCK)  ) { existingNode->blockWrite++; }
+	if ((flags & OS_OPEN_NODE_WRITE_ACCESS) ) { existingNode->countWrite++; }
+	if ((flags & OS_OPEN_NODE_RESIZE_BLOCK) ) { existingNode->blockResize++; }
+	if ((flags & OS_OPEN_NODE_RESIZE_ACCESS)) { existingNode->countResize++; }
 
 	if (!existingNode->handles) {
 		existingNode->semaphore.Return(1);

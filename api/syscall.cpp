@@ -144,7 +144,7 @@ OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation 
 void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize) {
 	OSNodeInformation information;
 
-	if (OS_SUCCESS != OSOpenNode((char *) filePath, filePathLength, OS_OPEN_NODE_ACCESS_READ, &information)) {
+	if (OS_SUCCESS != OSOpenNode((char *) filePath, filePathLength, OS_OPEN_NODE_READ_ACCESS, &information)) {
 		return nullptr;
 	}
 
