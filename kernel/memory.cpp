@@ -86,12 +86,14 @@ struct VMMRegion {
 	// To remove the region this must be 0.
 	volatile unsigned lock;
 
+	unsigned flags;
+	LinkedItem<VMMRegion> item; // Only used by some objects.
+
 	// Fields used to distinguish regions in lookupRegions
-	uintptr_t offset;
+	uintptr_t offset; // TODO Sinec we only merge standard and free regions, can we remove offset and object from the comparison?
 	void *object;
 	VMMRegionType type;
 	VMMMapPolicy mapPolicy;
-	unsigned flags;
 };
 
 struct VirtualAddressSpace {
@@ -163,6 +165,8 @@ struct SharedMemoryRegion {
 	volatile size_t handles;
 	size_t sizeBytes;
 	bool named;
+
+	LinkedList<VMMRegion> regions;
 	
 	// Follows is a list of physical addresses,
 	// that contain the memory in the region.
@@ -398,6 +402,11 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 
 	uintptr_t regionIndex = AddRegion(&region, regions, regionsCount, regionsAllocated);
 
+	{
+		VMMRegion *region = regions + regionIndex;
+		region->item.thisItem = region;
+	}
+
 	if (type != vmmRegionFree && mapPolicy != vmmMapAll) {
 		uintptr_t lookupRegionIndex = AddRegion(&region, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
 		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsCount);
@@ -408,6 +417,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		if (type == vmmRegionShared) {
 			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
 			region->mutex.Acquire();
+			region->regions.InsertEnd(&regions[regionIndex].item);
 			region->handles++; // Increment the number of handles to the shared memory region.
 		}
 
@@ -596,7 +606,16 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 
 	if (region->type == vmmRegionShared) {
 		if (!region->object) KernelPanic("VMM::Free - Object from a freed shared memory region was null.\n");
+
+		SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
+
+		sharedRegion->mutex.Acquire();
+		sharedRegion->regions.Remove(&region->item);
+		sharedRegion->mutex.Release();
+
 		scheduler.lock.Acquire();
+		// We have to do it like this because if this is the last handles then the we'll need to deallocate the shared memory,
+		// which we'll need to the VMM's lock.
 		RegisterAsyncTask(CloseHandleToSharedMemoryRegionAfterVMMFree, region->object, kernelProcess, true);
 		scheduler.lock.Release();
 	} else if (region->type == vmmRegionCopy) {
@@ -1387,7 +1406,7 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 
 	if (namedRegion) {
 		region->named = true;
-		region->handles = 2; // Named regions must always be present.
+		region->handles = 1; 
 		namedRegion->region = region;
 	} else {
 		region->named = false;
@@ -1421,7 +1440,15 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 	}
 	
 	if (region->named) {
-		KernelPanic("SharedMemoryManager::DestroySharedMemory - Cannot destroy named regions (yet).\n");
+		mutex.Acquire();
+		Defer(mutex.Release());
+
+		for (uintptr_t i = 0; i < namedSharedMemoryRegionsCount; i++) {
+			if (namedSharedMemoryRegions[i].region == region) {
+				// Replace this with the last entry and decrement the count.
+				namedSharedMemoryRegions[i] = namedSharedMemoryRegions[--namedSharedMemoryRegionsCount];
+			}
+		}
 	}
 
 	size_t pages = region->sizeBytes / PAGE_SIZE;
@@ -1434,6 +1461,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 	pmm.lock.Acquire();
 	for (uintptr_t i = 0; i < pages; i++) {
 		uintptr_t address = addresses[i];
+		if (!address) continue;
 		pmm.FreePage(address);
 	}
 	pmm.lock.Release();

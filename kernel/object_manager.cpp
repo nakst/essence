@@ -131,6 +131,7 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			region->mutex.Acquire();
 			bool destroy = region->handles == 1;
 			region->handles--;
+			// Print("%d handles remaining\n", region->handles);
 			region->mutex.Release();
 
 			if (destroy) {

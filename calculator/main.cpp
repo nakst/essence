@@ -176,6 +176,16 @@ extern "C" void ProgramEntry() {
 		OSCreateWindow((char *) "Test Program", 12, 320, 200, 0);
 	}
 
+	for (int i = 0; i < 3; i++) {
+		OSHandle handle = OSCreateSharedMemory(1024, (char *) "Test", 4);
+		OSHandle handle3 = OSOpenNamedSharedMemory((char *) "Test", 4);
+		if (handle3 == OS_INVALID_HANDLE) OSCrashProcess(141);
+		OSCloseHandle(handle);
+		OSCloseHandle(handle3);
+		OSHandle handle2 = OSOpenNamedSharedMemory((char *) "Test", 4);
+		if (handle2 != OS_INVALID_HANDLE) OSCrashProcess(140);
+	}
+
 #if 0
 	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 
 			OS_CREATE_WINDOW_WITH_MENU_BAR);
