@@ -592,10 +592,13 @@ enum OSObjectType {
 #define OS_OPEN_NODE_EXCLUSIVE_READ	(0x10)
 #define OS_OPEN_NODE_EXCLUSIVE_WRITE	(0x20)
 #define OS_OPEN_NODE_EXCLUSIVE_RESIZE	(0x40)
-#define OS_OPEN_NODE_FAIL_IF_FOUND	(0x100)
-#define OS_OPEN_NODE_FAIL_IF_NOT_FOUND	(0x200)
-#define OS_OPEN_NODE_DIRECTORY		(0x2000)
-#define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x4000) // Create the directories leading to the file, if they don't already exist.
+#define OS_OPEN_NODE_BLOCK_READ		(0x100)
+#define OS_OPEN_NODE_BLOCK_WRITE	(0x200)
+#define OS_OPEN_NODE_BLOCK_RESIZE	(0x400)
+#define OS_OPEN_NODE_FAIL_IF_FOUND	(0x1000)
+#define OS_OPEN_NODE_FAIL_IF_NOT_FOUND	(0x2000)
+#define OS_OPEN_NODE_DIRECTORY		(0x4000)
+#define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x8000) // Create the directories leading to the file, if they don't already exist.
 
 #define OS_CREATE_WINDOW_WITH_MENU_BAR 	(1)
 #define OS_CREATE_WINDOW_NOT_RESIZABLE  (2) // TODO Currently does nothing.
