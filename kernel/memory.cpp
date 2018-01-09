@@ -164,12 +164,21 @@ struct SharedMemoryRegion {
 	Mutex mutex;
 	volatile size_t handles;
 	size_t sizeBytes;
-	bool named;
+
+	bool named : 1;
+	bool big : 1;
 
 	LinkedList<VMMRegion> regions;
 	
-	// Follows is a list of physical addresses,
+	// If big = false,
+	// what follows is a list of physical addresses,
 	// that contain the memory in the region.
+
+	// If big = true,
+	// what follows is a list of virtual addresses,
+	// that are pointers to lists of physical addresses,
+	// each covering 256MB.
+#define BIG_SHARED_MEMORY (256 * 1024 * 1024)
 };
 
 struct NamedSharedMemoryRegion {
@@ -420,9 +429,6 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 			region->regions.InsertEnd(&regions[regionIndex].item);
 			region->handles++; // Increment the number of handles to the shared memory region.
 		}
-
-		virtualAddressSpace.lock.Acquire();
-		Defer(virtualAddressSpace.lock.Release());
 
 		HandlePageFaultInRegion(baseAddress, regions + regionIndex);
 
@@ -692,7 +698,6 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 
 bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit) {
 	lock.AssertLocked();
-	virtualAddressSpace.lock.AssertLocked();
 
 	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
 
@@ -702,7 +707,10 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 			// (But make sure we don't go outside the region).
 			(region->mapPolicy == vmmMapAll || limit || i < (region->mapPolicy == vmmMapStrict ? 1 : 16)) && pageInRegion + i < region->pageCount && (!limit || i < limit); 
 			address += PAGE_SIZE, i++) {
-		if (!virtualAddressSpace.Get(address)) {
+		virtualAddressSpace.lock.Acquire();
+		uintptr_t existingTranslation = virtualAddressSpace.Get(address);
+		virtualAddressSpace.lock.Release();
+		if (!existingTranslation) {
 			// This page needs mapping.
 		} else {
 			// Skip the page.
@@ -714,44 +722,74 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 			case vmmRegionStandard: {
 				uintptr_t physicalPage = pmm.AllocatePage();
 				allocatedPhysicalMemory += PAGE_SIZE;
+				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(physicalPage, address, region->flags);
+				virtualAddressSpace.lock.Release();
 				ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
 				// if (limit) KernelLog(LOG_VERBOSE, "vmmRegionCopy: fm %x\n", physicalPage);
 			} break;
 
 			case vmmRegionPhysical: {
+				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(address - region->baseAddress + region->offset, address, region->flags);
+				virtualAddressSpace.lock.Release();
 			} break;
 
 			case vmmRegionShared: {
 				SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
 				sharedRegion->mutex.AssertLocked();
+
 				uintptr_t *volatile addresses = (uintptr_t *) (sharedRegion + 1);
-				uintptr_t index = (address - region->baseAddress + region->offset) >> PAGE_BITS;
+				uintptr_t index;
+
+				uintptr_t base = (address - region->baseAddress + region->offset);
+
+				if (sharedRegion->big) {
+					uintptr_t group = base / BIG_SHARED_MEMORY;
+
+					if (!addresses[group]) {
+						addresses[group] = (uintptr_t) kernelVMM.Allocate("BigShare", BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t), vmmMapAll);
+					}
+
+					addresses = (uintptr_t *) addresses[group];
+					index = (base % BIG_SHARED_MEMORY) >> PAGE_BITS;
+				} else {
+					index = base >> PAGE_BITS;
+				}
 
 				if (addresses[index]) {
+					virtualAddressSpace.lock.Acquire();
 					virtualAddressSpace.Map(addresses[index], address, region->flags);
+					virtualAddressSpace.lock.Release();
 				} else {
 					// NOTE Duplicated from above.
 					uintptr_t physicalPage = pmm.AllocatePage();
 					allocatedPhysicalMemory += PAGE_SIZE;
+					virtualAddressSpace.lock.Acquire();
 					virtualAddressSpace.Map(physicalPage, address, region->flags);
+					virtualAddressSpace.lock.Release();
 					ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
+
+					// Store the address.
 					addresses[index] = physicalPage;
 				}
 			} break;
 
 			case vmmRegionCopy: {
+				virtualAddressSpace.lock.Acquire();
 				uintptr_t physicalAddress = virtualAddressSpace.Get(address - region->baseAddress + region->offset);
 				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x\n", physicalAddress);
 				if (!physicalAddress) KernelPanic("VMM::HandlePageFaultInRegion - Copy region page (%x/%x) was unmapped.\n", address, address - region->baseAddress + region->offset);
 				virtualAddressSpace.Map(physicalAddress, address, region->flags);
+				virtualAddressSpace.lock.Release();
 				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x (from %x) -> %x\n", physicalAddress, address - region->baseAddress + region->offset, address);
 			} break;
 
 			case vmmRegionHandleTable: {
 				// This means we're trying to access an invalid handle.
+				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(emptyHandlePage, address, region->flags);
+				virtualAddressSpace.lock.Release();
 			} break;
 
 			default: {
@@ -833,9 +871,7 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 			_region->mutex.Acquire();
 		}
 
-		virtualAddressSpace.lock.Acquire();
 		bool result = HandlePageFaultInRegion(page, region, limit);
-		virtualAddressSpace.lock.Release();
 
 		if (region->type == vmmRegionShared) {
 			SharedMemoryRegion *_region = (SharedMemoryRegion *) region->object;
@@ -1399,12 +1435,17 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	size_t pages = sizeBytes / PAGE_SIZE;
 	if (sizeBytes & (PAGE_SIZE - 1)) pages++;
 
-	// Allocate enough space for the SharedMemoryRegion itself,
-	// and the list of physical addresses.
-	// TODO Sparse, tiered storage of the physical addresses.
-	// TODO Track which pages in the region are dirty for MMIO (i.e. a cached write).
-	SharedMemoryRegion *region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), true);
-	region->sizeBytes = sizeBytes;
+	SharedMemoryRegion *region;
+
+	if (pages > BIG_SHARED_MEMORY / PAGE_SIZE) {
+		size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
+		region = (SharedMemoryRegion *) OSHeapAllocate(pageGroups * sizeof(void *) + sizeof(SharedMemoryRegion), true);
+		region->sizeBytes = sizeBytes;
+		region->big = true;
+	} else {
+		region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), true);
+		region->sizeBytes = sizeBytes;
+	}
 
 	if (namedRegion) {
 		region->named = true;
@@ -1453,20 +1494,42 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 		}
 	}
 
+	// KernelLog(LOG_VERBOSE, "Freeing shared memory region.... (%d bytes)\n", region->sizeBytes);
+
 	size_t pages = region->sizeBytes / PAGE_SIZE;
 	if (region->sizeBytes & (PAGE_SIZE - 1)) pages++;
 
-	uintptr_t *addresses = (uintptr_t *) (region + 1);
 
-	// KernelLog(LOG_VERBOSE, "Freeing shared memory region.... (%d bytes)\n", region->sizeBytes);
+	if (region->big) {
+		size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
+		uintptr_t **addresses = (uintptr_t **) (region + 1);
 
-	pmm.lock.Acquire();
-	for (uintptr_t i = 0; i < pages; i++) {
-		uintptr_t address = addresses[i];
-		if (!address) continue;
-		pmm.FreePage(address);
+		pmm.lock.Acquire();
+		for (uintptr_t i = 0; i < pageGroups; i++) {
+			if (!addresses[i]) continue;
+			for (uintptr_t j = 0; j < (BIG_SHARED_MEMORY / PAGE_SIZE); j++) {
+				uintptr_t address = addresses[i][j];
+				if (!address) continue;
+				pmm.FreePage(address);
+			}
+		}
+		pmm.lock.Release();
+
+		for (uintptr_t i = 0; i < pageGroups; i++) {
+			if (!addresses[i]) continue;
+			kernelVMM.Free(addresses[i]);
+		}
+	} else {
+		uintptr_t *addresses = (uintptr_t *) (region + 1);
+
+		pmm.lock.Acquire();
+		for (uintptr_t i = 0; i < pages; i++) {
+			uintptr_t address = addresses[i];
+			if (!address) continue;
+			pmm.FreePage(address);
+		}
+		pmm.lock.Release();
 	}
-	pmm.lock.Release();
 
 	OSHeapFree(region);
 }

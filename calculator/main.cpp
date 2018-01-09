@@ -176,6 +176,21 @@ extern "C" void ProgramEntry() {
 		OSCreateWindow((char *) "Test Program", 12, 320, 200, 0);
 	}
 
+	{
+		OSHandle region = OSCreateSharedMemory(512 * 1024 * 1024, nullptr, 0);
+		void *pointer = OSMapSharedMemory(region, 0, 0);
+		OSCloseHandle(region);
+		OSFree(pointer);
+	}
+
+	{
+		OSHandle region = OSCreateSharedMemory(512 * 1024 * 1024, nullptr, 0);
+		void *pointer = OSMapSharedMemory(region, 0, 0);
+		OSZeroMemory(pointer, 512 * 1024 * 1024);
+		OSCloseHandle(region);
+		OSFree(pointer);
+	}
+
 	for (int i = 0; i < 3; i++) {
 		OSHandle handle = OSCreateSharedMemory(1024, (char *) "Test", 4);
 		OSHandle handle3 = OSOpenNamedSharedMemory((char *) "Test", 4);
