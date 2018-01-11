@@ -131,10 +131,16 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			region->mutex.Acquire();
 			bool destroy = region->handles == 1;
 			region->handles--;
+			Node *file = region->file && region->handles == (region->file->cacheData ? 2 : 1) ? region->file : nullptr; 
 			// Print("%d handles remaining\n", region->handles);
 			region->mutex.Release();
 
-			if (destroy) {
+			if (file && file->handles == 0) {
+				// The file needs to be destroyed; it has no handles to itself, and it only has a handle to us.
+				vfs.nodeHashTableMutex.Acquire();
+				vfs.DestroyNode(file);
+				vfs.nodeHashTableMutex.Release();
+			} else if (destroy) {
 				sharedMemoryManager.DestroySharedMemory(region);
 			}
 		} break;
@@ -327,7 +333,7 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 
 	if (!linear) {
 		linear = (Handle *) kernelVMM.Allocate("HTL", HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES * sizeof(Handle),
-				vmmMapStrict, vmmRegionHandleTable, 0, VMM_REGION_FLAG_SUPERVISOR, this);
+				vmmMapStrict, VMM_REGION_HANDLE_TABLE, 0, VMM_REGION_FLAG_SUPERVISOR, this);
 	}
 
 	handle.closing = false;

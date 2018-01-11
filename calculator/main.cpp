@@ -183,13 +183,15 @@ extern "C" void ProgramEntry() {
 		OSFree(pointer);
 	}
 
+#if 1
 	{
 		OSHandle region = OSCreateSharedMemory(512 * 1024 * 1024, nullptr, 0);
 		void *pointer = OSMapSharedMemory(region, 0, 0);
-		OSZeroMemory(pointer, 512 * 1024 * 1024);
+		// OSZeroMemory(pointer, 512 * 1024 * 1024);
 		OSCloseHandle(region);
 		OSFree(pointer);
 	}
+#endif
 
 	for (int i = 0; i < 3; i++) {
 		OSHandle handle = OSCreateSharedMemory(1024, (char *) "Test", 4);

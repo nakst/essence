@@ -113,7 +113,7 @@ Node *EsFSVolume::LoadRootDirectory() {
 	size_t fileEntryLength = rootEnd - (uint8_t *) root;
 
 	uint64_t temp = 0;
-	Node *node = vfs.RegisterNodeHandle(OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true), temp, ((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY);
+	Node *node = vfs.RegisterNodeHandle(OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true), temp, ((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY, true);
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
@@ -661,14 +661,12 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 		// If the file is already open, return that file.
 		if ((node = vfs.FindOpenNode(returnValue->identifier, _directory->filesystem))) {
-			return vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type);
+			return vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, false);
 		}
 
-		void *nodeAlloc = OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true);
-		node = vfs.RegisterNodeHandle(nodeAlloc, flags, returnValue->identifier, _directory, type);
+		node = (Node *) OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true);
 
 		if (!node) {
-			OSHeapFree(nodeAlloc);
 			return nullptr;
 		}
 
@@ -694,6 +692,11 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 		eFile->containerBlock = lastAccessedActualBlock;
 		eFile->offsetIntoBlock = (uintptr_t) returnValue - (uintptr_t) directoryBuffer;
+
+		if (!vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, true)) {
+			OSHeapFree(node);
+			return nullptr;
+		}
 
 		return node;
 	}

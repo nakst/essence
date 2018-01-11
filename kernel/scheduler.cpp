@@ -29,6 +29,7 @@ struct Event {
 struct Semaphore {
 	void Take(uintptr_t units = 1);
 	void Return(uintptr_t units = 1);
+	void Set(uintptr_t units = 1);
 
 	Event available;
 	Mutex mutex;
@@ -1286,6 +1287,13 @@ void Semaphore::Return(uintptr_t u) {
 	mutex.Acquire();
 	if (!available.state) available.Set();
 	units += u;
+	mutex.Release();
+}
+
+void Semaphore::Set(uintptr_t u) {
+	mutex.Acquire();
+	if (!available.state) available.Set();
+	units = u;
 	mutex.Release();
 }
 

@@ -528,7 +528,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				argument2 = region->sizeBytes;
 			}
 
-			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, vmmMapLazy, vmmRegionShared, argument1, VMM_REGION_FLAG_CACHABLE, region);
+			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, vmmMapCacheBlock, VMM_REGION_SHARED, argument1, VMM_REGION_FLAG_CACHABLE, region);
 
 			if (!address) {
 				CloseHandleToObject(region, KERNEL_OBJECT_SHMEM);

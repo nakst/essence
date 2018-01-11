@@ -57,26 +57,29 @@ struct PMM {
 
 extern PMM pmm;
 
-// TODO Why are these in lowercase?!
-
 enum VMMRegionType {
-	vmmRegionFree,
-	vmmRegionStandard, // Allocate and zero on write
-	vmmRegionPhysical,
-	vmmRegionShared,  
-	vmmRegionCopy, // Copy the mappings from another address; should only be used by IO manager.
-	vmmRegionHandleTable, // A special mapping type for per-process handle tables.
+	VMM_REGION_FREE,
+	VMM_REGION_STANDARD, // Allocate and zero on write
+	VMM_REGION_PHYSICAL,
+	VMM_REGION_SHARED,  
+	VMM_REGION_COPY, // Copy the mappings from another address; should only be used by IO manager.
+	VMM_REGION_HANDLE_TABLE, // A special mapping type for per-process handle tables.
 };
+
+// TODO Why are these in lowercase?!
 
 enum VMMMapPolicy {
 	vmmMapLazy,
 	vmmMapAll, // These are not stored in the region lookup array
 	vmmMapStrict,
+#define CACHE_BLOCK_SIZE (128 * 1024)
+	vmmMapCacheBlock, // Only map in 128KB blocks.
 };
 
 #define VMM_REGION_FLAG_NOT_CACHABLE (0)
-#define VMM_REGION_FLAG_CACHABLE (1)
-#define VMM_REGION_FLAG_SUPERVISOR (32)
+#define VMM_REGION_FLAG_CACHABLE     (1)
+#define VMM_REGION_FLAG_SUPERVISOR   (32)
+#define VMM_REGION_FLAG_READ_ONLY    (64)
 
 struct VMMRegion {
 	uintptr_t baseAddress;
@@ -84,13 +87,14 @@ struct VMMRegion {
 
 	// Incremented when a syscall is using the region.
 	// To remove the region this must be 0.
+	// Must be modified using __sync_fetch_and_*** sinec the VMM's lock *doesn't* need to be acquired.
 	volatile unsigned lock;
 
 	unsigned flags;
 	LinkedItem<VMMRegion> item; // Only used by some objects.
 
 	// Fields used to distinguish regions in lookupRegions
-	uintptr_t offset; // TODO Sinec we only merge standard and free regions, can we remove offset and object from the comparison?
+	uintptr_t offset; // TODO Since we only merge standard and free regions, can we remove offset and object from the comparison?
 	void *object;
 	VMMRegionType type;
 	VMMMapPolicy mapPolicy;
@@ -123,9 +127,9 @@ struct VMM {
 	void Initialise();
 	void Destroy(); 
 
-	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = vmmRegionStandard, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
+	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = VMM_REGION_STANDARD, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
-	bool HandlePageFault(uintptr_t address, size_t limit = 0, bool lookupRegionsOnly = true);
+	bool HandlePageFault(uintptr_t address, size_t limit = 0, bool lookupRegionsOnly = true, struct CacheBlockFault *fault = nullptr);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
 	void UnlockRegion(VMMRegion *region);
 
@@ -137,7 +141,7 @@ struct VMM {
 
 	bool AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object);
 	uintptr_t AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated);
-	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit = 0);
+	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit = 0, struct CacheBlockFault *fault = nullptr);
 	VMMRegion *FindRegion(uintptr_t address, VMMRegion *array, size_t arrayCount);
 	void MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t &arrayCount);
 	void SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayCount, size_t &arrayAllocated);
@@ -164,6 +168,7 @@ struct SharedMemoryRegion {
 	Mutex mutex;
 	volatile size_t handles;
 	size_t sizeBytes;
+	struct Node *file;
 
 	bool named : 1;
 	bool big : 1;
@@ -179,6 +184,13 @@ struct SharedMemoryRegion {
 	// that are pointers to lists of physical addresses,
 	// each covering 256MB.
 #define BIG_SHARED_MEMORY (256 * 1024 * 1024)
+
+#define SHARED_ADDRESS_PRESENT (1)
+#define SHARED_ADDRESS_READING (2)
+
+	// At the end of a physical address listing,
+	// are the reading events for the cache blocks,
+	// if file is not nullptr.
 };
 
 struct NamedSharedMemoryRegion {
@@ -187,8 +199,23 @@ struct NamedSharedMemoryRegion {
 	size_t nameLength;
 };
 
+struct CacheBlockFault {
+	// When we fault in a shared memory region that contains cache blocks for a file,
+	// we need to tell the rest of the page fault handling code that we need to read in the file.
+
+	bool Handle();
+
+#define CACHE_BLOCK_FAULT_NONE (0)
+#define CACHE_BLOCK_FAULT_READ (1)
+	int type;
+
+	VMMRegion *vmmRegion;
+	uintptr_t offset;
+	uintptr_t *physicalAddresses;
+};
+
 struct SharedMemoryManager {
-	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0);
+	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0, Node *file = nullptr);
 	SharedMemoryRegion *LookupSharedMemory(char *name, size_t nameLength);
 	void DestroySharedMemory(SharedMemoryRegion *region);
 
@@ -269,7 +296,7 @@ void VMM::Initialise() {
 		lookupRegions = (VMMRegion *) 0xFFFF8F8000000000;
 		// regionsAllocated = 0x8000000000 / sizeof(VMMRegion);
 		lookupRegionsAllocated = 65536; 
-		AddRegion(0xFFFF900000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
+		AddRegion(0xFFFF900000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = ProcessorReadCR3();
 #endif
@@ -278,11 +305,11 @@ void VMM::Initialise() {
 
 		// Initialise the virtual address space for a new process.
 #ifdef ARCH_X86_64
-		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, vmmRegionFree, vmmMapLazy, true, nullptr);
+		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, vmmMapLazy, true, nullptr);
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
 		// KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
-		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, vmmMapAll, vmmRegionPhysical, (uintptr_t) virtualAddressSpace.cr3);
+		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, vmmMapAll, VMM_REGION_PHYSICAL, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
 		CopyMemory(pageTable + 0x100, (uint64_t *) (PAGE_TABLE_L4 + 0x100), PAGE_SIZE / 2);
 		pageTable[512 - 1] = virtualAddressSpace.cr3 | 3;
@@ -316,7 +343,7 @@ void VMM::Destroy() {
 		for (uintptr_t i = 0; i < regionsCount; i++) {
 			VMMRegion *region = regions + i;
 
-			if (region->type != vmmRegionFree) {
+			if (region->type != VMM_REGION_FREE) {
 				regionsFreed++;
 				// KernelLog(LOG_VERBOSE, "Freeing VMM region at %x...\n", region->baseAddress);
 				Free((void *) region->baseAddress);
@@ -405,7 +432,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	region.flags = flags;
 	region.object = object;
 
-	if (type != vmmRegionFree) {
+	if (type != VMM_REGION_FREE) {
 		allocatedVirtualMemory += pageCount * PAGE_SIZE;
 	}
 
@@ -416,26 +443,26 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		region->item.thisItem = region;
 	}
 
-	if (type != vmmRegionFree && mapPolicy != vmmMapAll) {
+	if (type != VMM_REGION_FREE && mapPolicy != vmmMapAll) {
 		uintptr_t lookupRegionIndex = AddRegion(&region, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
 		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsCount);
 	}
 
+	if (type == VMM_REGION_SHARED) {
+		SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+		region->mutex.Acquire();
+		region->regions.InsertEnd(&regions[regionIndex].item);
+		region->handles++; // Increment the number of handles to the shared memory region.
+	}
+
 	// Map the first few pages in to reduce the number of initial page faults.
-	if (type != vmmRegionFree && mapPolicy != vmmMapStrict) {
-		if (type == vmmRegionShared) {
-			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
-			region->mutex.Acquire();
-			region->regions.InsertEnd(&regions[regionIndex].item);
-			region->handles++; // Increment the number of handles to the shared memory region.
-		}
-
+	if (type != VMM_REGION_FREE && mapPolicy != vmmMapStrict && mapPolicy != vmmMapCacheBlock) {
 		HandlePageFaultInRegion(baseAddress, regions + regionIndex);
+	}
 
-		if (type == vmmRegionShared) {
-			SharedMemoryRegion *region = (SharedMemoryRegion *) object;
-			region->mutex.Release();
-		}
+	if (type == VMM_REGION_SHARED) {
+		SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+		region->mutex.Release();
 	}
 
 	return true;
@@ -444,9 +471,10 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
 	// Print("allocating memory, %d bytes\n", size);
 
+	if (!size) return nullptr;
 	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;
 
-	if (type == vmmRegionCopy) {
+	if (type == VMM_REGION_COPY) {
 		if (this != &kernelVMM) {
 			KernelPanic("VMM::Allocate - Attempt to allocate a copy region in a user VMM.\n");
 		}
@@ -460,7 +488,8 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 			vmm->lock.Acquire();
 			Defer(vmm->lock.Release());
 
-			if (!vmm->HandlePageFault(offset, pageCount, false)) {
+			CacheBlockFault fault = {};
+			if (!vmm->HandlePageFault(offset, pageCount, false, &fault) || !fault.Handle()) {
 				KernelPanic("VMM::Allocate - Could not page fault copy source region %x in VMM %x.\n", offset, vmm);
 			}
 		}
@@ -471,19 +500,25 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 			KernelLog(LOG_WARNING, "VMM::Allocate - Could not lock copy buffer.\n");
 			return nullptr;
 		}
-	} else if (type == vmmRegionHandleTable) {
+	} else if (type == VMM_REGION_HANDLE_TABLE) {
 		if (!(flags & VMM_REGION_FLAG_SUPERVISOR)) {
 			KernelPanic("VMM::Allocate - Expected supervisor flag for handle table region.\n");
 		} else if (mapPolicy != vmmMapStrict) {
 			KernelPanic("VMM::Allocate - Expected strict map policy for handle table region.\n");
 		}
+	} else if (type == VMM_REGION_SHARED) {
+		if (mapPolicy != vmmMapCacheBlock) {
+			KernelPanic("VMM::Allocate - Expected shared memory region to use vmmMapCacheBlock.\n");
+		}
+
+		// Print("Mapping shared region of object %x\n", object);
 	}
 
 	lock.Acquire();
 	Defer(lock.Release());
 
 #if 0
-	if (type == vmmRegionStandard) {
+	if (type == VMM_REGION_STANDARD) {
 		KernelLog(LOG_VERBOSE, "VMM::Allocate - %z, reason = %z, this = %x, size = %d\n", this == &kernelVMM ? "KERN" : "user", reason, this, size);
 	}
 #else
@@ -492,30 +527,33 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 
 	ValidateCurrentVMM(this);
 
-	if (!size) return nullptr;
+	VMMRegion *region;
+	uintptr_t baseAddress;
 
-	// TODO Should we look for the smallest/largest/first/last/etc. region?
-	uintptr_t i = 0;
+	{
+		// TODO Should we look for the smallest/largest/first/last/etc. region?
+		uintptr_t i = 0;
 
-	for (; i < regionsCount; i++) {
-		if (regions[i].type == vmmRegionFree
-				&& regions[i].pageCount > pageCount) {
-			break;
+		for (; i < regionsCount; i++) {
+			if (regions[i].type == VMM_REGION_FREE
+					&& regions[i].pageCount > pageCount) {
+				break;
+			}
 		}
-	}
 
-	if (i == regionsCount) {
-		return nullptr;
-	}
+		if (i == regionsCount) {
+			return nullptr;
+		}
 
-	VMMRegion *region = regions + i;
-	uintptr_t baseAddress = region->baseAddress;
-	region->baseAddress += pageCount << PAGE_BITS;
-	region->pageCount -= pageCount;
+		region = regions + i;
+		baseAddress = region->baseAddress;
+		region->baseAddress += pageCount << PAGE_BITS;
+		region->pageCount -= pageCount;
+	}
 
 	bool success = AddRegion(baseAddress, pageCount, offset & ~(PAGE_SIZE - 1), type, mapPolicy, flags, object);
 	if (!success) return nullptr;
-	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1)));
+	void *address = (void *) (baseAddress + (offset & (PAGE_SIZE - 1))); 
 
 	return address;
 }
@@ -531,12 +569,12 @@ void VMM::MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, siz
 		if (r->type != region->type) continue;
 		if (r == region) continue;
 
-		if (r->type != vmmRegionStandard && r->type != vmmRegionFree) {
+		if (r->type != VMM_REGION_STANDARD && r->type != VMM_REGION_FREE) {
 			// We can only merge standard and free regions.
 			continue;
 		}
 
-		if (r->type == vmmRegionStandard) {
+		if (r->type == VMM_REGION_STANDARD) {
 			if (r->mapPolicy != region->mapPolicy) continue;
 			if (r->offset != region->offset) continue;
 			if (r->flags != region->flags) continue;
@@ -603,15 +641,17 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		return OS_FATAL_ERROR_INVALID_MEMORY_REGION;
 	} else if (region->lock) {
 		return OS_FATAL_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL;
-	} else if (region->type == vmmRegionFree) {
+	} else if (region->type == VMM_REGION_FREE) {
 		KernelPanic("VMM::Free - Trying to free region that has already been freed.\n");
 	}
 
 	if (object) *object = region->object;
 	if (type) *type = region->type;
 
-	if (region->type == vmmRegionShared) {
+	if (region->type == VMM_REGION_SHARED) {
 		if (!region->object) KernelPanic("VMM::Free - Object from a freed shared memory region was null.\n");
+
+		// Print("Freeing region for shared object %x\n", region->object);
 
 		SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
 
@@ -624,7 +664,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		// which we'll need to the VMM's lock.
 		RegisterAsyncTask(CloseHandleToSharedMemoryRegionAfterVMMFree, region->object, kernelProcess, true);
 		scheduler.lock.Release();
-	} else if (region->type == vmmRegionCopy) {
+	} else if (region->type == VMM_REGION_COPY) {
 		VMMRegion *region2 = (VMMRegion *) region->object;
 		__sync_fetch_and_sub(&region2->lock, 1);
 	}
@@ -646,25 +686,25 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 
 			if (mappedAddress) {
 				switch (region->type) {
-					case vmmRegionStandard: {
+					case VMM_REGION_STANDARD: {
 						pmm.FreePage(mappedAddress);
 						allocatedPhysicalMemory -= PAGE_SIZE;
 					} break;
 
-					case vmmRegionPhysical: {
+					case VMM_REGION_PHYSICAL: {
 						// Do nothing.
 					} break;
 
-					case vmmRegionShared: {
+					case VMM_REGION_SHARED: {
 						// This memory will be freed when the last handle to the shared memory region is closed.
 					} break;
 
-					case vmmRegionCopy: {
+					case VMM_REGION_COPY: {
 						// Do nothing.
-						// KernelLog(LOG_VERBOSE, "vmmRegionCopy: Deallocate %x from %x.\n", mappedAddress, address);
+						// KernelLog(LOG_VERBOSE, "VMM_REGION_COPY: Deallocate %x from %x.\n", mappedAddress, address);
 					} break;
 
-					case vmmRegionHandleTable: {
+					case VMM_REGION_HANDLE_TABLE: {
 						// Do nothing.
 					} break;
 
@@ -690,52 +730,53 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		*lookupRegion = lookupRegions[--lookupRegionsCount];
 	}
 
-	region->type = vmmRegionFree;
+	region->type = VMM_REGION_FREE;
 	MergeIdenticalAdjacentRegions(region, regions, regionsCount);
 
 	return OS_SUCCESS;
 }
 
-bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit) {
+bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit, CacheBlockFault *fault) {
 	lock.AssertLocked();
 
 	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
 
+	uintptr_t postCount = 16;
+	if (region->mapPolicy == vmmMapStrict) postCount = 1;
+	else if (region->mapPolicy == vmmMapCacheBlock) postCount = CACHE_BLOCK_SIZE / PAGE_SIZE;
+	if (limit) postCount = limit;
+
 	for (uintptr_t address = page, i = 0; 
-			// If we need to map all pages in now, then do that.
-			// Otherwise, just map in this page and any in the following 16 that haven't been mapped already.
-			// (But make sure we don't go outside the region).
-			(region->mapPolicy == vmmMapAll || limit || i < (region->mapPolicy == vmmMapStrict ? 1 : 16)) && pageInRegion + i < region->pageCount && (!limit || i < limit); 
+			(region->mapPolicy == vmmMapAll || i < postCount) && (pageInRegion + i < region->pageCount); 
 			address += PAGE_SIZE, i++) {
 		virtualAddressSpace.lock.Acquire();
 		uintptr_t existingTranslation = virtualAddressSpace.Get(address);
 		virtualAddressSpace.lock.Release();
+
 		if (!existingTranslation) {
 			// This page needs mapping.
 		} else {
 			// Skip the page.
-			// if (limit) KernelLog(LOG_VERBOSE, "vmmRegionCopy: am %x\n", virtualAddressSpace.Get(address));
 			continue;
 		}
 
 		switch (region->type) {
-			case vmmRegionStandard: {
+			case VMM_REGION_STANDARD: {
 				uintptr_t physicalPage = pmm.AllocatePage();
 				allocatedPhysicalMemory += PAGE_SIZE;
 				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(physicalPage, address, region->flags);
 				virtualAddressSpace.lock.Release();
 				ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
-				// if (limit) KernelLog(LOG_VERBOSE, "vmmRegionCopy: fm %x\n", physicalPage);
 			} break;
 
-			case vmmRegionPhysical: {
+			case VMM_REGION_PHYSICAL: {
 				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(address - region->baseAddress + region->offset, address, region->flags);
 				virtualAddressSpace.lock.Release();
 			} break;
 
-			case vmmRegionShared: {
+			case VMM_REGION_SHARED: {
 				SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
 				sharedRegion->mutex.AssertLocked();
 
@@ -757,10 +798,17 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					index = base >> PAGE_BITS;
 				}
 
-				if (addresses[index]) {
+				if (addresses[index] & SHARED_ADDRESS_PRESENT) {
 					virtualAddressSpace.lock.Acquire();
 					virtualAddressSpace.Map(addresses[index], address, region->flags);
 					virtualAddressSpace.lock.Release();
+
+					if (addresses[index] & SHARED_ADDRESS_READING) {
+						// Page fault collision!
+						// Let's try to load the file ourselves.
+						if (!fault->physicalAddresses) fault->physicalAddresses = addresses + index;
+						fault->type = CACHE_BLOCK_FAULT_READ;
+					}
 				} else {
 					// NOTE Duplicated from above.
 					uintptr_t physicalPage = pmm.AllocatePage();
@@ -771,21 +819,28 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
 
 					// Store the address.
-					addresses[index] = physicalPage;
+					addresses[index] = physicalPage | SHARED_ADDRESS_PRESENT;
+
+					// Do we need to read this from a cache block?
+					if (sharedRegion->file) {
+						if (!fault->physicalAddresses) fault->physicalAddresses = addresses + index;
+						addresses[index] |= SHARED_ADDRESS_READING;
+						fault->type = CACHE_BLOCK_FAULT_READ;
+					}
 				}
 			} break;
 
-			case vmmRegionCopy: {
+			case VMM_REGION_COPY: {
 				virtualAddressSpace.lock.Acquire();
 				uintptr_t physicalAddress = virtualAddressSpace.Get(address - region->baseAddress + region->offset);
-				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x\n", physicalAddress);
+				// KernelLog(LOG_VERBOSE, "VMM_REGION_COPY: %x\n", physicalAddress);
 				if (!physicalAddress) KernelPanic("VMM::HandlePageFaultInRegion - Copy region page (%x/%x) was unmapped.\n", address, address - region->baseAddress + region->offset);
 				virtualAddressSpace.Map(physicalAddress, address, region->flags);
 				virtualAddressSpace.lock.Release();
-				// KernelLog(LOG_VERBOSE, "vmmRegionCopy: %x (from %x) -> %x\n", physicalAddress, address - region->baseAddress + region->offset, address);
+				// KernelLog(LOG_VERBOSE, "VMM_REGION_COPY: %x (from %x) -> %x\n", physicalAddress, address - region->baseAddress + region->offset, address);
 			} break;
 
-			case vmmRegionHandleTable: {
+			case VMM_REGION_HANDLE_TABLE: {
 				// This means we're trying to access an invalid handle.
 				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(emptyHandlePage, address, region->flags);
@@ -796,6 +851,11 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 				return false;
 			} break;
 		}
+	}
+
+	if (fault && fault->type != CACHE_BLOCK_FAULT_NONE) {
+		fault->vmmRegion = region;
+		fault->offset = page - region->baseAddress + region->offset;
 	}
 
 	return true;
@@ -853,7 +913,7 @@ void VMM::UnlockRegion(VMMRegion *region) {
 	__sync_fetch_and_sub(&region->lock, 1);
 }
 
-bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnly) {
+bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnly, CacheBlockFault *fault) {
 	lock.AssertLocked();
 
 	uintptr_t page = address & ~(PAGE_SIZE - 1);
@@ -866,16 +926,27 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 	}
 
 	if (region) {
-		if (region->type == vmmRegionShared) {
+		if (region->type == VMM_REGION_SHARED) {
 			SharedMemoryRegion *_region = (SharedMemoryRegion *) region->object;
 			_region->mutex.Acquire();
+			__sync_fetch_and_add(&region->lock, 1);
 		}
 
-		bool result = HandlePageFaultInRegion(page, region, limit);
+		if (region->mapPolicy == vmmMapCacheBlock) {
+			page = page - region->baseAddress + region->offset;
+			page &= ~(CACHE_BLOCK_SIZE - 1);
+			page = page + region->baseAddress - region->offset;
+		}
 
-		if (region->type == vmmRegionShared) {
+		bool result = HandlePageFaultInRegion(page, region, limit, fault);
+
+		if (region->type == VMM_REGION_SHARED) {
 			SharedMemoryRegion *_region = (SharedMemoryRegion *) region->object;
 			_region->mutex.Release();
+
+			if (fault->type == CACHE_BLOCK_FAULT_NONE) {
+				__sync_fetch_and_sub(&region->lock, 1);
+			}
 		}
 
 		return result;
@@ -889,6 +960,59 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 
 		return false;
 	}
+}
+
+bool CacheBlockFault::Handle() {
+	bool result = true;
+	if (type != CACHE_BLOCK_FAULT_READ) return result;
+
+	// This can't be closed because we have a lock on the region which has a handle to the shared memory object.
+	SharedMemoryRegion *region = (SharedMemoryRegion *) vmmRegion->object;
+
+	void *buffer = OSHeapAllocate(CACHE_BLOCK_SIZE, false);
+
+	{
+		IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+		request->handles = 1;
+		request->type = IO_REQUEST_READ;
+		request->node = region->file;
+		request->offset = offset;
+		request->count = CACHE_BLOCK_SIZE;
+		request->buffer = buffer;
+		request->Start();
+		request->complete.Wait(OS_WAIT_NO_TIMEOUT); // No mutexes acquired!! (so no deadlock...)
+		OSError error = request->error;
+		CloseHandleToObject(request, KERNEL_OBJECT_IO_REQUEST);
+		result = error == OS_SUCCESS;
+	}
+
+	if (!result) goto frFail;
+
+	region->mutex.Acquire(); 
+
+	if (region->sizeBytes > offset) {
+		for (uintptr_t i = 0; i < CACHE_BLOCK_SIZE / PAGE_SIZE; i++) {
+			if (!(physicalAddresses[i] & SHARED_ADDRESS_READING)) {
+				// Page fault collision! Another thread got here before us...
+				goto pfCollision;
+			}
+
+			// Mark the cache block as no longer being read.
+			physicalAddresses[i] &= ~SHARED_ADDRESS_READING;
+		}
+
+		// Copy in the data we read!
+		void *destination = offset + (uint8_t *) region->file->cacheData;
+		CopyMemory(destination, buffer, CACHE_BLOCK_SIZE);
+	}
+
+	pfCollision:;
+	region->mutex.Release();
+	frFail:;
+	OSHeapFree(buffer);
+	__sync_fetch_and_sub(&vmmRegion->lock, 1);
+
+	return result;
 }
 
 #ifdef ARCH_X86_64
@@ -922,6 +1046,8 @@ bool HandlePageFault(uintptr_t page) {
 		}
 	}
 
+	VMM *vmm;
+
 	if (page >= 0xFFFF810000000000 && page < 0xFFFF900000000000) {
 		kernelVMM.virtualAddressSpace.lock.Acquire();
 		Defer(kernelVMM.virtualAddressSpace.lock.Release());
@@ -933,12 +1059,8 @@ bool HandlePageFault(uintptr_t page) {
 		if (GetLocalStorage()->spinlockCount)
 			KernelPanic("HandlePageFault - Page fault (%x) occurred in critical section.\n", page);
 
-		kernelVMM.lock.Acquire();
-		Defer(kernelVMM.lock.Release());
-
-		bool result = kernelVMM.HandlePageFault(page);
-
-		return result;
+		vmm = &kernelVMM;
+		goto normalFault;
 	} else if (page >= 0xFFFFFF0000000000 && page < 0xFFFFFF0100000000) {
 		kernelVMM.virtualAddressSpace.lock.Acquire();
 		Defer(kernelVMM.virtualAddressSpace.lock.Release());
@@ -947,19 +1069,26 @@ bool HandlePageFault(uintptr_t page) {
 		return true;
 	} else if (page < 0x0000800000000000) {
 		Process *currentProcess = GetCurrentThread()->process;
-		VMM *vmm = currentProcess->vmm;
 
 		if (GetLocalStorage()->spinlockCount)
 			KernelPanic("HandlePageFault - Page fault (%x) occurred in critical section.\n", page);
 
-		vmm->lock.Acquire();
-		Defer(vmm->lock.Release());
-
-		bool result = vmm->HandlePageFault(page);
-
-		return result;
+		vmm = currentProcess->vmm;
+		goto normalFault;
 	} else {
 		return false;
+	}
+
+	normalFault:;
+
+	{
+		CacheBlockFault fault = {};
+		vmm->lock.Acquire();
+		bool result = vmm->HandlePageFault(page, 0, true, &fault);
+		vmm->lock.Release();
+		if (!result) return false;
+		result = fault.Handle();
+		return result;
 	}
 }
 #endif
@@ -1238,6 +1367,7 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 	}
 
 	uintptr_t value = physicalAddress | ((userland && !(flags & VMM_REGION_FLAG_SUPERVISOR)) ? 7 : 0x103) | (flags & VMM_REGION_FLAG_CACHABLE ? 0 : 24);
+	if (flags & VMM_REGION_FLAG_READ_ONLY) value &= ~2;
 	PAGE_TABLE_L1[indexL1] = value;
 
 	ProcessorInvalidatePage(oldVirtualAddress);
@@ -1405,9 +1535,12 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 
 #define ArrayAdd(_array, _item) _ArrayAdd((void **) &(_array), (_array ## Count), (_array ## Allocated), &(_item), sizeof(_item))
 
-SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, char *name, size_t nameLength) {
+SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, char *name, size_t nameLength, Node *file) {
 	mutex.Acquire();
 	Defer(mutex.Release());
+
+	// sizeBytes must be at CACHE_BLOCK_SIZE granularity.
+	sizeBytes = (sizeBytes + CACHE_BLOCK_SIZE - 1) & ~(CACHE_BLOCK_SIZE - 1);
 
 	// KernelLog(LOG_VERBOSE, "SharedMemoryManager::CreateSharedMemory - %d bytes\n", sizeBytes);
 
@@ -1433,29 +1566,31 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	}
 
 	size_t pages = sizeBytes / PAGE_SIZE;
-	if (sizeBytes & (PAGE_SIZE - 1)) pages++;
 
 	SharedMemoryRegion *region;
 
 	if (pages > BIG_SHARED_MEMORY / PAGE_SIZE) {
 		size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
-		region = (SharedMemoryRegion *) OSHeapAllocate(pageGroups * sizeof(void *) + sizeof(SharedMemoryRegion), true);
+		region = (SharedMemoryRegion *) OSHeapAllocate(pageGroups * sizeof(void *) + sizeof(SharedMemoryRegion), false);
+		ZeroMemory(region, pageGroups * sizeof(void *) + sizeof(SharedMemoryRegion));
 		region->sizeBytes = sizeBytes;
 		region->big = true;
 	} else {
-		region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), true);
+		region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), false);
+		ZeroMemory(region, pages * sizeof(void *) + sizeof(SharedMemoryRegion));
 		region->sizeBytes = sizeBytes;
 	}
 
 	if (namedRegion) {
 		region->named = true;
-		region->handles = 1; 
 		namedRegion->region = region;
 	} else {
 		region->named = false;
-		region->handles = 1;
 	}
 
+	region->handles = 1;
+	region->file = file;
+	
 	return region;
 }
 
@@ -1498,7 +1633,6 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 	size_t pages = region->sizeBytes / PAGE_SIZE;
 	if (region->sizeBytes & (PAGE_SIZE - 1)) pages++;
-
 
 	if (region->big) {
 		size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;

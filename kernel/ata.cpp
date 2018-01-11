@@ -568,7 +568,7 @@ void ATADriver::Initialise() {
 				sectorCount[bus * 2 + 0] = sectorCount[bus * 2 + 1] = 0;
 				drivesOnBus = 0;
 			} else {
-				uintptr_t dataVirtual = (uintptr_t) kernelVMM.Allocate("ATADMA", 131072, vmmMapAll, vmmRegionPhysical, dataPhysical, 0 /*do not cache reads/writes*/);
+				uintptr_t dataVirtual = (uintptr_t) kernelVMM.Allocate("ATADMA", 131072, vmmMapAll, VMM_REGION_PHYSICAL, dataPhysical, 0 /*do not cache reads/writes*/);
 
 				PRD *prdt = (PRD *) dataVirtual;
 				prdt->end = 0x8000;

@@ -1,17 +1,7 @@
 // TODO
-//
-// 	-> Creating files
-// 	-> Get file information
-// 	-> Directory enumeration
-//
-// 	-> Creating directories
 // 	-> Moving files/directories
 // 	-> Deleting files/directories
-// 	-> Asynchronous file I/O (start, cancel, wait, get progress)
 // 	-> Wait for file access
-// 	-> File/block cache
-// 	-> Keep files around even when all closed to cache
-// 	-> Memory mapped files
 
 #ifndef IMPLEMENTATION
 
@@ -67,6 +57,11 @@ struct Node {
 
 	NodeData data;
 	Node *parent;
+
+	LinkedItem<Node> noHandleCacheItem;
+
+	SharedMemoryRegion *cache;
+	void *cacheData;
 };
 
 struct Filesystem {
@@ -94,19 +89,23 @@ struct VFS {
 
 	Node *OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *error);
 	void CloseNode(Node *node, uint64_t flags);
+	void DestroyNode(Node *node);
 
-	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type);
+	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew);
 	Node *FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem);
 
 	LinkedList<Filesystem> filesystems;
 	LinkedList<Mountpoint> mountpoints;
 	Mutex filesystemsMutex, mountpointsMutex;
 
+#define MAX_CACHED_NODES (256)
+	LinkedList<Node> cachedNodes;
+
 	bool foundBootFilesystem;
 
 #define NODE_HASH_TABLE_BITS (12)
 	Node *nodeHashTable[1 << NODE_HASH_TABLE_BITS];
-	Mutex nodeHashTableMutex;
+	Mutex nodeHashTableMutex; // Required to changed node handle count.
 };
 
 VFS vfs;
@@ -116,11 +115,16 @@ VFS vfs;
 #ifdef IMPLEMENTATION
 
 bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
+	// TODO Resize shared memory region.
+
 	if (!alreadyTakenSemaphore) semaphore.Take();
 	Defer(if (!alreadyTakenSemaphore) semaphore.Return());
 
 	parent->semaphore.Take();
 	Defer(parent->semaphore.Return());
+
+	cache->mutex.Acquire();
+	Defer(cache->mutex.Release());
 
 	modifiedSinceLastSync = true;
 
@@ -154,7 +158,6 @@ void Node::Sync() {
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			Print("Syncing node...\n");
 			EsFSSync(this);
 		} break;
 
@@ -209,6 +212,8 @@ void Node::Complete(IOPacket *packet) {
 }
 
 void Node::Write(IOPacket *packet, bool canResize) {
+	// TODO Access cache.
+
 	semaphore.Take();
 
 	IORequest *request = packet->request;
@@ -254,6 +259,8 @@ void Node::Write(IOPacket *packet, bool canResize) {
 }
 
 void Node::Read(IOPacket *packet) {
+	// TODO Access cache.
+
 	semaphore.Take();
 
 	IORequest *request = packet->request;
@@ -304,12 +311,30 @@ void VFS::Initialise() {
 	}
 }
 
+void VFS::DestroyNode(Node *node) {
+	nodeHashTableMutex.AssertLocked();
+
+	vfs.cachedNodes.InsertStart(&node->noHandleCacheItem);
+
+	if (vfs.cachedNodes.count > MAX_CACHED_NODES) {
+		LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
+		vfs.cachedNodes.Remove(item);
+		Node *node = item->thisItem;
+		node->Sync();
+
+		if (node->cache) {
+			CloseHandleToObject(node->cache, KERNEL_OBJECT_SHMEM);
+			kernelVMM.Free(node->cacheData);
+		}
+
+		OSHeapFree(node);
+	}
+}
+
 void VFS::CloseNode(Node *node, uint64_t flags) {
 	nodeHashTableMutex.Acquire();
 
 	node->handles--;
-
-	bool noHandles = node->handles == 0;
 
 	if ((flags & OS_OPEN_NODE_READ_BLOCK)   ) { node->blockRead--; }
 	if ((flags & OS_OPEN_NODE_READ_ACCESS)  ) { node->countRead--; }
@@ -322,18 +347,13 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	Node *parent = node->parent;
 
-	if (noHandles) {
-		if (parent) {
-			*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
-		}
+	// A node can only be closed when it's cache region has only 1 handle remaining (i.e. the handle when we first opened this node).
+	// (see also: CloseHandleToObject for KERNEL_OBJECT_SHMEM.
+	if (node->handles == 0 && node->cache && node->cache->handles == (node->cacheData ? 2 : 1)) {
+		DestroyNode(node);
 	}
 
 	nodeHashTableMutex.Release();
-
-	if (noHandles) {
-		node->Sync();
-		OSHeapFree(node);
-	}
 
 	if (parent) {
 		CloseNode(parent, DIRECTORY_ACCESS);
@@ -373,7 +393,7 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 
 	Filesystem *filesystem = mountpoint->filesystem;
 	uint64_t directoryAccess = DIRECTORY_ACCESS;
-	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY);
+	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY, false);
 
 	if (!node) {
 		*error = OS_ERROR_PATH_NOT_TRAVERSABLE;
@@ -505,12 +525,13 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 	return node;
 }
 
-Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdentifier identifier, Node *parent, OSNodeType type) {
+Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew) {
 	if (parent && !parent->filesystem) {
 		KernelPanic("VFS::RegisterNodeHandle - Trying to register a node without a filesystem.\n");
 	}
 
 	Node *existingNode = (Node *) _existingNode;
+	existingNode->data.type = type;
 
 	nodeHashTableMutex.Acquire();
 	Defer(nodeHashTableMutex.Release());
@@ -539,8 +560,18 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 	if ((flags & OS_OPEN_NODE_RESIZE_BLOCK) ) { existingNode->blockResize++; }
 	if ((flags & OS_OPEN_NODE_RESIZE_ACCESS)) { existingNode->countResize++; }
 
-	if (!existingNode->handles) {
-		existingNode->semaphore.Return(1);
+	if (existingNode->noHandleCacheItem.list) {
+		vfs.cachedNodes.Remove(&existingNode->noHandleCacheItem);
+	}
+
+	if (isNodeNew) {
+		existingNode->semaphore.Set(1);
+		existingNode->noHandleCacheItem.thisItem = existingNode;
+
+		if (existingNode->data.type == OS_NODE_FILE) {
+			existingNode->cache = sharedMemoryManager.CreateSharedMemory(existingNode->data.file.fileSize, nullptr, 0, existingNode);
+			existingNode->cacheData = kernelVMM.Allocate("NodeCache", existingNode->data.file.fileSize, vmmMapCacheBlock, VMM_REGION_SHARED, 0, VMM_REGION_FLAG_CACHABLE, existingNode->cache);
+		}
 	}
 
 	existingNode->handles++;
