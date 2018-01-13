@@ -156,7 +156,7 @@ extern "C" void SetupProcessor2() {
 
 	// Create the processor's local storage.
 
-	CPULocalStorage *localStorage = (CPULocalStorage *) kernelVMM.Allocate("ProcLocal", sizeof(CPULocalStorage), vmmMapAll);
+	CPULocalStorage *localStorage = (CPULocalStorage *) kernelVMM.Allocate("ProcLocal", sizeof(CPULocalStorage), VMM_MAP_ALL);
 	ProcessorSetLocalStorage(localStorage);
 
 	// Find the ACPIProcessor for the current processor.
@@ -165,7 +165,7 @@ extern "C" void SetupProcessor2() {
 	// Setup a GDT and TSS for the processor.
 	{
 		uintptr_t memoryPhysical = pmm.AllocatePage();
-		void *memory = kernelVMM.Allocate("ProcGDT", 4096, vmmMapAll, VMM_REGION_PHYSICAL, memoryPhysical);
+		void *memory = kernelVMM.Allocate("ProcGDT", 4096, VMM_MAP_ALL, VMM_REGION_PHYSICAL, memoryPhysical);
 
 		uintptr_t gdtPhysical = memoryPhysical +    0;
 		uintptr_t tssPhysical = memoryPhysical + 2048;

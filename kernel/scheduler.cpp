@@ -378,10 +378,10 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	// Allocate the thread's stacks.
 	uintptr_t kernelStackSize = userland ? 0x4000 : 0x10000;
 	uintptr_t userStackSize = userland ? 0x100000 : 0x10000;
-	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate("KernStack", kernelStackSize, vmmMapAll);;
+	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate("KernStack", kernelStackSize, VMM_MAP_ALL);
 
 	if (userland) {
-		stack = (uintptr_t) process->vmm->Allocate("UserStack", userStackSize, vmmMapLazy);
+		stack = (uintptr_t) process->vmm->Allocate("UserStack", userStackSize, VMM_MAP_LAZY);
 	} else {
 		stack = kernelStack;
 	}
@@ -1292,7 +1292,8 @@ void Semaphore::Return(uintptr_t u) {
 
 void Semaphore::Set(uintptr_t u) {
 	mutex.Acquire();
-	if (!available.state) available.Set();
+	if (!available.state && u) available.Set();
+	else if (available.state && !u) available.Reset();
 	units = u;
 	mutex.Release();
 }

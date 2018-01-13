@@ -347,7 +347,7 @@ void IORequest::Start(bool canResize) {
 		KernelPanic("IORequest::Start - Performing asynchronous IO on the asynchronous task thread.\n");
 	}
 
-	buffer = kernelVMM.Allocate("IOCopy", count, vmmMapAll, VMM_REGION_COPY, (uintptr_t) buffer);
+	buffer = kernelVMM.Allocate("IOCopy", count, VMM_MAP_ALL, VMM_REGION_COPY, (uintptr_t) buffer);
 
 	if (!buffer) {
 		return;

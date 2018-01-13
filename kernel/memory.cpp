@@ -69,11 +69,9 @@ enum VMMRegionType {
 // TODO Why are these in lowercase?!
 
 enum VMMMapPolicy {
-	vmmMapLazy,
-	vmmMapAll, // These are not stored in the region lookup array
-	vmmMapStrict,
-#define CACHE_BLOCK_SIZE (128 * 1024)
-	vmmMapCacheBlock, // Only map in 128KB blocks.
+	VMM_MAP_LAZY,
+	VMM_MAP_ALL, // These are not stored in the region lookup array
+	VMM_MAP_STRICT,
 };
 
 #define VMM_REGION_FLAG_NOT_CACHABLE (0)
@@ -127,7 +125,7 @@ struct VMM {
 	void Initialise();
 	void Destroy(); 
 
-	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = vmmMapLazy, VMMRegionType type = VMM_REGION_STANDARD, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
+	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = VMM_MAP_LAZY, VMMRegionType type = VMM_REGION_STANDARD, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
 	bool HandlePageFault(uintptr_t address, size_t limit = 0, bool lookupRegionsOnly = true, struct CacheBlockFault *fault = nullptr);
 	VMMRegion *FindAndLockRegion(uintptr_t address, size_t size);
@@ -296,7 +294,7 @@ void VMM::Initialise() {
 		lookupRegions = (VMMRegion *) 0xFFFF8F8000000000;
 		// regionsAllocated = 0x8000000000 / sizeof(VMMRegion);
 		lookupRegionsAllocated = 65536; 
-		AddRegion(0xFFFF900000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, vmmMapLazy, true, nullptr);
+		AddRegion(0xFFFF900000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, VMM_MAP_LAZY, true, nullptr);
 
 		virtualAddressSpace.cr3 = ProcessorReadCR3();
 #endif
@@ -305,11 +303,11 @@ void VMM::Initialise() {
 
 		// Initialise the virtual address space for a new process.
 #ifdef ARCH_X86_64
-		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, vmmMapLazy, true, nullptr);
+		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, VMM_MAP_LAZY, true, nullptr);
 
 		virtualAddressSpace.cr3 = pmm.AllocatePage();
 		// KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
-		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, vmmMapAll, VMM_REGION_PHYSICAL, (uintptr_t) virtualAddressSpace.cr3);
+		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, VMM_MAP_ALL, VMM_REGION_PHYSICAL, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
 		CopyMemory(pageTable + 0x100, (uint64_t *) (PAGE_TABLE_L4 + 0x100), PAGE_SIZE / 2);
 		pageTable[512 - 1] = virtualAddressSpace.cr3 | 3;
@@ -397,12 +395,12 @@ uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCoun
 			if (arrayCount) {
 				arrayAllocated *= 2;
 				VMMRegion *old = array;
-				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), vmmMapAll);
+				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), VMM_MAP_ALL);
 				CopyMemory(array, old, arrayCount * sizeof(VMMRegion));
 				kernelVMM.Free(old);
 			} else {
 				arrayAllocated = 256;
-				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), vmmMapAll);
+				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), VMM_MAP_ALL);
 			}
 		}
 	}
@@ -443,7 +441,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		region->item.thisItem = region;
 	}
 
-	if (type != VMM_REGION_FREE && mapPolicy != vmmMapAll) {
+	if (type != VMM_REGION_FREE && mapPolicy != VMM_MAP_ALL) {
 		uintptr_t lookupRegionIndex = AddRegion(&region, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
 		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsCount);
 	}
@@ -456,7 +454,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	}
 
 	// Map the first few pages in to reduce the number of initial page faults.
-	if (type != VMM_REGION_FREE && mapPolicy != vmmMapStrict && mapPolicy != vmmMapCacheBlock) {
+	if (type != VMM_REGION_FREE && mapPolicy != VMM_MAP_STRICT) {
 		HandlePageFaultInRegion(baseAddress, regions + regionIndex);
 	}
 
@@ -503,14 +501,10 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 	} else if (type == VMM_REGION_HANDLE_TABLE) {
 		if (!(flags & VMM_REGION_FLAG_SUPERVISOR)) {
 			KernelPanic("VMM::Allocate - Expected supervisor flag for handle table region.\n");
-		} else if (mapPolicy != vmmMapStrict) {
+		} else if (mapPolicy != VMM_MAP_STRICT) {
 			KernelPanic("VMM::Allocate - Expected strict map policy for handle table region.\n");
 		}
 	} else if (type == VMM_REGION_SHARED) {
-		if (mapPolicy != vmmMapCacheBlock) {
-			KernelPanic("VMM::Allocate - Expected shared memory region to use vmmMapCacheBlock.\n");
-		}
-
 		// Print("Mapping shared region of object %x\n", object);
 	}
 
@@ -723,7 +717,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	size_t regionPageCount = region->pageCount;
 	VMMMapPolicy mapPolicy = region->mapPolicy;
 
-	if (mapPolicy != vmmMapAll) {
+	if (mapPolicy != VMM_MAP_ALL) {
 		VMMRegion *lookupRegion = FindRegion(baseAddress, lookupRegions, lookupRegionsCount);
 		SplitRegion(lookupRegion, baseAddress, true, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
 		SplitRegion(lookupRegion, baseAddress + (regionPageCount << PAGE_BITS), false, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
@@ -737,17 +731,17 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 }
 
 bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit, CacheBlockFault *fault) {
+	(void) fault;
 	lock.AssertLocked();
 
 	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
 
 	uintptr_t postCount = 16;
-	if (region->mapPolicy == vmmMapStrict) postCount = 1;
-	else if (region->mapPolicy == vmmMapCacheBlock) postCount = CACHE_BLOCK_SIZE / PAGE_SIZE;
+	if (region->mapPolicy == VMM_MAP_STRICT) postCount = 1;
 	if (limit) postCount = limit;
 
 	for (uintptr_t address = page, i = 0; 
-			(region->mapPolicy == vmmMapAll || i < postCount) && (pageInRegion + i < region->pageCount); 
+			(region->mapPolicy == VMM_MAP_ALL || i < postCount) && (pageInRegion + i < region->pageCount); 
 			address += PAGE_SIZE, i++) {
 		virtualAddressSpace.lock.Acquire();
 		uintptr_t existingTranslation = virtualAddressSpace.Get(address);
@@ -789,7 +783,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					uintptr_t group = base / BIG_SHARED_MEMORY;
 
 					if (!addresses[group]) {
-						addresses[group] = (uintptr_t) kernelVMM.Allocate("BigShare", BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t), vmmMapAll);
+						addresses[group] = (uintptr_t) kernelVMM.Allocate("BigShare", BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t), VMM_MAP_ALL);
 					}
 
 					addresses = (uintptr_t *) addresses[group];
@@ -802,13 +796,6 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					virtualAddressSpace.lock.Acquire();
 					virtualAddressSpace.Map(addresses[index], address, region->flags);
 					virtualAddressSpace.lock.Release();
-
-					if (addresses[index] & SHARED_ADDRESS_READING) {
-						// Page fault collision!
-						// Let's try to load the file ourselves.
-						if (!fault->physicalAddresses) fault->physicalAddresses = addresses + index;
-						fault->type = CACHE_BLOCK_FAULT_READ;
-					}
 				} else {
 					// NOTE Duplicated from above.
 					uintptr_t physicalPage = pmm.AllocatePage();
@@ -820,13 +807,6 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 
 					// Store the address.
 					addresses[index] = physicalPage | SHARED_ADDRESS_PRESENT;
-
-					// Do we need to read this from a cache block?
-					if (sharedRegion->file) {
-						if (!fault->physicalAddresses) fault->physicalAddresses = addresses + index;
-						addresses[index] |= SHARED_ADDRESS_READING;
-						fault->type = CACHE_BLOCK_FAULT_READ;
-					}
 				}
 			} break;
 
@@ -851,11 +831,6 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 				return false;
 			} break;
 		}
-	}
-
-	if (fault && fault->type != CACHE_BLOCK_FAULT_NONE) {
-		fault->vmmRegion = region;
-		fault->offset = page - region->baseAddress + region->offset;
 	}
 
 	return true;
@@ -932,12 +907,6 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 			__sync_fetch_and_add(&region->lock, 1);
 		}
 
-		if (region->mapPolicy == vmmMapCacheBlock) {
-			page = page - region->baseAddress + region->offset;
-			page &= ~(CACHE_BLOCK_SIZE - 1);
-			page = page + region->baseAddress - region->offset;
-		}
-
 		bool result = HandlePageFaultInRegion(page, region, limit, fault);
 
 		if (region->type == VMM_REGION_SHARED) {
@@ -966,6 +935,7 @@ bool CacheBlockFault::Handle() {
 	bool result = true;
 	if (type != CACHE_BLOCK_FAULT_READ) return result;
 
+#if 0
 	// This can't be closed because we have a lock on the region which has a handle to the shared memory object.
 	SharedMemoryRegion *region = (SharedMemoryRegion *) vmmRegion->object;
 
@@ -1010,6 +980,7 @@ bool CacheBlockFault::Handle() {
 	region->mutex.Release();
 	frFail:;
 	OSHeapFree(buffer);
+#endif
 	__sync_fetch_and_sub(&vmmRegion->lock, 1);
 
 	return result;
@@ -1212,7 +1183,7 @@ void PMM::Initialise() {
 	bitsetPages = physicalMemoryHighest >> PAGE_BITS;
 	bitsetGroups = bitsetPages / BITSET_GROUP_PAGES + 1;
 
-	bitsetPageUsage = (uint32_t *) kernelVMM.Allocate("PMM", (bitsetPages >> 3) + (bitsetGroups * 2), vmmMapAll);
+	bitsetPageUsage = (uint32_t *) kernelVMM.Allocate("PMM", (bitsetPages >> 3) + (bitsetGroups * 2), VMM_MAP_ALL);
 	bitsetGroupUsage = (uint16_t *) bitsetPageUsage + (bitsetPages >> 4);
 
 	while (physicalMemoryRegionsPagesCount) {
@@ -1539,8 +1510,8 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	// sizeBytes must be at CACHE_BLOCK_SIZE granularity.
-	sizeBytes = (sizeBytes + CACHE_BLOCK_SIZE - 1) & ~(CACHE_BLOCK_SIZE - 1);
+	// sizeBytes must be at PAGE_SIZE granularity.
+	sizeBytes = (sizeBytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
 	// KernelLog(LOG_VERBOSE, "SharedMemoryManager::CreateSharedMemory - %d bytes\n", sizeBytes);
 

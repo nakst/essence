@@ -183,7 +183,7 @@ void ACPI::Initialise() {
 			sdt = (ACPIDescriptorTable *) (uintptr_t) rsdp->rsdtAddress;
 		}
 
-		sdt = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, vmmMapAll, VMM_REGION_PHYSICAL, (uintptr_t) sdt);
+		sdt = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, VMM_MAP_ALL, VMM_REGION_PHYSICAL, (uintptr_t) sdt);
 	} else {
 		KernelPanic("ACPI::Initialise - Could not find supported root system descriptor pointer.\nACPI support is required.\n");
 	}
@@ -207,7 +207,7 @@ void ACPI::Initialise() {
 				address = ((uint32_t *) tableListAddress)[i];
 			}
 
-			tables[i] = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, vmmMapAll, VMM_REGION_PHYSICAL, address);
+			tables[i] = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, VMM_MAP_ALL, VMM_REGION_PHYSICAL, address);
 
 			if (tables[i]->length > ACPI_MAX_TABLE_LENGTH || SumBytes((uint8_t *) tables[i], tables[i]->length)) {
 				KernelPanic("ACPI::Initialise - ACPI table %d with signature %s was invalid or unsupported.\n", i, 4, &tables[i]->signature);

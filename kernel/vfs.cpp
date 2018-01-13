@@ -59,9 +59,6 @@ struct Node {
 	Node *parent;
 
 	LinkedItem<Node> noHandleCacheItem;
-
-	SharedMemoryRegion *cache;
-	void *cacheData;
 };
 
 struct Filesystem {
@@ -122,9 +119,6 @@ bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
 
 	parent->semaphore.Take();
 	Defer(parent->semaphore.Return());
-
-	cache->mutex.Acquire();
-	Defer(cache->mutex.Release());
 
 	modifiedSinceLastSync = true;
 
@@ -322,11 +316,6 @@ void VFS::DestroyNode(Node *node) {
 		Node *node = item->thisItem;
 		node->Sync();
 
-		if (node->cache) {
-			CloseHandleToObject(node->cache, KERNEL_OBJECT_SHMEM);
-			kernelVMM.Free(node->cacheData);
-		}
-
 		OSHeapFree(node);
 	}
 }
@@ -347,9 +336,7 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	Node *parent = node->parent;
 
-	// A node can only be closed when it's cache region has only 1 handle remaining (i.e. the handle when we first opened this node).
-	// (see also: CloseHandleToObject for KERNEL_OBJECT_SHMEM.
-	if (node->handles == 0 && node->cache && node->cache->handles == (node->cacheData ? 2 : 1)) {
+	if (node->handles == 0) {
 		DestroyNode(node);
 	}
 
@@ -567,11 +554,6 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 	if (isNodeNew) {
 		existingNode->semaphore.Set(1);
 		existingNode->noHandleCacheItem.thisItem = existingNode;
-
-		if (existingNode->data.type == OS_NODE_FILE) {
-			existingNode->cache = sharedMemoryManager.CreateSharedMemory(existingNode->data.file.fileSize, nullptr, 0, existingNode);
-			existingNode->cacheData = kernelVMM.Allocate("NodeCache", existingNode->data.file.fileSize, vmmMapCacheBlock, VMM_REGION_SHARED, 0, VMM_REGION_FLAG_CACHABLE, existingNode->cache);
-		}
 	}
 
 	existingNode->handles++;
