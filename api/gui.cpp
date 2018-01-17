@@ -1293,16 +1293,16 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 
 			// TODO Window minimum size.
 
-			if (width < 256) {
-				width = 256;
-				if (!la) bounds.right = bounds.left + 256;
-				else bounds.left = bounds.right - 256;
+			if (width < 200) {
+				width = 200;
+				if (!la) bounds.right = bounds.left + 200;
+				else bounds.left = bounds.right - 200;
 			}
 
-			if (height < 256) {
-				height = 256;
-				if (!ta) bounds.bottom = bounds.top + 256;
-				else bounds.top = bounds.bottom - 256;
+			if (height < 200) {
+				height = 200;
+				if (!ta) bounds.bottom = bounds.top + 200;
+				else bounds.top = bounds.bottom - 200;
 			}
 
 			window->width = width;

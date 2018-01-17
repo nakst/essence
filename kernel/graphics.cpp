@@ -102,7 +102,6 @@ struct Graphics {
 	Surface cursorSwap; // A surface for temporarily storing the pixels behind the cursor.
 };
 
-#ifdef ARCH_X86_64
 struct VESAVideoModeInformation {
 	// Useful fields marked with /**/
 	uint16_t attributes;
@@ -151,7 +150,6 @@ struct VESAVideoModeInformation {
 
 VESAVideoModeInformation *vesaMode = (VESAVideoModeInformation *) (LOW_MEMORY_MAP_START + 0x7000);
 Graphics graphics;
-#endif
 
 #else
 

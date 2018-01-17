@@ -618,7 +618,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				OSError error;
 				size_t bytesRead = file->Read(argument1, argument2, (uint8_t *) argument3, &error);
 #else
-				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				IORequest *request = (IORequest *) ioRequestPool.Add();
 				request->handles = 1;
 				request->type = IO_REQUEST_READ;
 				request->node = file;
@@ -653,7 +653,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				OSError error;
 				size_t bytesWritten = file->Write(argument1, argument2, (uint8_t *) argument3, &error);
 #else
-				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				IORequest *request = (IORequest *) ioRequestPool.Add();
 				request->handles = 1;
 				request->type = IO_REQUEST_WRITE;
 				request->node = file;
@@ -684,7 +684,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_READ_ACCESS) {
-				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				IORequest *request = (IORequest *) ioRequestPool.Add();
 				request->handles = 1;
 				request->type = IO_REQUEST_READ;
 				request->node = file;
@@ -713,7 +713,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_BUFFER(argument3, argument2, 1);
 
 			if (handleData->flags & OS_OPEN_NODE_WRITE_ACCESS) {
-				IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+				IORequest *request = (IORequest *) ioRequestPool.Add();
 				request->handles = 1;
 				request->type = IO_REQUEST_WRITE;
 				request->node = file;

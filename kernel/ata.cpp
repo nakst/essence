@@ -600,6 +600,13 @@ void ATADriver::Initialise() {
 					useDMA[slave + bus * 2] = false;
 					KernelLog(LOG_WARNING, "ATADriver::Initialise - Could not perform test DMA read on drive.\n");
 				}
+
+				Access(nullptr, bus * 2 + slave, 0, 512, DRIVE_ACCESS_READ, (uint8_t *) identifyData);
+				success = Access(nullptr, bus * 2 + slave, 0, 512, DRIVE_ACCESS_WRITE, (uint8_t *) identifyData);
+
+				if (!success) {
+					KernelLog(LOG_WARNING, "ATADriver::Initialise - Could not perform test write to drive.\n");
+				}
 			}
 		}
 	}

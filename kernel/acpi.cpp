@@ -252,6 +252,7 @@ void ACPI::Initialise() {
 					// An I/O APIC.
 					ioApics[ioapicCount].id = data[2];
 					ioApics[ioapicCount].address = ((uint32_t *) data)[1];
+					ioApics[ioapicCount].ReadRegister(0); // Make sure it's mapped.
 					ioApics[ioapicCount].gsiBase = ((uint32_t *) data)[2];
 					ioapicCount++;
 				} break;

@@ -155,11 +155,11 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 0
+#if 1
 	{
 		// Start the Odin test program.
 
-		const char *path = "/os/OdinHello";
+		const char *path = "/os/essence_gui";
 		OSProcessInformation process;
 		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 	}

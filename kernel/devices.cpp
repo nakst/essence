@@ -1,5 +1,3 @@
-// TODO Reduce heap allocations made by the IO manager.
-
 #ifndef IMPLEMENTATION
 
 enum DeviceType {
@@ -112,6 +110,8 @@ struct IORequest {
 	Mutex mutex;
 	volatile size_t handles;
 };
+
+Pool ioRequestPool, ioPacketPool;
 
 extern DeviceManager deviceManager;
 
@@ -273,6 +273,8 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 
 void DeviceManager::Initialise() {
 	devicePool.Initialise(sizeof(Device));
+	ioPacketPool.Initialise(sizeof(IOPacket));
+	ioRequestPool.Initialise(sizeof(IORequest));
 
 #ifdef ARCH_X86_64
 	InitialiseRandomSeed();
@@ -307,7 +309,7 @@ IOPacket *IORequest::AddPacket(IOPacket *parent) {
 	mutex.AssertLocked();
 	handles++;
 
-	IOPacket *packet = (IOPacket *) OSHeapAllocate(sizeof(IOPacket), true);
+	IOPacket *packet = (IOPacket *) ioPacketPool.Add();
 	packet->cancelled = false;
 	packet->parent = parent;
 	packet->request = this;
@@ -482,10 +484,10 @@ void IOPacket::Complete(OSError error) {
 	}
 
 	if (request->CloseHandle()) {
-		OSHeapFree(request, sizeof(IORequest));
+		ioRequestPool.Remove(request);
 	}
 
-	OSHeapFree(this, sizeof(IOPacket));
+	ioPacketPool.Remove(this);
 }
 
 void IOPacket::QueuedChildren() {

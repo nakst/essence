@@ -1,7 +1,5 @@
 #ifndef IMPLEMENTATION
 
-#define USE_OLD_POOLS 0
-
 #ifdef ARCH_X86_64
 #define PAGE_BITS (12)
 #define PAGE_SIZE (1 << PAGE_BITS)
@@ -52,7 +50,7 @@ struct PMM {
 	size_t bitsetPages; 
 	size_t bitsetGroups;
 
-	Spinlock lock; 
+	Mutex lock; 
 };
 
 extern PMM pmm;
@@ -106,7 +104,7 @@ struct VirtualAddressSpace {
 	uintptr_t Get(uintptr_t virtualAddress, bool force = false);
 	
 	bool userland;
-	Spinlock lock;
+	Mutex lock;
 
 #ifdef ARCH_X86_64
 #define VIRTUAL_ADDRESS_SPACE_IDENTIFIER(x) ((x)->cr3)
@@ -225,51 +223,18 @@ struct SharedMemoryManager {
 
 SharedMemoryManager sharedMemoryManager;
 
-#if USE_OLD_POOLS
-#define POOL_GROUP_PADDING 32
-struct PoolGroup {
-	union {
-		struct {
-			struct PoolGroup *next;
-			struct PoolGroup **reference;
-			size_t elementsUsed;
-		};
-
-		uint8_t _padding[POOL_GROUP_PADDING];
-	};
-
-	uint8_t data[PAGE_SIZE * 32 - POOL_GROUP_PADDING];
-};
-
 struct Pool {
 	void Initialise(size_t _elementSize);
 	void *Add(); // Aligned to the size of a pointer.
 	void Remove(void *element);
 
-	Mutex lock; 
-
 	size_t elementSize;
 
-#define POOL_STACK_SIZE 1024
-	void *stack[POOL_STACK_SIZE];
-	size_t stackCount;
-
-	PoolGroup *availableGroups;
-	PoolGroup *fullGroups; // TODO This list isn't used anymore; clean it up.
-
-	size_t elementsPerGroup;
-	size_t bitsetLength;
-
-	bool concurrentModificationCheck;
+#define POOL_CACHE_COUNT (16)
+	void *cache[POOL_CACHE_COUNT];
+	size_t cacheEntries;
+	Mutex mutex;
 };
-#else
-struct Pool {
-	void Initialise(size_t _elementSize);
-	void *Add(); // Aligned to the size of a pointer.
-	void Remove(void *element);
-	size_t elementSize;
-};
-#endif
 
 #endif
 
@@ -467,7 +432,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
-	// Print("allocating memory, %d bytes\n", size);
+	// Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
 
 	if (!size) return nullptr;
 	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;
@@ -942,7 +907,7 @@ bool CacheBlockFault::Handle() {
 	void *buffer = OSHeapAllocate(CACHE_BLOCK_SIZE, false);
 
 	{
-		IORequest *request = (IORequest *) OSHeapAllocate(sizeof(IORequest), true);
+		IORequest *request = (IORequest *) ioRequestPool.Add();
 		request->handles = 1;
 		request->type = IO_REQUEST_READ;
 		request->node = region->file;
@@ -1068,6 +1033,8 @@ uintptr_t PMM::AllocateContiguous64KB() {
 	lock.Acquire();
 	Defer(lock.Release());
 
+	pagesAllocated += 16;
+
 	for (uintptr_t i = 0; i < bitsetGroups; i++) {
 		if (bitsetGroupUsage[i] >= 16) {
 			for (uintptr_t j = 0; j < BITSET_GROUP_PAGES; j += 16) {
@@ -1091,6 +1058,8 @@ uintptr_t PMM::AllocateContiguous64KB() {
 uintptr_t PMM::AllocateContiguous128KB() {
 	lock.Acquire();
 	Defer(lock.Release());
+
+	pagesAllocated += 32;
 
 	for (uintptr_t i = 0; i < bitsetGroups; i++) {
 		if (bitsetGroupUsage[i] >= 32) {
@@ -1345,142 +1314,47 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 }
 #endif
 
-#if USE_OLD_POOLS 
 void Pool::Initialise(size_t _elementSize) {
-	if (elementSize) {
-		KernelPanic("Pool::Initialise - Attempt to reinitilise a pool.\n");
-	}
-
-	elementSize = _elementSize + sizeof(PoolGroup *); // Each element starts with a pointer to the its parent PoolGroup.
-	elementsPerGroup = sizeof(PoolGroup) / elementSize;
-	bitsetLength = ((elementsPerGroup / 8) & ~(POOL_GROUP_PADDING - 1)) + POOL_GROUP_PADDING; // Ensure that it is aligned correctly.
-	elementsPerGroup -= ((bitsetLength + POOL_GROUP_PADDING) / elementSize) + 1;
-
-	if (elementsPerGroup < 4) {
-		KernelPanic("Pool::Initialise - elementsPerGroups too low for size %d\n", elementSize);
-	}
-}
-
-void *Pool::Add() {
-	lock.Acquire();
-	Defer(lock.Release());
-
-	if (concurrentModificationCheck) {
-		KernelPanic("Pool::Add - Concurrent modification of pool.\n");
-	}
-
-	concurrentModificationCheck = true;
-	Defer(concurrentModificationCheck = false);
-
-	if (!elementSize) {
-		KernelPanic("Pool::Add - Attempt to use a pool before initilisation.\n");
-	}
-
-	if (stackCount) {
-		addFromStack:
-		void *item = stack[--stackCount];
-		return item;
-	} else if (availableGroups) {
-		findElementsInGroups:
-
-		PoolGroup *group = availableGroups;
-		bool remove = true;
-
-		for (uintptr_t i = 0; i < elementsPerGroup; i++) {
-			if ((group->data[i >> 3] & (1 << (i & 7))) == 0) {
-				group->data[i >> 3] |= (1 << (i & 7));
-				void **element = (void **) (group->data + bitsetLength + i * elementSize);
-				element[0] = group; // Save a pointer to the group for fast deallocation.
-				stack[stackCount++] = element + 1;
-				group->elementsUsed++;
-
-				// If the stack's full but there were more elements in this group,
-				// then don't remove it from the availableGroups list.
-				if (stackCount == POOL_STACK_SIZE && group->elementsUsed != elementsPerGroup) {
-					remove = false;
-					break;
-				}
-			}
-		}
-
-		if (remove) {
-			availableGroups = group->next;
-
-			group->next = fullGroups;
-			fullGroups = group;
-
-			group->reference = &fullGroups;
-			if (group->next) group->next->reference = &group->next;
-		}
-
-		goto addFromStack;
-	} else {
-		availableGroups = (PoolGroup *) kernelVMM.Allocate(sizeof(PoolGroup));
-		availableGroups->reference = &availableGroups;
-
-		goto findElementsInGroups;
-	}
-}
-
-void Pool::Remove(void *element) {
-	lock.Acquire();
-	Defer(lock.Release());
-
-	if (!elementSize) {
-		KernelPanic("Pool::Remove - Attempt to use a pool before initilisation.\n");
-	}
-
-	// Make sure that the memory is cleared before we try to use it again.
-	ZeroMemory((void **) element - 1, elementSize); 
-
-#if 1
-	if (stackCount != POOL_STACK_SIZE) {
-		stack[stackCount++] = element;
-		return;
-	} else {
-#else
-	{
-#endif
-		element = (void **) element - 1;
-		PoolGroup *group = (PoolGroup *) *((void **) element);
-		bool wasFull = group->elementsUsed == elementsPerGroup;
-		group->elementsUsed--;
-
-		uintptr_t indexInGroup = ((uintptr_t) element - (uintptr_t) group - bitsetLength - POOL_GROUP_PADDING) / elementSize;
-		group->data[indexInGroup >> 3] &= ~(1 << (indexInGroup & 7));
-
-		// If the group was previously full,
-		// then we will want to add the group to the available groups list.
-		// If it wasn't previously full,
-		// then the group is already in the available groups list.
-		if (wasFull) {
-			*group->reference = group->next;
-
-			group->reference = &availableGroups;
-			group->next = availableGroups;
-
-			if (availableGroups) availableGroups->reference = &group->next;
-			availableGroups = group;
-		}
-
-		return;
-	}
-}
-#else
-void Pool::Initialise(size_t _elementSize) {
+	ZeroMemory(cache, sizeof(cache));
 	elementSize = _elementSize;
 }
 
 void *Pool::Add() {
 	if (!elementSize) KernelPanic("Pool::Add - Pool uninitialised.\n");
-	void *address = OSHeapAllocate(elementSize, true);
+
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	void *address;
+
+#if 1
+	if (cacheEntries) {
+		address = cache[--cacheEntries];
+		ZeroMemory(address, elementSize);
+	} else {
+		address = OSHeapAllocate(elementSize, true);
+	}
+#else
+	address = OSHeapAllocate(elementSize, true);
+#endif
+
 	return address;
 }
 
 void Pool::Remove(void *address) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+#if 1
+	if (cacheEntries == POOL_CACHE_COUNT) {
+		OSHeapFree(address, elementSize);
+	} else {
+		cache[cacheEntries++] = address;
+	}
+#else
 	OSHeapFree(address, elementSize);
-}
 #endif
+}
 
 void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *item, size_t itemSize) {
 	if (arrayCount == arrayAllocated) {
