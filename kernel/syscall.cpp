@@ -116,12 +116,12 @@ uintptr_t DoSyscall(OSSyscallType index,
 #define SYSCALL_RETURN(value, fatal) {returnValue = value; fatalError = fatal; goto end;}
 
 #define SYSCALL_BUFFER(address, length, index) \
-	VMMRegion *region ## index = currentVMM->FindAndLockRegion((address), (length)); \
-	if (!region ## index && !fromKernel) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true); \
-	Defer(if (region ## index) currentVMM->UnlockRegion(region ## index));
+	VMMRegionReference region ## index = currentVMM->FindAndLockRegion((address), (length)); \
+	if (!region ## index .vmm && !fromKernel) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_BUFFER, true); \
+	Defer(if (region ## index .vmm) currentVMM->UnlockRegion(region ## index));
 #define SYSCALL_BUFFER_ALLOW_NULL(address, length, index) \
-	VMMRegion *region ## index = currentVMM->FindAndLockRegion((address), (length)); \
-	Defer(if (region ## index) currentVMM->UnlockRegion(region ## index));
+	VMMRegionReference region ## index = currentVMM->FindAndLockRegion((address), (length)); \
+	Defer(if (region ## index .vmm) currentVMM->UnlockRegion(region ## index));
 
 	switch (index) {
 		case OS_SYSCALL_PRINT: {
