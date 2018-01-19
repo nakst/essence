@@ -78,6 +78,8 @@ enum VMMMapPolicy {
 #define VMM_REGION_FLAG_READ_ONLY    (64)
 
 struct VMMRegion {
+	bool used;
+
 	uintptr_t baseAddress;
 	size_t pageCount;
 
@@ -143,20 +145,20 @@ struct VMM {
 	Mutex lock; 
 
 	bool AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object);
-	uintptr_t AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated);
+	uintptr_t FindEmptySpaceInRegionArray(VMMRegion *region, VMMRegion *&array, size_t &arrayAllocated);
 	bool HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit = 0, struct CacheBlockFault *fault = nullptr);
-	VMMRegion *FindRegion(uintptr_t address, VMMRegion *array, size_t arrayCount);
-	void MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t &arrayCount);
-	void SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayCount, size_t &arrayAllocated);
+	VMMRegion *FindRegion(uintptr_t address, VMMRegion *array, size_t arrayAllocated);
+	void MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t arrayAllocated);
+	void SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayAllocated);
 
 	// This contains the canonical "split" regions.
 	VMMRegion *regions;
-	size_t regionsCount, regionsAllocated;
+	size_t regionsAllocated;
 
 	// This contains the regions that can be used for working out how to resolve a page fault.
 	// i.e. If 2 regions are identical then they will be merged in this list.
 	VMMRegion *lookupRegions;
-	size_t lookupRegionsCount, lookupRegionsAllocated;
+	size_t lookupRegionsAllocated;
 
 	uintptr_t allocatedVirtualMemory, allocatedPhysicalMemory;
 
@@ -312,10 +314,10 @@ void VMM::Destroy() {
 
 	while (true) {
 		uintptr_t regionsFreed = 0;
-		for (uintptr_t i = 0; i < regionsCount; i++) {
+		for (uintptr_t i = 0; i < regionsAllocated; i++) {
 			VMMRegion *region = regions + i;
 
-			if (region->type != VMM_REGION_FREE) {
+			if (region->used && region->type != VMM_REGION_FREE) {
 				regionsFreed++;
 				// KernelLog(LOG_VERBOSE, "Freeing VMM region at %x...\n", region->baseAddress);
 				Free((void *) region->baseAddress);
@@ -361,27 +363,39 @@ void VMM::Destroy() {
 	// KernelLog(LOG_VERBOSE, "VMM destroyed,\n");
 }
 
-uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCount, size_t &arrayAllocated) {
-	if (arrayCount == arrayAllocated) {
+uintptr_t VMM::FindEmptySpaceInRegionArray(VMMRegion *region, VMMRegion *&array, size_t &arrayAllocated) {
+	uintptr_t regionIndex = -1;
+	retry:;
+
+	for (uintptr_t i = 0; i < arrayAllocated; i++) {
+		if (!array[i].used) {
+			regionIndex = i;
+			break;
+		}
+	}
+
+	if (regionIndex == (uintptr_t) -1) {
 		if (this == &kernelVMM) {
-			KernelPanic("VMM::AddRegion - Maximum kernel VMM regions (%d) exceeded\n", arrayAllocated);
+			KernelPanic("VMM::FindEmptySpaceInRegionArray - Maximum kernel VMM regions (%d) exceeded\n", arrayAllocated);
 		} else {
-			if (arrayCount) {
-				arrayAllocated *= 2;
+			if (arrayAllocated) {
+				size_t oldAllocated = arrayAllocated;
+				arrayAllocated = oldAllocated * 2;
 				VMMRegion *old = array;
 				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), VMM_MAP_ALL);
-				CopyMemory(array, old, arrayCount * sizeof(VMMRegion));
+				CopyMemory(array, old, oldAllocated * sizeof(VMMRegion));
 				kernelVMM.Free(old);
 			} else {
 				arrayAllocated = 256;
 				array = (VMMRegion *) kernelVMM.Allocate("VMM", arrayAllocated * sizeof(VMMRegion), VMM_MAP_ALL);
 			}
 		}
+
+		goto retry;
 	}
 
-	uintptr_t regionIndex = arrayCount;
 	array[regionIndex] = *region;
-	arrayCount++;
+	array[regionIndex].used = true;
 
 	return regionIndex;
 }
@@ -389,7 +403,7 @@ uintptr_t VMM::AddRegion(VMMRegion *region, VMMRegion *&array, size_t &arrayCoun
 bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, VMMRegionType type, VMMMapPolicy mapPolicy, unsigned flags, void *object) {
 	lock.AssertLocked();
 
-	if (FindRegion(baseAddress, regions, regionsCount)) {
+	if (FindRegion(baseAddress, regions, regionsAllocated)) {
 		// This new region intersects an already existing region.
 		// Fail.
 		return false;
@@ -409,7 +423,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	}
 
 	// TODO This seems to be returning overlapping regions?? See ../todo_list.txt for repro.
-	uintptr_t regionIndex = AddRegion(&region, regions, regionsCount, regionsAllocated);
+	uintptr_t regionIndex = FindEmptySpaceInRegionArray(&region, regions, regionsAllocated);
 
 	{
 		VMMRegion *region = regions + regionIndex;
@@ -419,8 +433,8 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	}
 
 	if (type != VMM_REGION_FREE && mapPolicy != VMM_MAP_ALL) {
-		uintptr_t lookupRegionIndex = AddRegion(&region, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
-		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsCount);
+		uintptr_t lookupRegionIndex = FindEmptySpaceInRegionArray(&region, lookupRegions, lookupRegionsAllocated);
+		MergeIdenticalAdjacentRegions(lookupRegions + lookupRegionIndex, lookupRegions, lookupRegionsAllocated);
 	}
 
 	if (type == VMM_REGION_SHARED) {
@@ -505,14 +519,14 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 		// TODO Should we look for the smallest/largest/first/last/etc. region?
 		uintptr_t i = 0;
 
-		for (; i < regionsCount; i++) {
-			if (regions[i].type == VMM_REGION_FREE
+		for (; i < regionsAllocated; i++) {
+			if (regions[i].used && regions[i].type == VMM_REGION_FREE
 					&& regions[i].pageCount > pageCount) {
 				break;
 			}
 		}
 
-		if (i == regionsCount) {
+		if (i == regionsAllocated) {
 			return nullptr;
 		}
 
@@ -529,14 +543,15 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 	return address;
 }
 
-void VMM::MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t &arrayCount) {
+void VMM::MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t arrayAllocated) {
 	lock.AssertLocked();
 
 	intptr_t remove1 = -1, remove2 = -1;
 
-	for (uintptr_t i = 0; i < arrayCount && (remove1 != -1 || remove2 != 1); i++) {
+	for (uintptr_t i = 0; i < arrayAllocated && (remove1 != -1 || remove2 != 1); i++) {
 		VMMRegion *r = array + i;
 
+		if (!r->used) continue;
 		if (r->type != region->type) continue;
 		if (r == region) continue;
 
@@ -562,12 +577,11 @@ void VMM::MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, siz
 		}
 	}
 
-	if (remove1 != -1) array[remove1] = array[--arrayCount];
-	if (remove2 == (intptr_t) arrayCount) remove2 = remove1;
-	if (remove2 != -1) array[remove2] = array[--arrayCount];
+	if (remove1 != -1) array[remove1].used = false;
+	if (remove2 != -1) array[remove2].used = false;
 }
 
-void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayCount, size_t &arrayAllocated) {
+void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayAllocated) {
 	lock.AssertLocked();
 
 	if (region->baseAddress == address) {
@@ -578,7 +592,7 @@ void VMM::SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMR
 		return;
 	}
 
-	VMMRegion *newRegion = array + AddRegion(region, array, arrayCount, arrayAllocated);
+	VMMRegion *newRegion = array + FindEmptySpaceInRegionArray(region, array, arrayAllocated);
 
 	if (keepAbove) {
 		VMMRegion *t = newRegion;
@@ -606,7 +620,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	Defer(lock.Release());
 
 	uintptr_t baseAddress = (uintptr_t) address;
-	VMMRegion *region = FindRegion(baseAddress, regions, regionsCount);
+	VMMRegion *region = FindRegion(baseAddress, regions, regionsAllocated);
 
 	if (!region) {
 		return OS_FATAL_ERROR_INVALID_MEMORY_REGION;
@@ -692,14 +706,14 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	VMMMapPolicy mapPolicy = region->mapPolicy;
 
 	if (mapPolicy != VMM_MAP_ALL) {
-		VMMRegion *lookupRegion = FindRegion(baseAddress, lookupRegions, lookupRegionsCount);
-		SplitRegion(lookupRegion, baseAddress, true, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
-		SplitRegion(lookupRegion, baseAddress + (regionPageCount << PAGE_BITS), false, lookupRegions, lookupRegionsCount, lookupRegionsAllocated);
-		*lookupRegion = lookupRegions[--lookupRegionsCount];
+		VMMRegion *lookupRegion = FindRegion(baseAddress, lookupRegions, lookupRegionsAllocated);
+		SplitRegion(lookupRegion, baseAddress, true, lookupRegions, lookupRegionsAllocated);
+		SplitRegion(lookupRegion, baseAddress + (regionPageCount << PAGE_BITS), false, lookupRegions, lookupRegionsAllocated);
+		lookupRegion->used = false;
 	}
 
 	region->type = VMM_REGION_FREE;
-	MergeIdenticalAdjacentRegions(region, regions, regionsCount);
+	MergeIdenticalAdjacentRegions(region, regions, regionsAllocated);
 
 	return OS_SUCCESS;
 }
@@ -810,13 +824,13 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 	return true;
 }
 
-VMMRegion *VMM::FindRegion(uintptr_t address, VMMRegion *array, size_t arrayCount) {
+VMMRegion *VMM::FindRegion(uintptr_t address, VMMRegion *array, size_t arrayAllocated) {
 	lock.AssertLocked();
 
-	for (uintptr_t i = 0; i < arrayCount; i++) {
+	for (uintptr_t i = 0; i < arrayAllocated; i++) {
 		VMMRegion *region = array + i;
 
-		if (region->baseAddress <= address
+		if (region->used && region->baseAddress <= address
 				&& region->baseAddress + (region->pageCount << PAGE_BITS) > address) {
 			return region;
 		}
@@ -833,7 +847,7 @@ VMMRegionReference VMM::FindAndLockRegion(uintptr_t address, size_t size) {
 	lock.Acquire();
 	Defer(lock.Release());
 
-	VMMRegion *region = FindRegion(address, regions, regionsCount);
+	VMMRegion *region = FindRegion(address, regions, regionsAllocated);
 
 	if (!region) {
 		return reference;
@@ -883,9 +897,9 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 	VMMRegion *region;
 
 	if (lookupRegionsOnly) {
-		region = FindRegion(address, lookupRegions, lookupRegionsCount);
+		region = FindRegion(address, lookupRegions, lookupRegionsAllocated);
 	} else {
-		region = FindRegion(address, regions, regionsCount);
+		region = FindRegion(address, regions, regionsAllocated);
 	}
 
 	if (region) {

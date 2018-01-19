@@ -432,8 +432,10 @@ void KernelLog(LogLevel level, const char *format, ...) {
 #endif
 }
 
+#if 0
 void PrintStats() {
 	Print("stats: [pmmalloc] %d; [vmmlook] %d; [vmmreg] %d; [vmmalloc] %d\n", pmm.pagesAllocated * PAGE_SIZE, 
 			kernelVMM.lookupRegionsCount, kernelVMM.regionsCount, kernelVMM.allocatedVirtualMemory * PAGE_SIZE);
 }
+#endif
 #endif
