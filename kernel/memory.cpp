@@ -76,6 +76,7 @@ enum VMMMapPolicy {
 #define VMM_REGION_FLAG_CACHABLE     (1)
 #define VMM_REGION_FLAG_SUPERVISOR   (32)
 #define VMM_REGION_FLAG_READ_ONLY    (64)
+#define VMM_REGION_FLAG_OVERWRITABLE (128)
 
 struct VMMRegion {
 	bool used;
@@ -246,6 +247,10 @@ struct Pool {
 	size_t cacheEntries;
 	Mutex mutex;
 };
+
+#define ZERO_MEMORY_REGION_PAGES (16)
+void ZeroPhysicalMemory(uintptr_t page, size_t pageCount);
+void *zeroMemoryRegion;
 
 #endif
 
@@ -746,10 +751,10 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 			case VMM_REGION_STANDARD: {
 				uintptr_t physicalPage = pmm.AllocatePage();
 				allocatedPhysicalMemory += PAGE_SIZE;
+				ZeroPhysicalMemory(physicalPage, 1);
 				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(physicalPage, address, region->flags);
 				virtualAddressSpace.lock.Release();
-				ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
 			} break;
 
 			case VMM_REGION_PHYSICAL: {
@@ -788,10 +793,10 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					// NOTE Duplicated from above.
 					uintptr_t physicalPage = pmm.AllocatePage();
 					allocatedPhysicalMemory += PAGE_SIZE;
+					ZeroPhysicalMemory(physicalPage, 1);
 					virtualAddressSpace.lock.Acquire();
 					virtualAddressSpace.Map(physicalPage, address, region->flags);
 					virtualAddressSpace.lock.Release();
-					ZeroMemory((void *) address, PAGE_SIZE); // TODO "Clean" physical pages during idle.
 
 					// Store the address.
 					addresses[index] = physicalPage | SHARED_ADDRESS_PRESENT;
@@ -1187,6 +1192,9 @@ uintptr_t PMM::AllocatePage() {
 }
 
 void PMM::Initialise() {
+	zeroMemoryRegion = kernelVMM.Allocate("ZeroMemReg", ZERO_MEMORY_REGION_PAGES * PAGE_SIZE, VMM_MAP_STRICT, 
+			VMM_REGION_PHYSICAL, 0, VMM_REGION_FLAG_OVERWRITABLE | VMM_REGION_FLAG_CACHABLE, nullptr);
+
 	physicalMemoryHighest += PAGE_SIZE << 3;
 
 	bitsetPages = physicalMemoryHighest >> PAGE_BITS;
@@ -1341,7 +1349,7 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L1 + indexL1) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}
 
-	if (PAGE_TABLE_L1[indexL1] & 1) {
+	if ((PAGE_TABLE_L1[indexL1] & 1) && !(flags & VMM_REGION_FLAG_OVERWRITABLE)) {
 		KernelPanic("VirtualAddressSpace::Map - Attempt to map to %x address %x that has already been mapped in address space %x to %x.\n", 
 				physicalAddress, virtualAddress, ProcessorReadCR3(), PAGE_TABLE_L1[indexL1] & (~(PAGE_SIZE - 1)));
 	}
@@ -1350,7 +1358,12 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 	if (flags & VMM_REGION_FLAG_READ_ONLY) value &= ~2;
 	PAGE_TABLE_L1[indexL1] = value;
 
-	ProcessorInvalidatePage(oldVirtualAddress);
+	if (flags & VMM_REGION_FLAG_OVERWRITABLE) {
+		ProcessorInvalidatePage(oldVirtualAddress);
+	} else {
+		// Not technically required, but helps to increase performance.
+		ProcessorInvalidatePage(oldVirtualAddress);
+	}
 }
 #endif
 
@@ -1556,5 +1569,37 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 	OSHeapFree(region);
 }
+
+Mutex zeroPhysicalMemoryLock;
+
+void ZeroPhysicalMemory(uintptr_t page, size_t pageCount) {
+	zeroPhysicalMemoryLock.Acquire();
+
+	repeat:;
+	size_t doCount = pageCount > ZERO_MEMORY_REGION_PAGES ? ZERO_MEMORY_REGION_PAGES : pageCount;
+	pageCount -= doCount;
+
+	{
+		void *region = zeroMemoryRegion;
+
+		kernelVMM.virtualAddressSpace.lock.Acquire();
+
+		for (uintptr_t i = 0; i < doCount; i++) {
+			kernelVMM.virtualAddressSpace.Map(page + PAGE_SIZE * i, (uintptr_t) region + PAGE_SIZE * i, VMM_REGION_FLAG_OVERWRITABLE | VMM_REGION_FLAG_CACHABLE);
+		}
+
+		kernelVMM.virtualAddressSpace.lock.Release();
+
+		ZeroMemory(region, doCount * PAGE_SIZE);
+	}
+
+	if (pageCount) {
+		page += ZERO_MEMORY_REGION_PAGES * PAGE_SIZE;
+		goto repeat;
+	}
+
+	zeroPhysicalMemoryLock.Release();
+}
+
 
 #endif

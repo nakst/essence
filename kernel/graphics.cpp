@@ -314,7 +314,7 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 	}
 
 	Copy(oldState, OSPoint(0, 0), OSRectangle(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
-	kernelVMM.Free(oldState.memory); // TODO This isn't getting freed! Handle leak?
+	kernelVMM.Free(oldState.memory); 
 }
 
 bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
@@ -336,7 +336,6 @@ bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
 		memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 6 + (resY + 7) / 8;
 		region = sharedMemoryManager.CreateSharedMemory(memoryNeeded);
 		memory = (uint8_t *) kernelVMM.Allocate("Surface", memoryNeeded, VMM_MAP_LAZY, VMM_REGION_SHARED, 0, VMM_REGION_FLAG_CACHABLE, region);
-		Print("(just made region + memory)\n");
 		linearBuffer = memory;
 		depthBuffer = (uint16_t *) (memory + resX * resY * 4);
 		modifiedScanlines = (ModifiedScanline *) (depthBuffer + resX * resY);
@@ -345,7 +344,6 @@ bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
 		memoryNeeded = resY * sizeof(ModifiedScanline) + resX * resY * 4 + (resY + 7) / 8;
 		region = sharedMemoryManager.CreateSharedMemory(memoryNeeded);
 		memory = (uint8_t *) kernelVMM.Allocate("Surface", memoryNeeded, VMM_MAP_LAZY, VMM_REGION_SHARED, 0, VMM_REGION_FLAG_CACHABLE, region);
-		Print("(just made region + memory)\n");
 		linearBuffer = memory;
 		depthBuffer = nullptr;
 		modifiedScanlines = (ModifiedScanline *) (memory + resX * resY * 4);

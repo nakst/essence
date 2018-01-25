@@ -377,6 +377,16 @@ void KernelPanic(const char *format, ...) {
 		((uint8_t *) TERMINAL_ADDRESS)[i * 2 + 1] = 0x4F;
 	}
 
+	switch (graphics.colorMode) {
+		case VIDEO_COLOR_24_RGB: {
+			for (uintptr_t i = 0; i < graphics.resX; i++) {
+				graphics.linearBuffer[i * 3 + 2] = 0xFF;
+			}
+		} break;
+
+		default:;
+	}
+
 	while (true);
 	// EnterDebugger();
 	ProcessorHalt();
