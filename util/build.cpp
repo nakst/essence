@@ -107,6 +107,7 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 }
 
 int main(int argc, char **argv) {
+	char *prev = nullptr;
 	printf("Essence Build System\nPress Ctrl-C to exit.\nEnter 'help' to get a list of commands.\n");
 
 	while (true) {
@@ -114,7 +115,12 @@ int main(int argc, char **argv) {
 		size_t pos = 0;
 		printf("\n> ");
 		getline(&l, &pos, stdin);
-		l[strlen(l) - 1]=0;
+
+		if (strlen(l) == 0) {
+			l = prev;
+		} else {
+			l[strlen(l) - 1] = 0;
+		}
 
 		if (0 == strcmp(l, "build") || 0 == strcmp(l, "b")) {
 			Build(false);
@@ -131,6 +137,8 @@ int main(int argc, char **argv) {
 			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
 		} else if (0 == strcmp(l, "exit") || 0 == strcmp(l, "x")) {
 			break;
+		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
+			system("./compile.sh");
 		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h")) {
 			printf("(b) build - Unoptimised build\n");
 			printf("(o) optimise - Optimised build\n");
@@ -139,11 +147,13 @@ int main(int argc, char **argv) {
 			printf("(v) vbox - VirtualBox (optimised)\n");
 			printf("(x) exit - Exit the build system.\n");
 			printf("(h) help - Show the help prompt.\n");
+			printf("(c) compile - Compile the kernel and programs.\n");
 		} else {
 			printf("Unrecognised command. Enter 'help' to get a list of commands.\n");
 		}
 
-		free(l);
+		free(prev);
+		prev = l;
 	}
 
 	return 0;
