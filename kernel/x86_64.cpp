@@ -164,7 +164,7 @@ extern "C" void SetupProcessor2() {
 
 	// Setup a GDT and TSS for the processor.
 	{
-		uintptr_t memoryPhysical = pmm.AllocatePage();
+		uintptr_t memoryPhysical = pmm.AllocatePage(true);
 		void *memory = kernelVMM.Allocate("ProcGDT", 4096, VMM_MAP_ALL, VMM_REGION_PHYSICAL, memoryPhysical);
 
 		uintptr_t gdtPhysical = memoryPhysical +    0;

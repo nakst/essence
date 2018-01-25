@@ -31,7 +31,7 @@ extern "C" void ProcessorInstallTSS(uint32_t *gdt, uint32_t *tss);
 #endif
 
 struct PMM {
-	uintptr_t AllocatePage();
+	uintptr_t AllocatePage(bool zeroPage); 
 	uintptr_t AllocateContiguous64KB();
 	uintptr_t AllocateContiguous128KB();
 	void FreePage(uintptr_t address, bool bypassStack = false);
@@ -286,7 +286,7 @@ void VMM::Initialise() {
 #ifdef ARCH_X86_64
 		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, VMM_MAP_LAZY, true, nullptr);
 
-		virtualAddressSpace.cr3 = pmm.AllocatePage();
+		virtualAddressSpace.cr3 = pmm.AllocatePage(true);
 		// KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace.cr3);
 		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, VMM_MAP_ALL, VMM_REGION_PHYSICAL, (uintptr_t) virtualAddressSpace.cr3);
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
@@ -749,9 +749,8 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 
 		switch (region->type) {
 			case VMM_REGION_STANDARD: {
-				uintptr_t physicalPage = pmm.AllocatePage();
+				uintptr_t physicalPage = pmm.AllocatePage(true);
 				allocatedPhysicalMemory += PAGE_SIZE;
-				ZeroPhysicalMemory(physicalPage, 1);
 				virtualAddressSpace.lock.Acquire();
 				virtualAddressSpace.Map(physicalPage, address, region->flags);
 				virtualAddressSpace.lock.Release();
@@ -791,9 +790,8 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					virtualAddressSpace.lock.Release();
 				} else {
 					// NOTE Duplicated from above.
-					uintptr_t physicalPage = pmm.AllocatePage();
+					uintptr_t physicalPage = pmm.AllocatePage(true);
 					allocatedPhysicalMemory += PAGE_SIZE;
-					ZeroPhysicalMemory(physicalPage, 1);
 					virtualAddressSpace.lock.Acquire();
 					virtualAddressSpace.Map(physicalPage, address, region->flags);
 					virtualAddressSpace.lock.Release();
@@ -1030,11 +1028,14 @@ bool HandlePageFault(uintptr_t page) {
 	VMM *vmm;
 
 	if (page >= 0xFFFF810000000000 && page < 0xFFFF900000000000) {
+		uintptr_t frame = pmm.AllocatePage(false);
+
 		kernelVMM.virtualAddressSpace.lock.Acquire();
 		Defer(kernelVMM.virtualAddressSpace.lock.Release());
 
-		kernelVMM.virtualAddressSpace.Map(pmm.AllocatePage(), page, true);
+		kernelVMM.virtualAddressSpace.Map(frame, page, true);
 		ZeroMemory((void *) (page & ~(PAGE_SIZE - 1)), PAGE_SIZE);
+
 		return true;
 	} else if (page >= 0xFFFF900000000000 && page < 0xFFFFF00000000000) {
 		if (GetLocalStorage()->spinlockCount)
@@ -1126,9 +1127,8 @@ uintptr_t PMM::AllocateContiguous128KB() {
 	return 0;
 }
 
-uintptr_t PMM::AllocatePage() {
+uintptr_t PMM::AllocatePage(bool zeroPage) {
 	lock.Acquire();
-	Defer(lock.Release());
 
 	pagesAllocated++;
 
@@ -1136,6 +1136,8 @@ uintptr_t PMM::AllocatePage() {
 		returnFromStack:
 		pageStackIndex--;
 		uintptr_t address = pageStack[pageStackIndex];
+		lock.Release();
+		if (zeroPage) ZeroPhysicalMemory(address, 1);
 		return address;
 	} else if (physicalMemoryRegionsPagesCount) {
 		uintptr_t i = physicalMemoryRegionsIndex;
@@ -1206,7 +1208,7 @@ void PMM::Initialise() {
 	while (physicalMemoryRegionsPagesCount) {
 		startPageCount++;
 
-		uintptr_t page = AllocatePage();
+		uintptr_t page = AllocatePage(false);
 		lock.Acquire();
 		FreePage(page, true);
 		lock.Release();
@@ -1214,8 +1216,7 @@ void PMM::Initialise() {
 
 	for (uintptr_t i = 0x100; i < 0x200; i++) {
 		if (PAGE_TABLE_L4[i] == 0) {
-			PAGE_TABLE_L4[i] = pmm.AllocatePage() | 3;
-			ZeroMemory((void *) (PAGE_TABLE_L3 + (i << ENTRIES_PER_PAGE_TABLE_BITS)), PAGE_SIZE);
+			PAGE_TABLE_L4[i] = pmm.AllocatePage(true) | 3;
 		}
 	}
 }
@@ -1332,19 +1333,19 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 	uintptr_t indexL1 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0);
 
 	if ((PAGE_TABLE_L4[indexL4] & 1) == 0) {
-		PAGE_TABLE_L4[indexL4] = pmm.AllocatePage() | 7;
+		PAGE_TABLE_L4[indexL4] = pmm.AllocatePage(false) | 7;
 		ProcessorInvalidatePage((uintptr_t) (PAGE_TABLE_L3 + indexL3));
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L3 + indexL3) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}
 
 	if ((PAGE_TABLE_L3[indexL3] & 1) == 0) {
-		PAGE_TABLE_L3[indexL3] = pmm.AllocatePage() | 7;
+		PAGE_TABLE_L3[indexL3] = pmm.AllocatePage(false) | 7;
 		ProcessorInvalidatePage((uintptr_t) (PAGE_TABLE_L2 + indexL2));
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L2 + indexL2) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}
 
 	if ((PAGE_TABLE_L2[indexL2] & 1) == 0) {
-		PAGE_TABLE_L2[indexL2] = pmm.AllocatePage() | 7;
+		PAGE_TABLE_L2[indexL2] = pmm.AllocatePage(false) | 7;
 		ProcessorInvalidatePage((uintptr_t) (PAGE_TABLE_L1 + indexL1));
 		ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L1 + indexL1) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 	}

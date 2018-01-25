@@ -778,15 +778,13 @@ void AHCIDriver::Initialise() {
 
 	for (uintptr_t i = 0; i < driveCount; i++) {
 		if ((i % (PAGE_SIZE / 1024)) == 0) {
-			commandListPage = pmm.AllocatePage();
+			commandListPage = pmm.AllocatePage(true);
 			commandListPageVirtual = (uint8_t *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), VMM_MAP_LAZY, VMM_REGION_PHYSICAL, commandListPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
-			ZeroMemory(commandListPageVirtual, PAGE_SIZE);
 		}
 
 		if ((i % (PAGE_SIZE / 256)) == 0) {
-			receivedPacketPage = pmm.AllocatePage();
+			receivedPacketPage = pmm.AllocatePage(true);
 			receivedPacketPageVirtual = (uint8_t *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), VMM_MAP_LAZY, VMM_REGION_PHYSICAL, receivedPacketPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
-			ZeroMemory(receivedPacketPageVirtual, PAGE_SIZE);
 		}
 
 		AHCIPresentDrive *drive = drives + i;
@@ -799,9 +797,8 @@ void AHCIDriver::Initialise() {
 			timeout->Set(AHCI_TIMEOUT, false);
 			Defer(timeout->Remove());
 
-			uintptr_t commandTablePage = pmm.AllocatePage();
+			uintptr_t commandTablePage = pmm.AllocatePage(true);
 			drive->commandTable = (AHCICommandTable *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), VMM_MAP_LAZY, VMM_REGION_PHYSICAL, commandTablePage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
-			ZeroMemory(drive->commandTable, PAGE_SIZE);
 
 			volatile AHCIPort *port = r->ports + drives[i].port;
 			port->command &= ~0x11; // Stop the command engine.

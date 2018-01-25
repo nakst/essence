@@ -455,7 +455,7 @@ void HandleTable::Destroy() {
 }
 
 void InitialiseObjectManager() {
-	emptyHandlePage = pmm.AllocatePage();
+	emptyHandlePage = pmm.AllocatePage(true);
 }
 
 #endif
