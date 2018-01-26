@@ -11,7 +11,7 @@ struct Window {
 	void Update();
 	void SetCursorStyle(OSCursorStyle style);
 	void Destroy();
-	void Move(OSRectangle &newBounds);
+	bool Move(OSRectangle &newBounds);
 	void Resize(size_t newWidth, size_t newHeight);
 	void ClearImage();
 
@@ -489,7 +489,7 @@ void Window::ClearImage() {
 	windowManager.Redraw(position, width, height, this);
 }
 
-void Window::Move(OSRectangle &rectangle) {
+bool Window::Move(OSRectangle &rectangle) {
 	windowManager.mutex.Acquire();
 
 	windowManager.SetActiveWindow(this);
@@ -503,7 +503,12 @@ void Window::Move(OSRectangle &rectangle) {
 
 		if (newWidth < 16 || newHeight < 16 
 				|| rectangle.left > rectangle.right 
-				|| rectangle.top > rectangle.bottom) return;
+				|| rectangle.top > rectangle.bottom
+				|| newWidth > graphics.resX + 64
+				|| newHeight > graphics.resY + 64) {
+			windowManager.mutex.Release();
+			return false;
+		}
 
 		ClearImage();
 		position = OSPoint(rectangle.left, rectangle.top);
@@ -522,6 +527,7 @@ void Window::Move(OSRectangle &rectangle) {
 
 	windowManager.mutex.Release();
 	Update();
+	return true;
 }
 
 void Window::Destroy() {

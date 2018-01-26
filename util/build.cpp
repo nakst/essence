@@ -116,8 +116,9 @@ int main(int argc, char **argv) {
 		printf("\n> ");
 		getline(&l, &pos, stdin);
 
-		if (strlen(l) == 0) {
+		if (strlen(l) == 1) {
 			l = prev;
+			printf("(%s)\n", l);
 		} else {
 			l[strlen(l) - 1] = 0;
 		}
@@ -132,6 +133,9 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "debug") || 0 == strcmp(l, "d")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
+		} else if (0 == strcmp(l, "debug-smp")) {
+			Build(false);
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "vbox") || 0 == strcmp(l, "v")) {
 			Build(true);
 			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
@@ -144,15 +148,16 @@ int main(int argc, char **argv) {
 			printf("(o) optimise - Optimised build\n");
 			printf("(t) test - Qemu (SMP/AHCI/64MB)\n");
 			printf("(d) debug - Qemu (AHCI/64MB/GDB)\n");
+			printf("( ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
 			printf("(v) vbox - VirtualBox (optimised)\n");
 			printf("(x) exit - Exit the build system.\n");
 			printf("(h) help - Show the help prompt.\n");
 			printf("(c) compile - Compile the kernel and programs.\n");
 		} else {
-			printf("Unrecognised command. Enter 'help' to get a list of commands.\n");
+			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);
 		}
 
-		free(prev);
+		if (prev != l) free(prev);
 		prev = l;
 	}
 

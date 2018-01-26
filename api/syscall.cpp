@@ -223,8 +223,8 @@ void OSSetCursorStyle(OSHandle window, OSCursorStyle style) {
 	OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, (uintptr_t) window, (uintptr_t) style, 0, 0);
 }
 
-void OSMoveWindow(OSHandle window, OSRectangle newBounds) {
-	OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, (uintptr_t) &newBounds, 0, 0);
+OSError OSMoveWindow(OSHandle window, OSRectangle newBounds) {
+	return OSSyscall(OS_SYSCALL_MOVE_WINDOW, (uintptr_t) window, (uintptr_t) &newBounds, 0, 0);
 }
 
 void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle) {

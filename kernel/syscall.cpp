@@ -897,8 +897,8 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSRectangle *rectangle = (OSRectangle *) argument1;
 			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 1);
 
-			window->Move(*rectangle);
-			SYSCALL_RETURN(OS_SUCCESS, false);
+			bool success = window->Move(*rectangle);
+			SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_INVALID_DIMENSIONS, false);
 		} break;
 
 		case OS_SYSCALL_GET_WINDOW_BOUNDS: {

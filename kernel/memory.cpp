@@ -1572,6 +1572,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 }
 
 Mutex zeroPhysicalMemoryLock;
+Spinlock zeroPhysicalMemoryProcessorLock;
 
 void ZeroPhysicalMemory(uintptr_t page, size_t pageCount) {
 	zeroPhysicalMemoryLock.Acquire();
@@ -1581,17 +1582,26 @@ void ZeroPhysicalMemory(uintptr_t page, size_t pageCount) {
 	pageCount -= doCount;
 
 	{
+		VirtualAddressSpace &vas = kernelVMM.virtualAddressSpace;
 		void *region = zeroMemoryRegion;
 
-		kernelVMM.virtualAddressSpace.lock.Acquire();
+		vas.lock.Acquire();
 
 		for (uintptr_t i = 0; i < doCount; i++) {
-			kernelVMM.virtualAddressSpace.Map(page + PAGE_SIZE * i, (uintptr_t) region + PAGE_SIZE * i, VMM_REGION_FLAG_OVERWRITABLE | VMM_REGION_FLAG_CACHABLE);
+			kernelVMM.virtualAddressSpace.Map(page + PAGE_SIZE * i, (uintptr_t) region + PAGE_SIZE * i, VMM_REGION_FLAG_CACHABLE | VMM_REGION_FLAG_OVERWRITABLE);
 		}
 
-		kernelVMM.virtualAddressSpace.lock.Release();
+		vas.lock.Release();
+
+		zeroPhysicalMemoryProcessorLock.Acquire();
+
+		for (uintptr_t i = 0; i < doCount; i++) {
+			ProcessorInvalidatePage((uintptr_t) region + doCount * PAGE_SIZE);
+		}
 
 		ZeroMemory(region, doCount * PAGE_SIZE);
+
+		zeroPhysicalMemoryProcessorLock.Release();
 	}
 
 	if (pageCount) {

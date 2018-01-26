@@ -198,6 +198,7 @@ enum OSFatalError {
 #define OS_ERROR_NO_CHARACTER_AT_COORDINATE	(-31)
 #define OS_ERROR_FILE_ON_READ_ONLY_VOLUME	(-32)
 #define OS_ERROR_USER_CANCELED_IO		(-33)
+#define OS_ERROR_INVALID_DIMENSIONS		(-34)
 
 typedef intptr_t OSError;
 
@@ -729,7 +730,7 @@ extern "C" void OSInvalidateControl(OSObject control);
 extern "C" void OSSetCursorStyle(OSHandle window, OSCursorStyle style);
 extern "C" void OSUpdateWindow(OSObject window);
 extern "C" OSError OSProcessGUIMessage(OSMessage *message);
-extern "C" void OSMoveWindow(OSHandle window, OSRectangle rectangle);
+extern "C" OSError OSMoveWindow(OSHandle window, OSRectangle rectangle);
 extern "C" void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle);
 
 #ifndef KERNEL

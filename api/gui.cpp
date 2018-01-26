@@ -1305,20 +1305,20 @@ static void UpdateMousePosition(Window *window, int x, int y, int sx, int sy) {
 				else bounds.top = bounds.bottom - 200;
 			}
 
-			window->width = width;
-			window->height = height;
+			if (OSMoveWindow(window->handle, bounds) == OS_SUCCESS) {
+				window->width = width;
+				window->height = height;
 
-			OSMoveWindow(window->handle, bounds);
+				// Redraw the window background and border.
+				OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
+						OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
 
-			// Redraw the window background and border.
-			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), 
-					OSRectangle(96, 105, 42, 77), OSRectangle(96 + 3, 96 + 5, 42 + 29, 42 + 31), OS_DRAW_MODE_REPEAT_FIRST);
+				// Layout the window.
+				OSLayoutPane(&window->pane);
 
-			// Layout the window.
-			OSLayoutPane(&window->pane);
-
-			// Redraw the window.
-			DrawPane(&window->pane, true);
+				// Redraw the window.
+				DrawPane(&window->pane, true);
+			}
 		}
 	}
 }
