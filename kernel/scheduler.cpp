@@ -1281,8 +1281,8 @@ void Semaphore::Set(uintptr_t u) {
 	mutex.Release();
 }
 
-void Event::Set(bool schedulerAlreadyLocked) {
-	if (state) {
+void Event::Set(bool schedulerAlreadyLocked, bool maybeAlreadySet) {
+	if (state && !maybeAlreadySet) {
 		KernelLog(LOG_WARNING, "Event::Set - Attempt to set a event that had already been set\n");
 	}
 

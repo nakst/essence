@@ -42,11 +42,13 @@ struct PMM {
 	uintptr_t pagesAllocated;
 	uintptr_t startPageCount;
 
-	Bitset dirty;
+	Bitset zeroed, dirty;
 
 	Mutex lock; 
+
 	struct Event signalZeroPageThread;
 	Thread *zeroPageThread;
+	bool zeroPageThreadStarted;
 };
 
 extern PMM pmm;
@@ -1078,6 +1080,7 @@ uintptr_t PMM::AllocateContiguous64KB() {
 	pagesAllocated += 65536 >> PAGE_BITS;
 
 	uintptr_t index = dirty.Get(65536 >> PAGE_BITS);
+	if (index == (uintptr_t) -1) index = zeroed.Get(65536 >> PAGE_BITS);
 
 	if (index != (uintptr_t) -1) {
 		index <<= PAGE_BITS;
@@ -1094,6 +1097,7 @@ uintptr_t PMM::AllocateContiguous128KB() {
 	pagesAllocated += 131072 >> PAGE_BITS;
 
 	uintptr_t index = dirty.Get(131072 >> PAGE_BITS);
+	if (index == (uintptr_t) -1) index = zeroed.Get(131072 >> PAGE_BITS);
 
 	if (index != (uintptr_t) -1) {
 		index <<= PAGE_BITS;
@@ -1127,12 +1131,27 @@ uintptr_t PMM::AllocatePage(bool zeroPage) {
 		physicalMemoryRegionsPagesCount--;
 		physicalMemoryRegionsIndex = i;
 	} else {
-		returnValue = dirty.Get();
+		if (zeroPage) {
+			returnValue = zeroed.Get();
+		} else {
+			returnValue = dirty.Get();
+		}
 
 		if (returnValue == (uintptr_t) -1) {
-			returnValue = 0;
+			if (zeroPage) {
+				returnValue = dirty.Get();
+			} else {
+				returnValue = zeroed.Get();
+			}
+
+			if (returnValue == (uintptr_t) -1) {
+				returnValue = 0;
+			} else {
+				returnValue <<= PAGE_BITS;
+			}
 		} else {
 			returnValue <<= PAGE_BITS;
+			zeroPage = false;
 		}
 	}
 
@@ -1149,9 +1168,11 @@ uintptr_t PMM::AllocatePage(bool zeroPage) {
 void PMM::Initialise() {
 	zeroMemoryRegion = kernelVMM.Allocate("ZeroMemReg", ZERO_MEMORY_REGION_PAGES * PAGE_SIZE, VMM_MAP_STRICT, 
 			VMM_REGION_PHYSICAL, 0, VMM_REGION_FLAG_OVERWRITABLE | VMM_REGION_FLAG_CACHABLE, nullptr);
+	signalZeroPageThread.autoReset = true;
 
 	physicalMemoryHighest += PAGE_SIZE << 3;
 	dirty.Initialise(physicalMemoryHighest >> PAGE_BITS, true);
+	zeroed.Initialise(physicalMemoryHighest >> PAGE_BITS, true);
 
 	while (physicalMemoryRegionsPagesCount) {
 		startPageCount++;
@@ -1170,7 +1191,21 @@ void PMM::Initialise() {
 }
 
 void PMM::ZeroPages() {
-	// TODO.
+	uintptr_t count = 0;
+
+	while (dirty.singleCount) {
+		lock.Acquire();
+		uintptr_t page = dirty.Get();
+		lock.Release();
+		if (page == (uintptr_t) -1) break;
+		ZeroPhysicalMemory(page << PAGE_BITS, 1);
+		count++;
+		lock.Acquire();
+		zeroed.Put(page);
+		lock.Release();
+	}
+
+	(void) count;
 }
 
 void _ZeroPageThread(PMM *pmm) {
@@ -1181,8 +1216,8 @@ void _ZeroPageThread(PMM *pmm) {
 }
 
 void PMM::Initialise2() {
-	signalZeroPageThread.autoReset = true;
 	zeroPageThread = scheduler.SpawnThread((uintptr_t) _ZeroPageThread, (uintptr_t) this, kernelProcess, false);
+	zeroPageThreadStarted = true;
 }
 
 void PMM::FreePage(uintptr_t address, bool bypassStack) {
@@ -1194,6 +1229,10 @@ void PMM::FreePage(uintptr_t address, bool bypassStack) {
 	}
 
 	dirty.Put(address >> PAGE_BITS, bypassStack);
+
+	if (zeroPageThreadStarted) {
+		signalZeroPageThread.Set(false, true);
+	}
 }
 
 #ifdef ARCH_X86_64

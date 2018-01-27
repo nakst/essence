@@ -139,15 +139,15 @@ struct Spinlock {
 };
 
 struct Event {
-	void Set(bool schedulerAlreadyLocked = false);
+	void Set(bool schedulerAlreadyLocked = false, bool maybeAlreadySet = false);
 	void Reset(); 
 	bool Poll();
 
 	bool Wait(uint64_t timeoutMs); // See Scheduler::WaitEvents to wait for multiple events.
 				       // Returns false if the wait timed out.
 
-	bool autoReset; // This should be first field in the structure,
-			// so that the type of Event can be easily declared with {autoReset}.
+	volatile bool autoReset; // This should be first field in the structure,
+			         // so that the type of Event can be easily declared with {autoReset}.
 
 	volatile uintptr_t state;
 	volatile size_t handles;
