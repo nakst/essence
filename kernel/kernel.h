@@ -138,6 +138,23 @@ struct Spinlock {
 	volatile uint8_t ownerCPU;
 };
 
+struct Event {
+	void Set(bool schedulerAlreadyLocked = false);
+	void Reset(); 
+	bool Poll();
+
+	bool Wait(uint64_t timeoutMs); // See Scheduler::WaitEvents to wait for multiple events.
+				       // Returns false if the wait timed out.
+
+	bool autoReset; // This should be first field in the structure,
+			// so that the type of Event can be easily declared with {autoReset}.
+
+	volatile uintptr_t state;
+	volatile size_t handles;
+
+	LinkedList<Thread> blockedThreads;
+};
+
 typedef void (*AsyncTaskCallback)(void *argument);
 
 struct AsyncTask {
@@ -174,6 +191,7 @@ struct Process *desktopProcess;
 
 #endif
 
+#include "bitset.cpp"
 #include "memory.cpp"
 #include "object_manager.cpp"
 #include "scheduler.cpp"

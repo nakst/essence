@@ -35,22 +35,18 @@ struct PMM {
 	uintptr_t AllocateContiguous64KB();
 	uintptr_t AllocateContiguous128KB();
 	void FreePage(uintptr_t address, bool bypassStack = false);
+	void ZeroPages();
 	void Initialise();
+	void Initialise2();
 
 	uintptr_t pagesAllocated;
 	uintptr_t startPageCount;
 
-#define PMM_PAGE_STACK_SIZE 1024
-	uintptr_t pageStack[1024];
-	uintptr_t pageStackIndex;
-
-#define BITSET_GROUP_PAGES 4096
-	uint32_t *bitsetPageUsage;
-	uint16_t *bitsetGroupUsage; 
-	size_t bitsetPages; 
-	size_t bitsetGroups;
+	Bitset dirty;
 
 	Mutex lock; 
+	struct Event signalZeroPageThread;
+	Thread *zeroPageThread;
 };
 
 extern PMM pmm;
@@ -1079,67 +1075,40 @@ uintptr_t PMM::AllocateContiguous64KB() {
 	lock.Acquire();
 	Defer(lock.Release());
 
-	pagesAllocated += 16;
+	pagesAllocated += 65536 >> PAGE_BITS;
 
-	for (uintptr_t i = 0; i < bitsetGroups; i++) {
-		if (bitsetGroupUsage[i] >= 16) {
-			for (uintptr_t j = 0; j < BITSET_GROUP_PAGES; j += 16) {
-				uintptr_t page = i * BITSET_GROUP_PAGES + j;
+	uintptr_t index = dirty.Get(65536 >> PAGE_BITS);
 
-				if (((uint16_t *) bitsetPageUsage)[page >> 4] == (uint16_t) (-1)) {
-					uintptr_t address = page << PAGE_BITS;
-
-					((uint16_t *) bitsetPageUsage)[page >> 4] = 0;
-					bitsetGroupUsage[i] -= 16;
-
-					return address;
-				}
-			}
-		}
+	if (index != (uintptr_t) -1) {
+		index <<= PAGE_BITS;
+		return index;
+	} else {
+		return 0;
 	}
-
-	return 0;
 }
 
 uintptr_t PMM::AllocateContiguous128KB() {
 	lock.Acquire();
 	Defer(lock.Release());
 
-	pagesAllocated += 32;
+	pagesAllocated += 131072 >> PAGE_BITS;
 
-	for (uintptr_t i = 0; i < bitsetGroups; i++) {
-		if (bitsetGroupUsage[i] >= 32) {
-			for (uintptr_t j = 0; j < BITSET_GROUP_PAGES; j += 32) {
-				uintptr_t page = i * BITSET_GROUP_PAGES + j;
+	uintptr_t index = dirty.Get(131072 >> PAGE_BITS);
 
-				if (bitsetPageUsage[page >> 5] == (uint32_t) (-1)) {
-					uintptr_t address = page << PAGE_BITS;
-
-					bitsetPageUsage[page >> 5] = 0;
-					bitsetGroupUsage[i] -= 32;
-
-					return address;
-				}
-			}
-		}
+	if (index != (uintptr_t) -1) {
+		index <<= PAGE_BITS;
+		return index;
+	} else {
+		return 0;
 	}
-
-	return 0;
 }
 
 uintptr_t PMM::AllocatePage(bool zeroPage) {
+	uintptr_t returnValue = 0;
 	lock.Acquire();
-
 	pagesAllocated++;
 
-	if (pageStackIndex) {
-		returnFromStack:
-		pageStackIndex--;
-		uintptr_t address = pageStack[pageStackIndex];
-		lock.Release();
-		if (zeroPage) ZeroPhysicalMemory(address, 1);
-		return address;
-	} else if (physicalMemoryRegionsPagesCount) {
+	if (physicalMemoryRegionsPagesCount) {
 		uintptr_t i = physicalMemoryRegionsIndex;
 
 		while (!physicalMemoryRegions[i].pageCount) {
@@ -1150,47 +1119,31 @@ uintptr_t PMM::AllocatePage(bool zeroPage) {
 			}
 		}
 
-		uintptr_t addingPageCount = PMM_PAGE_STACK_SIZE;
-
 		PhysicalMemoryRegion *region = physicalMemoryRegions + i;
+		returnValue = region->baseAddress;
 
-		if (region->pageCount < addingPageCount) {
-			addingPageCount = region->pageCount;
-		}
-
-		for (uintptr_t i = 0; i < addingPageCount; i++) {
-			pageStack[pageStackIndex++] = region->baseAddress;
-			region->baseAddress += PAGE_SIZE;
-			region->pageCount--;
-			physicalMemoryRegionsPagesCount--;
-		}
-
+		region->baseAddress += PAGE_SIZE;
+		region->pageCount--;
+		physicalMemoryRegionsPagesCount--;
 		physicalMemoryRegionsIndex = i;
-		goto returnFromStack;
 	} else {
-		for (uintptr_t i = 0; i < bitsetGroups; i++) {
-			if (bitsetGroupUsage[i]) {
-				for (uintptr_t j = 0; j < BITSET_GROUP_PAGES && bitsetGroupUsage[i] && pageStackIndex != PMM_PAGE_STACK_SIZE; j++) {
-					uintptr_t page = i * BITSET_GROUP_PAGES + j;
+		returnValue = dirty.Get();
 
-					if (bitsetPageUsage[page >> 5] & (1 << (page & 31))) {
-						uintptr_t address = page << PAGE_BITS;
-
-						pageStack[pageStackIndex] = address;
-						pageStackIndex++;
-
-						bitsetPageUsage[page >> 5] &= ~(1 << (page & 31));
-						bitsetGroupUsage[i]--;
-					}
-				}
-
-				goto returnFromStack;
-			}
+		if (returnValue == (uintptr_t) -1) {
+			returnValue = 0;
+		} else {
+			returnValue <<= PAGE_BITS;
 		}
 	}
 
-	KernelPanic("PMM::AllocatePage - Out of physical memory\n");
-	return 0; 
+	if (!returnValue) {
+		KernelPanic("PMM::AllocatePage - Out of physical memory\n");
+	}
+
+	lock.Release();
+	if (zeroPage) ZeroPhysicalMemory(returnValue, 1);
+
+	return returnValue; 
 }
 
 void PMM::Initialise() {
@@ -1198,12 +1151,7 @@ void PMM::Initialise() {
 			VMM_REGION_PHYSICAL, 0, VMM_REGION_FLAG_OVERWRITABLE | VMM_REGION_FLAG_CACHABLE, nullptr);
 
 	physicalMemoryHighest += PAGE_SIZE << 3;
-
-	bitsetPages = physicalMemoryHighest >> PAGE_BITS;
-	bitsetGroups = bitsetPages / BITSET_GROUP_PAGES + 1;
-
-	bitsetPageUsage = (uint32_t *) kernelVMM.Allocate("PMM", (bitsetPages >> 3) + (bitsetGroups * 2), VMM_MAP_ALL);
-	bitsetGroupUsage = (uint16_t *) bitsetPageUsage + (bitsetPages >> 4);
+	dirty.Initialise(physicalMemoryHighest >> PAGE_BITS, true);
 
 	while (physicalMemoryRegionsPagesCount) {
 		startPageCount++;
@@ -1221,22 +1169,31 @@ void PMM::Initialise() {
 	}
 }
 
+void PMM::ZeroPages() {
+	// TODO.
+}
+
+void _ZeroPageThread(PMM *pmm) {
+	while (true) {
+		pmm->signalZeroPageThread.Wait(OS_WAIT_NO_TIMEOUT);
+		pmm->ZeroPages();
+	}
+}
+
+void PMM::Initialise2() {
+	signalZeroPageThread.autoReset = true;
+	zeroPageThread = scheduler.SpawnThread((uintptr_t) _ZeroPageThread, (uintptr_t) this, kernelProcess, false);
+}
+
 void PMM::FreePage(uintptr_t address, bool bypassStack) {
 	lock.AssertLocked();
-
 	pagesAllocated--;
 
 	if (!address) {
 		KernelPanic("PMM::FreePage - address was 0\n");
 	}
 
-	if (pageStackIndex == PMM_PAGE_STACK_SIZE || bypassStack) {
-		bitsetPageUsage[address >> (PAGE_BITS + 5)] |= 1 << ((address >> PAGE_BITS) & 31);
-		bitsetGroupUsage[(address >> PAGE_BITS) / BITSET_GROUP_PAGES]++;
-	} else {
-		pageStack[pageStackIndex] = address;
-		pageStackIndex++;
-	}
+	dirty.Put(address >> PAGE_BITS, bypassStack);
 }
 
 #ifdef ARCH_X86_64

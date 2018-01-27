@@ -6,6 +6,7 @@
 #include "kernel.h"
 
 void KernelInitilisation() {
+	pmm.Initialise2();
 	InitialiseObjectManager();
 	vfs.Initialise();
 	deviceManager.Initialise();

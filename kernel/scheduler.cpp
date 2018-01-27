@@ -9,23 +9,6 @@ void KillThread(void *_thread);
 
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Process *targetProcess, bool needed /*If false, the task may not be registered if there are many queued tasks.*/);
 
-struct Event {
-	void Set(bool schedulerAlreadyLocked = false);
-	void Reset(); 
-	bool Poll();
-
-	bool Wait(uint64_t timeoutMs); // See Scheduler::WaitEvents to wait for multiple events.
-				       // Returns false if the wait timed out.
-
-	bool autoReset; // This should be first field in the structure,
-			// so that the type of Event can be easily declared with {autoReset}.
-
-	volatile uintptr_t state;
-	volatile size_t handles;
-
-	LinkedList<Thread> blockedThreads;
-};
-
 struct Semaphore {
 	void Take(uintptr_t units = 1);
 	void Return(uintptr_t units = 1);
