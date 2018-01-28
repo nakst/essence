@@ -1193,13 +1193,35 @@ void PMM::Initialise() {
 void PMM::ZeroPages() {
 	uintptr_t count = 0;
 
+	while (dirty.singleCount > 65536 / PAGE_SIZE) {
+		lock.Acquire();
+		uintptr_t page = dirty.Get(65536 / PAGE_SIZE);
+		lock.Release();
+
+		if (page == (uintptr_t) -1) break;
+
+		ZeroPhysicalMemory(page << PAGE_BITS, 65536 / PAGE_SIZE);
+		count += 65536 / PAGE_SIZE;
+
+		lock.Acquire();
+
+		for (uintptr_t i = 0; i < 65536 / PAGE_SIZE; i++) {
+			zeroed.Put(page + i);
+		}
+
+		lock.Release();
+	}
+
 	while (dirty.singleCount) {
 		lock.Acquire();
 		uintptr_t page = dirty.Get();
 		lock.Release();
+
 		if (page == (uintptr_t) -1) break;
+
 		ZeroPhysicalMemory(page << PAGE_BITS, 1);
 		count++;
+
 		lock.Acquire();
 		zeroed.Put(page);
 		lock.Release();
