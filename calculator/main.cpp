@@ -177,16 +177,16 @@ extern "C" void ProgramEntry() {
 	}
 
 	{
-		OSHandle region = OSCreateSharedMemory(512 * 1024 * 1024, nullptr, 0);
-		void *pointer = OSMapSharedMemory(region, 0, 0);
+		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
+		void *pointer = OSMapObject(region, 0, 0);
 		OSCloseHandle(region);
 		OSFree(pointer);
 	}
 
 #if 1
 	{
-		OSHandle region = OSCreateSharedMemory(512 * 1024 * 1024, nullptr, 0);
-		void *pointer = OSMapSharedMemory(region, 0, 0);
+		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
+		void *pointer = OSMapObject(region, 0, 0);
 		// OSZeroMemory(pointer, 512 * 1024 * 1024);
 		OSCloseHandle(region);
 		OSFree(pointer);
@@ -194,12 +194,12 @@ extern "C" void ProgramEntry() {
 #endif
 
 	for (int i = 0; i < 3; i++) {
-		OSHandle handle = OSCreateSharedMemory(1024, (char *) "Test", 4);
-		OSHandle handle3 = OSOpenNamedSharedMemory((char *) "Test", 4);
+		OSHandle handle = OSOpenSharedMemory(1024, (char *) "Test", 4, OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
+		OSHandle handle3 = OSOpenSharedMemory(0, (char *) "Test", 4, OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND);
 		if (handle3 == OS_INVALID_HANDLE) OSCrashProcess(141);
 		OSCloseHandle(handle);
 		OSCloseHandle(handle3);
-		OSHandle handle2 = OSOpenNamedSharedMemory((char *) "Test", 4);
+		OSHandle handle2 = OSOpenSharedMemory(0, (char *) "Test", 4, OS_OPEN_NODE_FAIL_IF_NOT_FOUND);
 		if (handle2 != OS_INVALID_HANDLE) OSCrashProcess(140);
 	}
 

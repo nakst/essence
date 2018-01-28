@@ -229,10 +229,9 @@ enum OSSyscallType {
 	OS_SYSCALL_TERMINATE_THREAD,
 	OS_SYSCALL_CREATE_THREAD,
 	OS_SYSCALL_WAIT,
-	OS_SYSCALL_CREATE_SHARED_MEMORY,
 	OS_SYSCALL_SHARE_MEMORY,
-	OS_SYSCALL_MAP_SHARED_MEMORY,
-	OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY,
+	OS_SYSCALL_MAP_OBJECT,
+	OS_SYSCALL_OPEN_SHARED_MEMORY,
 	OS_SYSCALL_TERMINATE_PROCESS,
 	OS_SYSCALL_OPEN_NODE,
 	OS_SYSCALL_READ_FILE_SYNC,
@@ -610,6 +609,9 @@ enum OSObjectType {
 #define OS_OPEN_NODE_DIRECTORY		(0x4000)
 #define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x8000) // Create the directories leading to the file, if they don't already exist.
 
+#define OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND     (0x1000)
+#define OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND (0x2000)
+
 #define OS_CREATE_WINDOW_WITH_MENU_BAR 	(1)
 #define OS_CREATE_WINDOW_NOT_RESIZABLE  (2) // TODO Currently does nothing.
 #define OS_CREATE_WINDOW_NO_DECORATIONS (4)
@@ -678,10 +680,9 @@ extern "C" OSError OSPollEvent(OSHandle event);
 extern "C" uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t timeoutMs);
 #define OSWaitSingle(object) OSWait(&object, 1, OS_WAIT_NO_TIMEOUT)
 
-extern "C" OSHandle OSCreateSharedMemory(size_t size, char *name, size_t nameLength);
+extern "C" OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
 extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
-extern "C" void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size);
-extern "C" OSHandle OSOpenNamedSharedMemory(char *name, size_t nameLength);
+extern "C" void *OSMapObject(OSHandle object, uintptr_t offset, size_t size);
 
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);

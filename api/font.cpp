@@ -21,14 +21,15 @@ static void OSFontRendererInitialise() {
 		return;
 	}
 
-	OSHandle regularFontHandle = OSOpenNamedSharedMemory(OS_GUI_FONT_REGULAR, OSCStringLength(OS_GUI_FONT_REGULAR));
+	OSHandle regularFontHandle = OSOpenSharedMemory(0, OS_GUI_FONT_REGULAR, OSCStringLength(OS_GUI_FONT_REGULAR), 
+			OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND);
 
 	if (regularFontHandle == OS_INVALID_HANDLE) {
 		OSPrint("Could not get font handle.\n");
 		return;
 	}
 
-	void *loadedFont = OSMapSharedMemory(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL);
+	void *loadedFont = OSMapObject(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL);
 
 	if (stbtt_InitFont(&guiRegularFont, (uint8_t *) loadedFont, 0)) {
 		// The font was loaded.
@@ -121,7 +122,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	void *bitmap = nullptr;
 	if (surface != OS_INVALID_HANDLE) {
 		OSGetLinearBuffer(surface, &linearBuffer);
-		bitmap = OSMapSharedMemory(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height);
+		bitmap = OSMapObject(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height);
 	}
 
 	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, scale);

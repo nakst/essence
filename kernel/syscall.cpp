@@ -497,7 +497,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 		} break;
 
-		case OS_SYSCALL_CREATE_SHARED_MEMORY: {
+		case OS_SYSCALL_OPEN_SHARED_MEMORY: {
 			if (argument0 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
 				SYSCALL_RETURN(OS_FATAL_ERROR_SHARED_MEMORY_REGION_TOO_LARGE, true);
 			}
@@ -510,15 +510,16 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_BUFFER_ALLOW_NULL(argument1, argument2, 1);
 
-			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0, (char *) argument1, argument2);
+			SharedMemoryRegion *region = sharedMemoryManager.CreateSharedMemory(argument0, (char *) argument1, argument2, argument3);
 			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE, false);
+
 			Handle handle = {};
 			handle.type = KERNEL_OBJECT_SHMEM;
 			handle.object = region;
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
-		case OS_SYSCALL_MAP_SHARED_MEMORY: {
+		case OS_SYSCALL_MAP_OBJECT: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
 			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
@@ -557,22 +558,6 @@ uintptr_t DoSyscall(OSSyscallType index,
 			handle.object = region;
 			handle.readOnly = argument2 ? true : false;
 			SYSCALL_RETURN(process->handleTable.OpenHandle(handle), false);
-		} break;
-
-		case OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY: {
-			if (argument1 > OS_SHARED_MEMORY_NAME_MAX_LENGTH) {
-				SYSCALL_RETURN(OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT, true);
-			}
-
-			SYSCALL_BUFFER(argument0, argument1, 1);
-
-			SharedMemoryRegion *region = sharedMemoryManager.LookupSharedMemory((char *) argument0, argument1);
-			if (!region) SYSCALL_RETURN(OS_INVALID_HANDLE, false);
-
-			Handle handle = {};
-			handle.type = KERNEL_OBJECT_SHMEM;
-			handle.object = region;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
 		case OS_SYSCALL_OPEN_NODE: {

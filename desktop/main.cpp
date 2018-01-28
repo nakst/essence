@@ -52,7 +52,7 @@ extern "C" void ProgramEntry() {
 
 			OSHandle surface = OS_SURFACE_UI_SHEET;
 			OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-			void *bitmap = OSMapSharedMemory(buffer.handle, 0, buffer.height * buffer.stride);
+			void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride);
 
 			for (intptr_t y = 0; y < imageY; y++) {
 				for (intptr_t x = 0; x < imageX; x++) {
@@ -86,8 +86,8 @@ extern "C" void ProgramEntry() {
 			OSPrint("Error: Could not load the font file.\n");
 		} else {
 			char *fontName = OS_GUI_FONT_REGULAR;
-			OSHandle sharedMemory = OSCreateSharedMemory(fileSize, fontName, OSCStringLength(fontName));
-			OSCopyMemory(OSMapSharedMemory(sharedMemory, 0, fileSize), loadedFile, fileSize);
+			OSHandle sharedMemory = OSOpenSharedMemory(fileSize, fontName, OSCStringLength(fontName), OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
+			OSCopyMemory(OSMapObject(sharedMemory, 0, fileSize), loadedFile, fileSize);
 			OSHeapFree(loadedFile);
 		}
 	}
@@ -111,12 +111,21 @@ extern "C" void ProgramEntry() {
 			} else {
 				OSHandle surface = OS_SURFACE_WALLPAPER;
 				OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-				void *bitmap = OSMapSharedMemory(buffer.handle, 0, buffer.height * buffer.stride);
+				void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride);
+				int xOffset = 0, yOffset = 0;
+
+				if (imageX > (int) buffer.width) {
+					xOffset = imageX / 2 - buffer.width / 2;
+				}
+
+				if (imageY > (int) buffer.height) {
+					yOffset = imageY / 2 - buffer.height / 2;
+				}
 
 				for (uintptr_t y = 0; y < buffer.height; y++) {
 					for (uintptr_t x = 0; x < buffer.width; x++) {
 						uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
-						uint8_t *source = image + y * imageX * 4 + x * 4;
+						uint8_t *source = image + (y + yOffset) * imageX * 4 + (x + xOffset) * 4;
 						destination[2] = source[0];
 						destination[1] = source[1];
 						destination[0] = source[2];
@@ -155,7 +164,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-#if 1
+#if 0
 	{
 		// Start the Odin test program.
 

@@ -172,7 +172,6 @@ struct SharedMemoryRegion {
 	Mutex mutex;
 	volatile size_t handles;
 	size_t sizeBytes;
-	struct Node *file;
 
 	bool named : 1;
 	bool big : 1;
@@ -221,8 +220,7 @@ struct CacheBlockFault {
 };
 
 struct SharedMemoryManager {
-	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0, Node *file = nullptr);
-	SharedMemoryRegion *LookupSharedMemory(char *name, size_t nameLength);
+	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0, unsigned flags = 0);
 	void DestroySharedMemory(SharedMemoryRegion *region);
 
 	NamedSharedMemoryRegion *namedSharedMemoryRegions;
@@ -460,7 +458,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
-	// Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
+	Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
 
 	if (!size) return nullptr;
 	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;
@@ -1452,9 +1450,30 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 
 #define ArrayAdd(_array, _item) _ArrayAdd((void **) &(_array), (_array ## Count), (_array ## Allocated), &(_item), sizeof(_item))
 
-SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, char *name, size_t nameLength, Node *file) {
+SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, char *name, size_t nameLength, unsigned flags) {
 	mutex.Acquire();
 	Defer(mutex.Release());
+
+	if (name && nameLength) {
+		for (uintptr_t i = 0; i < namedSharedMemoryRegionsCount; i++) {
+			if (namedSharedMemoryRegions[i].nameLength == nameLength 
+					&& !CompareBytes(namedSharedMemoryRegions[i].name, name, nameLength)) {
+				if (flags & OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND) {
+					return nullptr;
+				}
+
+				SharedMemoryRegion *region = namedSharedMemoryRegions[i].region;
+				region->mutex.Acquire();
+				region->handles++;
+				region->mutex.Release();
+				return region;
+			}
+		}
+	}
+
+	if (flags & OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND) {
+		return nullptr;
+	}
 
 	// sizeBytes must be at PAGE_SIZE granularity.
 	sizeBytes = (sizeBytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
@@ -1506,29 +1525,10 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	}
 
 	region->handles = 1;
-	region->file = file;
 
 	// Print("Created shared memory region %x\n", region);
 	
 	return region;
-}
-
-SharedMemoryRegion *SharedMemoryManager::LookupSharedMemory(char *name, size_t nameLength) {
-	mutex.Acquire();
-	Defer(mutex.Release());
-
-	for (uintptr_t i = 0; i < namedSharedMemoryRegionsCount; i++) {
-		if (namedSharedMemoryRegions[i].nameLength == nameLength 
-				&& !CompareBytes(namedSharedMemoryRegions[i].name, name, nameLength)) {
-			SharedMemoryRegion *region = namedSharedMemoryRegions[i].region;
-			region->mutex.Acquire();
-			region->handles++;
-			region->mutex.Release();
-			return region;
-		}
-	}
-
-	return nullptr;
 }
 
 void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {

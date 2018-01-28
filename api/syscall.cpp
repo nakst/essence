@@ -160,20 +160,16 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 	return buffer;
 }
 
-OSHandle OSOpenNamedSharedMemory(char *name, size_t nameLength) {
-	return OSSyscall(OS_SYSCALL_OPEN_NAMED_SHARED_MEMORY, (uintptr_t) name, nameLength, 0, 0);
-}
-
-OSHandle OSCreateSharedMemory(size_t size, char *name, size_t nameLength) {
-	return OSSyscall(OS_SYSCALL_CREATE_SHARED_MEMORY, size, (uintptr_t) name, nameLength, 0);
+OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags) {
+	return OSSyscall(OS_SYSCALL_OPEN_SHARED_MEMORY, size, (uintptr_t) name, nameLength, flags);
 }
 
 OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly) {
 	return OSSyscall(OS_SYSCALL_SHARE_MEMORY, sharedMemoryRegion, targetProcess, readOnly, 0);
 }
 
-void *OSMapSharedMemory(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size) {
-	intptr_t result = OSSyscall(OS_SYSCALL_MAP_SHARED_MEMORY, sharedMemoryRegion, offset, size, 0);
+void *OSMapObject(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size) {
+	intptr_t result = OSSyscall(OS_SYSCALL_MAP_OBJECT, sharedMemoryRegion, offset, size, 0);
 
 	if (result >= 0) {
 		return (void *) result;
