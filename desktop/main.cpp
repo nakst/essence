@@ -33,7 +33,7 @@ void CloseDialog(OSObject generator, void *argument, OSCallbackData *data) {
 	(void) generator;
 	(void) data;
 	
-	OSCloseWindow((OSObject) argument); // TODO This crashes because we try to return with a closed window.
+	OSCloseWindow((OSObject) argument); 
 }
 
 extern "C" void ProgramEntry() {

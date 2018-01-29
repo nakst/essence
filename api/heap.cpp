@@ -188,6 +188,8 @@ void OSHeapFree(void *address) {
 
 #ifndef KERNEL
 	// OSPrint("Free: %x (%d bytes)\n", address, region->size);
+#else
+	// Print("free %x\n", address);
 #endif
 
 	bool expectingSize = expectedSize != 0;

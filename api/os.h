@@ -255,6 +255,7 @@ enum OSSyscallType {
 	OS_SYSCALL_GET_IO_REQUEST_PROGRESS,
 	OS_SYSCALL_CANCEL_IO_REQUEST,
 	OS_SYSCALL_BATCH,
+	OS_SYSCALL_RESIZE_SHARED_MEMORY,
 };
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -683,6 +684,7 @@ extern "C" uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t tim
 extern "C" OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
 extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
 extern "C" void *OSMapObject(OSHandle object, uintptr_t offset, size_t size);
+extern "C" void OSResizeSharedMemory(OSHandle sharedMemoryRegion, size_t newSize);
 
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);

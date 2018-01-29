@@ -179,6 +179,10 @@ extern "C" void ProgramEntry() {
 	{
 		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
 		void *pointer = OSMapObject(region, 0, 0);
+		OSResizeSharedMemory(region, 300 * 1024 * 1024); // Big -> big
+		OSResizeSharedMemory(region, 200 * 1024 * 1024); // Big -> small
+		OSResizeSharedMemory(region, 100 * 1024 * 1024); // Small -> small
+		OSResizeSharedMemory(region, 400 * 1024 * 1024); // Small -> big
 		OSCloseHandle(region);
 		OSFree(pointer);
 	}

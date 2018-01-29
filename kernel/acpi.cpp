@@ -362,9 +362,9 @@ void ACPI::Initialise() {
 				// Send a startup IPI.
 				lapic.WriteRegister(0x310 >> 2, processor->apicID << 24);
 				lapic.WriteRegister(0x300 >> 2, 0x4600 | (AP_TRAMPOLINE >> PAGE_BITS));
-				for (uintptr_t i = 0; i < 10; i++) Delay1MS();
+				for (uintptr_t i = 0; i < 100 && *startupFlag == 0; i++) Delay1MS();
 
-				if (startupFlag) {
+				if (*startupFlag) {
 					// The processor started correctly.
 					processor->started = true;
 				} else {
@@ -383,7 +383,7 @@ void ACPI::Initialise() {
 					}
 				}
 
-				for (uintptr_t i = 0; i < 1000 && *startupFlag != 2; i++) Delay1MS();
+				for (uintptr_t i = 0; i < 10000 && *startupFlag != 2; i++) Delay1MS();
 
 				if (*startupFlag == 2) {
 					// The processor started!
@@ -395,7 +395,7 @@ void ACPI::Initialise() {
 					processor->started = false;
 					KernelLog(LOG_WARNING, "ACPI::Initialise - Could not initialise processor %d\n", processor->processorID);
 
-					// TODO Send IPI to stop the processor?
+					// TODO Send IPI to stop the processor.
 				}
 			}
 		}

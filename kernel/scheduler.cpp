@@ -526,16 +526,19 @@ void NewProcess() {
 }
 
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
-	// Print("spawning process, %s\n", imagePathLength, imagePath);
+	// Print("Creating process, %s...\n", imagePathLength, imagePath);
 
 	// Process initilisation.
 	Process *process = (Process *) processPool.Add();
-	KernelLog(LOG_VERBOSE, "Created process, %x\n", process);
 	process->allItem.thisItem = process;
 	process->vmm = &process->_vmm;
 	process->handles = 1;
 	process->creationArgument = argument;
-	if (!kernelProcess) process->vmm->Initialise();
+
+	if (!kernelProcess) {
+		process->vmm->Initialise();
+	}
+
 	CopyMemory((process->executablePath = (char *) OSHeapAllocate(imagePathLength, false)), imagePath, imagePathLength);
 	process->executablePathLength = imagePathLength;
 

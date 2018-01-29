@@ -101,6 +101,10 @@ void Bitset::Put(uintptr_t index, bool intoBitset) {
 	if (modCheck) KernelPanic("Bitset::Put - Concurrent modification.\n");
 	modCheck = true; Defer({modCheck = false;});
 
+	if (index > singleCount) {
+		KernelPanic("Bitset::Put - Index greater than single code.\n");
+	}
+
 	if (singleUsage[index >> 5] & (1 << (index & 31))) {
 		KernelPanic("Bitset::Put - Duplicate entry.\n");
 	}

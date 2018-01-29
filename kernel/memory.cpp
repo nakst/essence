@@ -176,22 +176,20 @@ struct SharedMemoryRegion {
 	bool named : 1;
 	bool big : 1;
 
+	void *data;
+
 	// If big = false,
-	// what follows is a list of physical addresses,
+	// `data` is a list of physical addresses,
 	// that contain the memory in the region.
 
 	// If big = true,
-	// what follows is a list of virtual addresses,
+	// `data` is a list of virtual addresses,
 	// that are pointers to lists of physical addresses,
 	// each covering 256MB.
 #define BIG_SHARED_MEMORY (256 * 1024 * 1024)
 
 #define SHARED_ADDRESS_PRESENT (1)
 #define SHARED_ADDRESS_READING (2)
-
-	// At the end of a physical address listing,
-	// are the reading events for the cache blocks,
-	// if file is not nullptr.
 };
 
 struct NamedSharedMemoryRegion {
@@ -222,6 +220,7 @@ struct CacheBlockFault {
 struct SharedMemoryManager {
 	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0, unsigned flags = 0);
 	void DestroySharedMemory(SharedMemoryRegion *region);
+	void ResizeSharedMemory(struct SharedMemoryRegion *region, size_t newSizeBytes);
 
 	NamedSharedMemoryRegion *namedSharedMemoryRegions;
 	size_t namedSharedMemoryRegionsCount, namedSharedMemoryRegionsAllocated;
@@ -423,7 +422,6 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 		allocatedVirtualMemory += pageCount * PAGE_SIZE;
 	}
 
-	// TODO This seems to be returning overlapping regions?? See ../todo_list.txt for repro.
 	uintptr_t regionIndex = FindEmptySpaceInRegionArray(&region, regions, regionsAllocated);
 
 	{
@@ -458,7 +456,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 }
 
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
-	Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
+	// Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
 
 	if (!size) return nullptr;
 	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;
@@ -762,7 +760,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 				SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
 				sharedRegion->mutex.AssertLocked();
 
-				uintptr_t *volatile addresses = (uintptr_t *) (sharedRegion + 1);
+				uintptr_t *volatile addresses = (uintptr_t *) (sharedRegion->data);
 				uintptr_t index;
 
 				uintptr_t base = (address - region->baseAddress + region->offset);
@@ -771,7 +769,9 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					uintptr_t group = base / BIG_SHARED_MEMORY;
 
 					if (!addresses[group]) {
-						addresses[group] = (uintptr_t) kernelVMM.Allocate("BigShare", BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t), VMM_MAP_ALL);
+						// addresses[group] = (uintptr_t) kernelVMM.Allocate("BigShare", BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t), VMM_MAP_ALL);
+						addresses[group] = (uintptr_t) OSHeapAllocate(BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t), false);
+						ZeroMemory((void *) addresses[group], BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(uintptr_t));
 					}
 
 					addresses = (uintptr_t *) addresses[group];
@@ -1328,7 +1328,6 @@ void VirtualAddressSpace::Remove(uintptr_t _virtualAddress, size_t pageCount) {
 
 void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddress, unsigned flags) {
 	// TODO Use the no-execute bit.
-	// TODO Support read-only pages.
 
 	lock.AssertLocked();
 
@@ -1450,6 +1449,99 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 
 #define ArrayAdd(_array, _item) _ArrayAdd((void **) &(_array), (_array ## Count), (_array ## Allocated), &(_item), sizeof(_item))
 
+void SharedMemoryManager::ResizeSharedMemory(SharedMemoryRegion *region, size_t sizeBytes) {
+	mutex.AssertLocked();
+	region->mutex.Acquire();
+	Defer(region->mutex.Release());
+
+	sizeBytes = (sizeBytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+	size_t pages = sizeBytes / PAGE_SIZE;
+	size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
+
+	size_t oldPages = region->sizeBytes / PAGE_SIZE;
+	uintptr_t oldPageGroups = oldPages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
+
+	bool oldBig = region->big;
+	void *oldData = region->data;
+
+	region->sizeBytes = sizeBytes;
+
+	if (pages > BIG_SHARED_MEMORY / PAGE_SIZE) {
+		region->data = (SharedMemoryRegion *) OSHeapAllocate(pageGroups * sizeof(void *), false);
+		ZeroMemory(region->data, pageGroups * sizeof(void *));
+		region->big = true;
+	} else {
+		region->data = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *), false);
+		ZeroMemory(region->data, pages * sizeof(void *));
+		region->big = false;
+	}
+
+	// The old shared memory region was empty.
+	if (!oldData) return;
+
+	if (oldPages > pages) {
+		// TODO Shrink mapped regions.
+
+		for (uintptr_t i = pages; i < oldPages; i++) {
+			uintptr_t address;
+
+			if (oldBig) {
+				uintptr_t **addresses = (uintptr_t **) oldData;
+				uintptr_t group = (i << PAGE_BITS) / BIG_SHARED_MEMORY;
+				uintptr_t index = ((i << PAGE_BITS) % BIG_SHARED_MEMORY) >> PAGE_BITS;
+
+				if (!addresses[group]) continue;
+				address = addresses[group][index];
+			} else {
+				uintptr_t *addresses = (uintptr_t *) oldData;
+				address = addresses[i];
+			}
+			
+			if (address & SHARED_ADDRESS_PRESENT) {
+				pmm.lock.Acquire();
+				pmm.FreePage(address);
+				pmm.lock.Release();
+			}
+		}
+	}
+	
+	if (region->big) {
+		if (oldBig) {
+			uintptr_t copy = oldPageGroups > pageGroups ? pageGroups : oldPageGroups;
+			CopyMemory(region->data, oldData, sizeof(void *) * copy);
+
+			for (uintptr_t i = copy; i < oldPageGroups; i++) {
+				OSHeapFree(((void **) oldData)[i]);
+			}
+
+			OSHeapFree(oldData);
+		} else { 
+			void **addresses = (void **) region->data;
+			addresses[0] = OSHeapAllocate(BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(void *), false);
+			ZeroMemory(addresses[0], BIG_SHARED_MEMORY / PAGE_SIZE * sizeof(void *));
+			CopyMemory(addresses[0], oldData, sizeof(void *) * oldPages);
+			OSHeapFree(oldData);
+		}
+	} else {
+		if (oldBig) {
+			uintptr_t copy = oldPages > pages ? pages : oldPages;
+			void **addresses = (void **) oldData;
+			CopyMemory(region->data, addresses[0], sizeof(void *) * copy);
+
+			for (uintptr_t i = 0; i < oldPageGroups; i++) {
+				OSHeapFree(((void **) oldData)[i]);
+			}
+
+			OSHeapFree(oldData);
+		} else { 
+			uintptr_t copy = oldPages > pages ? pages : oldPages;
+			CopyMemory(region->data, oldData, sizeof(void *) * copy);
+			OSHeapFree(oldData);
+		}
+	}
+}
+
 SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, char *name, size_t nameLength, unsigned flags) {
 	mutex.Acquire();
 	Defer(mutex.Release());
@@ -1501,21 +1593,8 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 		namedRegion = (NamedSharedMemoryRegion *) ArrayAdd(namedSharedMemoryRegions, region);
 	}
 
-	size_t pages = sizeBytes / PAGE_SIZE;
-
-	SharedMemoryRegion *region;
-
-	if (pages > BIG_SHARED_MEMORY / PAGE_SIZE) {
-		size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
-		region = (SharedMemoryRegion *) OSHeapAllocate(pageGroups * sizeof(void *) + sizeof(SharedMemoryRegion), false);
-		ZeroMemory(region, pageGroups * sizeof(void *) + sizeof(SharedMemoryRegion));
-		region->sizeBytes = sizeBytes;
-		region->big = true;
-	} else {
-		region = (SharedMemoryRegion *) OSHeapAllocate(pages * sizeof(void *) + sizeof(SharedMemoryRegion), false);
-		ZeroMemory(region, pages * sizeof(void *) + sizeof(SharedMemoryRegion));
-		region->sizeBytes = sizeBytes;
-	}
+	SharedMemoryRegion *region = (SharedMemoryRegion *) OSHeapAllocate(sizeof(SharedMemoryRegion), true);
+	ResizeSharedMemory(region, sizeBytes);
 
 	if (namedRegion) {
 		region->named = true;
@@ -1526,7 +1605,6 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 
 	region->handles = 1;
 
-	// Print("Created shared memory region %x\n", region);
 	
 	return region;
 }
@@ -1555,7 +1633,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 	if (region->big) {
 		size_t pageGroups = pages / (BIG_SHARED_MEMORY / PAGE_SIZE) + 1;
-		uintptr_t **addresses = (uintptr_t **) (region + 1);
+		uintptr_t **addresses = (uintptr_t **) (region->data);
 
 		pmm.lock.Acquire();
 		for (uintptr_t i = 0; i < pageGroups; i++) {
@@ -1570,10 +1648,10 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 
 		for (uintptr_t i = 0; i < pageGroups; i++) {
 			if (!addresses[i]) continue;
-			kernelVMM.Free(addresses[i]);
+			OSHeapFree(addresses[i]);
 		}
 	} else {
-		uintptr_t *addresses = (uintptr_t *) (region + 1);
+		uintptr_t *addresses = (uintptr_t *) (region->data);
 
 		pmm.lock.Acquire();
 		for (uintptr_t i = 0; i < pages; i++) {
@@ -1584,8 +1662,7 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 		pmm.lock.Release();
 	}
 
-	// Print("Destroyed shared memory region %x\n", region);
-
+	OSHeapFree(region->data);
 	OSHeapFree(region);
 }
 

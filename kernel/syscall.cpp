@@ -519,6 +519,24 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
+		case OS_SYSCALL_RESIZE_SHARED_MEMORY: {
+			if (argument1 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
+				SYSCALL_RETURN(OS_FATAL_ERROR_SHARED_MEMORY_REGION_TOO_LARGE, true);
+			}
+
+			KernelObjectType type = KERNEL_OBJECT_SHMEM;
+			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
+
+			// TODO Test this!!
+			sharedMemoryManager.mutex.Acquire();
+			sharedMemoryManager.ResizeSharedMemory(region, argument1);
+			sharedMemoryManager.mutex.Release();
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
 		case OS_SYSCALL_MAP_OBJECT: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
 			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
