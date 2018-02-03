@@ -202,7 +202,7 @@ void PCI::Enumerate() {
 						uint32_t deviceID = ReadConfig(bus, device, function, 0x00);
 						if ((deviceID & 0xFFFF) == 0xFFFF) continue;
 
-						PCIDevice *pciDevice = (PCIDevice *) ArrayAdd(pci.devices, _device);
+						PCIDevice *pciDevice = (PCIDevice *) ArrayAdd(pci.devices, _device, false);
 
 						uint32_t deviceClass = ReadConfig(bus, device, function, 0x08);
 						uint32_t interruptInformation = ReadConfig(bus, device, function, 0x3C);

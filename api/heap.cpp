@@ -19,16 +19,17 @@ static uintptr_t OSHeapCalculateIndex(uintptr_t size) {
 	return msb - 4;
 }
 
-static OSHeapRegion *heapRegions[12];
-
 #ifdef KERNEL
-Mutex heapMutex;
+Mutex _heapMutex, _heapMutex2;
+static OSHeapRegion *_heapRegions[12], *_heapRegions2[12];
+#define MMVMM_HEAP (true)
 #define OS_HEAP_ACQUIRE_MUTEX() heapMutex.Acquire()
 #define OS_HEAP_RELEASE_MUTEX() heapMutex.Release()
 #define OS_HEAP_PANIC(n) KernelPanic("Heap panic (%d).\n", n)
-#define OS_HEAP_ALLOCATE_CALL(x) kernelVMM.Allocate("Heap", x)
-#define OS_HEAP_FREE_CALL(x) kernelVMM.Free(x)
+#define OS_HEAP_ALLOCATE_CALL(x) (mmvmm ? memoryManagerVMM : kernelVMM).Allocate("Heap", x)
+#define OS_HEAP_FREE_CALL(x) (mmvmm ? memoryManagerVMM : kernelVMM).Free(x)
 #else
+static OSHeapRegion *heapRegions[12];
 static OSHandle heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(heapMutex)
 #define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(heapMutex)
@@ -62,7 +63,7 @@ static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 	region->regionListReference = nullptr;
 }
 
-static void OSHeapAddFreeRegion(OSHeapRegion *region) {
+static void OSHeapAddFreeRegion(OSHeapRegion *region, OSHeapRegion **heapRegions) {
 	if (region->used || region->size < 32) {
 		OS_HEAP_PANIC(1);
 	}
@@ -74,7 +75,13 @@ static void OSHeapAddFreeRegion(OSHeapRegion *region) {
 	region->regionListReference = heapRegions + index;
 }
 
+#ifdef KERNEL
+void *OSHeapAllocate(size_t size, bool zeroMemory, bool mmvmm = false) {
+	OSHeapRegion **heapRegions = mmvmm ? _heapRegions2 : _heapRegions;
+	Mutex &heapMutex = mmvmm ? _heapMutex2 : _heapMutex;
+#else
 void *OSHeapAllocate(size_t size, bool zeroMemory) {
+#endif
 	if (!size) return nullptr;
 
 #ifndef KERNEL
@@ -161,7 +168,7 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	freeRegion->previous = size;
 	freeRegion->offset = allocatedRegion->offset + size;
 	freeRegion->used = false;
-	OSHeapAddFreeRegion(freeRegion);
+	OSHeapAddFreeRegion(freeRegion, heapRegions);
 
 	OSHeapRegion *nextRegion = OS_HEAP_REGION_NEXT(freeRegion);
 	nextRegion->previous = freeRegion->size;
@@ -175,7 +182,9 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 }
 
 #ifdef KERNEL
-void OSHeapFree(void *address, size_t expectedSize = 0) {
+void OSHeapFree(void *address, size_t expectedSize = 0, bool mmvmm = false) {
+	OSHeapRegion **heapRegions = mmvmm ? _heapRegions2 : _heapRegions;
+	Mutex &heapMutex = mmvmm ? _heapMutex2 : _heapMutex;
 #else
 void OSHeapFree(void *address) {
 	size_t expectedSize = 0;
@@ -242,7 +251,7 @@ void OSHeapFree(void *address) {
 	}
 
 	// Put the free region in the region list.
-	OSHeapAddFreeRegion(region);
+	OSHeapAddFreeRegion(region, heapRegions);
 	OS_HEAP_RELEASE_MUTEX();
 }
 

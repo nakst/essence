@@ -595,7 +595,7 @@ void AsyncTaskThread() {
 
 			task->callback(task->argument);
 			local->currentThread->asyncTempAddressSpace = nullptr;
-			ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(&kernelVMM.virtualAddressSpace));
+			ProcessorSetAddressSpace(VIRTUAL_ADDRESS_SPACE_IDENTIFIER(kernelVMM.virtualAddressSpace));
 
 			local->asyncTasksRead++;
 		}
@@ -668,7 +668,7 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 	volatile AsyncTask *task = local->asyncTasks + local->asyncTasksWrite;
 	task->callback = callback;
 	task->argument = argument;
-	task->addressSpace = &targetProcess->vmm->virtualAddressSpace;
+	task->addressSpace = targetProcess->vmm->virtualAddressSpace;
 	local->asyncTasksWrite++;
 }
 
@@ -1037,7 +1037,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	}
 
 	InterruptContext *newContext = newThread->interruptContext;
-	VirtualAddressSpace *addressSpace = &newThread->process->vmm->virtualAddressSpace;
+	VirtualAddressSpace *addressSpace = newThread->process->vmm->virtualAddressSpace;
 	if (newThreadIsAsyncTask && newThread->asyncTempAddressSpace) addressSpace = newThread->asyncTempAddressSpace;
 #if 0
 	KernelLog(LOG_VERBOSE, "%x/%d/%d\n", VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->id, newThread->type);

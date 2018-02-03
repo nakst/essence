@@ -397,14 +397,14 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 		size_t count = sizeof(HandleTableL3) / PAGE_SIZE;
 
 		for (uintptr_t i = 0; i < count; i++) {
-			VirtualAddressSpace &kernelAddressSpace = kernelVMM.virtualAddressSpace;
-			kernelAddressSpace.lock.Acquire();
-			uintptr_t n = kernelAddressSpace.Get((uintptr_t) l3 + i * PAGE_SIZE);
-			kernelAddressSpace.lock.Release();
-			VirtualAddressSpace &addressSpace = process->vmm->virtualAddressSpace;
-			addressSpace.lock.Acquire();
-			addressSpace.Map(n, (uintptr_t) (linear + (l2Index * HANDLE_TABLE_L3_ENTRIES) + (l1Index * HANDLE_TABLE_L3_ENTRIES * HANDLE_TABLE_L2_ENTRIES)) + i * PAGE_SIZE, VMM_REGION_FLAG_SUPERVISOR);
-			addressSpace.lock.Release();
+			VirtualAddressSpace *kernelAddressSpace = kernelVMM.virtualAddressSpace;
+			kernelAddressSpace->lock.Acquire();
+			uintptr_t n = kernelAddressSpace->Get((uintptr_t) l3 + i * PAGE_SIZE);
+			kernelAddressSpace->lock.Release();
+			VirtualAddressSpace *addressSpace = process->vmm->virtualAddressSpace;
+			addressSpace->lock.Acquire();
+			addressSpace->Map(n, (uintptr_t) (linear + (l2Index * HANDLE_TABLE_L3_ENTRIES) + (l1Index * HANDLE_TABLE_L3_ENTRIES * HANDLE_TABLE_L2_ENTRIES)) + i * PAGE_SIZE, VMM_REGION_FLAG_SUPERVISOR);
+			addressSpace->lock.Release();
 		}
 	}
 

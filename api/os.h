@@ -3,6 +3,8 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
+#define OSLiteral(x) (char *) x, OSCStringLength((char *) x)
+
 #define OS_SCANCODE_A (0x1C)
 #define OS_SCANCODE_B (0x32)
 #define OS_SCANCODE_C (0x21)
@@ -255,7 +257,6 @@ enum OSSyscallType {
 	OS_SYSCALL_GET_IO_REQUEST_PROGRESS,
 	OS_SYSCALL_CANCEL_IO_REQUEST,
 	OS_SYSCALL_BATCH,
-	OS_SYSCALL_RESIZE_SHARED_MEMORY,
 };
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -576,6 +577,7 @@ enum OSObjectType {
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
 #define OS_SHARED_MEMORY_MAP_ALL (0)
+#define OS_MAP_OBJECT_ALL (0)
 
 #define OS_GUI_FONT_REGULAR ((char *) "Shell/Font/RegularGUI")
 
@@ -684,7 +686,6 @@ extern "C" uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t tim
 extern "C" OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
 extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
 extern "C" void *OSMapObject(OSHandle object, uintptr_t offset, size_t size);
-extern "C" void OSResizeSharedMemory(OSHandle sharedMemoryRegion, size_t newSize);
 
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);
@@ -737,7 +738,7 @@ extern "C" OSError OSMoveWindow(OSHandle window, OSRectangle rectangle);
 extern "C" void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle);
 
 #ifndef KERNEL
-extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
+extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory, bool mmvmm);
 extern "C" void OSHeapFree(void *address);
 
 extern "C" size_t OSCStringLength(char *string);

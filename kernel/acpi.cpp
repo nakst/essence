@@ -333,10 +333,10 @@ void ACPI::Initialise() {
 
 		// Temporarily identity map a 2 pages in at 0x10000.
 		{
-			kernelVMM.virtualAddressSpace.lock.Acquire();
-			kernelVMM.virtualAddressSpace.Map(0x10000, 0x10000, false);
-			kernelVMM.virtualAddressSpace.Map(0x11000, 0x11000, false);
-			kernelVMM.virtualAddressSpace.lock.Release();
+			kernelVMM.virtualAddressSpace->lock.Acquire();
+			kernelVMM.virtualAddressSpace->Map(0x10000, 0x10000, false);
+			kernelVMM.virtualAddressSpace->Map(0x11000, 0x11000, false);
+			kernelVMM.virtualAddressSpace->lock.Release();
 		} 
 
 		scheduler.processors = 1;
@@ -404,9 +404,9 @@ void ACPI::Initialise() {
 		
 		// Remove the identity pages needed for the trampoline code.
 		{
-			kernelVMM.virtualAddressSpace.lock.Acquire();
-			kernelVMM.virtualAddressSpace.Remove(0x10000, 2);
-			kernelVMM.virtualAddressSpace.lock.Release();
+			kernelVMM.virtualAddressSpace->lock.Acquire();
+			kernelVMM.virtualAddressSpace->Remove(0x10000, 2);
+			kernelVMM.virtualAddressSpace->lock.Release();
 		}
 
 		// Set up the LAPIC's time

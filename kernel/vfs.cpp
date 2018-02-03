@@ -41,6 +41,7 @@ struct Node {
 
 	void CopyInformation(OSNodeInformation *information);
 	void Sync();
+
 	bool modifiedSinceLastSync;
 
 	size_t countRead, countWrite, countResize;
@@ -58,7 +59,10 @@ struct Node {
 	NodeData data;
 	Node *parent;
 
-	LinkedItem<Node> noHandleCacheItem;
+	// We keep a couple nodes around that have no handles, so they can be quickly accessed later.
+	LinkedItem<Node> noHandleCacheItem; 
+
+	SharedMemoryRegion region;
 };
 
 struct Filesystem {
@@ -552,8 +556,11 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 	}
 
 	if (isNodeNew) {
-		existingNode->semaphore.Set(1);
-		existingNode->noHandleCacheItem.thisItem = existingNode;
+		Node *newNode = existingNode;
+
+		newNode->semaphore.Set(1);
+		newNode->noHandleCacheItem.thisItem = newNode;
+		newNode->region.node = newNode;
 	}
 
 	existingNode->handles++;

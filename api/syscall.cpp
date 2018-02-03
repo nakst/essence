@@ -265,7 +265,3 @@ void OSBatch(OSBatchCall *calls, size_t count) {
 
 	OSSyscall(OS_SYSCALL_BATCH, (uintptr_t) calls, count, 0, 0);
 }
-
-void OSResizeSharedMemory(OSHandle sharedMemoryRegion, size_t newSize) {
-	OSSyscall(OS_SYSCALL_RESIZE_SHARED_MEMORY, sharedMemoryRegion, newSize, 0, 0);
-}

@@ -460,7 +460,7 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 	KernelLog(LOG_VERBOSE, "Created window %x, handles = %d\n", window, window->handles);
 
 	window->z = windowsCount;
-	ArrayAdd(windows, window);
+	ArrayAdd(windows, window, false);
 	SetActiveWindow(window);
 
 	return window;

@@ -519,38 +519,36 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
-		case OS_SYSCALL_RESIZE_SHARED_MEMORY: {
-			if (argument1 > OS_SHARED_MEMORY_MAXIMUM_SIZE) {
-				SYSCALL_RETURN(OS_FATAL_ERROR_SHARED_MEMORY_REGION_TOO_LARGE, true);
-			}
-
-			KernelObjectType type = KERNEL_OBJECT_SHMEM;
-			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
-
-			// TODO Test this!!
-			sharedMemoryManager.mutex.Acquire();
-			sharedMemoryManager.ResizeSharedMemory(region, argument1);
-			sharedMemoryManager.mutex.Release();
-
-			SYSCALL_RETURN(OS_SUCCESS, false);
-		} break;
-
 		case OS_SYSCALL_MAP_OBJECT: {
-			KernelObjectType type = KERNEL_OBJECT_SHMEM;
-			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
+			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE);
+			Handle *handleData;
+			void *object = currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			if (!object) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
-			if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
-				argument2 = region->sizeBytes;
+			if (type == KERNEL_OBJECT_SHMEM) {
+				SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+
+				if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
+					argument2 = region->sizeBytes;
+				}
+			} else if (type == KERNEL_OBJECT_NODE) {
+				Node *file = (Node *) object;
+
+				if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
+				if (!(handleData->flags & OS_OPEN_NODE_RESIZE_BLOCK)) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
+
+				if (argument2 == OS_SHARED_MEMORY_MAP_ALL) {
+					argument2 = file->data.file.fileSize;
+				}
+
+				object = &file->region;
 			}
 
-			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, VMM_MAP_LAZY, VMM_REGION_SHARED, argument1, VMM_REGION_FLAG_CACHABLE, region);
+			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, VMM_MAP_LAZY, VMM_REGION_SHARED, argument1, VMM_REGION_FLAG_CACHABLE, object);
 
 			if (!address) {
-				CloseHandleToObject(region, KERNEL_OBJECT_SHMEM);
+				CloseHandleToObject(object, type);
 			}
 
 			SYSCALL_RETURN(address, false);

@@ -53,6 +53,17 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 }
 
 extern "C" void ProgramEntry() {
+	{
+		OSNodeInformation node = {};
+		OSOpenNode(OSLiteral("/MapFile.txt"), 
+				  OS_OPEN_NODE_RESIZE_EXCLUSIVE 
+				| OS_OPEN_NODE_WRITE_ACCESS 
+				| OS_OPEN_NODE_READ_ACCESS, &node);
+		OSResizeFile(node.handle, 0x1000);
+		// OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL);
+		OSCloseHandle(node.handle);
+	}
+
 	char *path = (char *) "/os/new_dir/test2.txt";
 	OSNodeInformation node;
 	OSError error = OSOpenNode(path, OSCStringLength(path), 
@@ -179,10 +190,12 @@ extern "C" void ProgramEntry() {
 	{
 		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
 		void *pointer = OSMapObject(region, 0, 0);
+#if 0
 		OSResizeSharedMemory(region, 300 * 1024 * 1024); // Big -> big
 		OSResizeSharedMemory(region, 200 * 1024 * 1024); // Big -> small
 		OSResizeSharedMemory(region, 100 * 1024 * 1024); // Small -> small
 		OSResizeSharedMemory(region, 400 * 1024 * 1024); // Small -> big
+#endif
 		OSCloseHandle(region);
 		OSFree(pointer);
 	}

@@ -36,6 +36,7 @@ extern "C" void KernelAPMain() {
 extern "C" void KernelMain() {
 	Print("---------------------------\n");
 	kernelVMM.Initialise();
+	memoryManagerVMM.Initialise();
 	pmm.Initialise();
 	scheduler.Initialise();
 	acpi.Initialise(); // Initialises CPULocalStorage.
