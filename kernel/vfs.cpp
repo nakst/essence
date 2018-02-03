@@ -116,8 +116,6 @@ VFS vfs;
 #ifdef IMPLEMENTATION
 
 bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
-	// TODO Resize shared memory region.
-
 	if (!alreadyTakenSemaphore) semaphore.Take();
 	Defer(if (!alreadyTakenSemaphore) semaphore.Return());
 
@@ -136,6 +134,12 @@ bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
 
 	if (success) {
 		data.file.fileSize = newSize;
+
+		sharedMemoryManager.mutex.Acquire();
+		sharedMemoryManager.ResizeSharedMemory(&region, newSize);
+		sharedMemoryManager.mutex.Release();
+
+		// TODO Resize cache region.
 	}
 
 	return success;
@@ -560,7 +564,13 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 
 		newNode->semaphore.Set(1);
 		newNode->noHandleCacheItem.thisItem = newNode;
+
 		newNode->region.node = newNode;
+		newNode->region.handles = 1;
+
+		sharedMemoryManager.mutex.Acquire();
+		sharedMemoryManager.ResizeSharedMemory(&newNode->region, newNode->data.file.fileSize);
+		sharedMemoryManager.mutex.Release();
 	}
 
 	existingNode->handles++;

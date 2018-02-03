@@ -60,7 +60,14 @@ extern "C" void ProgramEntry() {
 				| OS_OPEN_NODE_WRITE_ACCESS 
 				| OS_OPEN_NODE_READ_ACCESS, &node);
 		OSResizeFile(node.handle, 0x1000);
-		// OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL);
+		char buffer[0x1000];
+		for (uintptr_t i = 0; i < 0x1000; i++) buffer[i] = (char) i;
+		OSWriteFileSync(node.handle, 0, 0x1000, buffer);
+		OSReadFileSync(node.handle, 0, 0x1000, buffer);
+		for (uintptr_t i = 0; i < 0x1000; i++) if (buffer[i] != (char) i) OSCrashProcess(201);
+		char *pointer = (char *) OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL);
+		for (uintptr_t i = 0; i < 0x1000; i++) if (pointer[i] != buffer[i]) OSCrashProcess(200);
+		OSFree(pointer);
 		OSCloseHandle(node.handle);
 	}
 
