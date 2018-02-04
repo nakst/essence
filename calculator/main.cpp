@@ -59,14 +59,15 @@ extern "C" void ProgramEntry() {
 				  OS_OPEN_NODE_RESIZE_EXCLUSIVE 
 				| OS_OPEN_NODE_WRITE_ACCESS 
 				| OS_OPEN_NODE_READ_ACCESS, &node);
-		OSResizeFile(node.handle, 0x1000);
-		char buffer[0x1000];
-		for (uintptr_t i = 0; i < 0x1000; i++) buffer[i] = (char) i;
-		OSWriteFileSync(node.handle, 0, 0x1000, buffer);
-		OSReadFileSync(node.handle, 0, 0x1000, buffer);
-		for (uintptr_t i = 0; i < 0x1000; i++) if (buffer[i] != (char) i) OSCrashProcess(201);
-		char *pointer = (char *) OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL);
-		for (uintptr_t i = 0; i < 0x1000; i++) if (pointer[i] != buffer[i]) OSCrashProcess(200);
+		OSResizeFile(node.handle, 1048576);
+		uint32_t *buffer = (uint32_t *) OSHeapAllocate(1048576, false);
+		for (int i = 0; i < 262144; i++) buffer[i] = i;
+		OSWriteFileSync(node.handle, 0, 1048576, buffer);
+		OSReadFileSync(node.handle, 0, 1048576, buffer);
+		for (uintptr_t i = 0; i < 262144; i++) if (buffer[i] != i) OSCrashProcess(201);
+		uint32_t *pointer = (uint32_t *) OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL, OS_MAP_OBJECT_READ_WRITE);
+		for (uintptr_t i = 4096; i < 262144; i++) if (pointer[i] != buffer[i]) OSCrashProcess(200);
+		// pointer[0]++;
 		OSFree(pointer);
 		OSCloseHandle(node.handle);
 	}
@@ -196,7 +197,7 @@ extern "C" void ProgramEntry() {
 
 	{
 		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
-		void *pointer = OSMapObject(region, 0, 0);
+		void *pointer = OSMapObject(region, 0, 0, OS_MAP_OBJECT_READ_WRITE);
 #if 0
 		OSResizeSharedMemory(region, 300 * 1024 * 1024); // Big -> big
 		OSResizeSharedMemory(region, 200 * 1024 * 1024); // Big -> small
@@ -210,7 +211,7 @@ extern "C" void ProgramEntry() {
 #if 1
 	{
 		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
-		void *pointer = OSMapObject(region, 0, 0);
+		void *pointer = OSMapObject(region, 0, 0, OS_MAP_OBJECT_READ_WRITE);
 		// OSZeroMemory(pointer, 512 * 1024 * 1024);
 		OSCloseHandle(region);
 		OSFree(pointer);

@@ -364,6 +364,11 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 			}
 		}
 
+		if (descriptor->extentCount == 0) {
+			// This shouldn't normally happen, but currently we leave the filesystem in a bad state at reset.
+			continue;
+		}
+
 		// If that didn't work, we'll have to do a partial allocation.
 		extent.offset = extentTable[largestSeenIndex].offset;
 		extent.count = extentTable[largestSeenIndex].count;

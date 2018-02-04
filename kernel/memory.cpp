@@ -8,6 +8,11 @@ void *_ArrayAdd(void **array, size_t &arrayCount, size_t &arrayAllocated, void *
 #define PAGE_SIZE (1 << PAGE_BITS)
 #endif
 
+// We divide memory mapped files into chunks that can be loaded in and out memory.
+// Each chunk is 262144 bytes.
+#define MM_FILE_CHUNK_BYTES (262144)
+#define MM_FILE_CHUNK_PAGES (MM_FILE_CHUNK_BYTES >> PAGE_BITS)
+
 struct PhysicalMemoryRegion {
 	uint64_t baseAddress;
 
@@ -69,6 +74,7 @@ enum VMMMapPolicy {
 	VMM_MAP_LAZY,
 	VMM_MAP_ALL, // These are not stored in the region lookup array
 	VMM_MAP_STRICT,
+	VMM_MAP_CHUNKS, 
 };
 
 #define VMM_REGION_FLAG_NOT_CACHABLE (0)
@@ -103,7 +109,7 @@ struct VirtualAddressSpace {
 		 uintptr_t virtualAddress,
 		 unsigned flags);
 	void Remove(uintptr_t virtualAddress, size_t pageCount);
-	uintptr_t Get(uintptr_t virtualAddress, bool force = false);
+	uintptr_t Get(uintptr_t virtualAddress, bool force = false, bool returnZeroIfReadOnly = false);
 	
 	bool userland;
 	Mutex lock;
@@ -161,8 +167,6 @@ struct VMM {
 	VMMRegion *lookupRegions;
 	size_t lookupRegionsAllocated;
 
-	uintptr_t allocatedVirtualMemory, allocatedPhysicalMemory;
-
 #ifdef ARCH_X86_64
 	uint64_t *pageTable;
 #endif
@@ -207,6 +211,12 @@ struct NamedSharedMemoryRegion {
 };
 
 struct FaultInformation {
+	// Input.
+
+	bool wantWriteAccess;
+
+	// Output (for memory mapped files).
+
 	// When we fault in a shared memory region that maps a file,
 	// we need to tell the rest of the page fault handling code that we need to read in the file.
 
@@ -221,6 +231,9 @@ struct FaultInformation {
 	uintptr_t *sharedAddresses;
 
 	void *destination;
+	unsigned regionFlags;
+	uintptr_t maxCount;
+	VirtualAddressSpace *addressSpace;
 
 	VMMRegionReference reference;
 };
@@ -251,9 +264,10 @@ struct Pool {
 	Mutex mutex;
 };
 
-#define ZERO_MEMORY_REGION_PAGES (16)
+#define PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES (16)
 void ZeroPhysicalMemory(uintptr_t page, size_t pageCount);
-void *zeroMemoryRegion;
+void CopyIntoPhysicalMemory(uintptr_t page, void *source, size_t pageCount);
+void *physicalMemoryManipulationRegion;
 
 #endif
 
@@ -442,10 +456,6 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	region.flags = flags;
 	region.object = object;
 
-	if (type != VMM_REGION_FREE) {
-		allocatedVirtualMemory += pageCount * PAGE_SIZE;
-	}
-
 	uintptr_t regionIndex = FindEmptySpaceInRegionArray(&region, regions, regionsAllocated);
 
 	{
@@ -472,7 +482,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	}
 
 	// Map the first few pages in to reduce the number of initial page faults.
-	if (type != VMM_REGION_FREE && mapPolicy != VMM_MAP_STRICT && type != VMM_REGION_SHARED) {
+	if (type != VMM_REGION_FREE && mapPolicy != VMM_MAP_STRICT && mapPolicy != VMM_MAP_CHUNKS) {
 		HandlePageFaultInRegion(baseAddress, regions + regionIndex);
 	}
 
@@ -526,6 +536,14 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 			KernelPanic("VMM::Allocate - Expected supervisor flag for handle table region.\n");
 		} else if (mapPolicy != VMM_MAP_STRICT) {
 			KernelPanic("VMM::Allocate - Expected strict map policy for handle table region.\n");
+		}
+	} else if (type == VMM_REGION_SHARED) {
+		SharedMemoryRegion *region = (SharedMemoryRegion *) object;
+
+		if (region->node) {
+			if (mapPolicy != VMM_MAP_CHUNKS) {
+				KernelPanic("VMM::Allocate - Expected chunks map policy for mapped file.\n");
+			}
 		}
 	}
 
@@ -725,8 +743,6 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		copyReference = (VMMRegionReference *) region->object;
 	}
 
-	allocatedVirtualMemory -= region->pageCount * PAGE_SIZE;
-
 	{
 		pmm.lock.Acquire();
 		Defer(pmm.lock.Release());
@@ -744,7 +760,6 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 				switch (region->type) {
 					case VMM_REGION_STANDARD: {
 						pmm.FreePage(mappedAddress);
-						allocatedPhysicalMemory -= PAGE_SIZE;
 					} break;
 
 					case VMM_REGION_PHYSICAL: {
@@ -803,14 +818,28 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 }
 
 bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit, FaultInformation *fault) {
-	(void) fault;
 	lock.AssertLocked();
 
-	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
+	if (fault && fault->wantWriteAccess && (region->flags & VMM_REGION_FLAG_READ_ONLY)) {
+		return false;
+	}
 
-	uintptr_t postCount = 16;
-	if (region->mapPolicy == VMM_MAP_STRICT) postCount = 1;
-	if (limit) postCount = limit;
+	uintptr_t postCount;
+
+	if (limit) {
+		postCount = limit;
+	} else if (region->mapPolicy == VMM_MAP_STRICT) {
+		postCount = 1;
+	} else if (region->mapPolicy == VMM_MAP_CHUNKS) {
+		postCount = MM_FILE_CHUNK_PAGES;
+		page -= region->baseAddress;
+		page -= page & (MM_FILE_CHUNK_BYTES - 1);
+		page += region->baseAddress;
+	} else {
+		postCount = 16;
+	}
+
+	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
 
 	for (uintptr_t address = page, i = 0; 
 			(region->mapPolicy == VMM_MAP_ALL || i < postCount) && (pageInRegion + i < region->pageCount); 
@@ -829,7 +858,6 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 		switch (region->type) {
 			case VMM_REGION_STANDARD: {
 				uintptr_t physicalPage = pmm.AllocatePage(true);
-				allocatedPhysicalMemory += PAGE_SIZE;
 				virtualAddressSpace->lock.Acquire();
 				virtualAddressSpace->Map(physicalPage, address, region->flags);
 				virtualAddressSpace->lock.Release();
@@ -870,29 +898,19 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					virtualAddressSpace->lock.Acquire();
 					virtualAddressSpace->Map(addresses[index], address, region->flags);
 					virtualAddressSpace->lock.Release();
-
-					if (addresses[index] & SHARED_ADDRESS_READING) {
-						// Collided page fault.
-						// There really isn't a nice way to handle this,
-						// so let's read in the data ourselves
-						// and then whoever gets the lock on the shared memory region first when they are done
-						// gets to use their data.
-						readInBlock = true;
-					}
 				} else {
-					// NOTE Duplicated from above.
-					uintptr_t physicalPage = pmm.AllocatePage(true);
-					allocatedPhysicalMemory += PAGE_SIZE;
-					virtualAddressSpace->lock.Acquire();
-					virtualAddressSpace->Map(physicalPage, address, region->flags);
-					virtualAddressSpace->lock.Release();
-
 					if (sharedRegion->node) {
 						// This is a memory mapped file.
 						// Let's read in the file.
-						addresses[index] = physicalPage | SHARED_ADDRESS_READING | SHARED_ADDRESS_PRESENT;
+						addresses[index] = SHARED_ADDRESS_READING;
 						readInBlock = true;
 					} else {
+						// NOTE Duplicated from above.
+						uintptr_t physicalPage = pmm.AllocatePage(true);
+						virtualAddressSpace->lock.Acquire();
+						virtualAddressSpace->Map(physicalPage, address, region->flags);
+						virtualAddressSpace->lock.Release();
+
 						// Store the address.
 						addresses[index] = physicalPage | SHARED_ADDRESS_PRESENT;
 					}
@@ -905,6 +923,9 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					fault->offset = base;
 					fault->sharedAddresses = addresses + index;
 					fault->destination = (void *) address;
+					fault->regionFlags = region->flags;
+					fault->addressSpace = virtualAddressSpace;
+					fault->maxCount = region->baseAddress + region->pageCount * PAGE_SIZE - address;
 				}
 			} break;
 
@@ -1047,8 +1068,9 @@ bool FaultInformation::Handle() {
 	bool result = true;
 	if (type != FAULT_TYPE_READ) return result;
 
-	uintptr_t count = PAGE_SIZE;
-	void *readBuffer = OSHeapAllocate(count, true);
+	uintptr_t count = MM_FILE_CHUNK_BYTES;
+	if (count > maxCount) count = maxCount;
+	void *readBuffer = OSHeapAllocate(count, false);
 	Defer(OSHeapFree(readBuffer));
 
 	{
@@ -1078,8 +1100,15 @@ bool FaultInformation::Handle() {
 	region->mutex.Acquire();
 
 	if (sharedAddresses[0] & SHARED_ADDRESS_READING) {
-		sharedAddresses[0] &= ~SHARED_ADDRESS_READING;
-		CopyMemory(destination, readBuffer, count);
+		for (uintptr_t i = 0; i < count / PAGE_SIZE; i++) {
+			uintptr_t physicalPage = pmm.AllocatePage(true);
+			CopyIntoPhysicalMemory(physicalPage, (char *) readBuffer + i * PAGE_SIZE, 1);
+			sharedAddresses[i] = SHARED_ADDRESS_PRESENT | physicalPage;
+
+			addressSpace->lock.Acquire();
+			addressSpace->Map(sharedAddresses[i], (uintptr_t) destination + i * PAGE_SIZE, regionFlags);
+			addressSpace->lock.Release();
+		}
 	}
 
 	region->mutex.Release();
@@ -1090,7 +1119,7 @@ bool FaultInformation::Handle() {
 }
 
 #ifdef ARCH_X86_64
-bool HandlePageFault(uintptr_t page) {
+bool HandlePageFault(uintptr_t page, bool write) {
 	// Print("HandlePageFault, %x\n", page);
 
 	// FFFF_8000_0000_0000 -> FFFF_8100_0000_0000	kernel image
@@ -1116,7 +1145,7 @@ bool HandlePageFault(uintptr_t page) {
 			virtualAddressSpace = kernelVMM.virtualAddressSpace;
 		}
 
-		if (virtualAddressSpace->Get(page, true)) {
+		if (virtualAddressSpace->Get(page, true, write)) {
 			// If the processor "remembers" a non-present page then we'll get a page fault here.
 			// ...so invalidate the page.
 			ProcessorInvalidatePage(page);
@@ -1132,7 +1161,7 @@ bool HandlePageFault(uintptr_t page) {
 		kernelVMM.virtualAddressSpace->lock.Acquire();
 		Defer(kernelVMM.virtualAddressSpace->lock.Release());
 
-		kernelVMM.virtualAddressSpace->Map(frame, page, true);
+		kernelVMM.virtualAddressSpace->Map(frame, page, VMM_REGION_FLAG_CACHABLE);
 		ZeroMemory((void *) (page & ~(PAGE_SIZE - 1)), PAGE_SIZE);
 
 		return true;
@@ -1152,7 +1181,7 @@ bool HandlePageFault(uintptr_t page) {
 		kernelVMM.virtualAddressSpace->lock.Acquire();
 		Defer(kernelVMM.virtualAddressSpace->lock.Release());
 
-		kernelVMM.virtualAddressSpace->Map(page - 0xFFFFFF0000000000, page, 0 /* we use this for MMIO, so don't do caching! */);
+		kernelVMM.virtualAddressSpace->Map(page - 0xFFFFFF0000000000, page, VMM_REGION_FLAG_NOT_CACHABLE /* we use this for MMIO, so don't do caching! */);
 		return true;
 	} else if (page < 0x0000800000000000) {
 		Process *currentProcess = GetCurrentThread()->process;
@@ -1170,6 +1199,7 @@ bool HandlePageFault(uintptr_t page) {
 
 	{
 		FaultInformation fault = {};
+		fault.wantWriteAccess = write;
 		vmm->lock.Acquire();
 		bool result = vmm->HandlePageFault(page, 0, true, &fault);
 		vmm->lock.Release();
@@ -1273,7 +1303,7 @@ uintptr_t PMM::AllocatePage(bool zeroPage) {
 }
 
 void PMM::Initialise() {
-	zeroMemoryRegion = kernelVMM.Allocate("ZeroMemReg", ZERO_MEMORY_REGION_PAGES * PAGE_SIZE, VMM_MAP_STRICT, 
+	physicalMemoryManipulationRegion = kernelVMM.Allocate("PMMR", PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES * PAGE_SIZE, VMM_MAP_STRICT, 
 			VMM_REGION_PHYSICAL, 0, VMM_REGION_FLAG_OVERWRITABLE | VMM_REGION_FLAG_CACHABLE, nullptr); 
 	signalZeroPageThread.autoReset = true;
 
@@ -1365,7 +1395,7 @@ void PMM::FreePage(uintptr_t address, bool bypassStack) {
 }
 
 #ifdef ARCH_X86_64
-uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force) {
+uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force, bool returnZeroIfReadOnly) {
 	if (!force) {
 		lock.AssertLocked();
 	}
@@ -1392,7 +1422,11 @@ uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force) {
 	uintptr_t physicalAddress = PAGE_TABLE_L1[indexL1];
 
 	if (physicalAddress & 1) {
-		return physicalAddress & 0xFFFFFFFFFFFFF000;
+		if (returnZeroIfReadOnly && !(physicalAddress & 2)) {
+			return 0;
+		} else {
+			return physicalAddress & 0xFFFFFFFFFFFFF000;
+		}
 	} else {
 		return 0;
 	}
@@ -1778,19 +1812,19 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region, bool i
 	OSHeapFree(region, 0, MMVMM_HEAP); 
 }
 
-Mutex zeroPhysicalMemoryLock;
-Spinlock zeroPhysicalMemoryProcessorLock;
+Mutex physicalMemoryManipulationLock;
+Spinlock physicalMemoryManipulationProcessorLock;
 
 void ZeroPhysicalMemory(uintptr_t page, size_t pageCount) {
-	zeroPhysicalMemoryLock.Acquire();
+	physicalMemoryManipulationLock.Acquire();
 
 	repeat:;
-	size_t doCount = pageCount > ZERO_MEMORY_REGION_PAGES ? ZERO_MEMORY_REGION_PAGES : pageCount;
+	size_t doCount = pageCount > PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES ? PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES : pageCount;
 	pageCount -= doCount;
 
 	{
 		VirtualAddressSpace *vas = kernelVMM.virtualAddressSpace;
-		void *region = zeroMemoryRegion;
+		void *region = physicalMemoryManipulationRegion;
 
 		vas->lock.Acquire();
 
@@ -1800,7 +1834,7 @@ void ZeroPhysicalMemory(uintptr_t page, size_t pageCount) {
 
 		vas->lock.Release();
 
-		zeroPhysicalMemoryProcessorLock.Acquire();
+		physicalMemoryManipulationProcessorLock.Acquire();
 
 		for (uintptr_t i = 0; i < doCount; i++) {
 			ProcessorInvalidatePage((uintptr_t) region + doCount * PAGE_SIZE);
@@ -1808,16 +1842,55 @@ void ZeroPhysicalMemory(uintptr_t page, size_t pageCount) {
 
 		ZeroMemory(region, doCount * PAGE_SIZE);
 
-		zeroPhysicalMemoryProcessorLock.Release();
+		physicalMemoryManipulationProcessorLock.Release();
 	}
 
 	if (pageCount) {
-		page += ZERO_MEMORY_REGION_PAGES * PAGE_SIZE;
+		page += PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES * PAGE_SIZE;
 		goto repeat;
 	}
 
-	zeroPhysicalMemoryLock.Release();
+	physicalMemoryManipulationLock.Release();
 }
 
+void CopyIntoPhysicalMemory(uintptr_t page, void *_source, size_t pageCount) {
+	uint8_t *source = (uint8_t *) _source;
+	physicalMemoryManipulationLock.Acquire();
+
+	repeat:;
+	size_t doCount = pageCount > PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES ? PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES : pageCount;
+	pageCount -= doCount;
+
+	{
+		VirtualAddressSpace *vas = kernelVMM.virtualAddressSpace;
+		void *region = physicalMemoryManipulationRegion;
+
+		vas->lock.Acquire();
+
+		for (uintptr_t i = 0; i < doCount; i++) {
+			vas->Map(page + PAGE_SIZE * i, (uintptr_t) region + PAGE_SIZE * i, VMM_REGION_FLAG_CACHABLE | VMM_REGION_FLAG_OVERWRITABLE);
+		}
+
+		vas->lock.Release();
+
+		physicalMemoryManipulationProcessorLock.Acquire();
+
+		for (uintptr_t i = 0; i < doCount; i++) {
+			ProcessorInvalidatePage((uintptr_t) region + doCount * PAGE_SIZE);
+		}
+
+		CopyMemory(region, source, doCount * PAGE_SIZE);
+
+		physicalMemoryManipulationProcessorLock.Release();
+	}
+
+	if (pageCount) {
+		page += PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES * PAGE_SIZE;
+		source += PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES * PAGE_SIZE;
+		goto repeat;
+	}
+
+	physicalMemoryManipulationLock.Release();
+}
 
 #endif

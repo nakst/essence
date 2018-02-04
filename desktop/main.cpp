@@ -52,7 +52,7 @@ extern "C" void ProgramEntry() {
 
 			OSHandle surface = OS_SURFACE_UI_SHEET;
 			OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-			void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride);
+			void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
 
 			for (intptr_t y = 0; y < imageY; y++) {
 				for (intptr_t x = 0; x < imageX; x++) {
@@ -87,7 +87,7 @@ extern "C" void ProgramEntry() {
 		} else {
 			char *fontName = OS_GUI_FONT_REGULAR;
 			OSHandle sharedMemory = OSOpenSharedMemory(fileSize, fontName, OSCStringLength(fontName), OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
-			OSCopyMemory(OSMapObject(sharedMemory, 0, fileSize), loadedFile, fileSize);
+			OSCopyMemory(OSMapObject(sharedMemory, 0, fileSize, OS_MAP_OBJECT_READ_WRITE), loadedFile, fileSize);
 			OSHeapFree(loadedFile);
 		}
 	}
@@ -111,7 +111,7 @@ extern "C" void ProgramEntry() {
 			} else {
 				OSHandle surface = OS_SURFACE_WALLPAPER;
 				OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-				void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride);
+				void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
 				int xOffset = 0, yOffset = 0;
 
 				if (imageX > (int) buffer.width) {

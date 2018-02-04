@@ -615,6 +615,10 @@ enum OSObjectType {
 #define OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND     (0x1000)
 #define OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND (0x2000)
 
+#define OS_MAP_OBJECT_READ_WRITE        (0)
+#define OS_MAP_OBJECT_READ_ONLY         (1)
+#define OS_MAP_OBJECT_COPY_ON_WRITE     (2)
+
 #define OS_CREATE_WINDOW_WITH_MENU_BAR 	(1)
 #define OS_CREATE_WINDOW_NOT_RESIZABLE  (2) // TODO Currently does nothing.
 #define OS_CREATE_WINDOW_NO_DECORATIONS (4)
@@ -685,7 +689,7 @@ extern "C" uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t tim
 
 extern "C" OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
 extern "C" OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
-extern "C" void *OSMapObject(OSHandle object, uintptr_t offset, size_t size);
+extern "C" void *OSMapObject(OSHandle object, uintptr_t offset, size_t size, unsigned flags);
 
 extern "C" void *OSAllocate(size_t size);
 extern "C" OSError OSFree(void *address);
@@ -738,7 +742,7 @@ extern "C" OSError OSMoveWindow(OSHandle window, OSRectangle rectangle);
 extern "C" void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle);
 
 #ifndef KERNEL
-extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory, bool mmvmm);
+extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);
 extern "C" void OSHeapFree(void *address);
 
 extern "C" size_t OSCStringLength(char *string);

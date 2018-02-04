@@ -146,6 +146,9 @@ int main(int argc, char **argv) {
 			break;
 		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
 			system("./compile.sh");
+		} else if (0 == memcmp(l, "lua ", 3) || 0 == memcmp(l, "l ", 2)) {
+			sprintf(buffer, "lua -e \"print(%s)\"", 1 + strchr(l, ' '));
+			system(buffer);
 		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h")) {
 			printf("(b) build - Unoptimised build\n");
 			printf("(o) optimise - Optimised build\n");
@@ -156,6 +159,7 @@ int main(int argc, char **argv) {
 			printf("(v) vbox - VirtualBox (optimised)\n");
 			printf("(x) exit - Exit the build system.\n");
 			printf("(h) help - Show the help prompt.\n");
+			printf("(l) lua - Execute a Lua expression.\n");
 			printf("(c) compile - Compile the kernel and programs.\n");
 		} else {
 			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);

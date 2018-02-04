@@ -526,6 +526,9 @@ uintptr_t DoSyscall(OSSyscallType index,
 			if (!object) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
+			unsigned flags = VMM_REGION_FLAG_CACHABLE;
+			VMMMapPolicy mapPolicy = VMM_MAP_LAZY;
+
 			if (type == KERNEL_OBJECT_SHMEM) {
 				SharedMemoryRegion *region = (SharedMemoryRegion *) object;
 
@@ -543,9 +546,11 @@ uintptr_t DoSyscall(OSSyscallType index,
 				}
 
 				object = &file->region;
+				flags |= VMM_REGION_FLAG_READ_ONLY;
+				mapPolicy = VMM_MAP_CHUNKS;
 			}
 
-			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, VMM_MAP_LAZY, VMM_REGION_SHARED, argument1, VMM_REGION_FLAG_CACHABLE, object);
+			uintptr_t address = (uintptr_t) currentVMM->Allocate("UserReq", argument2, mapPolicy, VMM_REGION_SHARED, argument1, flags, object);
 
 			if (!address) {
 				CloseHandleToObject(object, type);

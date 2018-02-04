@@ -271,7 +271,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			ProcessorEnableInterrupts();
 
 			if (interrupt == 14) {
-				bool success = HandlePageFault(context->cr2);
+				bool success = HandlePageFault(context->cr2, context->errorCode & 2);
 
 				if (success) {
 					goto resolved;
@@ -342,7 +342,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 					}
 				}
 
-				if (!HandlePageFault(context->cr2)) {
+				if (!HandlePageFault(context->cr2, context->errorCode & 2)) {
 					goto fault;
 				}
 

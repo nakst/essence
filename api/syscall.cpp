@@ -168,8 +168,8 @@ OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool
 	return OSSyscall(OS_SYSCALL_SHARE_MEMORY, sharedMemoryRegion, targetProcess, readOnly, 0);
 }
 
-void *OSMapObject(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size) {
-	intptr_t result = OSSyscall(OS_SYSCALL_MAP_OBJECT, sharedMemoryRegion, offset, size, 0);
+void *OSMapObject(OSHandle sharedMemoryRegion, uintptr_t offset, size_t size, unsigned flags) {
+	intptr_t result = OSSyscall(OS_SYSCALL_MAP_OBJECT, sharedMemoryRegion, offset, size, flags);
 
 	if (result >= 0) {
 		return (void *) result;

@@ -29,7 +29,7 @@ static void OSFontRendererInitialise() {
 		return;
 	}
 
-	void *loadedFont = OSMapObject(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL);
+	void *loadedFont = OSMapObject(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_WRITE);
 
 	if (stbtt_InitFont(&guiRegularFont, (uint8_t *) loadedFont, 0)) {
 		// The font was loaded.
@@ -122,7 +122,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	void *bitmap = nullptr;
 	if (surface != OS_INVALID_HANDLE) {
 		OSGetLinearBuffer(surface, &linearBuffer);
-		bitmap = OSMapObject(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height);
+		bitmap = OSMapObject(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height, OS_MAP_OBJECT_READ_WRITE);
 	}
 
 	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, scale);

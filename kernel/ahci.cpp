@@ -436,33 +436,7 @@ bool AHCIDriver::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offset, s
 
 	blockedPacketsMutex.Release();
 
-#if 0
-	uintptr_t commandIndex;
-	while (true) {
-		drive->commandAvailable.Wait(OS_WAIT_NO_TIMEOUT);
-		drive->mutexStart.Acquire();
-
-		for (commandIndex = 0; commandIndex < AHCI_COMMAND_COUNT; commandIndex++) {
-			if (!(drive->commandsInUse & (1 << commandIndex))) {
-				drive->commandsInUse |= 1 << commandIndex;
-				drive->mutexStart.Release();
-				goto foundCommand;
-			}
-		}
-
-		drive->mutexStart.Release();
-	}
-
-	foundCommand:;
-#endif
-
 	drive->mutex.Acquire();
-
-#if 0
-	if (drive->commandsInUse == (1 << AHCI_COMMAND_COUNT) - 1) {
-		drive->commandAvailable.Reset();
-	}
-#endif
 
 	AHCICommandHeader *header = drive->commandList + commandIndex;
 	AHCICommandTable *table = drive->commandTable + commandIndex;
@@ -472,11 +446,6 @@ bool AHCIDriver::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offset, s
 	header->commandLength = sizeof(AHCIPacketDeviceToHost) / sizeof(uint32_t);
 	header->write = operation == DRIVE_ACCESS_WRITE;
 	header->prdEntryCount = prdtEntries;
-
-#if 0
-	uintptr_t physicalBuffer = pmm.AllocateContiguous64KB();
-	void *buffer = kernelVMM.Allocate("AHCI", 65536, VMM_MAP_ALL, VMM_REGION_PHYSICAL, physicalBuffer, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
-#endif
 
 	uintptr_t physicalBuffer = drive->physicalBuffers[commandIndex];
 	void *buffer = drive->buffers[commandIndex];
@@ -581,44 +550,6 @@ bool AHCIDriver::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offset, s
 
 	AHCIFinishOperation(drive->operations + commandIndex);
 	Unblock(drive);
-
-#if 0
-
-	blockedPacketsMutex.Acquire();
-
-#if 0
-	if (drive->commandsInUse == (1 << AHCI_COMMAND_COUNT) - 1) {
-		drive->commandAvailable.Set();
-	}
-
-	drive->mutexStart.Acquire();
-	drive->commandsInUse &= ~(1 << commandIndex);
-	drive->mutexStart.Release();
-#endif
-
-	drive->commandsInUse &= ~(1 << commandIndex);
-	semaphore.Return(1);
-
-	blockedPacketsMutex.Release();
-
-	if (port->interruptStatus & (1 << 30)) {
-		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive %d (2).\n", _drive);
-		return false;
-	}
-
-	// Copy to the output buffer.
-	if (operation != DRIVE_ACCESS_WRITE) {
-		CopyMemory(_buffer, (uint8_t *) buffer + offsetIntoSector, countBytes);
-	}
-
-#if 0
-	pmm.lock.Acquire();
-	for (uintptr_t i = 0; i < 65536 / PAGE_SIZE; i++) pmm.FreePage(physicalBuffer + i * PAGE_SIZE);
-	pmm.lock.Release();
-	kernelVMM.Free(buffer);
-#endif
-
-#endif
 
 	return true;
 }

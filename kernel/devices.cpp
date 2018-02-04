@@ -133,6 +133,10 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 		KernelPanic("BlockDevice::Access - `freeBuffer` set but `packet` was nullptr.\n");
 	}
 
+	if (!countBytes) {
+		return true;
+	}
+
 	if (!alreadyInCorrectPartition) {
 		if (offset / sectorSize > sectorCount || (offset + countBytes) / sectorSize > sectorCount || countBytes / sectorSize > maxAccessSectorCount) {
 			KernelPanic("BlockDevice::Access - Access out of bounds on drive %d.\n", driveID);
@@ -344,6 +348,11 @@ void IORequest::PrintTree() {
 void IORequest::Start(bool canResize) {
 	mutex.Acquire();
 	Defer(mutex.Release());
+
+	if (!count) {
+		Complete();
+		return;
+	}
 
 	if (GetCurrentThread()->type == THREAD_ASYNC_TASK) {
 		KernelPanic("IORequest::Start - Performing asynchronous IO on the asynchronous task thread.\n");
