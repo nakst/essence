@@ -21,6 +21,7 @@ static void OSFontRendererInitialise() {
 		return;
 	}
 
+#if 0
 	OSHandle regularFontHandle = OSOpenSharedMemory(0, OS_GUI_FONT_REGULAR, OSCStringLength(OS_GUI_FONT_REGULAR), 
 			OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND);
 
@@ -30,10 +31,22 @@ static void OSFontRendererInitialise() {
 	}
 
 	void *loadedFont = OSMapObject(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_WRITE);
+#endif
+
+	OSNodeInformation node;
+	OSError error = OSOpenNode(OSLiteral("/os/source_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
+
+	if (error != OS_SUCCESS) {
+		OSPrint("Could not open font file.\n");
+		return;
+	}
+
+	void *loadedFont = OSMapObject(node.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
 
 	if (stbtt_InitFont(&guiRegularFont, (uint8_t *) loadedFont, 0)) {
 		// The font was loaded.
 	} else {
+		OSPrint("Could not initialise stbtt.\n");
 		return;
 	}
 

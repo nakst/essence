@@ -66,10 +66,13 @@ extern "C" void ProgramEntry() {
 		OSReadFileSync(node.handle, 0, 1048576, buffer);
 		for (uintptr_t i = 0; i < 262144; i++) if (buffer[i] != i) OSCrashProcess(201);
 		uint32_t *pointer = (uint32_t *) OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL, OS_MAP_OBJECT_READ_WRITE);
+		uint32_t *pointer2 = (uint32_t *) OSMapObject(node.handle, 0, OS_MAP_OBJECT_ALL, OS_MAP_OBJECT_READ_WRITE);
 		for (uintptr_t i = 4096; i < 262144; i++) if (pointer[i] != buffer[i]) OSCrashProcess(200);
+		for (uintptr_t i = 4096; i < 262144; i++) if (pointer2[i] != buffer[i]) OSCrashProcess(200);
 		// pointer[0]++;
 		OSFree(pointer);
 		OSCloseHandle(node.handle);
+		OSFree(pointer2);
 	}
 
 	char *path = (char *) "/os/new_dir/test2.txt";

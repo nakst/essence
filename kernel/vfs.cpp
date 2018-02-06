@@ -95,11 +95,16 @@ struct VFS {
 	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew);
 	Node *FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem);
 
+	void NodeMapped(Node *node);
+	void NodeUnmapped(Node *node);
+
 	LinkedList<Filesystem> filesystems;
 	LinkedList<Mountpoint> mountpoints;
 	Mutex filesystemsMutex, mountpointsMutex;
 
-#define MAX_CACHED_NODES (256)
+	// TODO Temporary.
+	// #define MAX_CACHED_NODES (256)
+#define MAX_CACHED_NODES (0)
 	LinkedList<Node> cachedNodes;
 
 	bool foundBootFilesystem;
@@ -319,13 +324,26 @@ void VFS::DestroyNode(Node *node) {
 	vfs.cachedNodes.InsertStart(&node->noHandleCacheItem);
 
 	if (vfs.cachedNodes.count > MAX_CACHED_NODES) {
+		Print("Destroying node %x...\n", node);
+
+		if (node->nextNodeInHashTableSlot) {
+			node->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node->pointerToThisNodeInHashTableSlot;
+		}
+
+		*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
+
 		LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
 		vfs.cachedNodes.Remove(item);
 		Node *node = item->thisItem;
 		node->Sync();
+		sharedMemoryManager.DestroySharedMemory(&node->region);
 
 		OSHeapFree(node);
 	}
+}
+
+void VFS::NodeUnmapped(Node *node) {
+	CloseNode(node, 0);
 }
 
 void VFS::CloseNode(Node *node, uint64_t flags) {
@@ -350,6 +368,8 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	nodeHashTableMutex.Release();
 
+	// TODO Should this be moved to the top of the function?
+	// 	(With regards to how the node hash table mutex works).
 	if (parent) {
 		CloseNode(parent, DIRECTORY_ACCESS);
 	}
@@ -520,6 +540,21 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 	return node;
 }
 
+void VFS::NodeMapped(Node *node) {
+	if (node->parent) {
+		NodeMapped(node->parent);
+	}
+
+	nodeHashTableMutex.Acquire();
+	Defer(nodeHashTableMutex.Release());
+
+	if (node->handles == 0) {
+		KernelPanic("VFS::NodeMapped - Mapped a node with 0 handles.\n");
+	}
+
+	node->handles++;
+}
+
 Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew) {
 	if (parent && !parent->filesystem) {
 		KernelPanic("VFS::RegisterNodeHandle - Trying to register a node without a filesystem.\n");
@@ -557,6 +592,10 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 
 	if (existingNode->noHandleCacheItem.list) {
 		vfs.cachedNodes.Remove(&existingNode->noHandleCacheItem);
+
+		if (isNodeNew) {
+			KernelPanic("VFS::RegisterNodeHandle - Cached node apparently new.\n");
+		}
 	}
 
 	if (isNodeNew) {
@@ -566,11 +605,12 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 		newNode->noHandleCacheItem.thisItem = newNode;
 
 		newNode->region.node = newNode;
-		newNode->region.handles = 1;
 
 		sharedMemoryManager.mutex.Acquire();
 		sharedMemoryManager.ResizeSharedMemory(&newNode->region, newNode->data.file.fileSize);
 		sharedMemoryManager.mutex.Release();
+
+		Print("Created node %x.\n", newNode);
 	}
 
 	existingNode->handles++;

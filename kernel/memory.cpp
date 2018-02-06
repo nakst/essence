@@ -240,7 +240,7 @@ struct FaultInformation {
 
 struct SharedMemoryManager {
 	SharedMemoryRegion *CreateSharedMemory(size_t sizeBytes, char *name = nullptr, size_t nameLength = 0, unsigned flags = 0);
-	void DestroySharedMemory(SharedMemoryRegion *region, bool ignoreNode = false);
+	void DestroySharedMemory(SharedMemoryRegion *region);
 	void ResizeSharedMemory(struct SharedMemoryRegion *region, size_t newSizeBytes);
 
 	NamedSharedMemoryRegion *namedSharedMemoryRegions;
@@ -544,6 +544,9 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 			if (mapPolicy != VMM_MAP_CHUNKS) {
 				KernelPanic("VMM::Allocate - Expected chunks map policy for mapped file.\n");
 			}
+
+			Print("Mapping node %x...\n", region->node);
+			vfs.NodeMapped(region->node);
 		}
 	}
 
@@ -707,6 +710,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	if (type) *type = region->type;
 
 	VMMRegionReference *copyReference = nullptr;
+	SharedMemoryRegion *sharedRegionToFree = nullptr;
 
 	if (region->type == VMM_REGION_SHARED) {
 		if (!region->object) KernelPanic("VMM::Free - Object from a freed shared memory region was null.\n");
@@ -734,11 +738,14 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 			}
 		}
 
+		sharedRegionToFree = (SharedMemoryRegion *) region->object;
+#if 0
 		scheduler.lock.Acquire();
 		// We have to do it like this because if this is the last handles then the we'll need to deallocate the shared memory,
 		// which we'll need to the VMM's lock.
 		RegisterAsyncTask(CloseHandleToSharedMemoryRegionAfterVMMFree, region->object, kernelProcess, true);
 		scheduler.lock.Release();
+#endif
 	} else if (region->type == VMM_REGION_COPY) {
 		copyReference = (VMMRegionReference *) region->object;
 	}
@@ -812,6 +819,10 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		__sync_fetch_and_sub(&region2->lock, 1);
 		copyReference->vmm->lock.Release();
 		OSHeapFree(copyReference, 0, MMVMM_HEAP); 
+	}
+
+	if (sharedRegionToFree) {
+		CloseHandleToObject(sharedRegionToFree, KERNEL_OBJECT_SHMEM);
 	}
 
 	return OS_SUCCESS;
@@ -1750,16 +1761,11 @@ SharedMemoryRegion *SharedMemoryManager::CreateSharedMemory(size_t sizeBytes, ch
 	return region;
 }
 
-void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region, bool ignoreNode) {
+void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region) {
 	if (region->handles) {
 		KernelPanic("SharedMemoryManager::DestroySharedMemory - Region has handles.\n");
 	}
 
-	if (region->node && !ignoreNode) {
-		CloseHandleToObject(region->node, KERNEL_OBJECT_NODE);
-		return;
-	}
-	
 	if (region->named) {
 		mutex.Acquire();
 		Defer(mutex.Release());
@@ -1809,7 +1815,10 @@ void SharedMemoryManager::DestroySharedMemory(SharedMemoryRegion *region, bool i
 	}
 
 	OSHeapFree(region->data, 0, MMVMM_HEAP); 
-	OSHeapFree(region, 0, MMVMM_HEAP); 
+
+	if (!region->node) {
+		OSHeapFree(region, 0, MMVMM_HEAP); 
+	}
 }
 
 Mutex physicalMemoryManipulationLock;

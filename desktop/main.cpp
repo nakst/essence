@@ -74,6 +74,7 @@ extern "C" void ProgramEntry() {
 		OSRedrawAll();
 	}
 
+#if 0
 	{
 		// Load the GUI font.
 		// TODO Remove this when we have a proper file cache.
@@ -91,12 +92,13 @@ extern "C" void ProgramEntry() {
 			OSHeapFree(loadedFile);
 		}
 	}
+#endif
 
 #if 1
 	{
 		// Load the wallpaper.
 
-		char *wallpaperPath = (char *) "/os/sample_images/Flower.jpg";
+		char *wallpaperPath = (char *) "/os/sample_images/Winter.jpg";
 		size_t fileSize;
 		uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(wallpaperPath, OSCStringLength(wallpaperPath), &fileSize);
 
