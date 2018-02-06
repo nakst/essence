@@ -138,7 +138,10 @@ struct VMM {
 	void Initialise();
 	void Destroy(); 
 
-	void *Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy = VMM_MAP_LAZY, VMMRegionType type = VMM_REGION_STANDARD, uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr);
+	void *Allocate(const char *reason, size_t size, 
+			VMMMapPolicy mapPolicy = VMM_MAP_LAZY, VMMRegionType type = VMM_REGION_STANDARD, 
+			uintptr_t offset = 0, unsigned flags = VMM_REGION_FLAG_CACHABLE, void *object = nullptr,
+			uintptr_t baseAddress = 0);
 	OSError Free(void *address, void **object = nullptr, VMMRegionType *type = nullptr, bool skipVirtualAddressSpaceUpdate = false);
 	bool HandlePageFault(uintptr_t address, size_t limit = 0, bool lookupRegionsOnly = true, struct FaultInformation *fault = nullptr);
 	VMMRegionReference FindAndLockRegion(uintptr_t address, size_t size);
@@ -494,7 +497,7 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 	return true;
 }
 
-void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object) {
+void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object, uintptr_t _baseAddress) {
 	// Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
 
 	if (!size) return nullptr;
@@ -545,7 +548,6 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 				KernelPanic("VMM::Allocate - Expected chunks map policy for mapped file.\n");
 			}
 
-			Print("Mapping node %x...\n", region->node);
 			vfs.NodeMapped(region->node);
 		}
 	}
@@ -564,11 +566,11 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 	ValidateCurrentVMM(this);
 
 	VMMRegion *region;
-	uintptr_t baseAddress;
+	uintptr_t baseAddress = _baseAddress;
 	void *address;
 	bool success;
 
-	{
+	if (!baseAddress) {
 		// TODO Should we look for the smallest/largest/first/last/etc. region?
 		uintptr_t i = 0;
 

@@ -23,6 +23,9 @@ void Build(bool enableOptimisations) {
 		}
 	}
 
+	printf("Generating tags...\n");
+	system("ctags -R .");
+
 	printf("Building utilities...\n");
 	system("g++ util/esfs.cpp -o esfs -g");
 	system("chmod +x esfs");

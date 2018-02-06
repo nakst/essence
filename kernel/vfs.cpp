@@ -102,9 +102,7 @@ struct VFS {
 	LinkedList<Mountpoint> mountpoints;
 	Mutex filesystemsMutex, mountpointsMutex;
 
-	// TODO Temporary.
-	// #define MAX_CACHED_NODES (256)
-#define MAX_CACHED_NODES (0)
+#define MAX_CACHED_NODES (256)
 	LinkedList<Node> cachedNodes;
 
 	bool foundBootFilesystem;
@@ -324,8 +322,6 @@ void VFS::DestroyNode(Node *node) {
 	vfs.cachedNodes.InsertStart(&node->noHandleCacheItem);
 
 	if (vfs.cachedNodes.count > MAX_CACHED_NODES) {
-		Print("Destroying node %x...\n", node);
-
 		if (node->nextNodeInHashTableSlot) {
 			node->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node->pointerToThisNodeInHashTableSlot;
 		}
@@ -609,8 +605,6 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 		sharedMemoryManager.mutex.Acquire();
 		sharedMemoryManager.ResizeSharedMemory(&newNode->region, newNode->data.file.fileSize);
 		sharedMemoryManager.mutex.Release();
-
-		Print("Created node %x.\n", newNode);
 	}
 
 	existingNode->handles++;

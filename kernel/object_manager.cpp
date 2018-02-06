@@ -134,7 +134,6 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			region->mutex.Release();
 
 			if (region->node) {
-				Print("Unmapping node %x...\n", region->node);
 				vfs.NodeUnmapped(region->node);
 			} else if (destroy) {
 				sharedMemoryManager.DestroySharedMemory(region);
@@ -162,11 +161,9 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			windowManager.mutex.Acquire();
 			bool destroy = window->handles == 1;
 			window->handles--;
-			Print("closing window handle, %d remain...\n", window->handles);
 			windowManager.mutex.Release();
 
 			if (destroy) {
-				Print("destroying window...\n");
 				window->Destroy();
 			}
 		} break;

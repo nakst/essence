@@ -99,24 +99,38 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	bytesRead = OSReadFileSync(node.handle, header.programHeaderTable, programHeaderEntrySize * header.programHeaderEntries, (uint8_t *) programHeaders);
 	if (bytesRead != programHeaderEntrySize * header.programHeaderEntries) return 0;
 
+	KernelObjectType type = KERNEL_OBJECT_NODE;
+	void *object = kernelProcess->handleTable.ResolveHandle(node.handle, type, RESOLVE_HANDLE_TO_USE);
+	Defer(kernelProcess->handleTable.CompleteHandle(object, node.handle));
+
 	for (uintptr_t i = 0; i < header.programHeaderEntries; i++) {
 		ElfProgramHeader *header = (ElfProgramHeader *) ((uint8_t *) programHeaders + programHeaderEntrySize * i);
 		if (header->type != 1) continue;
 
 		void *segment = (void *) header->virtualAddress;
 
+#if 0
 		thisProcess->vmm->lock.Acquire();
 		bool success = thisProcess->vmm->AddRegion((uintptr_t) segment, 
 				(header->segmentSize / PAGE_SIZE) + 1, 0, VMM_REGION_STANDARD, VMM_MAP_ALL, true, nullptr);
 		thisProcess->vmm->lock.Release();
+#else
+		header->dataInFile = (header->dataInFile + 0x1000) & ~0xFFF;
+		header->segmentSize = (header->segmentSize + 0x1000) & ~0xFFF;
+		void *success = thisProcess->vmm->Allocate("Executable", header->dataInFile, VMM_MAP_CHUNKS, VMM_REGION_SHARED,
+				header->fileOffset, VMM_REGION_FLAG_CACHABLE | VMM_REGION_FLAG_READ_ONLY, &((Node *) object)->region, (uintptr_t) segment);
+		if (success && header->segmentSize - header->dataInFile) success = thisProcess->vmm->Allocate("Executable", header->segmentSize - header->dataInFile, VMM_MAP_LAZY, VMM_REGION_STANDARD,
+				0, VMM_REGION_FLAG_CACHABLE, nullptr, (uintptr_t) segment + header->dataInFile);
+#endif
 
 		if (!success) {
 			return 0;
 		}
 
-		// TODO Memory-map the file.
+#if 0
 		bytesRead = OSReadFileSync(node.handle, header->fileOffset, header->dataInFile, (uint8_t *) segment);
 		if (bytesRead != header->dataInFile) return 0;
+#endif
 	}
 
 	return header.entry;
