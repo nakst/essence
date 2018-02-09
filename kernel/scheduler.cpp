@@ -152,6 +152,7 @@ struct Process {
 
 	Event killedEvent;
 	bool allThreadsTerminated;
+	bool terminating;
 };
 
 Process *kernelProcess;
@@ -349,6 +350,12 @@ void Scheduler::InsertNewThread(Thread *thread, bool addToActiveList, Process *o
 }
 
 Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Process *process, bool userland, bool addToActiveThreads) {
+	scheduler.lock.Acquire();
+	bool terminating = process->terminating;
+	scheduler.lock.Release();
+
+	if (terminating) return nullptr;
+
 	Thread *thread = (Thread *) threadPool.Add();
 	// KernelLog(LOG_VERBOSE, "Created thread, %x to start at %x\n", thread, startAddress);
 	thread->isKernelThread = !userland;
@@ -409,6 +416,8 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 void Scheduler::TerminateProcess(Process *process) {
 	scheduler.lock.Acquire();
 	Defer(scheduler.lock.Release());
+
+	process->terminating = true;
 
 	Thread *currentThread = GetCurrentThread();
 	bool isCurrentProcess = process == currentThread->process;
