@@ -1,6 +1,5 @@
-// TODO Thread safety.
-
 #define STB_TRUETYPE_IMPLEMENTATION
+#define STBTT_STATIC
 #include "stb_truetype.h"
 
 static stbtt_fontinfo guiRegularFont;
@@ -20,18 +19,6 @@ static void OSFontRendererInitialise() {
 	if (fontRendererInitialised) {
 		return;
 	}
-
-#if 0
-	OSHandle regularFontHandle = OSOpenSharedMemory(0, OS_GUI_FONT_REGULAR, OSCStringLength(OS_GUI_FONT_REGULAR), 
-			OS_OPEN_SHARED_MEMORY_FAIL_IF_NOT_FOUND);
-
-	if (regularFontHandle == OS_INVALID_HANDLE) {
-		OSPrint("Could not get font handle.\n");
-		return;
-	}
-
-	void *loadedFont = OSMapObject(regularFontHandle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_WRITE);
-#endif
 
 	OSNodeInformation node;
 	OSError error = OSOpenNode(OSLiteral("/os/source_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
@@ -287,45 +274,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				entry->yoff = yoff;
 				entry->size = size;
 				fontCachePosition = (fontCachePosition + 1) % FONT_CACHE_SIZE;
-
-#if 0
-				for (int x = 0; x < entry->width; x++) {
-					for (int y = 0; y < entry->height; y++) {
-						int32_t result = 0;
-						int32_t totalWeight = 0;
-
-						const int32_t weights[][3] = {
-							{ 0, -1,  0},
-							{-1, 16, -1},
-							{ 0, -1,  0},
-						};
-
-						for (int i = -1; i <= 1; i++) {
-							for (int j = -1; j <= 1; j++) {
-								int x1 = x + i;
-								int y1 = y + j;
-
-								if (x1 >= 0 && x1 < entry->width && y1 >= 0 && y1 < entry->height) {
-									int32_t source = entry->data[x1 + y1 * width];
-									int32_t weight = weights[i + 1][j + 1];
-									result += source * weight;
-									totalWeight += weight > 0 ? weight : -weight;
-								}
-							}
-						}
-
-						if (totalWeight) {
-							result /= totalWeight;
-							
-							if (result >= 0) {
-								entry->data[x + y * width] = (uint8_t) result;
-							} else {
-								entry->data[x + y * width] = 0;
-							}
-						}
-					}
-				}
-#endif
 			} else {
 				goto skipCharacter;
 			}
@@ -364,7 +312,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 				if (pixel == 0xFF) {
 					*destination = sourcePixel;
-				} else {
+				} else if (pixel) {
 					uint32_t original;
 
 					if (selected) {
@@ -426,7 +374,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;
 }
 
-#define FONT_SIZE (16)
+#define FONT_SIZE (18)
 
 OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, 
 		OSString *string, unsigned alignment, OSCaret *caret) {

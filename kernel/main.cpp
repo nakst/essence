@@ -5,7 +5,7 @@
 #define IMPLEMENTATION
 #include "kernel.h"
 
-void KernelInitilisation() {
+void KernelInitialisation() {
 	pmm.Initialise2();
 	InitialiseObjectManager();
 	vfs.Initialise();
@@ -13,11 +13,9 @@ void KernelInitilisation() {
 	graphics.Initialise(); 
 	windowManager.Initialise();
 
-	KernelLog(LOG_INFO, "KernelInitilisation - Starting the desktop...\n");
 	char *desktop = (char *) "/os/desktop";
 	desktopProcess = scheduler.SpawnProcess(desktop, CStringLength(desktop));
 
-	KernelLog(LOG_VERBOSE, "KernelInitilisation - Complete.\n");
 	scheduler.TerminateThread(GetCurrentThread());
 }
 
@@ -40,7 +38,7 @@ extern "C" void KernelMain() {
 	pmm.Initialise();
 	scheduler.Initialise();
 	acpi.Initialise(); // Initialises CPULocalStorage.
-	scheduler.SpawnThread((uintptr_t) KernelInitilisation, 0, kernelProcess, false);
+	scheduler.SpawnThread((uintptr_t) KernelInitialisation, 0, kernelProcess, false);
 	KernelLog(LOG_VERBOSE, "Starting preemption...\n");
 	scheduler.Start();
 

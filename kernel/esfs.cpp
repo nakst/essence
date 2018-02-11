@@ -708,6 +708,9 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 }
 
 void GenerateUniqueIdentifier(UniqueIdentifier &identifier) {
+	// TODO Think about this.
+	// 	Maybe we could use the byte offset into the partition that the file entry is stored at instead?
+
 	for (int i = 0; i < 16; i++) {
 		identifier.d[i] = GetRandomByte();
 	}

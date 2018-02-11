@@ -16,23 +16,21 @@ x86_64-elf-ar -rcs bin/os/libapi.a bin/os/api1.o bin/os/api2.o
 echo -e "-> Building ${ColorBlue}desktop${ColorNormal}..."
 x86_64-elf-g++ -c desktop/main.cpp -o bin/os/desktop.o $BuildFlags  $Optimise
 x86_64-elf-gcc -o bin/os/desktop bin/os/desktop.o $LinkFlags
+cp bin/os/desktop bin/os/desktop_symbols
+x86_64-elf-strip --strip-all bin/os/desktop
 
-echo -e "-> Building ${ColorBlue}calculator${ColorNormal}..."
-x86_64-elf-g++ -c calculator/main.cpp -o bin/os/calculator.o $BuildFlags  $Optimise
-x86_64-elf-gcc -o bin/os/calculator bin/os/calculator.o $LinkFlags
+echo -e "-> Building ${ColorBlue}test program${ColorNormal}..."
+x86_64-elf-g++ -c api/test.cpp -o bin/os/test.o $BuildFlags  $Optimise
+x86_64-elf-gcc -o bin/os/test bin/os/test.o $LinkFlags
+cp bin/os/test bin/os/test_symbols
+x86_64-elf-strip --strip-all bin/os/test
 
 echo -e "-> Building ${ColorBlue}kernel${ColorNormal}..."
 nasm -felf64 kernel/x86_64.s -o bin/os/kernel_x86_64.o -Fdwarf
 x86_64-elf-g++ -c kernel/main.cpp -o bin/os/kernel.o -mno-red-zone $BuildFlags $OptimiseKernel
 x86_64-elf-gcc -T util/linker64.ld -o bin/os/kernel bin/os/kernel_x86_64.o bin/os/kernel.o -mno-red-zone $KernelLinkFlags
-
-echo "-> Saving debug symbols..."
 cp bin/os/kernel bin/os/kernel_symbols
-cp bin/os/desktop bin/os/desktop_symbols
-cp bin/os/calculator bin/os/calculator_symbols
+x86_64-elf-strip --strip-all bin/os/kernel
 
 echo "-> Removing temporary files..."
-x86_64-elf-strip --strip-all bin/os/kernel
-x86_64-elf-strip --strip-all bin/os/desktop
-x86_64-elf-strip --strip-all bin/os/calculator
 rm bin/os/*.o

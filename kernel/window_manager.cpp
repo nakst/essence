@@ -160,7 +160,7 @@ void WindowManager::PressKey(unsigned scancode) {
 
 		OSMessage message = {};
 		message.type = (scancode & SCANCODE_KEY_RELEASED) ? OS_MESSAGE_KEY_RELEASED : OS_MESSAGE_KEY_PRESSED;
-		message.targetWindow = window->apiWindow;
+		message.generator = window->apiWindow;
 		message.keyboard.alt = alt;
 		message.keyboard.ctrl = ctrl;
 		message.keyboard.shift = shift;
@@ -190,7 +190,7 @@ void WindowManager::SetActiveWindow(Window *window) {
 	if (oldActiveWindow) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
-		message.targetWindow = oldActiveWindow->apiWindow;
+		message.generator = oldActiveWindow->apiWindow;
 
 		if (window && window->owner == oldActiveWindow->owner) {
 			message.windowDeactivated.newWindow = window->apiWindow;
@@ -241,7 +241,7 @@ void WindowManager::SetActiveWindow(Window *window) {
 	if (window->apiWindow) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_ACTIVATED;
-		message.targetWindow = window->apiWindow;
+		message.generator = window->apiWindow;
 		window->owner->messageQueue.SendMessage(message);
 	}
 
@@ -305,7 +305,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 				message.mousePressed.positionXScreen = cursorX;
 				message.mousePressed.positionYScreen = cursorY;
 				message.mousePressed.clickChainCount = clickChainCount;
-				message.targetWindow = window->apiWindow;
+				message.generator = window->apiWindow;
 
 				RefreshCursor(window);
 				window->owner->messageQueue.SendMessage(message);
@@ -354,7 +354,7 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 	if (hoverWindow && hoverWindow != window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_EXIT;
-		message.targetWindow = hoverWindow->apiWindow;
+		message.generator = hoverWindow->apiWindow;
 		hoverWindow->owner->messageQueue.SendMessage(message);
 	}
 
@@ -367,14 +367,14 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		message.mouseEntered.positionY = cursorY - window->position.y;
 		message.mouseEntered.positionXScreen = cursorX;
 		message.mouseEntered.positionYScreen = cursorY;
-		message.targetWindow = hoverWindow->apiWindow;
+		message.generator = hoverWindow->apiWindow;
 		hoverWindow->owner->messageQueue.SendMessage(message);
 	}
 
 	if (window) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_MOVED;
-		message.targetWindow = window->apiWindow;
+		message.generator = window->apiWindow;
 		message.mouseMoved.newPositionX = cursorX - window->position.x;
 		message.mouseMoved.newPositionY = cursorY - window->position.y;
 		message.mouseMoved.newPositionXScreen = cursorX;
@@ -403,7 +403,7 @@ void CaretBlink(WindowManager *windowManager) {
 		if (window) {
 			OSMessage message = {};
 			message.type = OS_MESSAGE_WINDOW_BLINK_TIMER;
-			message.targetWindow = window->apiWindow;
+			message.generator = window->apiWindow;
 			window->owner->messageQueue.SendMessage(message);
 		}
 
@@ -569,7 +569,7 @@ void Window::Destroy() {
 
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DESTROYED;
-		message.targetWindow = apiWindow;
+		message.generator = apiWindow;
 		owner->messageQueue.SendMessage(message); // THe last message sent to the window.
 
 		windowManager.Redraw(position, width, height);

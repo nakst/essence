@@ -415,8 +415,6 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 void HandleTable::Destroy() {
 	HandleTableL1 *l1 = &l1r;
 
-	Print("--- Destroying handle table...\n");
-
 	for (uintptr_t i = 1; i < HANDLE_TABLE_L1_ENTRIES; i++) {
 		if (l1->u[i]) {
 			HandleTableL2 *l2 = l1->t[i];
@@ -434,7 +432,6 @@ void HandleTable::Destroy() {
 							}
 
 							if (handle->type & CLOSABLE_OBJECT_TYPES) {
-								KernelLog(LOG_VERBOSE, "Destroying handle to object %x of type %d...\n", handle->object, handle->type);
 								CloseHandleToObject(handle->object, handle->type);
 							} else {
 								KernelPanic("HandleTable::Destroy - Handle type %d cannot be closed.\n", handle->type);
@@ -449,8 +446,6 @@ void HandleTable::Destroy() {
 			OSHeapFree(l2, sizeof(HandleTableL2));
 		}
 	}
-
-	Print("--- Handle table destroyed.\n");
 }
 
 void InitialiseObjectManager() {

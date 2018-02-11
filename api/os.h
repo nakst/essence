@@ -175,8 +175,14 @@ enum OSFatalError {
 	OS_FATAL_ERROR_UNSUPPORTED_CALLBACK,
 	OS_FATAL_ERROR_MISSING_CALLBACK,
 	OS_FATAL_ERROR_UNKNOWN,
-	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_RECURSIVE_BATCH,
+	OS_FATAL_ERROR_CORRUPT_HEAP,
+	OS_FATAL_ERROR_COUNT,
+
+	OS_FATAL_ERROR_BAD_CALLBACK_OBJECT,
+	OS_FATAL_ERROR_RESIZE_GRID,
+	OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS,
+	OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT,
 };
 
 #define OS_ERROR_BUFFER_TOO_SMALL		(-2)
@@ -347,10 +353,10 @@ struct OSRectangle {
 		bottom = _bottom;
 	}
 
-	intptr_t left;
-	intptr_t right;
-	intptr_t top;
-	intptr_t bottom;
+	intptr_t left;   // Inclusive.
+	intptr_t right;  // Exclusive.
+	intptr_t top;    // Inclusive.
+	intptr_t bottom; // Exclusive.
 };
 
 struct OSColor {
@@ -397,43 +403,6 @@ enum OSCallbackType {
 	OS_CALLBACK_POPULATE_MENU,
 };
 
-struct OSCallbackData {
-	OSCallbackType type;
-
-	union {
-		struct {
-			struct OSString *string;
-			bool freeText;
-		} getText;
-
-		struct {
-			struct OSCaret *caret;
-			struct OSString *string;
-		} insertText;
-
-		struct {
-			struct OSCaret *caretStart, *caretEnd;
-		} removeText;
-
-		struct {
-#define OS_PUSH_DIMENSION (-1)
-			OSObject pane;
-			int width, height;
-		} measure;
-
-		struct {
-			OSObject pane;
-			OSRectangle bounds;
-		} layout;
-
-		struct {
-			OSObject popupMenu;
-		} populateMenu;
-	};
-};
-
-typedef void (*_OSCallback)(OSObject generator, void *argument, OSCallbackData *data);
-
 enum OSCursorStyle {
 	OS_CURSOR_NORMAL, 
 	OS_CURSOR_TEXT, 
@@ -443,30 +412,13 @@ enum OSCursorStyle {
 	OS_CURSOR_RESIZE_DIAGONAL_2, // '\'
 };
 
-enum OSControlType {
-	OS_CONTROL_BUTTON,
-	OS_CONTROL_STATIC,
-	OS_CONTROL_TEXTBOX,
-	OS_CONTROL_TITLEBAR,
-	OS_CONTROL_WINDOW_BORDER,
-	OS_CONTROL_MENU,
-};
-
-enum OSControlImageType {
-	OS_CONTROL_IMAGE_FILL,
-	OS_CONTROL_IMAGE_CENTER_LEFT,
-	OS_CONTROL_IMAGE_NONE,
-	OS_CONTROL_IMAGE_TRANSPARENT,
+struct OSString {
+	char *buffer;
+	size_t bytes;
 };
 
 struct OSCaret {
 	uintptr_t byte, character;
-};
-
-struct OSString {
-	char *buffer;
-	size_t bytes, characters;
-	size_t allocated;
 };
 
 struct OSCrashReason {
@@ -479,13 +431,6 @@ struct OSIORequestProgress {
 	bool completed, cancelled;
 	OSError error;
 };
-
-// TODO Implement separate message queues?
-#define OS_MESSAGE_QUEUE_WINDOW_MANAGER (0x01)
-#define OS_MESSAGE_QUEUE_DEBUGGER	(0x02)
-#define OS_MESSAGE_QUEUE_FILE_IO	(0x04)
-#define OS_MESSAGE_QUEUE_SYSTEM_EVENT	(0x08)
-#define OS_MESSAGE_QUEUE_IPC		(0x10)
 
 enum OSMessageType {
 	// Window manager messages:
@@ -502,16 +447,24 @@ enum OSMessageType {
 	OS_MESSAGE_MOUSE_EXIT			= 0x100A, // Sent when the mouse leaves the window's bounds.
 	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
 
-	// Internal messages:
-	OS_MESSAGE_CLOSE_WINDOW			= 0x1100,
-
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x2000,
+
+	// GUI messages:
+	OS_MESSAGE_LAYOUT			= 0x4000,
+	OS_MESSAGE_DESTROY			= 0x4001,
+	OS_MESSAGE_MEASURE			= 0x4002,
+	OS_MESSAGE_PAINT			= 0x4003,
+
+	// User messages:
+	OS_MESSAGE_USER_START			= 0x8000,
+	OS_MESSAGE_USER_END			= 0xEFFF,
 };
 
 struct OSMessage {
 	OSMessageType type;
-	OSObject targetWindow;
+	OSObject generator;
+	void *context;
 
 	union {
 		void *argument;
@@ -551,6 +504,14 @@ struct OSMessage {
 		} crash;
 
 		struct {
+			int left, right, top, bottom;
+		} layout;
+
+		struct {
+			OSHandle surface;
+		} paint;
+
+		struct {
 			OSObject newWindow; // nullptr if the window is not owned by the process.
 			int positionX; // The cursor coordinates in the new window.
 			int positionY;
@@ -562,17 +523,56 @@ struct OSMessage {
 enum OSDrawMode {
 	OS_DRAW_MODE_STRECH, // Not implemented yet.
 	OS_DRAW_MODE_REPEAT, // Not implemented yet.
-	OS_DRAW_MODE_REPEAT_FIRST, // The first non-bocder pixel is repeated.
+	OS_DRAW_MODE_REPEAT_FIRST, // The first non-border pixel is repeated.
 	OS_DRAW_MODE_TRANSPARENT, // Don't draw the non-border pixels.
 };
 
 typedef void (*OSThreadEntryFunction)(void *argument);
 
-enum OSObjectType {
-	OS_OBJECT_CONTROL,
-	OS_OBJECT_WINDOW,
-	OS_OBJECT_PANE,
+struct OSDebuggerMessage {
+	OSHandle process;
+	OSCrashReason reason;
 };
+
+typedef int OSCallbackResponse;
+typedef OSCallbackResponse (*OSCallbackFunction)(OSMessage *);
+
+struct OSCallback {
+	OSCallbackFunction function;
+	void *context;
+
+	OSCallback() {}
+	OSCallback(OSCallbackFunction _function, void *_context) { function = _function; context = _context; }
+};
+
+struct OSAction {
+	char *label;
+	size_t labelBytes;
+
+	OSObject icon;
+
+	OSCallback callback;
+	void *callbackContext;
+};
+
+#define OS_CALLBACK_NOT_HANDLED (-1)
+#define OS_CALLBACK_HANDLED (0)
+#define OS_CALLBACK_DEBUGGER_MESSAGES ((OSObject) 0x800)
+
+#define OS_CREATE_WINDOW_ALERT (1)
+
+#define OS_CELL_H_PUSH   (1)
+#define OS_CELL_H_EXPAND (2)
+#define OS_CELL_H_LEFT   (4)
+#define OS_CELL_H_CENTER (8)
+#define OS_CELL_H_RIGHT  (16)
+#define OS_CELL_V_PUSH   (32)
+#define OS_CELL_V_EXPAND (64)
+#define OS_CELL_V_TOP    (128)
+#define OS_CELL_V_CENTER (256)
+#define OS_CELL_V_BOTTOM (512)
+
+#define OS_ICON_NONE (OS_INVALID_OBJECT)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
@@ -619,31 +619,6 @@ enum OSObjectType {
 #define OS_MAP_OBJECT_READ_ONLY         (1)
 #define OS_MAP_OBJECT_COPY_ON_WRITE     (2)
 
-#define OS_CREATE_WINDOW_WITH_MENU_BAR 	(1)
-#define OS_CREATE_WINDOW_NOT_RESIZABLE  (2) // TODO Currently does nothing.
-#define OS_CREATE_WINDOW_NO_DECORATIONS (4)
-#define OS_CREATE_WINDOW_POPUP		(8)
-
-#define OS_CONFIGURE_PANE_NO_INDENT_H   (1)
-#define OS_CONFIGURE_PANE_NO_INDENT_V   (2)
-#define OS_CONFIGURE_PANE_NO_SPACE_H    (4)
-#define OS_CONFIGURE_PANE_NO_SPACE_V    (8)
-
-#define OS_SET_PANE_OBJECT_HORIZONTAL_RIGHT  (2)
-#define OS_SET_PANE_OBJECT_HORIZONTAL_LEFT   (4)
-#define OS_SET_PANE_OBJECT_HORIZONTAL_CENTER (8)
-#define OS_SET_PANE_OBJECT_HORIZONTAL_STRECH (16)
-#define OS_SET_PANE_OBJECT_HORIZONTAL_PUSH   (32)
-
-#define OS_SET_PANE_OBJECT_VERTICAL_TOP    (64)
-#define OS_SET_PANE_OBJECT_VERTICAL_BOTTOM (128)
-#define OS_SET_PANE_OBJECT_VERTICAL_CENTER (256)
-#define OS_SET_PANE_OBJECT_VERTICAL_STRECH (512)
-#define OS_SET_PANE_OBJECT_VERTICAL_PUSH   (1024)
-
-#define OS_CONTROL_MENU_STYLE_BAR (1)
-#define OS_CONTROL_MENU_HAS_CHILDREN (2)
-
 extern "C" void OSInitialiseAPI();
 
 extern "C" void OSBatch(OSBatchCall *calls, size_t count); 
@@ -661,7 +636,7 @@ extern "C" void *OSReadEntireFile(const char *filePath, size_t filePathLength, s
 extern "C" size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
 extern "C" size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 extern "C" OSHandle OSReadFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); 
-extern "C" OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Async API: message on completion, cancel
+extern "C" OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Message on completion.
 extern "C" OSError OSResizeFile(OSHandle file, uint64_t newSize);
 extern "C" void OSRefreshNodeInformation(OSNodeInformation *information);
 extern "C" OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
@@ -707,39 +682,16 @@ extern "C" OSError OSClearModifiedRegion(OSHandle surface);
 extern "C" OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, unsigned flags, uint32_t color, int32_t backgroundColor);
 extern "C" OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
 
-extern "C" OSError OSGetMessage(OSMessage *message);
-extern "C" OSError OSPostMessage(OSMessage *message);
-extern "C" OSError OSWaitMessage(uintptr_t timeoutMs);
-
 extern "C" void OSRedrawAll();
 
-extern "C" OSObject OSCreateWindow(char *title, size_t titleBytes, unsigned width, unsigned height, unsigned flags);
-extern "C" void OSCloseWindow(OSObject window);
-
-extern "C" OSObject OSCreateControl(OSControlType type, char *text, size_t textBytes, unsigned flags);
-extern "C" OSObject OSGetWindowContentPane(OSObject window);
-extern "C" OSObject OSGetWindowMenuBar(OSObject window);
-extern "C" OSObject OSGetPane(OSObject parent, uintptr_t gridX, uintptr_t gridY);
-extern "C" OSObject OSGetControl(OSObject parent, uintptr_t gridX, uintptr_t gridY);
-
-extern "C" void OSSetPaneObject(OSObject pane, OSObject object, unsigned flags);
-extern "C" void OSConfigurePane(OSObject pane, size_t gridWidth, size_t gridHeight, unsigned flags);
-extern "C" void OSSetMenuBarMenus(OSObject menuBar, size_t count);
-extern "C" void OSSetMenuBarMenu(OSObject menuBar, uintptr_t index, OSObject menu);
-extern "C" void OSSetMenuItems(OSObject menu, size_t count);
-extern "C" void OSSetMenuItem(OSObject menu, uintptr_t index, OSObject item);
-extern "C" void OSSetObjectCallback(OSObject object, OSObjectType objectType, OSCallbackType callbackType, _OSCallback function, void *argument);
-extern "C" void OSLayoutPane(OSObject pane);
-
-extern "C" void OSDisableControl(OSObject control, bool disabled);
-extern "C" void OSSetControlText(OSObject control, char *text, size_t textBytes);
-extern "C" void OSInvalidateControl(OSObject control);
-
-extern "C" void OSSetCursorStyle(OSHandle window, OSCursorStyle style);
-extern "C" void OSUpdateWindow(OSObject window);
-extern "C" OSError OSProcessGUIMessage(OSMessage *message);
-extern "C" OSError OSMoveWindow(OSHandle window, OSRectangle rectangle);
-extern "C" void OSGetWindowBounds(OSHandle window, OSRectangle *rectangle);
+extern "C" OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
+extern "C" OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
+extern "C" void OSProcessMessages();
+extern "C" OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *title, size_t titleBytes);
+extern "C" OSObject OSCreateGrid(unsigned columns, unsigned rows);
+extern "C" void OSAddControl(OSObject grid, OSRectangle cells, OSObject control, unsigned layout);
+extern "C" OSObject OSCreateLabel(char *label, size_t labelBytes);
+extern "C" OSObject OSCreateButton(OSAction *action);
 
 #ifndef KERNEL
 extern "C" void *OSHeapAllocate(size_t size, bool zeroMemory);

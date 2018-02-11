@@ -24,98 +24,81 @@ char *errorMessages[] = {
 	(char *) "UNSUPPORTED_CALLBACK",
 	(char *) "MISSING_CALLBACK",
 	(char *) "UNKNOWN",
+	(char *) "RECURSIVE_BATCH",
+	(char *) "CORRUPT_HEAP",
 };
 
-// TODO Move some of this into the kernel?
-// 	- Ideally, the kernel would still allow us to use system calls.
+OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
-void CloseDialog(OSObject generator, void *argument, OSCallbackData *data) {
-	(void) generator;
-	(void) data;
-	
-	OSCloseWindow((OSObject) argument); 
-}
+	switch (message->type) {
+		case OS_MESSAGE_PROGRAM_CRASH: {
+			// Terminate the crashed process.
+			OSTerminateProcess(message->crash.process);
+			OSCloseHandle(message->crash.process);
 
-extern "C" void ProgramEntry() {
-	{
-		// Load the UI theme.
+			char crashMessage[256];
+			size_t crashMessageLength;
+			OSError code = message->crash.reason.errorCode;
 
-		char *themeFile = (char *) "/os/UISheet.png";
-		size_t fileSize;
-		uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(themeFile, OSCStringLength(themeFile), &fileSize);
-
-		if (!loadedFile) {
-			OSPrint("Error: Could not load the UI sheet.\n");
-		} else {
-			int imageX, imageY, imageChannels;
-			uint8_t *image = stbi_load_from_memory(loadedFile, fileSize, &imageX, &imageY, &imageChannels, 4);
-
-			OSHandle surface = OS_SURFACE_UI_SHEET;
-			OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-			void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
-
-			for (intptr_t y = 0; y < imageY; y++) {
-				for (intptr_t x = 0; x < imageX; x++) {
-					uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
-					uint8_t *source = image + y * imageX * 4 + x * 4;
-					destination[2] = source[0];
-					destination[1] = source[1];
-					destination[0] = source[2];
-					destination[3] = source[3];
-				}
+			if (code < OS_FATAL_ERROR_COUNT) {
+				crashMessageLength = OSFormatString(crashMessage, 256, 
+						"Error code: %d (%s)", code, OSCStringLength(errorMessages[code]), errorMessages[code]);
+			} else {
+				crashMessageLength = OSFormatString(crashMessage, 256, 
+						"Error code: %d (user error)", code);
 			}
 
-			OSInvalidateRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height));
-			OSHeapFree(image);
-			OSHeapFree(loadedFile);
-			OSFree(bitmap);
-		}
-
-		OSRedrawAll();
-	}
-
+			OSObject dialog = OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, OSLiteral("Program Crashed"));
 #if 0
-	{
-		// Load the GUI font.
-		// TODO Remove this when we have a proper file cache.
+			OSSetGrid(dialog, 1 /* Columns */, 2 /* Rows */);
 
-		char *fontFile = (char *) "/os/source_sans/regular.ttf";
-		size_t fileSize;
-		void *loadedFile = OSReadEntireFile(fontFile, OSCStringLength(fontFile), &fileSize);
+			OSSetControl(OSGetGridCell(dialog, 0, 0), 
+					OSCreateLabel(crashMessage, crashMessageLength), 
+					OS_CELL_H_PUSH | OS_CELL_H_CENTER | OS_CELL_V_TOP);
 
-		if (!loadedFile) {
-			OSPrint("Error: Could not load the font file.\n");
-		} else {
-			char *fontName = OS_GUI_FONT_REGULAR;
-			OSHandle sharedMemory = OSOpenSharedMemory(fileSize, fontName, OSCStringLength(fontName), OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
-			OSCopyMemory(OSMapObject(sharedMemory, 0, fileSize, OS_MAP_OBJECT_READ_WRITE), loadedFile, fileSize);
-			OSHeapFree(loadedFile);
-		}
-	}
+			OSAction actionOK = {
+				OSLiteral("OK"),		// Label
+				OS_ICON_NONE,			// Icon
+				OSCallbackCloseWindow, dialog,	// Callback
+			};
+
+			OSSetControl(OSGetGridCell(dialog, 0, 1),
+					OSCreateButton(&actionOK), 0);
 #endif
 
-#if 1
-	{
-		// Load the wallpaper.
+			response = OS_CALLBACK_HANDLED;
+		} break;
 
-		char *wallpaperPath = (char *) "/os/sample_images/Winter.jpg";
-		size_t fileSize;
-		uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(wallpaperPath, OSCStringLength(wallpaperPath), &fileSize);
+		default: {
+			response = OS_CALLBACK_NOT_HANDLED;
+		} break;
+	}
 
-		if (!loadedFile) {
-			OSPrint("Error: Could not load the wallpaper.\n");
+	return response;
+}
+
+bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
+	size_t fileSize;
+	uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(cPath, OSCStringLength(cPath), &fileSize);
+
+	if (!loadedFile) {
+		return false;
+	} else {
+		int imageX, imageY, imageChannels;
+		uint8_t *image = stbi_load_from_memory(loadedFile, fileSize, &imageX, &imageY, &imageChannels, 4);
+
+		if (!image) {
+			OSHeapFree(loadedFile);
+			return false;
 		} else {
-			int imageX, imageY, imageChannels;
-			uint8_t *image = stbi_load_from_memory(loadedFile, fileSize, &imageX, &imageY, &imageChannels, 4);
+			OSLinearBuffer buffer; 
+			OSGetLinearBuffer(surface, &buffer);
 
-			if (!image) {
-				OSPrint("Error: Could not load the wallpaper.\n");
-			} else {
-				OSHandle surface = OS_SURFACE_WALLPAPER;
-				OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-				void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
-				int xOffset = 0, yOffset = 0;
+			void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
+			int xOffset = 0, yOffset = 0;
 
+			if (center) {
 				if (imageX > (int) buffer.width) {
 					xOffset = imageX / 2 - buffer.width / 2;
 				}
@@ -123,94 +106,57 @@ extern "C" void ProgramEntry() {
 				if (imageY > (int) buffer.height) {
 					yOffset = imageY / 2 - buffer.height / 2;
 				}
-
-				for (uintptr_t y = 0; y < buffer.height; y++) {
-					for (uintptr_t x = 0; x < buffer.width; x++) {
-						uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
-						uint8_t *source = image + (y + yOffset) * imageX * 4 + (x + xOffset) * 4;
-						destination[2] = source[0];
-						destination[1] = source[1];
-						destination[0] = source[2];
-						destination[3] = source[3];
-					}
-				}
-
-				OSInvalidateRectangle(surface, OSRectangle(0, imageX, 0, imageY));
-				OSHeapFree(image);
-				OSFree(bitmap);
 			}
 
-			OSHeapFree(loadedFile);
+			for (uintptr_t y = 0; y < buffer.height; y++) {
+				for (uintptr_t x = 0; x < buffer.width; x++) {
+					uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
+					uint8_t *source = image + (y + yOffset) * imageX * 4 + (x + xOffset) * 4;
+
+					destination[2] = source[0];
+					destination[1] = source[1];
+					destination[0] = source[2];
+					destination[3] = source[3];
+				}
+			}
+
+			OSInvalidateRectangle(surface, OSRectangle(0, imageX, 0, imageY));
+			OSHeapFree(image);
+			OSFree(bitmap);
+			OSCloseHandle(buffer.handle);
 		}
 
-		OSRedrawAll();
+		OSHeapFree(loadedFile);
 	}
+
+	return true;
+}
+
+extern "C" void ProgramEntry() {
+	LoadImageIntoSurface((char *) "/os/UISheet.png", OS_SURFACE_UI_SHEET, false);
+
+#if 0
+	LoadImageIntoSurface((char *) "/os/sample_images/Winter.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-	OSFillRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height), OSColor(0, 128, 128));
-	OSRedrawAll();
+	OSFillRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height), OSColor(40, 45, 60));
 #endif
 
-#if 1
+	OSRedrawAll();
+
 	{
-		// Start the calculator test program.
+		// Start the test program.
 
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/os/calculator";
+			const char *path = "/os/test";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);
 			OSCloseHandle(process.handle);
 		}
 	}
-#endif
 
-#if 0
-	{
-		// Start the Odin test program.
-
-		const char *path = "/os/essence_gui";
-		OSProcessInformation process;
-		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
-	}
-#endif
-
-	while (true) {
-		OSMessage message;
-		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
-
-		if (OSGetMessage(&message) == OS_SUCCESS) {
-			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
-				continue;
-			} else if (message.type == OS_MESSAGE_PROGRAM_CRASH) {
-				int code = message.crash.reason.errorCode;
-				OSPrint("The desktop process received a message that another process crashed.\n");
-				OSPrint("Error code: %d\n", code);
-				OSTerminateProcess(message.crash.process);
-				OSPauseProcess(message.crash.process, true);
-				OSCloseHandle(message.crash.process);
-
-				OSObject window = OSCreateWindow((char *) "Program Crash", 13, 300, 70, 0);
-				OSObject contentPane = OSGetWindowContentPane(window);
-				OSConfigurePane(contentPane, 1, 2, 0);
-
-				char crashMessage[256];
-				size_t crashMessageLength;
-				
-				if (code < OS_FATAL_ERROR_COUNT) {
-					crashMessageLength = OSFormatString(crashMessage, 256, "Error code: %d (%s)", code, OSCStringLength(errorMessages[code]), errorMessages[code]);
-				} else {
-					crashMessageLength = OSFormatString(crashMessage, 256, "Error code: %d (user error)", message.crash.reason.errorCode);
-				}
-
-				OSObject message = OSCreateControl(OS_CONTROL_STATIC, crashMessage, crashMessageLength, 0);
-				OSSetPaneObject(OSGetPane(contentPane, 0, 0), message, OS_SET_PANE_OBJECT_HORIZONTAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_TOP);
-
-				OSObject button = OSCreateControl(OS_CONTROL_BUTTON, (char *) "OK", 2, 0);
-				OSSetPaneObject(OSGetPane(contentPane, 0, 1), button, OS_SET_PANE_OBJECT_HORIZONTAL_CENTER);
-				OSSetObjectCallback(button, OS_OBJECT_CONTROL, OS_CALLBACK_ACTION, CloseDialog, window);
-			}
-		}
-	}
+	OSSetCallback(OS_CALLBACK_DEBUGGER_MESSAGES, OSCallback(ProcessDebuggerMessage, nullptr));
+	OSProcessMessages();
 }

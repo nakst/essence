@@ -362,7 +362,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSRectangle *bounds = (OSRectangle *) argument1;
 			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 2);
 
-			Window *window = windowManager.CreateWindow(currentProcess, *bounds, returnData);
+			Window *window = windowManager.CreateWindow(currentProcess, *bounds, (OSObject) argument2);
 
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
@@ -379,7 +379,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				
 				OSMessage message = {};
 				message.type = OS_MESSAGE_WINDOW_CREATED;
-				message.targetWindow = window->apiWindow;
+				message.generator = window->apiWindow;
 				window->owner->messageQueue.SendMessage(message);
 
 				SYSCALL_RETURN(OS_SUCCESS, false);
@@ -1066,9 +1066,9 @@ uintptr_t DoSyscall(OSSyscallType index,
 			currentThread->terminatableState = THREAD_TERMINATABLE;
 		}
 
-		if (currentThread->terminating) {
-			// The thread has been terminated.
-			// Yield the scheduler so it can be removed.
+		if (currentThread->terminating || currentThread->paused) {
+			// The thread has been terminated or paused.
+			// Yield the scheduler so it can be removed or sent to the paused thread queue.
 			ProcessorFakeTimerInterrupt();
 		}
 	}

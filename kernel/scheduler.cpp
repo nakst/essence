@@ -517,7 +517,6 @@ void Scheduler::Start() {
 void NewProcess() {
 	Process *thisProcess = GetCurrentThread()->process;
 
-	// TODO Shared memory with executables.
 	uintptr_t processStartAddress = LoadELF(thisProcess->executablePath, thisProcess->executablePathLength);
 
 	if (processStartAddress) {
@@ -760,7 +759,7 @@ void Scheduler::PauseThread(Thread *thread, bool resume, bool lockAlreadyAcquire
 
 	thread->paused = !resume;
 
-	if (!resume) {
+	if (!resume && thread->terminatableState == THREAD_TERMINATABLE) {
 		if (thread->state == THREAD_ACTIVE) {
 			if (thread->executing) {
 				if (thread == GetCurrentThread()) {
@@ -789,13 +788,13 @@ void Scheduler::PauseThread(Thread *thread, bool resume, bool lockAlreadyAcquire
 			// The thread doesn't need to be in the paused queue as it won't run anyway.
 			// If it is unblocked, then AddActiveThread will put it into the correct queue.
 		}
-	} else if (thread->item->list == &pausedThreads) {
+	} else if (resume && thread->item->list == &pausedThreads) {
 		// Remove the thread from the paused queue, and put it into the active queue.
 		pausedThreads.Remove(thread->item);
 		AddActiveThread(thread, false);
 	}
 
-	if (!lockAlreadyAcquired && thread != GetCurrentThread()) lock.Release();
+	if (!lockAlreadyAcquired) lock.Release();
 }
 
 void Scheduler::PauseProcess(Process *process, bool resume) {
@@ -1068,9 +1067,10 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 	thread->state = THREAD_WAITING_MUTEX;
 	thread->blockingMutex = mutex;
 
-	// TODO Why doesn't this work?
-	// bool spin = mutex && mutex->owner && mutex->owner->executing;
-	bool spin = false;
+	// Is the owner of this mutex executing?
+	// If not, there's no point in spinning on it.
+	bool spin = mutex && mutex->owner && mutex->owner->executing;
+	// bool spin = false;
 
 	lock.Release();
 
@@ -1203,7 +1203,6 @@ void Mutex::Acquire() {
 	while (__sync_val_compare_and_swap(&owner, nullptr, currentThread)) {
 		__sync_synchronize();
 
-		// TODO This is a bit of a hack.
 		if (GetLocalStorage() && GetLocalStorage()->schedulerReady) {
 			// Instead of spinning on the lock, 
 			// let's tell the scheduler to not schedule this thread

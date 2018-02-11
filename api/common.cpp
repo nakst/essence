@@ -46,6 +46,17 @@ void CF(CopyMemory)(void *_destination, void *_source, size_t bytes) {
 	uint8_t *destination = (uint8_t *) _destination;
 	uint8_t *source = (uint8_t *) _source;
 
+#ifdef ARCH_X86_64
+	while (bytes >= 16) {
+		_mm_storeu_si128((__m128i *) destination, 
+				_mm_loadu_si128((__m128i *) source));
+
+		source += 16;
+		destination += 16;
+		bytes -= 16;
+	}
+#endif
+
 	while (bytes >= 1) {
 		((uint8_t *) destination)[0] = ((uint8_t *) source)[0];
 
@@ -324,12 +335,7 @@ void *memcpy(void *dest, const void *src, size_t n) {
 
 void *memmove(void *dest, const void *src, size_t n) {
 	if ((uintptr_t) dest < (uintptr_t) src) {
-		uint8_t *dest8 = (uint8_t *) dest;
-		const uint8_t *src8 = (const uint8_t *) src;
-		for (uintptr_t i = 0; i < n; i++) {
-			dest8[i] = src8[i];
-		}
-		return dest;
+		return memcpy(dest, src, n);
 	} else {
 		uint8_t *dest8 = (uint8_t *) dest;
 		const uint8_t *src8 = (const uint8_t *) src;
@@ -387,7 +393,7 @@ void *realloc(void *ptr, size_t size) {
 		// Oops. We currently don't store the size of these regions.
 		// TODO Reallocating large heap allocations.
 		OSPrint("TODO Large heap reallocations.\n");
-		Panic();
+		OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
 	}
 
 	void *newBlock = malloc(size);
@@ -395,11 +401,6 @@ void *realloc(void *ptr, size_t size) {
 	memcpy(newBlock, ptr, oldSize);
 	free(ptr);
 	return newBlock;
-}
-
-extern "C" void write() {
-	// Temporary.
-	// Trying to get Odin to work.
 }
 
 void OSHelloWorld() {

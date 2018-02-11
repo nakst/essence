@@ -371,9 +371,9 @@ void ACPI::Initialise() {
 					// Send a startup IPI, again.
 					lapic.WriteRegister(0x310 >> 2, processor->apicID << 24);
 					lapic.WriteRegister(0x300 >> 2, 0x4600 | (AP_TRAMPOLINE >> PAGE_BITS));
-					for (uintptr_t i = 0; i < 1000; i++) Delay1MS(); // Wait longer this time.
+					for (uintptr_t i = 0; i < 1000 && *startupFlag == 0; i++) Delay1MS(); // Wait longer this time.
 
-					if (startupFlag) {
+					if (*startupFlag) {
 						// The processor started correctly.
 						processor->started = true;
 					} else {

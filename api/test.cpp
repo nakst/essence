@@ -1,5 +1,6 @@
 #include "../api/os.h"
 
+#if 0
 OSObject contentPane;
 
 void Test(OSObject generator, void *argument, OSCallbackData *data) {
@@ -51,6 +52,7 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 		} break;
 	}
 }
+#endif
 
 extern "C" void ProgramEntry() {
 	{
@@ -75,13 +77,23 @@ extern "C" void ProgramEntry() {
 		OSFree(pointer2);
 	}
 
+	{
+		char m[256];
+		char n[256];
+		n[255] = 0;
+		for (int i = 0; i < 256; i++) m[i] = i;
+		OSCopyMemory(n, m, 255);
+		m[255] = 0;
+		for (int i = 0; i < 256; i++) if (m[i] != n[i]) OSCrashProcess(202);
+	}
+
 	char *path = (char *) "/os/new_dir/test2.txt";
 	OSNodeInformation node;
 	OSError error = OSOpenNode(path, OSCStringLength(path), 
 			OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_CREATE_DIRECTORIES, &node);
-	OSPrint(":: error = %d\n", error);
+	if (error != OS_SUCCESS) OSCrashProcess(150);
 	error = OSResizeFile(node.handle, 8);
-	OSPrint(":: error = %d\n", error);
+	if (error != OS_SUCCESS) OSCrashProcess(151);
 	char buffer[8];
 	buffer[0] = 'a';
 	buffer[1] = 'b';
@@ -89,12 +101,9 @@ extern "C" void ProgramEntry() {
 	buffer[0] = 'b';
 	buffer[1] = 'c';
 	size_t bytesRead = OSReadFileSync(node.handle, 0, 8, buffer);
+	if (bytesRead != 8) OSCrashProcess(152);
 	if (buffer[0] != 'a' || buffer[1] != 0) OSCrashProcess(101);
-	OSPrint(":: bytesRead = %d\n", bytesRead);
-	OSPrint(":: buffer = %s\n", 8, buffer);
 	OSRefreshNodeInformation(&node);
-	OSPrint(":: length = %d\n", node.fileSize);
-	OSPrint(":: TID = %d\n", OSGetThreadID(OS_CURRENT_THREAD));
 
 	{
 		OSBatchCall calls[] = {
@@ -116,7 +125,6 @@ extern "C" void ProgramEntry() {
 			error = OSEnumerateDirectoryChildren(node.handle, buffer, 16);
 		}
 
-		OSPrint("error = %d\n", error);
 		if (error != OS_SUCCESS) OSCrashProcess(100);
 	}
 
@@ -179,7 +187,6 @@ extern "C" void ProgramEntry() {
 		if (error != OS_SUCCESS) OSCrashProcess(103);
 		uint16_t buffer[1024];
 		for (int i = 0; i < 1024; i++) buffer[i] = i;
-		OSPrint("!!!!Starting tests!!!!!\n");
 		OSWriteFileSync(node.handle, 0, 2048, buffer);
 		for (int i = 0; i < 1024; i++) buffer[i] = i + 1024;
 		OSHandle handle = OSWriteFileAsync(node.handle, 256, 2048 - 256 - 256, buffer + 128);
@@ -193,9 +200,8 @@ extern "C" void ProgramEntry() {
 		for (int i = 0; i < 128; i++) if (buffer[i] != i) OSCrashProcess(107);
 		for (int i = 1024 - 128; i < 1024; i++) if (buffer[i] != i) OSCrashProcess(108);
 		for (int i = 128; i < 1024 - 128; i++) if (buffer[i] == i) OSCrashProcess(110); else if (buffer[i] != i + 1024) OSCrashProcess(109);
-		OSPrint("Tests were a success!\n");
 
-		OSCreateWindow((char *) "Test Program", 12, 320, 200, 0);
+		// OSCreateWindow((char *) "Test Program", 12, 320, 200, 0);
 	}
 
 	{
@@ -277,6 +283,7 @@ extern "C" void ProgramEntry() {
 	OSSetObjectCallback(button1, OS_OBJECT_CONTROL, OS_CALLBACK_ACTION, Test, nullptr);
 #endif
 
+#if 0
 	while (true) {
 		OSMessage message;
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
@@ -289,4 +296,8 @@ extern "C" void ProgramEntry() {
 			}
 		}
 	}
+#endif
+
+	OSPrint("All tests completed successfully.\n");
+	OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 }

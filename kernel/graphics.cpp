@@ -618,6 +618,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 				sx = borderDimensions.left + 1;
 
 				if (mode == OS_DRAW_MODE_TRANSPARENT && !inBorderY) {
+					x = rightBorderStart;
 					continue;
 				}
 			}

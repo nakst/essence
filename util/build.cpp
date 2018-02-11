@@ -30,6 +30,9 @@ void Build(bool enableOptimisations) {
 	system("g++ util/esfs.cpp -o esfs -g");
 	system("chmod +x esfs");
 
+	printf("Creating output directories...\n");
+	system("mkdir -p bin/os");
+
 	printf("Creating MBR...\n");
 	system("nasm -fbin boot/x86/mbr.s -obin/mbr");
 	system("dd if=bin/mbr of=drive bs=436 count=1 conv=notrunc status=none");
@@ -121,6 +124,7 @@ int main(int argc, char **argv) {
 
 		if (strlen(l) == 1) {
 			l = prev;
+			if (!l) l = (char *) "help";
 			printf("(%s)\n", l);
 		} else {
 			l[strlen(l) - 1] = 0;
@@ -149,8 +153,11 @@ int main(int argc, char **argv) {
 			break;
 		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
 			system("./compile.sh");
-		} else if (0 == memcmp(l, "lua ", 3) || 0 == memcmp(l, "l ", 2)) {
+		} else if (0 == memcmp(l, "lua ", 4) || 0 == memcmp(l, "l ", 2)) {
 			sprintf(buffer, "lua -e \"print(%s)\"", 1 + strchr(l, ' '));
+			system(buffer);
+		} else if (0 == memcmp(l, "python ", 7) || 0 == memcmp(l, "p ", 2)) {
+			sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
 			system(buffer);
 		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h")) {
 			printf("(b) build - Unoptimised build\n");
@@ -163,6 +170,7 @@ int main(int argc, char **argv) {
 			printf("(x) exit - Exit the build system.\n");
 			printf("(h) help - Show the help prompt.\n");
 			printf("(l) lua - Execute a Lua expression.\n");
+			printf("(p) python - Execute a Lua expression.\n");
 			printf("(c) compile - Compile the kernel and programs.\n");
 		} else {
 			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);

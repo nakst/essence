@@ -33,7 +33,7 @@ static OSHeapRegion *heapRegions[12];
 static OSHandle heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(heapMutex)
 #define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(heapMutex)
-#define OS_HEAP_PANIC(n) { OSPrint("Heap panic, %d\n", n); Panic(); }
+#define OS_HEAP_PANIC(n) { OSCrashProcess(OS_FATAL_ERROR_CORRUPT_HEAP); }
 #define OS_HEAP_ALLOCATE_CALL(x) OSAllocate(x)
 #define OS_HEAP_FREE_CALL(x) OSFree(x)
 #endif
@@ -42,12 +42,6 @@ static OSHandle heapMutex;
 #define OS_HEAP_REGION_DATA(region) ((uint8_t *) region + 0x10)
 #define OS_HEAP_REGION_NEXT(region) ((OSHeapRegion *) ((uint8_t *) region + region->next))
 #define OS_HEAP_REGION_PREVIOUS(region) (region->previous ? ((OSHeapRegion *) ((uint8_t *) region - region->previous)) : nullptr)
-
-#ifndef KERNEL
-static void OSHeapInitialise() {
-	heapMutex = OSCreateMutex();
-}
-#endif
 
 static void OSHeapRemoveFreeRegion(OSHeapRegion *region) {
 	if (!region->regionListReference || region->used) {

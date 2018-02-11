@@ -259,9 +259,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			// User-code exceptions are *basically* the same thing as system calls.
+			Thread *currentThread = GetCurrentThread();
 			ThreadTerminatableState previousTerminatableState;
-			previousTerminatableState = GetCurrentThread()->terminatableState;
-			GetCurrentThread()->terminatableState = THREAD_IN_SYSCALL;
+			previousTerminatableState = currentThread->terminatableState;
+			currentThread->terminatableState = THREAD_IN_SYSCALL;
 
 			if (local && local->spinlockCount) {
 				KernelPanic("InterruptHandler - User exception occurred with spinlock acquired.");
@@ -281,22 +282,22 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			// TODO Usermode exceptions and debugging.
 			KernelLog(LOG_WARNING, "InterruptHandler - Exception (%z) in userland program (%s).\nRIP = %x (CPU %d)\nRSP = %x\nX86_64 error codes: [err] %x, [cr2] %x\n", 
 					exceptionInformation[interrupt], 
-					GetCurrentThread()->process->executablePathLength, GetCurrentThread()->process->executablePath,
+					currentThread->process->executablePathLength, currentThread->process->executablePath,
 					context->rip, local->processorID, context->rsp, context->errorCode, context->cr2);
 
 			OSCrashReason crashReason;
 			crashReason.errorCode = OS_FATAL_ERROR_PROCESSOR_EXCEPTION;
-			scheduler.CrashProcess(GetCurrentThread()->process, crashReason);
+			scheduler.CrashProcess(currentThread->process, crashReason);
 
 			resolved:;
 
-			if (GetCurrentThread()->terminatableState != THREAD_IN_SYSCALL) {
+			if (currentThread->terminatableState != THREAD_IN_SYSCALL) {
 				KernelPanic("InterruptHandler - Thread changed terminatable status during interrupt.\n");
 			}
 
-			GetCurrentThread()->terminatableState = previousTerminatableState;
+			currentThread->terminatableState = previousTerminatableState;
 
-			if (GetCurrentThread()->terminating) {
+			if (currentThread->terminating || currentThread->paused) {
 				ProcessorFakeTimerInterrupt();
 			}
 
@@ -308,23 +309,6 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			}
 
 			if (interrupt == 14) {
-#if 0
-				Print("err, %x\n", context->errorCode);
-				Print("cr3 = %x\n", ProcessorReadCR3());
-
-				{
-					uintptr_t indexL4 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 3);
-					uintptr_t indexL3 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 2);
-					uintptr_t indexL2 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 1);
-					uintptr_t indexL1 = (context->cr2 & 0xFFFFFFFFF000) >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0);
-					uintptr_t prev = context->cr2;
-					if (prev) Print("l4 %d, %x\n", indexL4, prev = PAGE_TABLE_L4[indexL4]);
-					if (prev) Print("l3, %x\n", prev = PAGE_TABLE_L3[indexL3]);
-					if (prev) Print("l2, %x\n", prev = PAGE_TABLE_L2[indexL2]);
-					if (prev) Print("l1, %x\n", prev = PAGE_TABLE_L1[indexL1]);
-				}
-#endif
-
 				if ((context->errorCode & (1 << 3)) || context->cr2 > 0xFFFFFF8000000000) {
 					goto fault;
 				}
