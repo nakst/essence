@@ -1,5 +1,8 @@
 #include "../api/os.h"
 
+#include "../freetype/ft2build.h"
+#include FT_FREETYPE_H
+
 #if 0
 OSObject contentPane;
 
@@ -54,7 +57,62 @@ void PopulateMenu(OSObject generator, void *argument, OSCallbackData *data) {
 }
 #endif
 
+jmp_buf buf;
+int jmpState = 0;
+
+void Function2() {
+	if (jmpState++ != 2) OSCrashProcess(232);
+	longjmp(buf, 0);
+	OSCrashProcess(233);
+}
+
+int CompareIntegers(const void *a, const void *b) {
+	uintptr_t *c = (uintptr_t *) a;
+	uintptr_t *d = (uintptr_t *) b;
+	return *c - *d;
+}
+
 extern "C" void ProgramEntry() {
+	jmpState = 1;
+	if (setjmp(buf) == 0) {
+		if (jmpState++ != 1) OSCrashProcess(230);
+		Function2();
+		OSCrashProcess(231);
+	} else {
+		if (jmpState++ != 3) OSCrashProcess(234);
+	}
+
+	if (jmpState++ != 4) OSCrashProcess(235);
+	if (strtol("\n\f\n -0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAaaaaaa", nullptr, 0) != LONG_MIN) OSCrashProcess(236);
+	char *x = (char *) "+03", *y;
+	if (strtol(x, &y, 4) != 3 || y != x + 3) OSCrashProcess(237);
+
+	{
+		char *a = (char *) "hello";
+		if (strstr(a, "hello") != a) OSCrashProcess(238);
+		if (strstr(a, "hell") != a) OSCrashProcess(239);
+		if (strstr(a, "ello") != a + 1) OSCrashProcess(240);
+		if (strstr(a, "hello!")) OSCrashProcess(241);
+		if (strstr(a, "l") != a + 2) OSCrashProcess(242);
+	}
+
+	{
+		char *a = (char *) "hello";
+
+		if (strcmp(a, "hdllo") <= 0) OSCrashProcess(243);
+		if (strcmp(a, "hello") != 0) OSCrashProcess(244);
+		if (strcmp(a, "hfllo") >= 0) OSCrashProcess(245);
+		if (strcmp(a, "h") <= 0) OSCrashProcess(246);
+		if (strcmp(a, "helloo") >= 0) OSCrashProcess(247);
+	}
+
+	{
+		uintptr_t array[1000];
+		for (uintptr_t i = 0; i < 1000; i++) array[i] = OSGetRandomByte();
+		qsort(array, 1000, sizeof(uintptr_t), CompareIntegers);
+		for (uintptr_t i = 1; i < 1000; i++) if (array[i] < array[i - 1]) OSCrashProcess(248);
+	}
+
 	{
 		OSNodeInformation node = {};
 		OSOpenNode(OSLiteral("/MapFile.txt"), 
@@ -297,6 +355,41 @@ extern "C" void ProgramEntry() {
 		}
 	}
 #endif
+	{
+		OSNodeInformation node;
+		OSOpenNode(OSLiteral("/os/source_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
+		void *loadedFont = OSMapObject(node.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
+
+		FT_Error error;
+
+		FT_Library library;
+		error = FT_Init_FreeType(&library);
+		if (error) OSCrashProcess(400);
+		// OSPrint("library = %x, error = %d\n", library, error);
+
+		FT_Face face;
+		error = FT_New_Memory_Face(library, (uint8_t *) loadedFont, node.fileSize, 0, &face);
+		if (error) OSCrashProcess(401);
+		// OSPrint("face = %x, error = %d\n", face, error);
+
+		const int fontSize = 14;
+		error = FT_Set_Char_Size(face, 0, fontSize * 64, 100, 100);
+		if (error) OSCrashProcess(402);
+		// OSPrint("size = %d, error = %d\n", fontSize, error);
+
+		char character = 'a';
+		int glyphIndex = FT_Get_Char_Index(face, character);
+		error = FT_Load_Glyph(face, glyphIndex, FT_LOAD_RENDER);
+		if (error) OSCrashProcess(403);
+		// OSPrint("character = %d, index = %d, error = %d\n", character, glyphIndex, error);
+
+		FT_Bitmap *bitmap = &face->glyph->bitmap;
+		int width = bitmap->width;
+		int height = bitmap->rows;
+		if (error) OSCrashProcess(404);
+		if (width != 9 || height != 9) OSCrashProcess(405);
+	}
+
 
 	OSPrint("All tests completed successfully.\n");
 	OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);

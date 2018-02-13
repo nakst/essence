@@ -1,3 +1,6 @@
+(This project includes other projects. Please see the relevant subdirectories
+for the licensing information of each.)
+
 MIT License
 
 Copyright (c) 2017 Nakst

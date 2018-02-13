@@ -1,19 +1,36 @@
-#define STB_TRUETYPE_IMPLEMENTATION
-#define STBTT_STATIC
-#include "stb_truetype.h"
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
-static stbtt_fontinfo guiRegularFont;
+static FT_Library freetypeLibrary;
+static FT_Face guiRegularFont;
+
 static bool fontRendererInitialised;
 
 struct FontCacheEntry {
 	uint8_t *data;
 	int character, size;
 	int width, height, xoff, yoff;
+	int advanceWidth, glyphIndex;
 };
 
 #define FONT_CACHE_SIZE 256
 static FontCacheEntry fontCache[FONT_CACHE_SIZE];
 static uintptr_t fontCachePosition;
+
+static FontCacheEntry *LookupFontCacheEntry(int character, int size) {
+	// TODO Is there a faster way to do this?
+
+	for (uintptr_t i = 0; i < FONT_CACHE_SIZE; i++) {
+		FontCacheEntry *entry = fontCache + i;
+
+		if (entry->character != character) continue;
+		if (entry->size != size) continue;
+
+		return entry;
+	}
+
+	return nullptr;
+}
 
 static void OSFontRendererInitialise() {
 	if (fontRendererInitialised) {
@@ -21,7 +38,7 @@ static void OSFontRendererInitialise() {
 	}
 
 	OSNodeInformation node;
-	OSError error = OSOpenNode(OSLiteral("/os/source_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
+	OSError error = OSOpenNode(OSLiteral("/os/noto_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
 
 	if (error != OS_SUCCESS) {
 		OSPrint("Could not open font file.\n");
@@ -30,45 +47,53 @@ static void OSFontRendererInitialise() {
 
 	void *loadedFont = OSMapObject(node.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
 
-	if (stbtt_InitFont(&guiRegularFont, (uint8_t *) loadedFont, 0)) {
-		// The font was loaded.
-	} else {
-		OSPrint("Could not initialise stbtt.\n");
+	if (!loadedFont) {
+		OSPrint("Could not map font file.\n");
 		return;
+	}
+
+	{
+		FT_Error error;
+
+		error = FT_Init_FreeType(&freetypeLibrary);
+
+		if (error) {
+			OSPrint("Could not initialise freetype.\n");
+			return;
+		}
+
+		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFont, node.fileSize, 0, &guiRegularFont);
+
+		if (error) {
+			OSPrint("Could not load font into freetype.\n");
+			return;
+		}
 	}
 
 	fontRendererInitialised = true;
 }
 
-static int MeasureStringWidth(char *string, size_t stringLength, float scale) {
+static int MeasureStringWidth(char *string, size_t stringLength, int size) {
 	char *stringEnd = string + stringLength;
 	int totalWidth = 0;
 
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) return -1;
 
+	FT_Set_Char_Size(guiRegularFont, 0, size * 64, 100, 100);
+
 	while (string < stringEnd) {
 		int character = utf8_value(string);
 
-		int advanceWidth, leftSideBearing;
-		stbtt_GetCodepointHMetrics(&guiRegularFont, character, &advanceWidth, &leftSideBearing);
-		advanceWidth    *= scale;
-		leftSideBearing *= scale;
+		int glyphIndex = FT_Get_Char_Index(guiRegularFont, character);
+		FT_Load_Glyph(guiRegularFont, glyphIndex, FT_LOAD_DEFAULT);
+		int advanceWidth = guiRegularFont->glyph->advance.x >> 6;
 
 		totalWidth += advanceWidth;
-
 		string = utf8_advance(string);
 	}
 
 	return totalWidth;
-}
-
-static float GetGUIFontScale(int size) {
-	OSFontRendererInitialise();
-	if (!fontRendererInitialised) OSCrashProcess(OS_FATAL_ERROR_COULD_NOT_LOAD_FONT);
-
-	float scale = stbtt_ScaleForPixelHeight(&guiRegularFont, size);
-	return scale;
 }
 
 static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap) {
@@ -106,15 +131,10 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) OSCrashProcess(OS_FATAL_ERROR_COULD_NOT_LOAD_FONT);
 
-	float scale = GetGUIFontScale(size);
+	FT_Set_Char_Size(guiRegularFont, 0, size * 64, 100, 100);
 
-	int ascent, descent, lineGap;
-	stbtt_GetFontVMetrics(&guiRegularFont, &ascent, &descent, &lineGap);
-	ascent  *= scale;
-	descent *= scale;
-	lineGap *= scale;
-
-	int lineHeight = ascent - descent + lineGap;
+	int lineHeight = guiRegularFont->size->metrics.height >> 6; 
+	int ascent = guiRegularFont->size->metrics.ascender >> 6; 
 
 	char *stringEnd = string->buffer + string->bytes;
 
@@ -125,7 +145,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		bitmap = OSMapObject(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height, OS_MAP_OBJECT_READ_WRITE);
 	}
 
-	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, scale);
+	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, size);
 
 	OSPoint outputPosition;
 
@@ -172,12 +192,25 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	while (buffer < stringEnd) {
 		int character = utf8_value(buffer);
 
-		int advanceWidth, leftSideBearing;
-		stbtt_GetCodepointHMetrics(&guiRegularFont, character, &advanceWidth, &leftSideBearing);
-		advanceWidth    *= scale;
-		leftSideBearing *= scale;
-
+		int width, height, xoff, yoff;
 		uint8_t *output = nullptr;
+		int glyphIndex, advanceWidth;
+
+		FontCacheEntry *cacheEntry = LookupFontCacheEntry(character, size);
+
+		if (cacheEntry) {
+			output = cacheEntry->data;
+			width = cacheEntry->width;
+			height = cacheEntry->height;
+			xoff = cacheEntry->xoff;
+			yoff = cacheEntry->yoff;
+			glyphIndex = cacheEntry->glyphIndex;
+			advanceWidth = cacheEntry->advanceWidth;
+		} else {
+			glyphIndex = FT_Get_Char_Index(guiRegularFont, character);
+			FT_Load_Glyph(guiRegularFont, glyphIndex, FT_LOAD_DEFAULT);
+			advanceWidth = guiRegularFont->glyph->advance.x >> 6;
+		}
 
 		bool selected = false;
 
@@ -186,9 +219,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		} else if (outputPosition.x >= region.right) {
 			break;
 		}
-
-		int ix0, iy0, ix1, iy1;
-		stbtt_GetCodepointBitmapBox(&guiRegularFont, character, scale, scale, &ix0, &iy0, &ix1, &iy1);
 
 		if (coordinate.x >= outputPosition.x && coordinate.x < outputPosition.x + advanceWidth / 2 && !actuallyDraw) {
 			caret->character = characterIndex;
@@ -204,20 +234,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 		if (!actuallyDraw) {
 			goto skipCharacter;
-		}
-
-		int width, height, xoff, yoff;
-
-		for (uintptr_t i = 0; i < FONT_CACHE_SIZE; i++) {
-			if (fontCache[i].character == character && fontCache[i].size == size) {
-				FontCacheEntry *entry = fontCache + i;
-				output = entry->data;
-				width = entry->width;
-				height = entry->height;
-				xoff = entry->xoff;
-				yoff = entry->yoff;
-				break;
-			}
 		}
 
 		if (caretIndex != (uintptr_t) -1) {
@@ -261,7 +277,16 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		if (!output) {
-			output = stbtt_GetCodepointBitmap(&guiRegularFont, scale, scale, character, &width, &height, &xoff, &yoff);
+			FT_Render_Glyph(guiRegularFont->glyph, FT_RENDER_MODE_NORMAL);
+
+			FT_Bitmap *bitmap = &guiRegularFont->glyph->bitmap;
+			width = bitmap->width;
+			height = bitmap->rows;
+			xoff = guiRegularFont->glyph->bitmap_left;
+			yoff = -guiRegularFont->glyph->bitmap_top;
+
+			output = (uint8_t *) OSHeapAllocate(width * height, false);
+			OSCopyMemory(output, bitmap->buffer, width * height);
 
 			if (output) {
 				FontCacheEntry *entry = fontCache + fontCachePosition;
@@ -272,6 +297,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				entry->height = height;
 				entry->xoff = xoff;
 				entry->yoff = yoff;
+				entry->advanceWidth = advanceWidth;
+				entry->glyphIndex = glyphIndex;
 				entry->size = size;
 				fontCachePosition = (fontCachePosition + 1) % FONT_CACHE_SIZE;
 			} else {
@@ -280,7 +307,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		for (int y = 0; y < height; y++) {
-			int oY = outputPosition.y + iy0 + y;
+			int oY = outputPosition.y + yoff + y;
 
 			if (oY < region.top) continue;
 			if (oY >= region.bottom) break;
@@ -292,7 +319,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			if (oY > invalidatedRegion.bottom) invalidatedRegion.bottom = oY;
 
 			for (int x = 0; x < width; x++) {
-				int oX = outputPosition.x + ix0 + x;
+				int oX = outputPosition.x + xoff + x;
 			
 				if (oX < region.left) continue;
 				if (oX >= region.right) break;
@@ -374,7 +401,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;
 }
 
-#define FONT_SIZE (18)
+#define FONT_SIZE (10)
 
 OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, 
 		OSString *string, unsigned alignment, OSCaret *caret) {

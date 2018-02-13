@@ -28,6 +28,31 @@ char *errorMessages[] = {
 	(char *) "CORRUPT_HEAP",
 };
 
+OSCallback oldCallback;
+
+OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
+	OSCallbackResponse response = OS_CALLBACK_HANDLED;
+
+	switch (message->type) {
+		case OS_MESSAGE_KEY_PRESSED: {
+			if (message->keyboard.alt && message->keyboard.scancode == OS_SCANCODE_F4) {
+				OSMessage close;
+				close.type = OS_MESSAGE_DESTROY;
+				OSSendMessage(message->context, &close);
+			} else {
+				goto unhandled;
+			}
+		} break;
+
+		default: {
+			unhandled:;
+			response = OSForwardMessage(oldCallback, message);
+		} break;
+	}
+
+	return response;
+}
+
 OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
@@ -49,7 +74,9 @@ OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
 						"Error code: %d (user error)", code);
 			}
 
-			OSObject dialog = OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, OSLiteral("Program Crashed"));
+			OSObject dialog = OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, crashMessage, crashMessageLength);
+			oldCallback = OSSetCallback(dialog, OSCallback(ProcessWindowMessage, dialog));
+			(void) dialog;
 #if 0
 			OSSetGrid(dialog, 1 /* Columns */, 2 /* Rows */);
 

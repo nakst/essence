@@ -124,7 +124,10 @@ int main(int argc, char **argv) {
 
 		if (strlen(l) == 1) {
 			l = prev;
-			if (!l) l = (char *) "help";
+			if (!l) {
+				l = (char *) malloc(5);
+				strcpy(l, "help");
+			}
 			printf("(%s)\n", l);
 		} else {
 			l[strlen(l) - 1] = 0;
@@ -137,6 +140,9 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "test") || 0 == strcmp(l, "t")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, false);
+		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
+			Build(false);
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "low-memory")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 32, 4, LOG_NORMAL, false);
@@ -163,6 +169,7 @@ int main(int argc, char **argv) {
 			printf("(b) build - Unoptimised build\n");
 			printf("(o) optimise - Optimised build\n");
 			printf("(t) test - Qemu (SMP/AHCI/64MB)\n");
+			printf("( ) test-without-smp - Qemu (AHCI/64MB)\n");
 			printf("( ) low-memory - Qemu (SMP/AHCI/32MB)\n");
 			printf("(d) debug - Qemu (AHCI/64MB/GDB)\n");
 			printf("( ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");

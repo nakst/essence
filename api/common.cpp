@@ -353,7 +353,8 @@ size_t strlen(const char *s) {
 }
 
 void *malloc(size_t size) {
-	return OSHeapAllocate(size, false);
+	void *x = OSHeapAllocate(size, false);
+	return x;
 }
 
 void *calloc(size_t num, size_t size) {
@@ -387,7 +388,7 @@ int iceil(double x) {
 void *realloc(void *ptr, size_t size) {
 	if (!ptr) return malloc(size);
 
-	uint16_t oldSize = ((OSHeapRegion *) ((uint8_t *) ptr - 0x10))->size;
+	uint16_t oldSize = ((OSHeapRegion *) ((uint8_t *) ptr - 0x10))->size - 0x10;
 
 	if (!oldSize) {
 		// Oops. We currently don't store the size of these regions.
@@ -401,6 +402,212 @@ void *realloc(void *ptr, size_t size) {
 	memcpy(newBlock, ptr, oldSize);
 	free(ptr);
 	return newBlock;
+}
+
+char *getenv(const char *name) {
+	(void) name;
+	return nullptr;
+}
+
+int strcmp(const char *s1, const char *s2) {
+	while (true) {
+		if (*s1 != *s2) {
+			if (*s1 == 0) return -1;
+			else if (*s2 == 0) return 1;
+			return *s1 - *s2;
+		}
+
+		if (*s1 == 0) {
+			return 0;
+		}
+
+		s1++;
+		s2++;
+	}
+}
+
+int strncmp(const char *s1, const char *s2, size_t n) {
+	while (n--) {
+		if (*s1 != *s2) {
+			if (*s1 == 0) return -1;
+			else if (*s2 == 0) return 1;
+			return *s1 - *s2;
+		}
+
+		if (*s1 == 0) {
+			return 0;
+		}
+
+		s1++;
+		s2++;
+	}
+
+	return 0;
+}
+
+int isspace(int c) {
+	if (c == ' ')  return 1;
+	if (c == '\f') return 1;
+	if (c == '\n') return 1;
+	if (c == '\r') return 1;
+	if (c == '\t') return 1;
+	if (c == '\v') return 1;
+
+	return 0;
+}
+
+static int64_t ConvertCharacterToDigit(int character, int base) {
+	int64_t result = -1;
+
+	if (character >= '0' && character <= '9') {
+		result = character - '0';
+	} else if (character >= 'A' && character <= 'Z') {
+		result = character - 'A' + 10;
+	} else if (character >= 'a' && character <= 'z') {
+		result = character - 'a' + 10;
+	}
+
+	if (result >= base) {
+		result = -1;
+	}
+
+	return result;
+}
+
+long int strtol(const char *nptr, char **endptr, int base) {
+	// TODO errno
+
+	if (base > 36) return 0;
+
+	while (isspace(*nptr)) {
+		nptr++;
+	}
+
+	bool positive = true;
+
+	if (*nptr == '+') {
+		positive = true;
+		nptr++;
+	} else if (*nptr == '-') {
+		positive = false;
+		nptr++;
+	}
+
+	if (base == 0) {
+		if (nptr[0] == '0' && (nptr[1] == 'x' || nptr[1] == 'X')) {
+			base = 16;
+			nptr += 2;
+		} else if (nptr[0] == '0') {
+			base = 8; // Why?!?
+			nptr++;
+		} else {
+			base = 10;
+		}
+	}
+
+	int64_t value = 0;
+	bool overflow = false;
+
+	while (true) {
+		int64_t digit = ConvertCharacterToDigit(*nptr, base);
+
+		if (digit != -1) {
+			nptr++;
+
+			int64_t x = value;
+			value *= base;
+			value += digit;
+
+			if (value / base != x) {
+				overflow = true;
+			}
+		} else {
+			break;
+		}
+	}
+
+	if (!positive) {
+		value = -value;
+	}
+
+	if (overflow) {
+		value = positive ? LONG_MAX : LONG_MIN;
+	}
+
+	if (endptr) {
+		*endptr = (char *) nptr;
+	}
+
+	return value;
+}
+
+char *strstr(const char *haystack, const char *needle) {
+	size_t haystackLength = strlen(haystack);
+	size_t needleLength = strlen(needle);
+
+	if (haystackLength < needleLength) {
+		return nullptr;
+	}
+
+	for (uintptr_t i = 0; i <= haystackLength - needleLength; i++) {
+		for (uintptr_t j = 0; j < needleLength; j++) {
+			if (haystack[i + j] != needle[j]) {
+				goto tryNext;
+			}
+
+			return (char *) haystack + i;
+		}
+
+		tryNext:;
+	}
+
+	return nullptr;
+}
+
+void qsort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *)) {
+	if (nmemb <= 1) return;
+
+	uint8_t *base = (uint8_t *) _base;
+	uint8_t swap[size];
+
+	uintptr_t i = -1, j = nmemb;
+
+	while (true) {
+		while (compar(base + ++i * size, base) < 0);
+		while (compar(base + --j * size, base) > 0);
+
+		if (i >= j) break;
+
+		memcpy(swap, base + i * size, size);
+		memcpy(base + i * size, base + j * size, size);
+		memcpy(base + j * size, swap, size);
+	}
+
+	qsort(base, ++j, size, compar);
+	qsort(base + j * size, nmemb - j, size, compar);
+}
+
+char *strcpy(char *dest, const char *src) {
+	size_t stringLength = strlen(src);
+	memcpy(dest, src, stringLength + 1);
+	return dest;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n) {
+	return CF(CompareBytes)((void *) s1, (void *) s2, n);
+}
+
+void *memchr(const void *_s, int _c, size_t n) {
+	uint8_t *s = (uint8_t *) _s;
+	uint8_t c = (uint8_t) _c;
+
+	for (uintptr_t i = 0; i < n; i++) {
+		if (s[i] == c) {
+			return s + i;
+		}
+	}
+
+	return nullptr;
 }
 
 void OSHelloWorld() {

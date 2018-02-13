@@ -1,4 +1,5 @@
 #define UI_IMAGE(_image) _image.region, _image.border
+#define DIMENSION_PUSH (-1)
 
 struct UIImage {
 	OSRectangle region;
@@ -7,16 +8,23 @@ struct UIImage {
 
 UIImage activeWindowBorder;
 
+// TODO Data caching system.
+// TODO Linking to parents.
+// TODO Notification callbacks.
+// TODO Simplifying the target/generator mess.
+
 struct Control : APIObject {
 	unsigned layout;
 	OSString text;
 	OSRectangle bounds;
+	int preferredWidth, preferredHeight;
 };
 
 struct Grid : APIObject {
 	unsigned columns, rows;
 	OSObject *objects;
 	OSRectangle bounds;
+	int *widths, *heights;
 };
 
 struct Window : APIObject {
@@ -24,6 +32,7 @@ struct Window : APIObject {
 	unsigned width, height;
 	Grid *root;
 	bool destroyed;
+	unsigned flags;
 };
 
 static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
@@ -35,15 +44,51 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 			control->bounds = OSRectangle(
 					message->layout.left, message->layout.right,
 					message->layout.top, message->layout.bottom);
+
+			int width = control->bounds.right - control->bounds.left;
+			int height = control->bounds.bottom - control->bounds.top;
+
+			if (width > control->preferredWidth) {
+				if (control->layout & OS_CELL_H_CENTER) {
+					control->bounds.left = control->bounds.left + width / 2 - control->preferredWidth / 2;
+					control->bounds.right = control->bounds.left + control->preferredWidth;
+				} else if (control->layout & OS_CELL_H_LEFT) {
+					control->bounds.right = control->bounds.left + control->preferredWidth;
+				} else if (control->layout & OS_CELL_H_RIGHT) {
+					control->bounds.left = control->bounds.right - control->preferredWidth;
+				}
+			}
+
+			if (height > control->preferredHeight) {
+				if (control->layout & OS_CELL_V_CENTER) {
+					control->bounds.top = control->bounds.top + height / 2 - control->preferredHeight / 2;
+					control->bounds.bottom = control->bounds.top + control->preferredHeight;
+				} else if (control->layout & OS_CELL_V_TOP) {
+					control->bounds.bottom = control->bounds.top + control->preferredHeight;
+				} else if (control->layout & OS_CELL_V_BOTTOM) {
+					control->bounds.top = control->bounds.bottom - control->preferredHeight;
+				}
+
+			}
+		} break;
+
+		case OS_MESSAGE_MEASURE: {
+			message->measure.width = control->preferredWidth;
+			message->measure.height = control->preferredHeight;
+
+			if (control->layout & OS_CELL_H_PUSH) message->measure.width = DIMENSION_PUSH;
+			if (control->layout & OS_CELL_V_PUSH) message->measure.height = DIMENSION_PUSH;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
+			OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
 			OSDrawString(message->paint.surface, control->bounds, &control->text,
-				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0, -1);
+				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0x003060, -1);
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
-			// TODO Free all the memory associated with the control.
+			OSHeapFree(control->text.buffer);
+			OSHeapFree(control);
 		} break;
 
 		default: {
@@ -54,38 +99,39 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 	return response;
 }
 
+static void CreateString(char *text, size_t textBytes, OSString *string) {
+	OSHeapFree(string->buffer);
+	string->buffer = (char *) OSHeapAllocate(textBytes, false);
+	string->bytes = textBytes;
+	OSCopyMemory(string->buffer, text, textBytes);
+}
+
 OSObject OSCreateLabel(char *text, size_t textBytes) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
-
-	control->text.buffer = (char *) OSHeapAllocate(textBytes, false);
-	control->text.bytes = textBytes;
-	OSCopyMemory(control->text.buffer, text, textBytes);
+	CreateString(text, textBytes, &control->text);
 
 	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
+
+	control->preferredWidth = MeasureStringWidth(text, textBytes, FONT_SIZE) + 4;
+	control->preferredHeight = FONT_SIZE + 4;
 
 	return control;
 }
 
-void OSAddControl(OSObject _grid, OSRectangle cells, OSObject _control, unsigned layout) {
+void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _control, unsigned layout) {
 	Grid *grid = (Grid *) _grid;
 
-	if (cells.right > grid->columns || cells.bottom > grid->rows 
-			|| cells.top < 0 || cells.left < 0 
-			|| cells.top >= cells.bottom || cells.left >= cells.right) {
+	if (column >= grid->columns || row >= grid->rows) {
 		OSCrashProcess(OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS);
 	}
 
 	Control *control = (Control *) _control;
 	control->layout = layout;
 
-	for (int y = cells.top; y < cells.bottom; y++) {
-		for (int x = cells.left; x < cells.right; x++) {
-			OSObject *object = grid->objects + (y * grid->columns + x);
-			if (*object) OSCrashProcess(OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT);
-			*object = control;
-		}
-	}
+	OSObject *object = grid->objects + (row * grid->columns + column);
+	if (*object) OSCrashProcess(OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT);
+	*object = control;
 }
 
 static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
@@ -94,15 +140,113 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
-			OSSendMessage(grid->objects[0], message);
+			grid->bounds = OSRectangle(
+					message->layout.left, message->layout.right,
+					message->layout.top, message->layout.bottom);
+
+			OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
+			OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
+
+			int pushH = 0, pushV = 0;
+
+			for (uintptr_t i = 0; i < grid->columns; i++) {
+				for (uintptr_t j = 0; j < grid->rows; j++) {
+					OSObject *object = grid->objects + (j * grid->columns + i);
+					message->type = OS_MESSAGE_MEASURE;
+					if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
+
+					int width = message->measure.width;
+					int height = message->measure.height;
+
+					if (width == DIMENSION_PUSH) { grid->widths[i] = DIMENSION_PUSH; pushH++; }
+					else if (grid->widths[i] < width && grid->widths[i] != DIMENSION_PUSH) grid->widths[i] = width;
+					if (height == DIMENSION_PUSH) { grid->heights[j] = DIMENSION_PUSH; pushV++; }
+					else if (grid->heights[j] < height && grid->heights[j] != DIMENSION_PUSH) grid->heights[j] = height;
+				}
+			}
+
+			if (pushH) {
+				int usedWidth = 4; 
+				for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i] + 4;
+				int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH - 4;
+				for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] == DIMENSION_PUSH) grid->widths[i] = widthPerPush;
+			}
+
+			if (pushV) {
+				int usedHeight = 4; 
+				for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j] + 4;
+				int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV - 4;
+				for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] == DIMENSION_PUSH) grid->heights[j] = heightPerPush;
+			}
+
+			int posX = grid->bounds.left + 4;
+
+			for (uintptr_t i = 0; i < grid->columns; i++) {
+				int posY = grid->bounds.top + 4;
+
+				for (uintptr_t j = 0; j < grid->rows; j++) {
+					OSObject *object = grid->objects + (j * grid->columns + i);
+
+					message->type = OS_MESSAGE_LAYOUT;
+					message->layout.left = posX;
+					message->layout.right = posX + grid->widths[i];
+					message->layout.top = posY;
+					message->layout.bottom = posY + grid->heights[j];
+
+					OSSendMessage(*object, message);
+
+					posY += grid->heights[j] + 4;
+				}
+
+				posX += grid->widths[i] + 4;
+			}
+		} break;
+
+		case OS_MESSAGE_MEASURE: {
+			OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
+			OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
+
+			bool pushH = false, pushV = false;
+
+			for (uintptr_t i = 0; i < grid->columns; i++) {
+				for (uintptr_t j = 0; j < grid->rows; j++) {
+					OSObject *object = grid->objects + (j * grid->columns + i);
+					if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
+
+					int width = message->measure.width;
+					int height = message->measure.height;
+
+					if (width == DIMENSION_PUSH) pushH = true;
+					if (height == DIMENSION_PUSH) pushV = true;
+
+					if (grid->widths[i] < width) grid->widths[i] = width;
+					if (grid->heights[j] < height) grid->heights[j] = height;
+				}
+			}
+
+			int width = pushH ? DIMENSION_PUSH : 4, height = pushV ? DIMENSION_PUSH : 4;
+
+			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + 4;
+			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + 4;
+
+			message->measure.width = width;
+			message->measure.height = height;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
-			OSSendMessage(grid->objects[0], message);
+			for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+				if (grid->objects[i]) {
+					OSSendMessage(grid->objects[i], message);
+				}
+			}
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
-			// TODO Free all the memory associated with the grid.
+			for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+				OSSendMessage(grid->objects[i], message);
+			}
+
+			OSHeapFree(grid);
 		} break;
 
 		default: {
@@ -114,11 +258,16 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 }
 
 OSObject OSCreateGrid(unsigned columns, unsigned rows) {
-	Grid *grid = (Grid *) OSHeapAllocate(sizeof(Grid), true);
+	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * (columns + rows), true);
+
+	Grid *grid = (Grid *) memory;
+	grid->type = API_OBJECT_GRID;
 
 	grid->columns = columns;
 	grid->rows = rows;
-	grid->objects = (OSObject *) OSHeapAllocate(sizeof(OSObject) * columns * rows, true);
+	grid->objects = (OSObject *) (memory + sizeof(Grid));
+	grid->widths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows);
+	grid->heights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns);
 
 	OSSetCallback(grid, OSCallback(ProcessGridMessage, grid));
 
@@ -135,7 +284,7 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_WINDOW_CREATED: {
-			OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), UI_IMAGE(activeWindowBorder), OS_DRAW_MODE_REPEAT_FIRST);
+			// OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), UI_IMAGE(activeWindowBorder), OS_DRAW_MODE_REPEAT_FIRST);
 
 			{
 				OSMessage message;
@@ -162,7 +311,7 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
-			// TODO Free all the memory associated with the window.
+			OSSendMessage(window->root, message);
 			OSCloseHandle(window->surface);
 			OSCloseHandle(window->window);
 			window->destroyed = true;
@@ -191,12 +340,21 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 
 	window->width = bounds.right - bounds.left;
 	window->height = bounds.bottom - bounds.top;
+	window->flags = flags;
 
 	OSSetCallback(window, OSCallback(ProcessWindowMessage, window));
 
-	window->root = (Grid *) OSCreateGrid(1, 1);
-	OSObject label = OSCreateLabel(OSLiteral("Hello, world!"));
-	OSAddControl(window->root, OSRectangle(0, 1, 0, 1), label, 0);
+	window->root = (Grid *) OSCreateGrid(1, 3);
+
+	{
+		OSObject label = OSCreateLabel(title, titleBytes);
+		OSAddControl(window->root, 0, 0, label, OS_CELL_H_PUSH | OS_CELL_V_TOP);
+	}
+
+	{
+		OSObject label = OSCreateLabel(OSLiteral("Hello, world!"));
+		OSAddControl(window->root, 0, 1, label, OS_CELL_H_LEFT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
+	}
 
 	return window;
 }

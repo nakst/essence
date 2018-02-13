@@ -1,0 +1,15 @@
+===================
+PORTING THE LIBRARY
+===================
+
+./configure --without-zlib --without-bzip2 --without-png --without-harfbuzz CC=x86_64-elf-gcc CFLAGS="-g -ffreestanding -DARCH_X86_64" LDFLAGS="-nostdlib -lgcc" --host=x86_64-elf
+(copy ftconfig.h from include/freetype/config to builds/unix)
+make
+(copy objs/.libs/libfreetype.a to essence/freetype and include files)
+
+====
+TODO
+====
+
+- The Freetype license (see FTL.txt) requires the including project makes a reference to the library in its documentation.
+  Do this when we have a proper documentation.

@@ -49,12 +49,12 @@ extern "C" void _start() {
 static OSCallback debuggerMessageCallback;
 
 OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
-	if (target == nullptr) {
-		target = message->generator;
-	} 
-
 	APIObject *object = (APIObject *) target;
 	OSCallback to;
+
+	if (!object) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
 
 	if (object == OS_CALLBACK_DEBUGGER_MESSAGES) {
 		to = debuggerMessageCallback;
@@ -70,6 +70,15 @@ OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 	return to.function(message);
 }
 
+OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message) {
+	if (!callback.function) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	message->context = callback.context;
+	return callback.function(message);
+}
+
 void OSProcessMessages() {
 	while (true) {
 		OSMessage message;
@@ -77,14 +86,14 @@ void OSProcessMessages() {
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
 			if (message.generator) {
-				OSSendMessage(nullptr, &message);
+				OSSendMessage(message.generator, &message);
 				continue;
 			}
 
 			switch (message.type) {
 				case OS_MESSAGE_PROGRAM_CRASH: {
 					message.generator = OS_CALLBACK_DEBUGGER_MESSAGES;
-					OSSendMessage(nullptr, &message);
+					OSSendMessage(message.generator, &message);
 				} break;
 
 				default: {
