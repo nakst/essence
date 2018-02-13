@@ -29,6 +29,7 @@ char *errorMessages[] = {
 };
 
 OSCallback oldCallback;
+OSObject dialog, label1;
 
 OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
@@ -39,17 +40,16 @@ OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 				OSMessage close;
 				close.type = OS_MESSAGE_DESTROY;
 				OSSendMessage(message->context, &close);
-			} else {
-				goto unhandled;
+			} else if (message->keyboard.scancode == OS_SCANCODE_C) {
+				OSSetText(label1, OSLiteral("Changed!"));
 			}
 		} break;
 
 		default: {
-			unhandled:;
-			response = OSForwardMessage(oldCallback, message);
 		} break;
 	}
 
+	OSForwardMessage(oldCallback, message);
 	return response;
 }
 
@@ -74,9 +74,30 @@ OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
 						"Error code: %d (user error)", code);
 			}
 
-			OSObject dialog = OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, crashMessage, crashMessageLength);
+			dialog = OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, crashMessage, crashMessageLength);
 			oldCallback = OSSetCallback(dialog, OSCallback(ProcessWindowMessage, dialog));
-			(void) dialog;
+
+#if 1
+			{
+				OSObject label = OSCreateLabel(crashMessage, crashMessageLength);
+				OSAddControl(dialog, 0, 0, label, OS_CELL_H_PUSH | OS_CELL_V_TOP);
+			}
+#endif
+
+			{
+				label1 = OSCreateLabel(OSLiteral("Hello, world!"));
+				OSAddControl(dialog, 0, 1, label1, OS_CELL_H_LEFT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
+			}
+
+#if 1
+			{
+				OSObject grid = OSCreateGrid(2, 1);
+				OSAddControl(grid, 0, 0, OSCreateLabel(OSLiteral("Hello, ")), OS_CELL_H_LEFT | OS_CELL_H_PUSH);
+				OSAddControl(grid, 1, 0, OSCreateLabel(OSLiteral("another world!")), OS_CELL_H_RIGHT);
+				OSAddControl(dialog, 0, 2, grid, OS_ADD_CHILD_GRID);
+			}
+#endif
+
 #if 0
 			OSSetGrid(dialog, 1 /* Columns */, 2 /* Rows */);
 

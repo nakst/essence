@@ -18,7 +18,18 @@ struct APIObject {
 	APIObjectType type;
 	OSCallback callback;
 	APIObject *parent;
+	unsigned descendentInvalidationFlags;
 };
+
+static void SetParentDescendentInvalidationFlags(APIObject *object, unsigned mask) {
+	do {
+		object->descendentInvalidationFlags |= mask;
+		object = object->parent;
+	} while (object);
+}
+
+#define DESCENDENT_REPAINT  (1)
+#define DESCENDENT_RELAYOUT (2)
 
 #include "utf8.h"
 #include "heap.cpp"

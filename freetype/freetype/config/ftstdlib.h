@@ -32,7 +32,8 @@
 #define FTSTDLIB_H_
 
 
-#include "/home/nakst/essence/api/os.h"
+// We include all our Cstdlib compatability declarations in the os.h
+#include "../../../api/os.h"
 
 
 #include <stddef.h>

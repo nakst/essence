@@ -8,16 +8,15 @@ struct UIImage {
 
 UIImage activeWindowBorder;
 
-// TODO Data caching system.
 // TODO Notification callbacks.
 //	- Simplifying the target/generator mess.
 
 struct Control : APIObject {
 	unsigned layout;
 	OSString text;
-	OSRectangle bounds;
+	OSRectangle bounds, cellBounds;
 	int preferredWidth, preferredHeight;
-	bool repaint;
+	bool repaint, relayout;
 };
 
 struct Grid : APIObject {
@@ -26,6 +25,7 @@ struct Grid : APIObject {
 	OSRectangle bounds;
 	int *widths, *heights;
 	int width, height;
+	bool relayout;
 };
 
 struct Window : APIObject {
@@ -42,7 +42,15 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
-			control->bounds = OSRectangle(
+			if (control->cellBounds.left == message->layout.left
+					&& control->cellBounds.right == message->layout.right
+					&& control->cellBounds.top == message->layout.top
+					&& control->cellBounds.bottom == message->layout.bottom
+					&& !control->relayout) {
+				break;
+			}
+
+			control->cellBounds = control->bounds = OSRectangle(
 					message->layout.left, message->layout.right,
 					message->layout.top, message->layout.bottom);
 
@@ -70,6 +78,10 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 					control->bounds.top = control->bounds.bottom - control->preferredHeight;
 				}
 			}
+
+			control->relayout = false;
+			control->repaint = true;
+			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
@@ -81,7 +93,7 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_PAINT: {
-			if (control->repaint) {
+			if (control->repaint || message->paint.force) {
 				OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
 				OSDrawString(message->paint.surface, control->bounds, &control->text,
 						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0x003060, -1);
@@ -92,6 +104,7 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 
 		case OS_MESSAGE_PARENT_UPDATED: {
 			control->repaint = true;
+			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
@@ -118,18 +131,41 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
-	CreateString(text, textBytes, &control->text);
-
+	OSSetText(control, text, textBytes);
 	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
-
-	control->preferredWidth = MeasureStringWidth(text, textBytes, FONT_SIZE) + 4;
-	control->preferredHeight = FONT_SIZE + 4;
 
 	return control;
 }
 
+void OSSetText(OSObject _control, char *text, size_t textBytes) {
+	Control *control = (Control *) _control;
+	CreateString(text, textBytes, &control->text);
+
+	control->preferredWidth = MeasureStringWidth(text, textBytes, FONT_SIZE) + 4;
+	control->preferredHeight = FONT_SIZE + 4;
+
+	control->repaint = true;
+	control->relayout = true;
+	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_CHILD_UPDATED;
+		OSSendMessage(control->parent, &message);
+	}
+}
+
 void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _control, unsigned layout) {
+	APIObject *_object = (APIObject *) _grid;
+
+	if (_object->type == API_OBJECT_WINDOW) {
+		_grid = ((Window *) _grid)->root;
+	}
+
 	Grid *grid = (Grid *) _grid;
+
+	grid->relayout = true;
+	SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
 
 	if (column >= grid->columns || row >= grid->rows) {
 		OSCrashProcess(OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS);
@@ -157,66 +193,79 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
-			grid->bounds = OSRectangle(
-					message->layout.left, message->layout.right,
-					message->layout.top, message->layout.bottom);
+			if (grid->relayout || message->layout.force) {
+				grid->relayout = false;
 
-			OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
-			OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
+				grid->bounds = OSRectangle(
+						message->layout.left, message->layout.right,
+						message->layout.top, message->layout.bottom);
 
-			int pushH = 0, pushV = 0;
+				OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
+				OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
 
-			for (uintptr_t i = 0; i < grid->columns; i++) {
-				for (uintptr_t j = 0; j < grid->rows; j++) {
-					OSObject *object = grid->objects + (j * grid->columns + i);
-					message->type = OS_MESSAGE_MEASURE;
-					if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
+				int pushH = 0, pushV = 0;
 
-					int width = message->measure.width;
-					int height = message->measure.height;
+				for (uintptr_t i = 0; i < grid->columns; i++) {
+					for (uintptr_t j = 0; j < grid->rows; j++) {
+						OSObject *object = grid->objects + (j * grid->columns + i);
+						message->type = OS_MESSAGE_MEASURE;
+						if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
 
-					if (width == DIMENSION_PUSH) { bool a = grid->widths[i] == DIMENSION_PUSH; grid->widths[i] = DIMENSION_PUSH; if (!a) pushH++; }
-					else if (grid->widths[i] < width && grid->widths[i] != DIMENSION_PUSH) grid->widths[i] = width;
-					if (height == DIMENSION_PUSH) { bool a = grid->heights[j] == DIMENSION_PUSH; grid->heights[j] = DIMENSION_PUSH; if (!a) pushV++; }
-					else if (grid->heights[j] < height && grid->heights[j] != DIMENSION_PUSH) grid->heights[j] = height;
+						int width = message->measure.width;
+						int height = message->measure.height;
+
+						if (width == DIMENSION_PUSH) { bool a = grid->widths[i] == DIMENSION_PUSH; grid->widths[i] = DIMENSION_PUSH; if (!a) pushH++; }
+						else if (grid->widths[i] < width && grid->widths[i] != DIMENSION_PUSH) grid->widths[i] = width;
+						if (height == DIMENSION_PUSH) { bool a = grid->heights[j] == DIMENSION_PUSH; grid->heights[j] = DIMENSION_PUSH; if (!a) pushV++; }
+						else if (grid->heights[j] < height && grid->heights[j] != DIMENSION_PUSH) grid->heights[j] = height;
+					}
+				}
+
+				if (pushH) {
+					int usedWidth = 4; 
+					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i] + 4;
+					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH - 4;
+					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] == DIMENSION_PUSH) grid->widths[i] = widthPerPush;
+				}
+
+				if (pushV) {
+					int usedHeight = 4; 
+					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j] + 4;
+					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV - 4;
+					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] == DIMENSION_PUSH) grid->heights[j] = heightPerPush;
+				}
+
+				int posX = grid->bounds.left + 4;
+
+				for (uintptr_t i = 0; i < grid->columns; i++) {
+					int posY = grid->bounds.top + 4;
+
+					for (uintptr_t j = 0; j < grid->rows; j++) {
+						OSObject *object = grid->objects + (j * grid->columns + i);
+
+						message->type = OS_MESSAGE_LAYOUT;
+						message->layout.left = posX;
+						message->layout.right = posX + grid->widths[i];
+						message->layout.top = posY;
+						message->layout.bottom = posY + grid->heights[j];
+						message->layout.force = true;
+
+						OSSendMessage(*object, message);
+
+						posY += grid->heights[j] + 4;
+					}
+
+					posX += grid->widths[i] + 4;
+				}
+			} else if (grid->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
+				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+					if (grid->objects[i]) {
+						OSSendMessage(grid->objects[i], message);
+					}
 				}
 			}
 
-			if (pushH) {
-				int usedWidth = 4; 
-				for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i] + 4;
-				int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH - 4;
-				for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] == DIMENSION_PUSH) grid->widths[i] = widthPerPush;
-			}
-
-			if (pushV) {
-				int usedHeight = 4; 
-				for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j] + 4;
-				int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV - 4;
-				for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] == DIMENSION_PUSH) grid->heights[j] = heightPerPush;
-			}
-
-			int posX = grid->bounds.left + 4;
-
-			for (uintptr_t i = 0; i < grid->columns; i++) {
-				int posY = grid->bounds.top + 4;
-
-				for (uintptr_t j = 0; j < grid->rows; j++) {
-					OSObject *object = grid->objects + (j * grid->columns + i);
-
-					message->type = OS_MESSAGE_LAYOUT;
-					message->layout.left = posX;
-					message->layout.right = posX + grid->widths[i];
-					message->layout.top = posY;
-					message->layout.bottom = posY + grid->heights[j];
-
-					OSSendMessage(*object, message);
-
-					posY += grid->heights[j] + 4;
-				}
-
-				posX += grid->widths[i] + 4;
-			}
+			grid->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
@@ -251,11 +300,20 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_PAINT: {
-			for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
-				if (grid->objects[i]) {
-					OSSendMessage(grid->objects[i], message);
+			if (grid->descendentInvalidationFlags & DESCENDENT_REPAINT) {
+				grid->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
+
+				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+					if (grid->objects[i]) {
+						OSSendMessage(grid->objects[i], message);
+					}
 				}
 			}
+		} break;
+
+		case OS_MESSAGE_CHILD_UPDATED: {
+			grid->relayout = true;
+			SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
@@ -324,20 +382,26 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		return response;
 	}
 
-	{
+	if (window->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
+		window->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
+
 		OSMessage message;
 		message.type = OS_MESSAGE_LAYOUT;
 		message.layout.left = 0;
 		message.layout.top = 0;
 		message.layout.right = window->width;
 		message.layout.bottom = window->height;
+		message.layout.force = false;
 		OSSendMessage(window->root, &message);
 	}
 
-	{
+	if (window->descendentInvalidationFlags & DESCENDENT_REPAINT) {
+		window->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
+
 		OSMessage message;
 		message.type = OS_MESSAGE_PAINT;
 		message.paint.surface = window->surface;
+		message.paint.force = false;
 		OSSendMessage(window->root, &message);
 		OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
 	}
@@ -365,23 +429,16 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 	OSSetCallback(window, OSCallback(ProcessWindowMessage, window));
 
 	window->root = (Grid *) OSCreateGrid(1, 3);
+	window->root->parent = window;
 
 	{
-		OSObject label = OSCreateLabel(title, titleBytes);
-		OSAddControl(window->root, 0, 0, label, OS_CELL_H_PUSH | OS_CELL_V_TOP);
+		OSMessage message;
+		message.type = OS_MESSAGE_PARENT_UPDATED;
+		OSSendMessage(window->root, &message);
 	}
 
-	{
-		OSObject label = OSCreateLabel(OSLiteral("Hello, world!"));
-		OSAddControl(window->root, 0, 1, label, OS_CELL_H_LEFT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
-	}
-
-	{
-		OSObject grid = OSCreateGrid(2, 1);
-		OSAddControl(grid, 0, 0, OSCreateLabel(OSLiteral("Hello, ")), OS_CELL_H_LEFT | OS_CELL_H_PUSH);
-		OSAddControl(grid, 1, 0, OSCreateLabel(OSLiteral("sailor!")), OS_CELL_H_RIGHT);
-		OSAddControl(window->root, 0, 2, grid, OS_ADD_CHILD_GRID);
-	}
+	(void) title;
+	(void) titleBytes;
 
 	return window;
 }

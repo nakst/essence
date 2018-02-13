@@ -8,11 +8,11 @@
 #include <stdbool.h>
 
 #ifdef __cplusplus
-#define EXTERN_C extern "C"
-#define CONSTRUCTOR(x) x
+#define OS_EXTERN_C extern "C"
+#define OS_CONSTRUCTOR(x) x
 #else
-#define EXTERN_C 
-#define CONSTRUCTOR(x)
+#define OS_EXTERN_C 
+#define OS_CONSTRUCTOR(x)
 #endif
 
 #define OSLiteral(x) (char *) x, OSCStringLength((char *) x)
@@ -155,7 +155,7 @@
 #define OS_SCANCODE_WWW_REFRESH	(0x120)
 #define OS_SCANCODE_WWW_STARRED	(0x118)
 
-EXTERN_C uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
+OS_EXTERN_C uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 			        uintptr_t unused,    uintptr_t argument3, uintptr_t argument4);
 #define OSSyscall(a, b, c, d, e) _OSSyscall((a), (b), (c), 0, (d), (e))
 
@@ -344,9 +344,9 @@ typedef struct OSDirectoryChild {
 } OSDirectoryChild;
 
 typedef struct OSPoint {
-	CONSTRUCTOR(OSPoint() {})
+	OS_CONSTRUCTOR(OSPoint() {})
 
-	CONSTRUCTOR(OSPoint(intptr_t _x, intptr_t _y) {
+	OS_CONSTRUCTOR(OSPoint(intptr_t _x, intptr_t _y) {
 		x = _x;
 		y = _y;
 	})
@@ -356,9 +356,9 @@ typedef struct OSPoint {
 } OSPoint;
 
 typedef struct OSRectangle {
-	CONSTRUCTOR(OSRectangle() {})
+	OS_CONSTRUCTOR(OSRectangle() {})
 
-	CONSTRUCTOR(OSRectangle(intptr_t _left, intptr_t _right, intptr_t _top, intptr_t _bottom) {
+	OS_CONSTRUCTOR(OSRectangle(intptr_t _left, intptr_t _right, intptr_t _top, intptr_t _bottom) {
 		left = _left;
 		right = _right;
 		top = _top;
@@ -372,9 +372,9 @@ typedef struct OSRectangle {
 } OSRectangle;
 
 typedef struct OSColor {
-	CONSTRUCTOR(OSColor() {})
+	OS_CONSTRUCTOR(OSColor() {})
 
-	CONSTRUCTOR(OSColor(uint8_t _red, uint8_t _green, uint8_t _blue) {
+	OS_CONSTRUCTOR(OSColor(uint8_t _red, uint8_t _green, uint8_t _blue) {
 		red = _red;
 		green = _green;
 		blue = _blue;
@@ -451,6 +451,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MEASURE			= 0x0402,
 	OS_MESSAGE_PAINT			= 0x0403,
 	OS_MESSAGE_PARENT_UPDATED		= 0x0404,
+	OS_MESSAGE_CHILD_UPDATED		= 0x0405,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -518,6 +519,7 @@ typedef struct OSMessage {
 
 		struct {
 			int left, right, top, bottom;
+			bool force;
 		} layout;
 
 		struct {
@@ -526,6 +528,7 @@ typedef struct OSMessage {
 
 		struct {
 			OSHandle surface;
+			bool force;
 		} paint;
 
 		struct {
@@ -558,8 +561,8 @@ typedef struct OSCallback {
 	OSCallbackFunction function;
 	void *context;
 
-	CONSTRUCTOR(OSCallback() {})
-	CONSTRUCTOR(OSCallback(OSCallbackFunction _function, void *_context) { function = _function; context = _context; })
+	OS_CONSTRUCTOR(OSCallback() {})
+	OS_CONSTRUCTOR(OSCallback(OSCallbackFunction _function, void *_context) { function = _function; context = _context; })
 } OSCallback;
 
 typedef struct OSAction {
@@ -637,128 +640,129 @@ typedef struct OSAction {
 #define OS_MAP_OBJECT_READ_ONLY         (1)
 #define OS_MAP_OBJECT_COPY_ON_WRITE     (2)
 
-EXTERN_C void OSInitialiseAPI();
+OS_EXTERN_C void OSInitialiseAPI();
 
-EXTERN_C void OSBatch(OSBatchCall *calls, size_t count); 
+OS_EXTERN_C void OSBatch(OSBatchCall *calls, size_t count); 
 
-EXTERN_C OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
-EXTERN_C OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
-EXTERN_C OSHandle OSCreateSurface(size_t width, size_t height);
-EXTERN_C OSHandle OSCreateMutex();
-EXTERN_C OSHandle OSCreateEvent(bool autoReset);
+OS_EXTERN_C OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
+OS_EXTERN_C OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
+OS_EXTERN_C OSHandle OSCreateSurface(size_t width, size_t height);
+OS_EXTERN_C OSHandle OSCreateMutex();
+OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 
-EXTERN_C OSError OSCloseHandle(OSHandle handle);
+OS_EXTERN_C OSError OSCloseHandle(OSHandle handle);
 
-EXTERN_C OSError OSOpenNode(char *path, size_t pathLength, uint64_t flags, OSNodeInformation *information);
-EXTERN_C void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 
-EXTERN_C size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
-EXTERN_C size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
-EXTERN_C OSHandle OSReadFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); 
-EXTERN_C OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Message on completion.
-EXTERN_C OSError OSResizeFile(OSHandle file, uint64_t newSize);
-EXTERN_C void OSRefreshNodeInformation(OSNodeInformation *information);
-EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
-EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);
-EXTERN_C void OSCancelIORequest(OSHandle ioRequest);
+OS_EXTERN_C OSError OSOpenNode(char *path, size_t pathLength, uint64_t flags, OSNodeInformation *information);
+OS_EXTERN_C void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 
+OS_EXTERN_C size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes read. Otherwise, OSError.
+OS_EXTERN_C size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
+OS_EXTERN_C OSHandle OSReadFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); 
+OS_EXTERN_C OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Message on completion.
+OS_EXTERN_C OSError OSResizeFile(OSHandle file, uint64_t newSize);
+OS_EXTERN_C void OSRefreshNodeInformation(OSNodeInformation *information);
+OS_EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
+OS_EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);
+OS_EXTERN_C void OSCancelIORequest(OSHandle ioRequest);
 
-EXTERN_C OSError OSTerminateThread(OSHandle thread);
-EXTERN_C OSError OSTerminateProcess(OSHandle thread);
-EXTERN_C OSError OSTerminateThisProcess();
+OS_EXTERN_C OSError OSTerminateThread(OSHandle thread);
+OS_EXTERN_C OSError OSTerminateProcess(OSHandle thread);
+OS_EXTERN_C OSError OSTerminateThisProcess();
 
-EXTERN_C void OSPauseProcess(OSHandle process, bool resume);
-EXTERN_C void OSCrashProcess(OSError error);
+OS_EXTERN_C void OSPauseProcess(OSHandle process, bool resume);
+OS_EXTERN_C void OSCrashProcess(OSError error);
 
-EXTERN_C uintptr_t OSGetThreadID(OSHandle thread);
+OS_EXTERN_C uintptr_t OSGetThreadID(OSHandle thread);
 
-EXTERN_C OSError OSReleaseMutex(OSHandle mutex);
-EXTERN_C OSError OSAcquireMutex(OSHandle mutex);
+OS_EXTERN_C OSError OSReleaseMutex(OSHandle mutex);
+OS_EXTERN_C OSError OSAcquireMutex(OSHandle mutex);
 
-EXTERN_C OSError OSSetEvent(OSHandle event);
-EXTERN_C OSError OSResetEvent(OSHandle event);
-EXTERN_C OSError OSPollEvent(OSHandle event);
+OS_EXTERN_C OSError OSSetEvent(OSHandle event);
+OS_EXTERN_C OSError OSResetEvent(OSHandle event);
+OS_EXTERN_C OSError OSPollEvent(OSHandle event);
 
-EXTERN_C uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t timeoutMs);
+OS_EXTERN_C uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t timeoutMs);
 #define OSWaitSingle(object) OSWait(&object, 1, OS_WAIT_NO_TIMEOUT)
 
-EXTERN_C OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
-EXTERN_C OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
-EXTERN_C void *OSMapObject(OSHandle object, uintptr_t offset, size_t size, unsigned flags);
+OS_EXTERN_C OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
+OS_EXTERN_C OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
+OS_EXTERN_C void *OSMapObject(OSHandle object, uintptr_t offset, size_t size, unsigned flags);
 
-EXTERN_C void *OSAllocate(size_t size);
-EXTERN_C OSError OSFree(void *address);
+OS_EXTERN_C void *OSAllocate(size_t size);
+OS_EXTERN_C OSError OSFree(void *address);
 
-EXTERN_C void *OSGetCreationArgument(OSHandle object);
+OS_EXTERN_C void *OSGetCreationArgument(OSHandle object);
 
-EXTERN_C OSError OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer);
-EXTERN_C OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle);
-EXTERN_C OSError OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth);
-EXTERN_C OSError OSForceScreenUpdate();
-EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
-EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
-EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
-EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
-EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, unsigned flags, uint32_t color, int32_t backgroundColor);
-EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
+OS_EXTERN_C OSError OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer);
+OS_EXTERN_C OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle);
+OS_EXTERN_C OSError OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth);
+OS_EXTERN_C OSError OSForceScreenUpdate();
+OS_EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
+OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
+OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
+OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
+OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, unsigned flags, uint32_t color, int32_t backgroundColor);
+OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
 
-EXTERN_C void OSRedrawAll();
+OS_EXTERN_C void OSRedrawAll();
 
-EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
-EXTERN_C OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message);
-EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
-EXTERN_C void OSProcessMessages();
-EXTERN_C OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *title, size_t titleBytes);
-EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows);
-EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
-EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
-EXTERN_C OSObject OSCreateButton(OSAction *action);
+OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
+OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message);
+OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
+OS_EXTERN_C void OSProcessMessages();
+OS_EXTERN_C OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *title, size_t titleBytes);
+OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows);
+OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
+OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
+OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
+OS_EXTERN_C OSObject OSCreateButton(OSAction *action);
 
 #ifndef KERNEL
-EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);
-EXTERN_C void OSHeapFree(void *address);
+OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);
+OS_EXTERN_C void OSHeapFree(void *address);
 
-EXTERN_C size_t OSCStringLength(char *string);
-EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
-EXTERN_C void OSZeroMemory(void *destination, size_t bytes);
-EXTERN_C int OSCompareBytes(void *a, void *b, size_t bytes);
-EXTERN_C uint8_t OSSumBytes(uint8_t *data, size_t bytes);
-EXTERN_C void OSPrint(const char *format, ...);
-EXTERN_C void OSPrintDirect(char *string, size_t stringLength);
-EXTERN_C size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
-EXTERN_C void OSHelloWorld();
-EXTERN_C uint8_t OSGetRandomByte();
+OS_EXTERN_C size_t OSCStringLength(char *string);
+OS_EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
+OS_EXTERN_C void OSZeroMemory(void *destination, size_t bytes);
+OS_EXTERN_C int OSCompareBytes(void *a, void *b, size_t bytes);
+OS_EXTERN_C uint8_t OSSumBytes(uint8_t *data, size_t bytes);
+OS_EXTERN_C void OSPrint(const char *format, ...);
+OS_EXTERN_C void OSPrintDirect(char *string, size_t stringLength);
+OS_EXTERN_C size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
+OS_EXTERN_C void OSHelloWorld();
+OS_EXTERN_C uint8_t OSGetRandomByte();
 
 // TODO Possibly remove all of these?
 // 	Or move into a libc library?
-EXTERN_C void *memset(void *s, int c, size_t n);
-EXTERN_C void *memcpy(void *dest, const void *src, size_t n);
-EXTERN_C size_t strlen(const char *s);
-EXTERN_C void *malloc(size_t size);
-EXTERN_C void *calloc(size_t num, size_t size);
-EXTERN_C void *memmove(void *dest, const void *src, size_t n);
-EXTERN_C void free(void *ptr);
-EXTERN_C void *realloc(void *ptr, size_t size);
-EXTERN_C double fabs(double x);
-EXTERN_C int abs(int n);
-EXTERN_C int ifloor(double x);
-EXTERN_C int iceil(double x);
-EXTERN_C double sqrt(double x);
-EXTERN_C char *getenv(const char *name);
-EXTERN_C int strcmp(const char *s1, const char *s2);
-EXTERN_C int strncmp(const char *s1, const char *s2, size_t n);
-EXTERN_C long int strtol(const char *nptr, char **endptr, int base);
-EXTERN_C char *strstr(const char *haystack, const char *needle);
-EXTERN_C void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
-EXTERN_C char *strcpy(char *dest, const char *src);
-EXTERN_C int memcmp(const void *s1, const void *s2, size_t n);
-EXTERN_C void *memchr(const void *s, int c, size_t n);
-EXTERN_C int isspace(int c);
-EXTERN_C void OSAssertionFailure();
+OS_EXTERN_C void *memset(void *s, int c, size_t n);
+OS_EXTERN_C void *memcpy(void *dest, const void *src, size_t n);
+OS_EXTERN_C size_t strlen(const char *s);
+OS_EXTERN_C void *malloc(size_t size);
+OS_EXTERN_C void *calloc(size_t num, size_t size);
+OS_EXTERN_C void *memmove(void *dest, const void *src, size_t n);
+OS_EXTERN_C void free(void *ptr);
+OS_EXTERN_C void *realloc(void *ptr, size_t size);
+OS_EXTERN_C double fabs(double x);
+OS_EXTERN_C int abs(int n);
+OS_EXTERN_C int ifloor(double x);
+OS_EXTERN_C int iceil(double x);
+OS_EXTERN_C double sqrt(double x);
+OS_EXTERN_C char *getenv(const char *name);
+OS_EXTERN_C int strcmp(const char *s1, const char *s2);
+OS_EXTERN_C int strncmp(const char *s1, const char *s2, size_t n);
+OS_EXTERN_C long int strtol(const char *nptr, char **endptr, int base);
+OS_EXTERN_C char *strstr(const char *haystack, const char *needle);
+OS_EXTERN_C void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
+OS_EXTERN_C char *strcpy(char *dest, const char *src);
+OS_EXTERN_C int memcmp(const void *s1, const void *s2, size_t n);
+OS_EXTERN_C void *memchr(const void *s, int c, size_t n);
+OS_EXTERN_C int isspace(int c);
+OS_EXTERN_C void OSAssertionFailure();
 #define assert(x) do{if (!(x)) OSAssertionFailure();}while(0)
 #ifdef ARCH_X86_64
 typedef struct { uintptr_t rsp, rbp, rbx, r12, r13, r14, r15, returnAddress; } jmp_buf;
 #endif
-EXTERN_C int _setjmp(jmp_buf *env);
-EXTERN_C void _longjmp(jmp_buf *env, int val);
+OS_EXTERN_C int _setjmp(jmp_buf *env);
+OS_EXTERN_C void _longjmp(jmp_buf *env, int val);
 #define setjmp(x) _setjmp(&(x))
 #define longjmp(x, y) _longjmp(&(x), (y))
 
@@ -768,7 +772,7 @@ EXTERN_C void _longjmp(jmp_buf *env, int val);
 #define STBI_NO_LINEAR
 #include "stb_image.h"
 
-EXTERN_C uint64_t osRandomByteSeed;
+OS_EXTERN_C uint64_t osRandomByteSeed;
 #endif
 
 #endif

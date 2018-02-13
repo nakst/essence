@@ -1233,6 +1233,8 @@ void Mutex::Release() {
 
 	Thread *currentThread = GetCurrentThread();
 
+	scheduler.lock.Acquire();
+
 	if (currentThread) {
 		Thread *temp;
 		if (currentThread != (temp = __sync_val_compare_and_swap(&owner, currentThread, nullptr))) {
@@ -1241,6 +1243,8 @@ void Mutex::Release() {
 	} else {
 		owner = nullptr;
 	}
+
+	scheduler.lock.Release();
 
 	__sync_synchronize();
 

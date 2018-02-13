@@ -38,6 +38,8 @@ struct WindowManager {
 	void Redraw(OSPoint position, int width, int height, Window *except = nullptr);
 	void SetActiveWindow(Window *window);
 
+	bool initialised;
+
 	Window **windows; // Sorted by z.
 	size_t windowsCount, windowsAllocated;
 
@@ -64,6 +66,10 @@ Surface uiSheetSurface, wallpaperSurface;
 #else
 
 void WindowManager::UpdateCursor(int xMovement, int yMovement, unsigned buttons) {
+	if (!initialised) {
+		return;
+	}
+
 	if (xMovement || yMovement) {
 		if (xMovement * xMovement + yMovement * yMovement < 10 && buttons != lastButtons) {
 			// This seems to be movement noise generated when the buttons were pressed/released.
@@ -429,6 +435,8 @@ void WindowManager::Initialise() {
 
 	// Create the caret blink thread.
 	scheduler.SpawnThread((uintptr_t) CaretBlink, (uintptr_t) this, kernelProcess, false);
+
+	initialised = true;
 }
 
 Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow) {
