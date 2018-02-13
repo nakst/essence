@@ -17,6 +17,7 @@ enum APIObjectType {
 struct APIObject {
 	APIObjectType type;
 	OSCallback callback;
+	APIObject *parent;
 };
 
 #include "utf8.h"

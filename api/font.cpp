@@ -126,6 +126,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
 		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink,
 		int size) {
+	OSPrint("draw string...\n");
+
 	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();

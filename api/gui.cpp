@@ -9,15 +9,15 @@ struct UIImage {
 UIImage activeWindowBorder;
 
 // TODO Data caching system.
-// TODO Linking to parents.
 // TODO Notification callbacks.
-// TODO Simplifying the target/generator mess.
+//	- Simplifying the target/generator mess.
 
 struct Control : APIObject {
 	unsigned layout;
 	OSString text;
 	OSRectangle bounds;
 	int preferredWidth, preferredHeight;
+	bool repaint;
 };
 
 struct Grid : APIObject {
@@ -25,6 +25,7 @@ struct Grid : APIObject {
 	OSObject *objects;
 	OSRectangle bounds;
 	int *widths, *heights;
+	int width, height;
 };
 
 struct Window : APIObject {
@@ -68,7 +69,6 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 				} else if (control->layout & OS_CELL_V_BOTTOM) {
 					control->bounds.top = control->bounds.bottom - control->preferredHeight;
 				}
-
 			}
 		} break;
 
@@ -81,9 +81,17 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_PAINT: {
-			OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
-			OSDrawString(message->paint.surface, control->bounds, &control->text,
-				OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0x003060, -1);
+			if (control->repaint) {
+				OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
+				OSDrawString(message->paint.surface, control->bounds, &control->text,
+						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0x003060, -1);
+
+				control->repaint = false;
+			}
+		} break;
+
+		case OS_MESSAGE_PARENT_UPDATED: {
+			control->repaint = true;
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
@@ -109,6 +117,7 @@ static void CreateString(char *text, size_t textBytes, OSString *string) {
 OSObject OSCreateLabel(char *text, size_t textBytes) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
+
 	CreateString(text, textBytes, &control->text);
 
 	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
@@ -127,11 +136,19 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	}
 
 	Control *control = (Control *) _control;
-	control->layout = layout;
+	if (control->type != API_OBJECT_CONTROL && layout != OS_ADD_CHILD_GRID) OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+	if (layout != OS_ADD_CHILD_GRID) control->layout = layout;
+	control->parent = grid;
 
 	OSObject *object = grid->objects + (row * grid->columns + column);
 	if (*object) OSCrashProcess(OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT);
 	*object = control;
+
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_PARENT_UPDATED;
+		OSSendMessage(control, &message);
+	}
 }
 
 static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
@@ -158,9 +175,9 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 					int width = message->measure.width;
 					int height = message->measure.height;
 
-					if (width == DIMENSION_PUSH) { grid->widths[i] = DIMENSION_PUSH; pushH++; }
+					if (width == DIMENSION_PUSH) { bool a = grid->widths[i] == DIMENSION_PUSH; grid->widths[i] = DIMENSION_PUSH; if (!a) pushH++; }
 					else if (grid->widths[i] < width && grid->widths[i] != DIMENSION_PUSH) grid->widths[i] = width;
-					if (height == DIMENSION_PUSH) { grid->heights[j] = DIMENSION_PUSH; pushV++; }
+					if (height == DIMENSION_PUSH) { bool a = grid->heights[j] == DIMENSION_PUSH; grid->heights[j] = DIMENSION_PUSH; if (!a) pushV++; }
 					else if (grid->heights[j] < height && grid->heights[j] != DIMENSION_PUSH) grid->heights[j] = height;
 				}
 			}
@@ -229,8 +246,8 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + 4;
 			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + 4;
 
-			message->measure.width = width;
-			message->measure.height = height;
+			grid->width = message->measure.width = width;
+			grid->height = message->measure.height = height;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -284,30 +301,11 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_WINDOW_CREATED: {
-			// OSDrawSurface(window->surface, OS_SURFACE_UI_SHEET, OSRectangle(0, window->width, 0, window->height), UI_IMAGE(activeWindowBorder), OS_DRAW_MODE_REPEAT_FIRST);
-
-			{
-				OSMessage message;
-				message.type = OS_MESSAGE_LAYOUT;
-				message.layout.left = 0;
-				message.layout.top = 0;
-				message.layout.right = window->width;
-				message.layout.bottom = window->height;
-				OSSendMessage(window->root, &message);
-			}
-
-			{
-				OSMessage message;
-				message.type = OS_MESSAGE_PAINT;
-				message.paint.surface = window->surface;
-				OSSendMessage(window->root, &message);
-			}
-
-			OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
 			OSHeapFree(window);
+			return response;
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
@@ -320,6 +318,28 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		default: {
 			response = OS_CALLBACK_NOT_HANDLED;
 		} break;
+	}
+
+	if (window->destroyed) {
+		return response;
+	}
+
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_LAYOUT;
+		message.layout.left = 0;
+		message.layout.top = 0;
+		message.layout.right = window->width;
+		message.layout.bottom = window->height;
+		OSSendMessage(window->root, &message);
+	}
+
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_PAINT;
+		message.paint.surface = window->surface;
+		OSSendMessage(window->root, &message);
+		OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
 	}
 
 	return response;
@@ -354,6 +374,13 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 	{
 		OSObject label = OSCreateLabel(OSLiteral("Hello, world!"));
 		OSAddControl(window->root, 0, 1, label, OS_CELL_H_LEFT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
+	}
+
+	{
+		OSObject grid = OSCreateGrid(2, 1);
+		OSAddControl(grid, 0, 0, OSCreateLabel(OSLiteral("Hello, ")), OS_CELL_H_LEFT | OS_CELL_H_PUSH);
+		OSAddControl(grid, 1, 0, OSCreateLabel(OSLiteral("sailor!")), OS_CELL_H_RIGHT);
+		OSAddControl(window->root, 0, 2, grid, OS_ADD_CHILD_GRID);
 	}
 
 	return window;

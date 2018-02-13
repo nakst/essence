@@ -445,6 +445,13 @@ typedef struct OSIORequestProgress {
 } OSIORequestProgress;
 
 typedef enum OSMessageType {
+	// GUI messages:
+	OS_MESSAGE_LAYOUT			= 0x0400,
+	OS_MESSAGE_DESTROY			= 0x0401,
+	OS_MESSAGE_MEASURE			= 0x0402,
+	OS_MESSAGE_PAINT			= 0x0403,
+	OS_MESSAGE_PARENT_UPDATED		= 0x0404,
+
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
 	OS_MESSAGE_MOUSE_LEFT_PRESSED 		= 0x1001,
@@ -460,13 +467,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
 
 	// Debugger messages:
-	OS_MESSAGE_PROGRAM_CRASH		= 0x2000,
-
-	// GUI messages:
-	OS_MESSAGE_LAYOUT			= 0x4000,
-	OS_MESSAGE_DESTROY			= 0x4001,
-	OS_MESSAGE_MEASURE			= 0x4002,
-	OS_MESSAGE_PAINT			= 0x4003,
+	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
 
 	// User messages:
 	OS_MESSAGE_USER_START			= 0x8000,
@@ -577,16 +578,17 @@ typedef struct OSAction {
 
 #define OS_CREATE_WINDOW_ALERT (1)
 
-#define OS_CELL_H_PUSH   (1)
-#define OS_CELL_H_EXPAND (2)
-#define OS_CELL_H_LEFT   (4)
-#define OS_CELL_H_CENTER (8)
-#define OS_CELL_H_RIGHT  (16)
-#define OS_CELL_V_PUSH   (32)
-#define OS_CELL_V_EXPAND (64)
-#define OS_CELL_V_TOP    (128)
-#define OS_CELL_V_CENTER (256)
-#define OS_CELL_V_BOTTOM (512)
+#define OS_CELL_H_PUSH    (1)
+#define OS_CELL_H_EXPAND  (2)
+#define OS_CELL_H_LEFT    (4)
+#define OS_CELL_H_CENTER  (8)
+#define OS_CELL_H_RIGHT   (16)
+#define OS_CELL_V_PUSH    (32)
+#define OS_CELL_V_EXPAND  (64)
+#define OS_CELL_V_TOP     (128)
+#define OS_CELL_V_CENTER  (256)
+#define OS_CELL_V_BOTTOM  (512)
+#define OS_ADD_CHILD_GRID (1024)
 
 #define OS_ICON_NONE (OS_INVALID_OBJECT)
 
