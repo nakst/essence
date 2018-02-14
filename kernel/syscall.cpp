@@ -884,6 +884,16 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
+		case OS_SYSCALL_NEED_WM_TIMER: {
+			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
+
+			window->NeedWMTimer(argument1);
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
 		case OS_SYSCALL_SET_CURSOR_STYLE: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);

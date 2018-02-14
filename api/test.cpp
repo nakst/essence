@@ -392,5 +392,22 @@ extern "C" void ProgramEntry() {
 
 
 	OSPrint("All tests completed successfully.\n");
-	OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
+	// OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
+	
+	OSWindowSpecification ws = {};
+	ws.width = 400;
+	ws.height = 400;
+	ws.title = (char *) "Hello";
+	ws.titleBytes = OSCStringLength(ws.title);
+	OSObject window = OSCreateWindow(&ws);
+
+	OSObject content = OSCreateGrid(3, 3, 0);
+	OSAddControl(window, 0, 0, content, OS_ADD_CHILD_GRID);
+
+	// OSObject progressBar = OSCreateProgressBar(0, 100, 25);
+	OSObject progressBar = OSCreateIndeterminateProgressBar();
+	OSAddControl(content, 0, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_V_PUSH | OS_CELL_H_LEFT | OS_CELL_V_TOP);
+	// OSSetProgressBarValue(progressBar, 16);
+
+	OSProcessMessages();
 }

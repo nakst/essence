@@ -10,6 +10,7 @@
 struct Window {
 	void Update();
 	void SetCursorStyle(OSCursorStyle style);
+	void NeedWMTimer(bool value);
 	void Destroy();
 	bool Move(OSRectangle &newBounds);
 	void Resize(size_t newWidth, size_t newHeight);
@@ -23,6 +24,7 @@ struct Window {
 	Process *owner;
 	OSObject apiWindow;
 	OSCursorStyle cursorStyle;
+	bool needsTimerMessages;
 
 	volatile unsigned handles;
 };
@@ -403,22 +405,27 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 	graphics.UpdateScreen();
 }
 
-void CaretBlink(WindowManager *windowManager) {
+void WMTimerMessages(WindowManager *windowManager) {
 	Timer timer = {};
+	uint64_t tick = 0;
 
 	while (true) {
-		timer.Set(800, true);
+		timer.Set(200, true);
 		timer.event.Wait(OS_WAIT_NO_TIMEOUT);
 		timer.Remove();
+		tick++;
 
 		windowManager->mutex.Acquire();
-		Window *window = windowManager->activeWindow;
 
-		if (window) {
-			OSMessage message = {};
-			message.type = OS_MESSAGE_WINDOW_BLINK_TIMER;
-			message.window = window->apiWindow;
-			window->owner->messageQueue.SendMessage(message);
+		for (uintptr_t i = 0; i < windowManager->windowsCount; i++) {
+			Window *window = windowManager->windows[i];
+
+			if (window->needsTimerMessages) {
+				OSMessage message = {};
+				message.type = OS_MESSAGE_WM_TIMER;
+				message.window = window->apiWindow;
+				window->owner->messageQueue.SendMessage(message);
+			}
 		}
 
 		windowManager->mutex.Release();
@@ -441,8 +448,8 @@ void WindowManager::Initialise() {
 	mutex.Release();
 	graphics.UpdateScreen();
 
-	// Create the caret blink thread.
-	scheduler.SpawnThread((uintptr_t) CaretBlink, (uintptr_t) this, kernelProcess, false);
+	// Create the window manager timer thread.
+	scheduler.SpawnThread((uintptr_t) WMTimerMessages, (uintptr_t) this, kernelProcess, false);
 
 	initialised = true;
 }
@@ -685,6 +692,12 @@ void Window::SetCursorStyle(OSCursorStyle style) {
 	windowManager.mutex.Acquire();
 	cursorStyle = style;
 	windowManager.RefreshCursor(this);
+	windowManager.mutex.Release();
+}
+
+void Window::NeedWMTimer(bool value) {
+	windowManager.mutex.Acquire();
+	needsTimerMessages = value;
 	windowManager.mutex.Release();
 }
 

@@ -53,8 +53,7 @@ void Print(const char *format, ...);
 #include "../api/os.h"
 #define CF(x) x
 #include "../api/common.cpp"
-
-#include "linked_list.cpp"
+#include "../api/linked_list.cpp"
 
 extern "C" void ProcessorDisableInterrupts();
 extern "C" void ProcessorEnableInterrupts();

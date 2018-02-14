@@ -1,5 +1,14 @@
 #include "os.h"
 
+// Scoped defer: http://www.gingerbill.org/article/defer-in-cpp.html
+template <typename F> struct privDefer { F f; privDefer(F f) : f(f) {} ~privDefer() { f(); } };
+template <typename F> privDefer<F> defer_func(F f) { return privDefer<F>(f); }
+#define DEFER_1(x, y) x##y
+#define DEFER_2(x, y) DEFER_1(x, y)
+#define DEFER_3(x)    DEFER_2(x, __COUNTER__)
+#define _Defer(code)   auto DEFER_3(_defer_) = defer_func([&](){code;})
+#define Defer(code)   _Defer(code)
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #include "stb_image.h"
@@ -33,6 +42,7 @@ static void SetParentDescendentInvalidationFlags(APIObject *object, unsigned mas
 
 #include "utf8.h"
 #include "heap.cpp"
+#include "linked_list.cpp"
 #include "font.cpp"
 #include "gui.cpp"
 #include "common.cpp"

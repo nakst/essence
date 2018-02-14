@@ -195,6 +195,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_RESIZE_GRID,
 	OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS,
 	OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT,
+	OS_FATAL_ERROR_CORRUPT_LINKED_LIST,
 } OSFatalError;
 
 #define OS_ERROR_BUFFER_TOO_SMALL		(-2)
@@ -275,6 +276,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_GET_IO_REQUEST_PROGRESS,
 	OS_SYSCALL_CANCEL_IO_REQUEST,
 	OS_SYSCALL_BATCH,
+	OS_SYSCALL_NEED_WM_TIMER,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -463,7 +465,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_KEY_PRESSED			= 0x1003,
 	OS_MESSAGE_KEY_RELEASED			= 0x1004,
 	OS_MESSAGE_WINDOW_CREATED 		= 0x1005,
-	OS_MESSAGE_WINDOW_BLINK_TIMER 		= 0x1006, // Sent periodically to the focused window so it can blink its caret.
+	OS_MESSAGE_WM_TIMER	 		= 0x1006, // Sent every 200ms to windows that need it.
 	OS_MESSAGE_WINDOW_ACTIVATED		= 0x1007,
 	OS_MESSAGE_WINDOW_DEACTIVATED		= 0x1008,
 	OS_MESSAGE_WINDOW_DESTROYED 		= 0x1009,
@@ -734,14 +736,21 @@ OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message);
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
 OS_EXTERN_C void OSProcessMessages();
+
+OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
+OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
+#define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
+
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
-OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
-OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
+
 OS_EXTERN_C OSObject OSCreateButton(OSAction *action);
-OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
-#define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
+OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
+OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
+#define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
+
+OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
 
 #ifndef KERNEL
 OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);

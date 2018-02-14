@@ -19,6 +19,7 @@ struct UIImage {
 };
 
 static UIImage blankImage;
+
 static UIImage activeWindowBorder11, activeWindowBorder12, activeWindowBorder13, 
 	activeWindowBorder21, activeWindowBorder22, activeWindowBorder23, 
 	activeWindowBorder31, activeWindowBorder32, activeWindowBorder33, 
@@ -30,8 +31,12 @@ static UIImage inactiveWindowBorder11, inactiveWindowBorder12, inactiveWindowBor
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
+static UIImage progressBarBackground, progressBarPellet, progressBarDisabled;
+
 // TODO Notification callbacks.
 //	- Simplifying the target/generator mess.
+// TODO Bold titlebars!
+// TODO Background clearing of grids.
 
 struct Control : APIObject {
 	unsigned layout;
@@ -50,6 +55,12 @@ struct Control : APIObject {
 	int preferredWidth, preferredHeight;
 
 	bool disabled;
+
+	LinkedItem<Control> timerControlItem;
+};
+
+struct ProgressBar : Control {
+	int minimum, maximum, value;
 };
 
 struct WindowResizeControl : Control {
@@ -77,6 +88,9 @@ struct Window : APIObject {
 
 	int width, height;
 	int minimumWidth, minimumHeight;
+
+	LinkedList<Control> timerControls;
+	bool currentlyGettingTimerMessages;
 };
 
 static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
@@ -191,10 +205,14 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
+			Window *window = (Window *) message->window;
+
+			if (control->timerControlItem.list) {
+				window->timerControls.Remove(&control->timerControlItem);
+			}
+
 			OSHeapFree(control->text.buffer);
 			OSHeapFree(control);
-
-			Window *window = (Window *) message->window;
 
 			if (window->hover == control) window->hover = nullptr;
 			if (window->drag == control) window->drag = nullptr;
@@ -334,6 +352,100 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 	return control;
 }
 
+static OSCallbackResponse ProcessProgressBarMessage(OSMessage *message) {
+	OSCallbackResponse response = OS_CALLBACK_HANDLED;
+	ProgressBar *control = (ProgressBar *) message->context;
+
+	if (message->type == OS_MESSAGE_PAINT) {
+		if (control->repaint || message->paint.force) {
+			if (control->disabled) {
+				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+						control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST);
+			} else {
+				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+						control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST);
+
+				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
+
+				if (control->maximum) {
+					float progress = (float) (control->value - control->minimum) / (float) (control->maximum - control->minimum);
+
+					pelletCount *= progress;
+
+					for (int i = 0; i < pelletCount; i++) {
+						OSRectangle bounds = control->bounds;
+						bounds.top += 3;
+						bounds.bottom = bounds.top + 15;
+						bounds.left += 3 + i * 9;
+						bounds.right = bounds.left + 8;
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
+								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST);
+					}
+				} else {
+					if (control->value >= pelletCount) control->value -= pelletCount;
+
+					for (int i = 0; i < 4; i++) {
+						int j = i + control->value;
+						if (j >= pelletCount) j -= pelletCount;
+						OSRectangle bounds = control->bounds;
+						bounds.top += 3;
+						bounds.bottom = bounds.top + 15;
+						bounds.left += 3 + j * 9;
+						bounds.right = bounds.left + 8;
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
+								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST);
+					}
+
+					if (!control->timerControlItem.list) {
+						Window *window = (Window *) message->window;
+						window->timerControls.InsertStart(&control->timerControlItem);
+					}
+				}
+			}
+
+			control->repaint = false;
+		}
+	} else if (message->type == OS_MESSAGE_WM_TIMER) {
+		OSSetProgressBarValue(control, control->value + 1);
+	} else {
+		response = OSForwardMessage(OSCallback(ProcessControlMessage, control), message);
+	}
+
+	return response;
+}
+
+void OSSetProgressBarValue(OSObject _control, int newValue) {
+	ProgressBar *control = (ProgressBar *) _control;
+	control->value = newValue;
+
+	control->repaint = true;
+	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+}
+
+OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
+	ProgressBar *control = (ProgressBar *) OSHeapAllocate(sizeof(ProgressBar), true);
+
+	control->type = API_OBJECT_CONTROL;
+	control->background = progressBarBackground;
+	control->disabledBackground = progressBarDisabled;
+
+	control->minimum = minimum;
+	control->maximum = maximum;
+	control->value = initialValue;
+
+	control->preferredWidth = 168;
+	control->preferredHeight = 21;
+
+	if (!control->maximum) {
+		// Indeterminate progress bar.
+		control->timerControlItem.thisItem = control;
+	}
+
+	OSSetCallback(control, OSCallback(ProcessProgressBarMessage, control));
+
+	return control;
+}
+
 void OSSetText(OSObject _control, char *text, size_t textBytes) {
 	Control *control = (Control *) _control;
 	CreateString(text, textBytes, &control->text);
@@ -357,6 +469,8 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 
 	if (_object->type == API_OBJECT_WINDOW) {
 		_grid = ((Window *) _grid)->root;
+		column = 1;
+		row = 2;
 	}
 
 	Grid *grid = (Grid *) _grid;
@@ -645,7 +759,22 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 				message->mouseDragged.originalPositionY = lastClickY;
 				OSSendMessage(window->drag, message);
 			} else {
+				window->hover = nullptr;
+
 				OSSendMessage(window->root, message);
+
+				if (!window->hover) {
+					window->cursor = OS_CURSOR_NORMAL;
+				}
+			}
+		} break;
+
+		case OS_MESSAGE_WM_TIMER: {
+			LinkedItem<Control> *item = window->timerControls.firstItem;
+
+			while (item) {
+				OSSendMessage(item->thisItem, message);
+				item = item->nextItem;
 			}
 		} break;
 
@@ -658,6 +787,14 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		return response;
 	}
 
+	if (window->currentlyGettingTimerMessages && !window->timerControls.count) {
+		OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, false, 0, 0);
+		window->currentlyGettingTimerMessages = false;
+	} else if (!window->currentlyGettingTimerMessages && window->timerControls.count) {
+		OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, true, 0, 0);
+		window->currentlyGettingTimerMessages = true;
+	}
+
 	if (window->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
 		window->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
 
@@ -668,6 +805,7 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		message.layout.right = window->width;
 		message.layout.bottom = window->height;
 		message.layout.force = false;
+		message.window = window;
 		OSSendMessage(window->root, &message);
 	}
 
@@ -686,6 +824,7 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		message.type = OS_MESSAGE_PAINT;
 		message.paint.surface = window->surface;
 		message.paint.force = false;
+		message.window = window;
 		OSSendMessage(window->root, &message);
 		updateWindow = true;
 	}
@@ -738,10 +877,6 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
 
-		// TODO Temporary.
-		Control *content = (Control *) CreateWindowResizeHandle(blankImage, blankImage, RESIZE_MOVE);
-		OSAddControl(window->root, 1, 2, content, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND); 
-
 		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, inactiveWindowBorder11, RESIZE_TOP_LEFT), 0);
 		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(activeWindowBorder12, inactiveWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(activeWindowBorder13, inactiveWindowBorder13, RESIZE_TOP_RIGHT), 0);
@@ -758,29 +893,35 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 }
 
 void OSInitialiseGUI() {
-	activeWindowBorder11 =   { {1, 1 + 6, 144, 144 + 6}, 			{1, 1, 144, 144} };
-	activeWindowBorder12 =   { {8, 8 + 1, 144, 144 + 6}, 			{7, 8, 144, 144} };
-	activeWindowBorder13 =   { {10, 10 + 6, 144, 144 + 6}, 			{10, 10, 144, 144} };
-	activeWindowBorder21 =   { {1, 1 + 6, 151, 151 + 24}, 			{1, 1, 151, 151} };
-	activeWindowBorder22 =   { {8, 8 + 1, 151, 151 + 24}, 			{7, 8, 151, 151} };
-	activeWindowBorder23 =   { {10, 10 + 6, 151, 151 + 24}, 		{10, 10, 151, 151} };
-	activeWindowBorder31 =   { {1, 1 + 6, 176, 176 + 1}, 			{1, 1, 175, 176} };
-	activeWindowBorder32 =   { {8, 8 + 1, 176, 176 + 1}, 			{7, 8, 175, 176} };
-	activeWindowBorder33 =   { {10, 10 + 6, 176, 176 + 1}, 			{10, 10, 175, 176} };
-	activeWindowBorder41 =   { {1, 1 + 6, 178, 178 + 6}, 			{1, 1, 178, 178} };
-	activeWindowBorder42 =   { {8, 8 + 1, 178, 178 + 6}, 			{7, 8, 178, 178} };
-	activeWindowBorder43 =   { {10, 10 + 6, 178, 178 + 6}, 			{10, 10, 178, 178} };
-	inactiveWindowBorder11 =   { {16 + 1, 16 + 1 + 6, 144, 144 + 6}, 	{16 + 1, 16 + 1, 144, 144} };
-	inactiveWindowBorder12 =   { {16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 7, 16 + 8, 144, 144} };
-	inactiveWindowBorder13 =   { {16 + 10, 16 + 10 + 6, 144, 144 + 6}, 	{16 + 10, 16 + 10, 144, 144} };
-	inactiveWindowBorder21 =   { {16 + 1, 16 + 1 + 6, 151, 151 + 24}, 	{16 + 1, 16 + 1, 151, 151} };
-	inactiveWindowBorder22 =   { {16 + 8, 16 + 8 + 1, 151, 151 + 24}, 	{16 + 7, 16 + 8, 151, 151} };
-	inactiveWindowBorder23 =   { {16 + 10, 16 + 10 + 6, 151, 151 + 24}, 	{16 + 10, 16 + 10, 151, 151} };
-	inactiveWindowBorder31 =   { {16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176} };
-	inactiveWindowBorder32 =   { {16 + 8, 16 + 8 + 1, 176, 176 + 1}, 	{16 + 7, 16 + 8, 175, 176} };
-	inactiveWindowBorder33 =   { {16 + 10, 16 + 10 + 6, 176, 176 + 1}, 	{16 + 10, 16 + 10, 175, 176} };
-	inactiveWindowBorder41 =   { {16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178} };
-	inactiveWindowBorder42 =   { {16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178} };
-	inactiveWindowBorder43 =   { {16 + 10, 16 + 10 + 6, 178, 178 + 6}, 	{16 + 10, 16 + 10, 178, 178} };
 	blankImage = {{0, 0, 0, 0}, {0, 0, 0, 0}};
+
+	activeWindowBorder11 =     {{1, 1 + 6, 144, 144 + 6}, 			{1, 1, 144, 144}};
+	activeWindowBorder12 =     {{8, 8 + 1, 144, 144 + 6}, 			{7, 8, 144, 144}};
+	activeWindowBorder13 =     {{10, 10 + 6, 144, 144 + 6}, 		{10, 10, 144, 144}};
+	activeWindowBorder21 =     {{1, 1 + 6, 151, 151 + 24}, 			{1, 1, 151, 151}};
+	activeWindowBorder22 =     {{8, 8 + 1, 151, 151 + 24}, 			{7, 8, 151, 151}};
+	activeWindowBorder23 =     {{10, 10 + 6, 151, 151 + 24}, 		{10, 10, 151, 151}};
+	activeWindowBorder31 =     {{1, 1 + 6, 176, 176 + 1}, 			{1, 1, 175, 176}};
+	activeWindowBorder32 =     {{8, 8 + 1, 176, 176 + 1}, 			{7, 8, 175, 176}};
+	activeWindowBorder33 =     {{10, 10 + 6, 176, 176 + 1}, 		{10, 10, 175, 176}};
+	activeWindowBorder41 =     {{1, 1 + 6, 178, 178 + 6}, 			{1, 1, 178, 178}};
+	activeWindowBorder42 =     {{8, 8 + 1, 178, 178 + 6}, 			{7, 8, 178, 178}};
+	activeWindowBorder43 =     {{10, 10 + 6, 178, 178 + 6}, 		{10, 10, 178, 178}};
+
+	inactiveWindowBorder11 =   {{16 + 1, 16 + 1 + 6, 144, 144 + 6}, 	{16 + 1, 16 + 1, 144, 144}};
+	inactiveWindowBorder12 =   {{16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 7, 16 + 8, 144, 144}};
+	inactiveWindowBorder13 =   {{16 + 10, 16 + 10 + 6, 144, 144 + 6}, 	{16 + 10, 16 + 10, 144, 144}};
+	inactiveWindowBorder21 =   {{16 + 1, 16 + 1 + 6, 151, 151 + 24}, 	{16 + 1, 16 + 1, 151, 151}};
+	inactiveWindowBorder22 =   {{16 + 8, 16 + 8 + 1, 151, 151 + 24}, 	{16 + 7, 16 + 8, 151, 151}};
+	inactiveWindowBorder23 =   {{16 + 10, 16 + 10 + 6, 151, 151 + 24}, 	{16 + 10, 16 + 10, 151, 151}};
+	inactiveWindowBorder31 =   {{16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176}};
+	inactiveWindowBorder32 =   {{16 + 8, 16 + 8 + 1, 176, 176 + 1}, 	{16 + 7, 16 + 8, 175, 176}};
+	inactiveWindowBorder33 =   {{16 + 10, 16 + 10 + 6, 176, 176 + 1}, 	{16 + 10, 16 + 10, 175, 176}};
+	inactiveWindowBorder41 =   {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178}};
+	inactiveWindowBorder42 =   {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
+	inactiveWindowBorder43 =   {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, 	{16 + 10, 16 + 10, 178, 178}};
+
+	progressBarBackground = {{9, 16, 122, 143}, {11, 12, 125, 139}};
+	progressBarDisabled   = {{16 + 9, 16 + 16, 122, 143}, {16 + 11, 16 + 12, 125, 139}};
+	progressBarPellet     = {{18, 26, 69, 84}, {18, 18, 69, 69}};
 }
