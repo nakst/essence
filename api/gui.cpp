@@ -16,26 +16,34 @@ struct UIImage {
 	OSRectangle border;
 };
 
-UIImage activeWindowBorder11, activeWindowBorder12, activeWindowBorder13, 
+static UIImage activeWindowBorder11, activeWindowBorder12, activeWindowBorder13, 
 	activeWindowBorder21, activeWindowBorder22, activeWindowBorder23, 
 	activeWindowBorder31, activeWindowBorder32, activeWindowBorder33, 
 	activeWindowBorder41, activeWindowBorder42, activeWindowBorder43;
-UIImage inactiveWindowBorder11, inactiveWindowBorder12, inactiveWindowBorder13, 
+static UIImage inactiveWindowBorder11, inactiveWindowBorder12, inactiveWindowBorder13, 
 	inactiveWindowBorder21, inactiveWindowBorder22, inactiveWindowBorder23, 
 	inactiveWindowBorder31, inactiveWindowBorder32, inactiveWindowBorder33, 
 	inactiveWindowBorder41, inactiveWindowBorder42, inactiveWindowBorder43;
+static const int totalBorderWidth = 6 + 6;
+static const int totalBorderHeight = 6 + 24 + 6;
 
 // TODO Notification callbacks.
 //	- Simplifying the target/generator mess.
 
 struct Control : APIObject {
 	unsigned layout;
-	OSString text;
 	OSRectangle bounds, cellBounds;
-	int preferredWidth, preferredHeight;
-	bool repaint, relayout;
+
 	UIImage background;
 	OSCursorStyle cursor;
+
+	OSString text;
+	OSRectangle textBounds;
+	uint32_t textColor;
+	bool textShadow;
+
+	bool repaint, relayout;
+	int preferredWidth, preferredHeight;
 };
 
 struct WindowResizeControl : Control {
@@ -54,7 +62,8 @@ struct Grid : APIObject {
 
 struct Window : APIObject {
 	OSHandle window, surface;
-	unsigned width, height;
+	int width, height;
+	int minimumWidth, minimumHeight;
 	Grid *root;
 	bool destroyed;
 	unsigned flags;
@@ -116,6 +125,16 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 			control->relayout = false;
 			control->repaint = true;
 			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+
+			{
+				OSMessage m = *message;
+				m.type = OS_MESSAGE_LAYOUT_TEXT;
+				OSSendMessage(control, &m);
+			}
+		} break;
+
+		case OS_MESSAGE_LAYOUT_TEXT: {
+			control->textBounds = control->bounds;
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
@@ -134,8 +153,16 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 					OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
 				}
 
-				OSDrawString(message->paint.surface, control->bounds, &control->text,
-						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0x003060, -1);
+				if (control->textShadow) {
+					OSRectangle bounds = control->textBounds;
+					bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
+
+					OSDrawString(message->paint.surface, bounds, &control->text,
+							OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0xFFFFFF - control->textColor, -1);
+				}
+
+				OSDrawString(message->paint.surface, control->textBounds, &control->text,
+						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, control->textColor, -1);
 
 				control->repaint = false;
 			}
@@ -187,13 +214,33 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		Window *window = (Window *) message->window;
-		OSRectangle bounds;
+		OSRectangle bounds, bounds2;
 		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
+
+		bounds2 = bounds;
+
+		int oldWidth = bounds.right - bounds.left;
+		int oldHeight = bounds.bottom - bounds.top;
 
 		if (control->direction & RESIZE_LEFT) bounds.left = message->mouseMoved.newPositionXScreen;
 		if (control->direction & RESIZE_RIGHT) bounds.right = message->mouseMoved.newPositionXScreen;
 		if (control->direction & RESIZE_TOP) bounds.top = message->mouseMoved.newPositionYScreen;
 		if (control->direction & RESIZE_BOTTOM) bounds.bottom = message->mouseMoved.newPositionYScreen;
+
+		int newWidth = bounds.right - bounds.left;
+		int newHeight = bounds.bottom - bounds.top;
+
+		if (newWidth < window->minimumWidth && control->direction & RESIZE_LEFT) bounds.left = bounds.right - window->minimumWidth;
+		if (newWidth < window->minimumWidth && control->direction & RESIZE_RIGHT) bounds.right = bounds.left + window->minimumWidth;
+		if (newHeight < window->minimumHeight && control->direction & RESIZE_TOP) bounds.top = bounds.bottom - window->minimumHeight;
+		if (newHeight < window->minimumHeight && control->direction & RESIZE_BOTTOM) bounds.bottom = bounds.top + window->minimumHeight;
+
+		if (control->direction == RESIZE_MOVE) {
+			bounds.left = message->mouseDragged.newPositionXScreen - message->mouseDragged.originalPositionX;
+			bounds.top = message->mouseDragged.newPositionYScreen - message->mouseDragged.originalPositionY;
+			bounds.right = bounds.left + oldWidth;
+			bounds.bottom = bounds.top + oldHeight;
+		}
 		
 		OSSyscall(OS_SYSCALL_MOVE_WINDOW, window->window, (uintptr_t) &bounds, 0, 0);
 
@@ -208,6 +255,9 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSMessage *message) {
 		layout.layout.bottom = window->height;
 		layout.layout.force = true;
 		OSSendMessage(window->root, &layout);
+	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
+		control->textBounds = control->bounds;
+		control->textBounds.bottom -= 6;
 	} else {
 		response = OSForwardMessage(OSCallback(ProcessControlMessage, control), message);
 	}
@@ -244,6 +294,11 @@ static OSObject CreateWindowResizeHandle(UIImage image, unsigned direction) {
 		case RESIZE_BOTTOM_RIGHT:
 			control->cursor = OS_CURSOR_RESIZE_DIAGONAL_2;
 			break;
+
+		case RESIZE_MOVE: {
+			control->textColor = 0xFFFFFF;
+			control->textShadow = true;
+		} break;
 	}
 
 	return control;
@@ -488,6 +543,8 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Window *window = (Window *) message->context;
 
+	static int lastClickX = 0, lastClickY = 0;
+
 	if (window->destroyed && message->type != OS_MESSAGE_WINDOW_DESTROYED) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
@@ -510,6 +567,8 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
 			window->drag = window->hover;
+			lastClickX = message->mousePressed.positionX;
+			lastClickY = message->mousePressed.positionY;
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
@@ -529,6 +588,8 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		case OS_MESSAGE_MOUSE_MOVED: {
 			if (window->drag) {
 				message->type = OS_MESSAGE_MOUSE_DRAGGED;
+				message->mouseDragged.originalPositionX = lastClickX;
+				message->mouseDragged.originalPositionY = lastClickY;
 				OSSendMessage(window->drag, message);
 			} else {
 				OSSendMessage(window->root, message);
@@ -583,23 +644,30 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 	return response;
 }
 
-OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *title, size_t titleBytes) {
+OSObject OSCreateWindow(OSWindowSpecification *specification) {
+	specification->width += totalBorderWidth;
+	specification->minimumWidth += totalBorderWidth;
+	specification->height += totalBorderHeight;
+	specification->minimumHeight += totalBorderHeight;
+
 	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 	window->type = API_OBJECT_WINDOW;
 
 	OSRectangle bounds;
 	bounds.left = 0;
-	bounds.right = width;
+	bounds.right = specification->width;
 	bounds.top = 0;
-	bounds.bottom = height;
+	bounds.bottom = specification->height;
 
 	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, 0);
 	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
 	window->width = bounds.right - bounds.left;
 	window->height = bounds.bottom - bounds.top;
-	window->flags = flags;
+	window->flags = specification->flags;
 	window->cursor = OS_CURSOR_NORMAL;
+	window->minimumWidth = specification->minimumWidth;
+	window->minimumHeight = specification->minimumHeight;
 
 	OSSetCallback(window, OSCallback(ProcessWindowMessage, window));
 
@@ -613,11 +681,14 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 	}
 
 	{
+		OSObject titlebar = CreateWindowResizeHandle(activeWindowBorder22, RESIZE_MOVE);
+		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSSetText(titlebar, specification->title, specification->titleBytes);
+
 		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, RESIZE_TOP_LEFT), 0);
 		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(activeWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(activeWindowBorder13, RESIZE_TOP_RIGHT), 0);
 		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(activeWindowBorder21, RESIZE_LEFT), 0);
-		OSAddControl(window->root, 1, 1, CreateWindowResizeHandle(activeWindowBorder22, RESIZE_MOVE), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(activeWindowBorder23, RESIZE_RIGHT), 0);
 		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(activeWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 		OSAddControl(window->root, 1, 2, CreateWindowResizeHandle(activeWindowBorder32, RESIZE_MOVE), OS_CELL_H_EXPAND | OS_CELL_V_EXPAND); // TODO Temporary.
@@ -626,9 +697,6 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(activeWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(activeWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
 	}
-
-	(void) title;
-	(void) titleBytes;
 
 	return window;
 }

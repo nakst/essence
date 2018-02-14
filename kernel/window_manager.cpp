@@ -518,7 +518,7 @@ bool Window::Move(OSRectangle &rectangle) {
 		size_t newWidth = rectangle.right - rectangle.left;
 		size_t newHeight = rectangle.bottom - rectangle.top;
 
-		if (newWidth < 16 || newHeight < 16 
+		if (newWidth < 4 || newHeight < 4 
 				|| rectangle.left > rectangle.right 
 				|| rectangle.top > rectangle.bottom
 				|| newWidth > graphics.resX + 64

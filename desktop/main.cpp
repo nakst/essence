@@ -49,7 +49,17 @@ OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
 						"Error code: %d (user error)", code);
 			}
 
-			OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, crashMessage, crashMessageLength);
+			(void) crashMessageLength;
+
+			OSWindowSpecification specification = {};
+			specification.width = 320;
+			specification.height = 200;
+			specification.minimumWidth = 160;
+			specification.minimumHeight = 100;
+			specification.flags = OS_CREATE_WINDOW_ALERT;
+			specification.title = (char *) "Program Crashed";
+			specification.titleBytes = OSCStringLength(specification.title);
+			OSCreateWindow(&specification);
 
 #if 0
 			OSSetGrid(dialog, 1 /* Columns */, 2 /* Rows */);

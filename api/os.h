@@ -454,6 +454,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_CHILD_UPDATED		= 0x0405,
 	OS_MESSAGE_FIND_HOVER_CONTROL		= 0x0406,
 	OS_MESSAGE_MOUSE_DRAGGED		= 0x0407,
+	OS_MESSAGE_LAYOUT_TEXT			= 0x0408,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -493,6 +494,15 @@ typedef struct OSMessage {
 			int newPositionXScreen;
 			int newPositionYScreen;
 		} mouseMoved;
+
+		struct {
+			int originalPositionX;
+			int newPositionX;
+			int originalPositionY;
+			int newPositionY;
+			int newPositionXScreen;
+			int newPositionYScreen;
+		} mouseDragged;
 
 		struct {
 			int positionX;
@@ -576,6 +586,16 @@ typedef struct OSAction {
 	OSCallback callback;
 	void *callbackContext;
 } OSAction;
+
+typedef struct OSWindowSpecification {
+	unsigned width, height;
+	unsigned minimumWidth, minimumHeight;
+
+	unsigned flags;
+
+	char *title;
+	size_t titleBytes;
+} OSWindowSpecification;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
@@ -714,7 +734,7 @@ OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message);
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
 OS_EXTERN_C void OSProcessMessages();
-OS_EXTERN_C OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *title, size_t titleBytes);
+OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
