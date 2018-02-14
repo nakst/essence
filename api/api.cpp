@@ -97,15 +97,15 @@ void OSProcessMessages() {
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
-			if (message.generator) {
-				OSSendMessage(message.generator, &message);
+			if (message.window) {
+				OSSendMessage(message.window, &message);
 				continue;
 			}
 
 			switch (message.type) {
 				case OS_MESSAGE_PROGRAM_CRASH: {
-					message.generator = OS_CALLBACK_DEBUGGER_MESSAGES;
-					OSSendMessage(message.generator, &message);
+					message.window = OS_CALLBACK_DEBUGGER_MESSAGES;
+					OSSendMessage(message.window, &message);
 				} break;
 
 				default: {

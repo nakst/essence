@@ -1,12 +1,29 @@
 #define UI_IMAGE(_image) _image.region, _image.border
 #define DIMENSION_PUSH (-1)
 
+#define RESIZE_LEFT 		(0)
+#define RESIZE_RIGHT 		(1)
+#define RESIZE_TOP 		(2)
+#define RESIZE_BOTTOM 		(3)
+#define RESIZE_TOP_LEFT 	(4)
+#define RESIZE_TOP_RIGHT 	(5)
+#define RESIZE_BOTTOM_LEFT 	(6)
+#define RESIZE_BOTTOM_RIGHT 	(7)
+#define RESIZE_MOVE		(8)
+
 struct UIImage {
 	OSRectangle region;
 	OSRectangle border;
 };
 
-UIImage activeWindowBorder;
+UIImage activeWindowBorder11, activeWindowBorder12, activeWindowBorder13, 
+	activeWindowBorder21, activeWindowBorder22, activeWindowBorder23, 
+	activeWindowBorder31, activeWindowBorder32, activeWindowBorder33, 
+	activeWindowBorder41, activeWindowBorder42, activeWindowBorder43;
+UIImage inactiveWindowBorder11, inactiveWindowBorder12, inactiveWindowBorder13, 
+	inactiveWindowBorder21, inactiveWindowBorder22, inactiveWindowBorder23, 
+	inactiveWindowBorder31, inactiveWindowBorder32, inactiveWindowBorder33, 
+	inactiveWindowBorder41, inactiveWindowBorder42, inactiveWindowBorder43;
 
 // TODO Notification callbacks.
 //	- Simplifying the target/generator mess.
@@ -17,6 +34,12 @@ struct Control : APIObject {
 	OSRectangle bounds, cellBounds;
 	int preferredWidth, preferredHeight;
 	bool repaint, relayout;
+	UIImage background;
+	OSCursorStyle cursor;
+};
+
+struct WindowResizeControl : Control {
+	unsigned direction;
 };
 
 struct Grid : APIObject {
@@ -26,6 +49,7 @@ struct Grid : APIObject {
 	int *widths, *heights;
 	int width, height;
 	bool relayout;
+	int borderSize, gapSize;
 };
 
 struct Window : APIObject {
@@ -34,7 +58,17 @@ struct Window : APIObject {
 	Grid *root;
 	bool destroyed;
 	unsigned flags;
+	OSCursorStyle cursor, cursorOld;
+	struct Control *drag, *hover;
 };
+
+static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
+	if (rectangle.left > x || rectangle.right <= x || rectangle.top > y || rectangle.bottom <= y) {
+		return false;
+	}
+	
+	return true;
+}
 
 static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
@@ -94,7 +128,12 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 
 		case OS_MESSAGE_PAINT: {
 			if (control->repaint || message->paint.force) {
-				OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
+				if (control->background.region.left) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST);
+				} else {
+					OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
+				}
+
 				OSDrawString(message->paint.surface, control->bounds, &control->text,
 						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0x003060, -1);
 
@@ -110,6 +149,21 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 		case OS_MESSAGE_DESTROY: {
 			OSHeapFree(control->text.buffer);
 			OSHeapFree(control);
+
+			Window *window = (Window *) message->window;
+
+			if (window->hover == control) window->hover = nullptr;
+			if (window->drag == control) window->drag = nullptr;
+		} break;
+
+		case OS_MESSAGE_MOUSE_MOVED: {
+			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				break;
+			}
+
+			Window *window = (Window *) message->window;
+			window->cursor = control->cursor;
+			window->hover = control;
 		} break;
 
 		default: {
@@ -125,6 +179,40 @@ static void CreateString(char *text, size_t textBytes, OSString *string) {
 	string->buffer = (char *) OSHeapAllocate(textBytes, false);
 	string->bytes = textBytes;
 	OSCopyMemory(string->buffer, text, textBytes);
+}
+
+static OSObject CreateWindowResizeHandle(UIImage image, unsigned direction) {
+	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
+	control->type = API_OBJECT_CONTROL;
+	control->background = image;
+	control->preferredWidth = image.region.right - image.region.left;
+	control->preferredHeight = image.region.bottom - image.region.top;
+	control->direction = direction;
+	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
+
+	switch (direction) {
+		case RESIZE_LEFT:
+		case RESIZE_RIGHT:
+			control->cursor = OS_CURSOR_RESIZE_HORIZONTAL;
+			break;
+
+		case RESIZE_TOP:
+		case RESIZE_BOTTOM:
+			control->cursor = OS_CURSOR_RESIZE_VERTICAL;
+			break;
+
+		case RESIZE_TOP_RIGHT:
+		case RESIZE_BOTTOM_LEFT:
+			control->cursor = OS_CURSOR_RESIZE_DIAGONAL_1;
+			break;
+
+		case RESIZE_TOP_LEFT:
+		case RESIZE_BOTTOM_RIGHT:
+			control->cursor = OS_CURSOR_RESIZE_DIAGONAL_2;
+			break;
+	}
+
+	return control;
 }
 
 OSObject OSCreateLabel(char *text, size_t textBytes) {
@@ -222,23 +310,23 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 				}
 
 				if (pushH) {
-					int usedWidth = 4; 
-					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i] + 4;
-					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH - 4;
+					int usedWidth = grid->borderSize * 2; 
+					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i] + (i == grid->columns - 1 ? grid->gapSize : 0);
+					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH - grid->gapSize; // This isn't completely correct... but I think it's good enough for now?
 					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] == DIMENSION_PUSH) grid->widths[i] = widthPerPush;
 				}
 
 				if (pushV) {
-					int usedHeight = 4; 
-					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j] + 4;
-					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV - 4;
+					int usedHeight = grid->borderSize * 2; 
+					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j] + (j == grid->rows - 1 ? grid->gapSize : 0);
+					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV - grid->gapSize; // This isn't completely correct... but I think it's good enough for now?
 					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] == DIMENSION_PUSH) grid->heights[j] = heightPerPush;
 				}
 
-				int posX = grid->bounds.left + 4;
+				int posX = grid->bounds.left + grid->borderSize;
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
-					int posY = grid->bounds.top + 4;
+					int posY = grid->bounds.top + grid->borderSize;
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						OSObject *object = grid->objects + (j * grid->columns + i);
@@ -252,10 +340,10 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 
 						OSSendMessage(*object, message);
 
-						posY += grid->heights[j] + 4;
+						posY += grid->heights[j] + grid->gapSize;
 					}
 
-					posX += grid->widths[i] + 4;
+					posX += grid->widths[i] + grid->gapSize;
 				}
 			} else if (grid->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
 				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
@@ -290,10 +378,10 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 				}
 			}
 
-			int width = pushH ? DIMENSION_PUSH : 4, height = pushV ? DIMENSION_PUSH : 4;
+			int width = pushH ? DIMENSION_PUSH : grid->borderSize, height = pushV ? DIMENSION_PUSH : grid->borderSize;
 
-			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + 4;
-			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + 4;
+			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + (i == grid->columns - 1 ? grid->borderSize : grid->gapSize);
+			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + (j == grid->rows - 1 ? grid->borderSize : grid->gapSize);
 
 			grid->width = message->measure.width = width;
 			grid->height = message->measure.height = height;
@@ -324,6 +412,16 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 			OSHeapFree(grid);
 		} break;
 
+		case OS_MESSAGE_MOUSE_MOVED: {
+			if (!IsPointInRectangle(grid->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				break;
+			}
+
+			for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+				OSSendMessage(grid->objects[i], message);
+			}
+		} break;
+
 		default: {
 			response = OS_CALLBACK_NOT_HANDLED;
 		} break;
@@ -332,7 +430,7 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 	return response;
 }
 
-OSObject OSCreateGrid(unsigned columns, unsigned rows) {
+OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * (columns + rows), true);
 
 	Grid *grid = (Grid *) memory;
@@ -343,6 +441,9 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows) {
 	grid->objects = (OSObject *) (memory + sizeof(Grid));
 	grid->widths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows);
 	grid->heights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns);
+
+	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
+	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
 
 	OSSetCallback(grid, OSCallback(ProcessGridMessage, grid));
 
@@ -373,6 +474,33 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 			window->destroyed = true;
 		} break;
 
+		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
+			window->drag = window->hover;
+		} break;
+
+		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
+			window->drag = nullptr;
+
+			OSMessage m = *message;
+			m.type = OS_MESSAGE_MOUSE_MOVED;
+			m.mouseMoved.oldPositionX = message->mousePressed.positionX;
+			m.mouseMoved.oldPositionY = message->mousePressed.positionY;
+			m.mouseMoved.newPositionX = message->mousePressed.positionX;
+			m.mouseMoved.newPositionY = message->mousePressed.positionY;
+			m.mouseMoved.newPositionXScreen = message->mousePressed.positionXScreen;
+			m.mouseMoved.newPositionYScreen = message->mousePressed.positionYScreen;
+			OSSendMessage(window->root, &m);
+		} break;
+
+		case OS_MESSAGE_MOUSE_MOVED: {
+			if (window->drag) {
+				message->type = OS_MESSAGE_MOUSE_DRAGGED;
+				OSSendMessage(window->root, message);
+			} else {
+				OSSendMessage(window->root, message);
+			}
+		} break;
+
 		default: {
 			response = OS_CALLBACK_NOT_HANDLED;
 		} break;
@@ -395,6 +523,14 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		OSSendMessage(window->root, &message);
 	}
 
+	bool updateWindow = false;
+
+	if (window->cursor != window->cursorOld) {
+		OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, window->window, window->cursor, 0, 0);
+		window->cursorOld = window->cursor;
+		updateWindow = true;
+	}
+
 	if (window->descendentInvalidationFlags & DESCENDENT_REPAINT) {
 		window->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
 
@@ -403,6 +539,10 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		message.paint.surface = window->surface;
 		message.paint.force = false;
 		OSSendMessage(window->root, &message);
+		updateWindow = true;
+	}
+
+	if (updateWindow) {
 		OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
 	}
 
@@ -425,16 +565,32 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 	window->width = bounds.right - bounds.left;
 	window->height = bounds.bottom - bounds.top;
 	window->flags = flags;
+	window->cursor = OS_CURSOR_NORMAL;
 
 	OSSetCallback(window, OSCallback(ProcessWindowMessage, window));
 
-	window->root = (Grid *) OSCreateGrid(1, 3);
+	window->root = (Grid *) OSCreateGrid(3, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
 	window->root->parent = window;
 
 	{
 		OSMessage message;
 		message.type = OS_MESSAGE_PARENT_UPDATED;
 		OSSendMessage(window->root, &message);
+	}
+
+	{
+		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, RESIZE_TOP_LEFT), 0);
+		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(activeWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(activeWindowBorder13, RESIZE_TOP_RIGHT), 0);
+		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(activeWindowBorder21, RESIZE_LEFT), 0);
+		OSAddControl(window->root, 1, 1, CreateWindowResizeHandle(activeWindowBorder22, RESIZE_MOVE), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(activeWindowBorder23, RESIZE_RIGHT), 0);
+		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(activeWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 1, 2, CreateWindowResizeHandle(activeWindowBorder32, RESIZE_MOVE), OS_CELL_H_EXPAND | OS_CELL_V_EXPAND); // TODO Temporary.
+		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(activeWindowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(activeWindowBorder41, RESIZE_BOTTOM_LEFT), 0);
+		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(activeWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(activeWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
 	}
 
 	(void) title;
@@ -444,5 +600,28 @@ OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *t
 }
 
 void OSInitialiseGUI() {
-	activeWindowBorder = { {96, 105, 42, 77}, {96 + 3, 96 + 5, 42 + 29, 42 + 31} };
+	activeWindowBorder11 =   { {1, 1 + 6, 144, 144 + 6}, 			{1, 1, 144, 144} };
+	activeWindowBorder12 =   { {8, 8 + 1, 144, 144 + 6}, 			{7, 8, 144, 144} };
+	activeWindowBorder13 =   { {10, 10 + 6, 144, 144 + 6}, 			{10, 10, 144, 144} };
+	activeWindowBorder21 =   { {1, 1 + 6, 151, 151 + 24}, 			{1, 1, 151, 151} };
+	activeWindowBorder22 =   { {8, 8 + 1, 151, 151 + 24}, 			{7, 8, 151, 151} };
+	activeWindowBorder23 =   { {10, 10 + 6, 151, 151 + 24}, 		{10, 10, 151, 151} };
+	activeWindowBorder31 =   { {1, 1 + 6, 176, 176 + 1}, 			{1, 1, 175, 176} };
+	activeWindowBorder32 =   { {8, 8 + 1, 176, 176 + 1}, 			{7, 8, 175, 176} };
+	activeWindowBorder33 =   { {10, 10 + 6, 176, 176 + 1}, 			{10, 10, 175, 176} };
+	activeWindowBorder41 =   { {1, 1 + 6, 178, 178 + 6}, 			{1, 1, 178, 178} };
+	activeWindowBorder42 =   { {8, 8 + 1, 178, 178 + 6}, 			{7, 8, 178, 178} };
+	activeWindowBorder43 =   { {10, 10 + 6, 178, 178 + 6}, 			{10, 10, 178, 178} };
+	inactiveWindowBorder11 =   { {16 + 1, 16 + 1 + 6, 144, 144 + 6}, 	{16 + 1, 16 + 1, 144, 144} };
+	inactiveWindowBorder12 =   { {16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 7, 16 + 8, 144, 144} };
+	inactiveWindowBorder13 =   { {16 + 10, 16 + 10 + 6, 144, 144 + 6}, 	{16 + 10, 16 + 10, 144, 144} };
+	inactiveWindowBorder21 =   { {16 + 1, 16 + 1 + 6, 151, 151 + 24}, 	{16 + 1, 16 + 1, 151, 151} };
+	inactiveWindowBorder22 =   { {16 + 8, 16 + 8 + 1, 151, 151 + 24}, 	{16 + 7, 16 + 8, 151, 151} };
+	inactiveWindowBorder23 =   { {16 + 10, 16 + 10 + 6, 151, 151 + 24}, 	{16 + 10, 16 + 10, 151, 151} };
+	inactiveWindowBorder31 =   { {16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176} };
+	inactiveWindowBorder32 =   { {16 + 8, 16 + 8 + 1, 176, 176 + 1}, 	{16 + 7, 16 + 8, 175, 176} };
+	inactiveWindowBorder33 =   { {16 + 10, 16 + 10 + 6, 176, 176 + 1}, 	{16 + 10, 16 + 10, 175, 176} };
+	inactiveWindowBorder41 =   { {16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178} };
+	inactiveWindowBorder42 =   { {16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178} };
+	inactiveWindowBorder43 =   { {16 + 10, 16 + 10 + 6, 178, 178 + 6}, 	{16 + 10, 16 + 10, 178, 178} };
 }

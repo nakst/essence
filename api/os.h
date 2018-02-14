@@ -452,6 +452,8 @@ typedef enum OSMessageType {
 	OS_MESSAGE_PAINT			= 0x0403,
 	OS_MESSAGE_PARENT_UPDATED		= 0x0404,
 	OS_MESSAGE_CHILD_UPDATED		= 0x0405,
+	OS_MESSAGE_FIND_HOVER_CONTROL		= 0x0406,
+	OS_MESSAGE_MOUSE_DRAGGED		= 0x0407,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -472,12 +474,12 @@ typedef enum OSMessageType {
 
 	// User messages:
 	OS_MESSAGE_USER_START			= 0x8000,
-	OS_MESSAGE_USER_END			= 0xEFFF,
+	OS_MESSAGE_USER_END			= 0xBFFF,
 } OSMessageType;
 
 typedef struct OSMessage {
 	OSMessageType type;
-	OSObject generator;
+	OSObject window;
 	void *context;
 
 	union {
@@ -592,6 +594,9 @@ typedef struct OSAction {
 #define OS_CELL_V_CENTER  (256)
 #define OS_CELL_V_BOTTOM  (512)
 #define OS_ADD_CHILD_GRID (1024)
+
+#define OS_CREATE_GRID_NO_BORDER (1)
+#define OS_CREATE_GRID_NO_GAP    (2)
 
 #define OS_ICON_NONE (OS_INVALID_OBJECT)
 
@@ -710,7 +715,7 @@ OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
 OS_EXTERN_C void OSProcessMessages();
 OS_EXTERN_C OSObject OSCreateWindow(unsigned width, unsigned height, unsigned flags, char *title, size_t titleBytes);
-OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows);
+OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);

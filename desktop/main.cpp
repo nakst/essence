@@ -28,31 +28,6 @@ char *errorMessages[] = {
 	(char *) "CORRUPT_HEAP",
 };
 
-OSCallback oldCallback;
-OSObject dialog, label1;
-
-OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
-	OSCallbackResponse response = OS_CALLBACK_HANDLED;
-
-	switch (message->type) {
-		case OS_MESSAGE_KEY_PRESSED: {
-			if (message->keyboard.alt && message->keyboard.scancode == OS_SCANCODE_F4) {
-				OSMessage close;
-				close.type = OS_MESSAGE_DESTROY;
-				OSSendMessage(message->context, &close);
-			} else if (message->keyboard.scancode == OS_SCANCODE_C) {
-				OSSetText(label1, OSLiteral("Changed!"));
-			}
-		} break;
-
-		default: {
-		} break;
-	}
-
-	OSForwardMessage(oldCallback, message);
-	return response;
-}
-
 OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
@@ -74,29 +49,7 @@ OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
 						"Error code: %d (user error)", code);
 			}
 
-			dialog = OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, crashMessage, crashMessageLength);
-			oldCallback = OSSetCallback(dialog, OSCallback(ProcessWindowMessage, dialog));
-
-#if 1
-			{
-				OSObject label = OSCreateLabel(crashMessage, crashMessageLength);
-				OSAddControl(dialog, 0, 0, label, OS_CELL_H_PUSH | OS_CELL_V_TOP);
-			}
-#endif
-
-			{
-				label1 = OSCreateLabel(OSLiteral("Hello, world!"));
-				OSAddControl(dialog, 0, 1, label1, OS_CELL_H_LEFT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
-			}
-
-#if 1
-			{
-				OSObject grid = OSCreateGrid(2, 1);
-				OSAddControl(grid, 0, 0, OSCreateLabel(OSLiteral("Hello, ")), OS_CELL_H_LEFT | OS_CELL_H_PUSH);
-				OSAddControl(grid, 1, 0, OSCreateLabel(OSLiteral("another world!")), OS_CELL_H_RIGHT);
-				OSAddControl(dialog, 0, 2, grid, OS_ADD_CHILD_GRID);
-			}
-#endif
+			OSCreateWindow(320, 200, OS_CREATE_WINDOW_ALERT, crashMessage, crashMessageLength);
 
 #if 0
 			OSSetGrid(dialog, 1 /* Columns */, 2 /* Rows */);
@@ -183,7 +136,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/os/UISheet.png", OS_SURFACE_UI_SHEET, false);
 
-#if 0
+#if 1
 	LoadImageIntoSurface((char *) "/os/sample_images/Winter.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;

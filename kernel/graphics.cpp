@@ -605,6 +605,8 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 			inBorderY = false;
 		}
 
+		// TODO There's currently no checking that the border dimensions are valid.
+
 		InvalidateScanline(y, destinationRegion.left < 0 ? 0 : destinationRegion.left, 
 				      destinationRegion.right >= (intptr_t) resX ? (intptr_t) resX : destinationRegion.right);
 
