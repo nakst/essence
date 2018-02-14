@@ -151,7 +151,7 @@ extern "C" void ProgramEntry() {
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-	OSFillRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height), OSColor(40, 45, 60));
+	OSFillRectangle(surface, OSRectangle(0, buffer.width, 0, buffer.height), OSColor(0, 128, 128));
 #endif
 
 	OSRedrawAll();
