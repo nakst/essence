@@ -11,11 +11,14 @@
 #define RESIZE_BOTTOM_RIGHT 	(10)
 #define RESIZE_MOVE		(0)
 
+#define STANDARD_BACKGROUND_COLOR (0xF0F0F5)
+
 struct UIImage {
 	OSRectangle region;
 	OSRectangle border;
 };
 
+static UIImage blankImage;
 static UIImage activeWindowBorder11, activeWindowBorder12, activeWindowBorder13, 
 	activeWindowBorder21, activeWindowBorder22, activeWindowBorder23, 
 	activeWindowBorder31, activeWindowBorder32, activeWindowBorder33, 
@@ -34,7 +37,8 @@ struct Control : APIObject {
 	unsigned layout;
 	OSRectangle bounds, cellBounds;
 
-	UIImage background;
+	uint32_t backgroundColor;
+	UIImage background, disabledBackground;
 	OSCursorStyle cursor;
 
 	OSString text;
@@ -44,6 +48,8 @@ struct Control : APIObject {
 
 	bool repaint, relayout;
 	int preferredWidth, preferredHeight;
+
+	bool disabled;
 };
 
 struct WindowResizeControl : Control {
@@ -62,13 +68,15 @@ struct Grid : APIObject {
 
 struct Window : APIObject {
 	OSHandle window, surface;
-	int width, height;
-	int minimumWidth, minimumHeight;
 	Grid *root;
-	bool destroyed;
+
 	unsigned flags;
 	OSCursorStyle cursor, cursorOld;
 	struct Control *drag, *hover;
+	bool destroyed, created;
+
+	int width, height;
+	int minimumWidth, minimumHeight;
 };
 
 static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
@@ -148,9 +156,18 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 		case OS_MESSAGE_PAINT: {
 			if (control->repaint || message->paint.force) {
 				if (control->background.region.left) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST);
+					if (control->disabled && control->disabledBackground.region.left) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+								control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST);
+					} else {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+								control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST);
+					}
 				} else {
-					OSFillRectangle(message->paint.surface, control->bounds, OSColor(255, 255, 255));
+					OSFillRectangle(message->paint.surface, control->bounds, 
+							OSColor((control->backgroundColor & 0xFF0000) >> 16, 
+								(control->backgroundColor & 0xFF00) >> 8, 
+								(control->backgroundColor & 0xFF) >> 0));
 				}
 
 				if (control->textShadow) {
@@ -265,13 +282,15 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSMessage *message) {
 	return response;
 }
 
-static OSObject CreateWindowResizeHandle(UIImage image, unsigned direction) {
+static OSObject CreateWindowResizeHandle(UIImage image, UIImage disabledImage, unsigned direction) {
 	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
 	control->type = API_OBJECT_CONTROL;
 	control->background = image;
+	control->disabledBackground = disabledImage;
 	control->preferredWidth = image.region.right - image.region.left;
 	control->preferredHeight = image.region.bottom - image.region.top;
 	control->direction = direction;
+	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, control));
 
 	switch (direction) {
@@ -307,6 +326,7 @@ static OSObject CreateWindowResizeHandle(UIImage image, unsigned direction) {
 OSObject OSCreateLabel(char *text, size_t textBytes) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
+	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 
 	OSSetText(control, text, textBytes);
 	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
@@ -539,6 +559,13 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	return grid;
 }
 
+void OSDisableControl(OSObject _control, bool disabled) {
+	Control *control = (Control *) _control;
+	control->disabled = disabled;
+	control->repaint = true;
+	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+}
+
 static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Window *window = (Window *) message->context;
@@ -551,11 +578,37 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 
 	switch (message->type) {
 		case OS_MESSAGE_WINDOW_CREATED: {
+			window->created = true;
+		} break;
+
+		case OS_MESSAGE_WINDOW_ACTIVATED: {
+			if (!window->created) break;
+
+			for (int i = 0; i < 12; i++) {
+				if (i == 7) continue;
+				OSDisableControl(window->root->objects[i], false);
+			}
+		} break;
+
+		case OS_MESSAGE_WINDOW_DEACTIVATED: {
+			if (!window->created) break;
+
+			for (int i = 0; i < 12; i++) {
+				if (i == 7) continue;
+				OSDisableControl(window->root->objects[i], true);
+			}
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
 			OSHeapFree(window);
 			return response;
+		} break;
+
+		case OS_MESSAGE_KEY_PRESSED: {
+			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
+				message->type = OS_MESSAGE_DESTROY;
+				OSSendMessage(window, message);
+			}
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
@@ -681,21 +734,24 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	}
 
 	{
-		OSObject titlebar = CreateWindowResizeHandle(activeWindowBorder22, RESIZE_MOVE);
+		OSObject titlebar = CreateWindowResizeHandle(activeWindowBorder22, inactiveWindowBorder22, RESIZE_MOVE);
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
 
-		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, RESIZE_TOP_LEFT), 0);
-		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(activeWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(activeWindowBorder13, RESIZE_TOP_RIGHT), 0);
-		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(activeWindowBorder21, RESIZE_LEFT), 0);
-		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(activeWindowBorder23, RESIZE_RIGHT), 0);
-		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(activeWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 1, 2, CreateWindowResizeHandle(activeWindowBorder32, RESIZE_MOVE), OS_CELL_H_EXPAND | OS_CELL_V_EXPAND); // TODO Temporary.
-		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(activeWindowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(activeWindowBorder41, RESIZE_BOTTOM_LEFT), 0);
-		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(activeWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(activeWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
+		// TODO Temporary.
+		Control *content = (Control *) CreateWindowResizeHandle(blankImage, blankImage, RESIZE_MOVE);
+		OSAddControl(window->root, 1, 2, content, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND); 
+
+		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, inactiveWindowBorder11, RESIZE_TOP_LEFT), 0);
+		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(activeWindowBorder12, inactiveWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(activeWindowBorder13, inactiveWindowBorder13, RESIZE_TOP_RIGHT), 0);
+		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(activeWindowBorder21, inactiveWindowBorder21, RESIZE_LEFT), 0);
+		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(activeWindowBorder23, inactiveWindowBorder23, RESIZE_RIGHT), 0);
+		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(activeWindowBorder31, inactiveWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(activeWindowBorder33, inactiveWindowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(activeWindowBorder41, inactiveWindowBorder41, RESIZE_BOTTOM_LEFT), 0);
+		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(activeWindowBorder42, inactiveWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(activeWindowBorder43, inactiveWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
 	}
 
 	return window;
@@ -726,4 +782,5 @@ void OSInitialiseGUI() {
 	inactiveWindowBorder41 =   { {16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178} };
 	inactiveWindowBorder42 =   { {16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178} };
 	inactiveWindowBorder43 =   { {16 + 10, 16 + 10 + 6, 178, 178 + 6}, 	{16 + 10, 16 + 10, 178, 178} };
+	blankImage = {{0, 0, 0, 0}, {0, 0, 0, 0}};
 }

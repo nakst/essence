@@ -740,6 +740,8 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
 OS_EXTERN_C OSObject OSCreateButton(OSAction *action);
+OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
+#define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
 
 #ifndef KERNEL
 OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);
