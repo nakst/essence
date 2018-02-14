@@ -506,8 +506,9 @@ void Window::ClearImage() {
 }
 
 bool Window::Move(OSRectangle &rectangle) {
-	windowManager.mutex.Acquire();
+	bool result = true;
 
+	windowManager.mutex.Acquire();
 	windowManager.SetActiveWindow(this);
 
 	mutex.Acquire();
@@ -522,8 +523,8 @@ bool Window::Move(OSRectangle &rectangle) {
 				|| rectangle.top > rectangle.bottom
 				|| newWidth > graphics.resX + 64
 				|| newHeight > graphics.resY + 64) {
-			windowManager.mutex.Release();
-			return false;
+			result = false;
+			goto done;
 		}
 
 		ClearImage();
@@ -541,9 +542,17 @@ bool Window::Move(OSRectangle &rectangle) {
 		surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
 	}
 
+	done:;
+
+	rectangle.left = position.x;
+	rectangle.top = position.y;
+	rectangle.right = position.x + width;
+	rectangle.bottom = position.y + height;
+
 	windowManager.mutex.Release();
-	Update();
-	return true;
+
+	if (result) Update();
+	return result;
 }
 
 void Window::Destroy() {

@@ -1,15 +1,15 @@
 #define UI_IMAGE(_image) _image.region, _image.border
 #define DIMENSION_PUSH (-1)
 
-#define RESIZE_LEFT 		(0)
-#define RESIZE_RIGHT 		(1)
-#define RESIZE_TOP 		(2)
-#define RESIZE_BOTTOM 		(3)
-#define RESIZE_TOP_LEFT 	(4)
-#define RESIZE_TOP_RIGHT 	(5)
-#define RESIZE_BOTTOM_LEFT 	(6)
-#define RESIZE_BOTTOM_RIGHT 	(7)
-#define RESIZE_MOVE		(8)
+#define RESIZE_LEFT 		(1)
+#define RESIZE_RIGHT 		(2)
+#define RESIZE_TOP 		(4)
+#define RESIZE_BOTTOM 		(8)
+#define RESIZE_TOP_LEFT 	(5)
+#define RESIZE_TOP_RIGHT 	(6)
+#define RESIZE_BOTTOM_LEFT 	(9)
+#define RESIZE_BOTTOM_RIGHT 	(10)
+#define RESIZE_MOVE		(0)
 
 struct UIImage {
 	OSRectangle region;
@@ -181,6 +181,40 @@ static void CreateString(char *text, size_t textBytes, OSString *string) {
 	OSCopyMemory(string->buffer, text, textBytes);
 }
 
+static OSCallbackResponse ProcessWindowResizeHandleMessage(OSMessage *message) {
+	OSCallbackResponse response = OS_CALLBACK_HANDLED;
+	WindowResizeControl *control = (WindowResizeControl *) message->context;
+
+	if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		Window *window = (Window *) message->window;
+		OSRectangle bounds;
+		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
+
+		if (control->direction & RESIZE_LEFT) bounds.left = message->mouseMoved.newPositionXScreen;
+		if (control->direction & RESIZE_RIGHT) bounds.right = message->mouseMoved.newPositionXScreen;
+		if (control->direction & RESIZE_TOP) bounds.top = message->mouseMoved.newPositionYScreen;
+		if (control->direction & RESIZE_BOTTOM) bounds.bottom = message->mouseMoved.newPositionYScreen;
+		
+		OSSyscall(OS_SYSCALL_MOVE_WINDOW, window->window, (uintptr_t) &bounds, 0, 0);
+
+		window->width = bounds.right - bounds.left;
+		window->height = bounds.bottom - bounds.top;
+
+		OSMessage layout;
+		layout.type = OS_MESSAGE_LAYOUT;
+		layout.layout.left = 0;
+		layout.layout.top = 0;
+		layout.layout.right = window->width;
+		layout.layout.bottom = window->height;
+		layout.layout.force = true;
+		OSSendMessage(window->root, &layout);
+	} else {
+		response = OSForwardMessage(OSCallback(ProcessControlMessage, control), message);
+	}
+
+	return response;
+}
+
 static OSObject CreateWindowResizeHandle(UIImage image, unsigned direction) {
 	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
 	control->type = API_OBJECT_CONTROL;
@@ -188,7 +222,7 @@ static OSObject CreateWindowResizeHandle(UIImage image, unsigned direction) {
 	control->preferredWidth = image.region.right - image.region.left;
 	control->preferredHeight = image.region.bottom - image.region.top;
 	control->direction = direction;
-	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
+	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, control));
 
 	switch (direction) {
 		case RESIZE_LEFT:
@@ -495,7 +529,7 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		case OS_MESSAGE_MOUSE_MOVED: {
 			if (window->drag) {
 				message->type = OS_MESSAGE_MOUSE_DRAGGED;
-				OSSendMessage(window->root, message);
+				OSSendMessage(window->drag, message);
 			} else {
 				OSSendMessage(window->root, message);
 			}
