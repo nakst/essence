@@ -608,6 +608,8 @@ typedef struct OSAction {
 	char *label;
 	size_t labelBytes;
 	OSCallback callback;
+
+	bool checkable, isChecked;
 } OSAction;
 
 typedef struct OSWindowSpecification {

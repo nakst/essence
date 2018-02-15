@@ -423,9 +423,10 @@ extern "C" void ProgramEntry() {
 	OSObject content = OSCreateGrid(2, 2, 0);
 	OSSetRootGrid(window, content);
 
-	actionOK.label = (char *) "OK";
+	actionOK.label = (char *) "Enable Something";
 	actionOK.labelBytes = OSCStringLength(actionOK.label);
 	actionOK.callback = OSCallback(ProcessActionOK, nullptr);
+	actionOK.checkable = true;
 
 	progressBar = OSCreateProgressBar(0, 5, 0);
 	OSObject button = OSCreateButton(&actionOK);

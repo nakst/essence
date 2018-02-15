@@ -411,19 +411,10 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 #define FONT_SIZE (9)
 
-OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, 
-		OSString *string, unsigned alignment, OSCaret *caret) {
-	return DrawString(OS_INVALID_HANDLE, region, 
-			string,
-			alignment, 0, 0, 0,
-			coordinate, caret, -1, -1, false, FONT_SIZE, fontRegular);
-}
-
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
 		OSString *string, int fontSize,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold) {
-	return DrawString(surface, region, 
-			string,
-			alignment, color, backgroundColor, 0,
+	return DrawString(surface, region, string,
+			alignment ? alignment : OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, color, backgroundColor, 0,
 			OSPoint(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular);
 }

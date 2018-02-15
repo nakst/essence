@@ -35,6 +35,8 @@ static const int totalBorderHeight = 6 + 24 + 6;
 
 static UIImage progressBarBackground, progressBarPellet, progressBarDisabled;
 static UIImage buttonNormal, buttonHover, buttonDragged, buttonDisabled;
+static UIImage checkboxNormal, checkboxHover, checkboxDragged, checkboxDisabled;
+static UIImage checkboxNormalChecked, checkboxHoverChecked, checkboxDraggedChecked, checkboxDisabledChecked;
 
 struct Control : APIObject {
 	struct Window *window;
@@ -43,17 +45,19 @@ struct Control : APIObject {
 	OSRectangle bounds, cellBounds;
 
 	uint32_t backgroundColor;
-	UIImage background, disabledBackground, hoverBackground, dragBackground;
 	bool drawParentBackground;
 
-	OSAction *clickAction;
+	UIImage background, disabledBackground, hoverBackground, dragBackground;
+	UIImage icon, disabledIcon, hoverIcon, dragIcon;
+
+	OSAction *action;
 	OSCursorStyle cursor;
 
 	OSString text;
 	OSRectangle textBounds;
 	uint32_t textColor;
 	bool textShadow, textBold;
-	int textSize;
+	int textSize, textAlign;
 
 	bool repaint, relayout;
 	int preferredWidth, preferredHeight;
@@ -105,6 +109,14 @@ static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	}
 	
 	return true;
+}
+
+static void UpdateCheckboxIcons(Control *control) {
+	OSAction *action = control->action;
+	control->icon = action->isChecked ? checkboxNormalChecked : checkboxNormal;
+	control->disabledIcon = action->isChecked ? checkboxDisabledChecked : checkboxDisabled;
+	control->hoverIcon = action->isChecked ? checkboxHoverChecked : checkboxHover;
+	control->dragIcon = action->isChecked ? checkboxDraggedChecked : checkboxDragged;
 }
 
 static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
@@ -165,6 +177,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 		case OS_MESSAGE_LAYOUT_TEXT: {
 			control->textBounds = control->bounds;
+
+			if (control->icon.region.left) {
+				control->textBounds.left += control->icon.region.right - control->icon.region.left + 4;
+			}
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
@@ -223,6 +239,40 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
+				{
+					bool found = false;
+					UIImage image;
+
+					if (control->icon.region.left) {
+						found = true;
+						image = control->icon;
+					}
+
+					if (control->disabledIcon.region.left && control->disabled) {
+						found = true;
+						image = control->disabledIcon;
+					}
+
+					if (control->hoverIcon.region.left && (control->window->hover == control || control->window->drag == control)) {
+						found = true;
+						image = control->hoverIcon;
+					}
+
+					if (control->dragIcon.region.left && control->window->drag == control && control->window->hover == control) {
+						found = true;
+						image = control->dragIcon;
+					}
+
+					if (found) {
+						OSRectangle bounds = control->bounds;
+						bounds.right = bounds.left + image.region.right - image.region.left;
+						bounds.top += (bounds.bottom - bounds.top) / 2 - (image.region.bottom - image.region.top) / 2;
+						bounds.bottom = bounds.top + image.region.bottom - image.region.top;
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST);
+					}
+				}
+
 				uint32_t textColor = control->textColor;
 				uint32_t textShadowColor = 0xFFFFFF - textColor;
 
@@ -236,11 +286,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
 
 					OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-							OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, textShadowColor, -1, control->textBold);
+							control->textAlign, textShadowColor, -1, control->textBold);
 				}
 
 				OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
-						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, textColor, -1, control->textBold);
+						control->textAlign, textColor, -1, control->textBold);
 
 				control->repaint = false;
 			}
@@ -297,10 +347,15 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_CLICKED: {
-			if (control->clickAction) {
+			if (control->action) {
 				OSMessage message;
 				message.type = OS_NOTIFICATION_ACTION;
-				OSForwardMessage(control, control->clickAction->callback, &message);
+				OSForwardMessage(control, control->action->callback, &message);
+
+				if (control->action->checkable) {
+					control->action->isChecked = !control->action->isChecked;
+					UpdateCheckboxIcons(control);
+				}
 			}
 		} break;
 
@@ -423,20 +478,27 @@ OSObject OSCreateButton(OSAction *action) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
-	control->minimumWidth = 80;
-	control->minimumHeight = 21;
 	control->preferredWidth = 80;
 	control->preferredHeight = 21;
 
+	control->action = action;
+
+	if (action->checkable) {
+		UpdateCheckboxIcons(control);
+		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
+		control->drawParentBackground = true;
+		control->minimumHeight = control->icon.region.bottom - control->icon.region.top;
+	} else {
+		control->background = buttonNormal;
+		control->disabledBackground = buttonDisabled;
+		control->hoverBackground = buttonHover;
+		control->dragBackground = buttonDragged;
+		control->minimumWidth = 80;
+		control->minimumHeight = 21;
+	}
+
 	OSSetCallback(control, OSCallback(ProcessControlMessage, nullptr));
 	OSSetText(control, action->label, action->labelBytes);
-
-	control->background = buttonNormal;
-	control->disabledBackground = buttonDisabled;
-	control->hoverBackground = buttonHover;
-	control->dragBackground = buttonDragged;
-
-	control->clickAction = action;
 
 	return control;
 }
@@ -563,6 +625,10 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 
 	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 4;
 	int suggestedHeight = FONT_SIZE + 8;
+
+	if (control->icon.region.left) {
+		suggestedWidth += control->icon.region.right - control->icon.region.left + 4;
+	}
 
 	if (suggestedWidth > control->minimumWidth) control->preferredWidth = suggestedWidth;
 	if (suggestedHeight > control->minimumHeight) control->preferredHeight = suggestedHeight;
@@ -1105,4 +1171,13 @@ void OSInitialiseGUI() {
 	buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
 	buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
 	buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
+
+	checkboxNormal		= {{95, 108, 120, 133}, {95, 95, 120, 120}};
+	checkboxDragged		= {{14 + 95, 14 + 108, 120, 133}, {14 + 95, 14 + 95, 120, 120}};
+	checkboxHover		= {{-14 + 95, -14 + 108, 120, 133}, {-14 + 95, -14 + 95, 120, 120}};
+	checkboxDisabled	= {{28 + 95, 28 + 108, 120, 133}, {28 + 95, 28 + 95, 120, 120}};
+	checkboxNormalChecked	= {{95, 108, 14 + 120, 14 + 133}, {95, 95, 14 + 120, 14 + 120}};
+	checkboxDraggedChecked	= {{14 + 95, 14 + 108, 14 + 120, 14 + 133}, {14 + 95, 14 + 95, 14 + 120, 14 + 120}};
+	checkboxHoverChecked	= {{-14 + 95, -14 + 108, 14 + 120, 14 + 133}, {-14 + 95, -14 + 95, 14 + 120, 14 + 120}};
+	checkboxDisabledChecked	= {{28 + 95, 28 + 108, 14 + 120, 14 + 133}, {28 + 95, 28 + 95, 14 + 120, 14 + 120}};
 }
