@@ -464,6 +464,8 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MOUSE_DRAGGED		= 0x0407,
 	OS_MESSAGE_LAYOUT_TEXT			= 0x0408,
 	OS_MESSAGE_PAINT_BACKGROUND		= 0x0409,
+	OS_MESSAGE_HIT_TEST			= 0x040A,
+	OS_MESSAGE_CLICKED			= 0x040B,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -478,6 +480,9 @@ typedef enum OSMessageType {
 	OS_MESSAGE_WINDOW_DESTROYED 		= 0x1009,
 	OS_MESSAGE_MOUSE_EXIT			= 0x100A, // Sent when the mouse leaves the window's bounds.
 	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
+
+	// Notifications:
+	OS_NOTIFICATION_ACTION			= 0x2000,
 
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -565,6 +570,11 @@ typedef struct OSMessage {
 		struct {
 			OSObject window;
 		} parentUpdated;
+
+		struct {
+			int positionX, positionY;
+			bool result;
+		} hitTest;
 	};
 } OSMessage;
 
@@ -597,11 +607,7 @@ typedef struct OSCallback {
 typedef struct OSAction {
 	char *label;
 	size_t labelBytes;
-
-	OSObject icon;
-
 	OSCallback callback;
-	void *callbackContext;
 } OSAction;
 
 typedef struct OSWindowSpecification {
@@ -634,8 +640,6 @@ typedef struct OSWindowSpecification {
 
 #define OS_CREATE_GRID_NO_BORDER (1)
 #define OS_CREATE_GRID_NO_GAP    (2)
-
-#define OS_ICON_NONE (OS_INVALID_OBJECT)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)

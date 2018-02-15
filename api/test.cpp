@@ -3,6 +3,25 @@
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
 
+OSAction actionOK;
+OSObject progressBar, window;
+
+OSCallbackResponse ProcessActionOK(OSObject object, OSMessage *message) {
+	(void) object;
+	(void) message;
+
+	static int progress = 0;
+	progress++;
+	if (progress <= 5) OSSetProgressBarValue(progressBar, progress);
+	else {
+		OSMessage message;
+		message.type = OS_MESSAGE_DESTROY;
+		OSSendMessage(window, &message);
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
+
 #if 0
 OSObject contentPane;
 
@@ -399,13 +418,20 @@ extern "C" void ProgramEntry() {
 	ws.height = 100;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
-	OSObject window = OSCreateWindow(&ws);
+	window = OSCreateWindow(&ws);
 
-	OSObject content = OSCreateGrid(2, 1, 0);
+	OSObject content = OSCreateGrid(2, 2, 0);
 	OSSetRootGrid(window, content);
 
-	OSAddControl(content, 1, 0, OSCreateIndeterminateProgressBar(), OS_CELL_H_PUSH);
+	actionOK.label = (char *) "OK";
+	actionOK.labelBytes = OSCStringLength(actionOK.label);
+	actionOK.callback = OSCallback(ProcessActionOK, nullptr);
+
+	progressBar = OSCreateProgressBar(0, 5, 0);
+	OSObject button = OSCreateButton(&actionOK);
+	OSAddControl(content, 1, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);
+	OSAddControl(content, 1, 1, button, OS_CELL_H_RIGHT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
 
 	OSProcessMessages();
 }

@@ -11,7 +11,9 @@
 #define RESIZE_BOTTOM_RIGHT 	(10)
 #define RESIZE_MOVE		(0)
 
-#define STANDARD_BACKGROUND_COLOR (0xF0F0F5)
+#define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
+
+// TODO Prevent flickering during window resize.
 
 struct UIImage {
 	OSRectangle region;
@@ -32,6 +34,7 @@ static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
 static UIImage progressBarBackground, progressBarPellet, progressBarDisabled;
+static UIImage buttonNormal, buttonHover, buttonDragged, buttonDisabled;
 
 struct Control : APIObject {
 	struct Window *window;
@@ -40,9 +43,10 @@ struct Control : APIObject {
 	OSRectangle bounds, cellBounds;
 
 	uint32_t backgroundColor;
-	UIImage background, disabledBackground;
+	UIImage background, disabledBackground, hoverBackground, dragBackground;
 	bool drawParentBackground;
 
+	OSAction *clickAction;
 	OSCursorStyle cursor;
 
 	OSString text;
@@ -53,6 +57,7 @@ struct Control : APIObject {
 
 	bool repaint, relayout;
 	int preferredWidth, preferredHeight;
+	int minimumWidth, minimumHeight; // Used by OSSetText.
 
 	bool disabled;
 
@@ -124,24 +129,26 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			int height = control->bounds.bottom - control->bounds.top;
 
 			if (width > control->preferredWidth) {
-				if (control->layout & OS_CELL_H_CENTER) {
-					control->bounds.left = control->bounds.left + width / 2 - control->preferredWidth / 2;
-					control->bounds.right = control->bounds.left + control->preferredWidth;
+				if (control->layout & OS_CELL_H_EXPAND) {
 				} else if (control->layout & OS_CELL_H_LEFT) {
 					control->bounds.right = control->bounds.left + control->preferredWidth;
 				} else if (control->layout & OS_CELL_H_RIGHT) {
 					control->bounds.left = control->bounds.right - control->preferredWidth;
+				} else {
+					control->bounds.left = control->bounds.left + width / 2 - control->preferredWidth / 2;
+					control->bounds.right = control->bounds.left + control->preferredWidth;
 				}
 			}
 
 			if (height > control->preferredHeight) {
-				if (control->layout & OS_CELL_V_CENTER) {
-					control->bounds.top = control->bounds.top + height / 2 - control->preferredHeight / 2;
-					control->bounds.bottom = control->bounds.top + control->preferredHeight;
+				if (control->layout & OS_CELL_V_EXPAND) {
 				} else if (control->layout & OS_CELL_V_TOP) {
 					control->bounds.bottom = control->bounds.top + control->preferredHeight;
 				} else if (control->layout & OS_CELL_V_BOTTOM) {
 					control->bounds.top = control->bounds.bottom - control->preferredHeight;
+				} else {
+					control->bounds.top = control->bounds.top + height / 2 - control->preferredHeight / 2;
+					control->bounds.bottom = control->bounds.top + control->preferredHeight;
 				}
 			}
 
@@ -181,29 +188,59 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					OSSendMessage(control->parent, &m);
 				}
 
-				if (control->background.region.left) {
-					if (control->disabled && control->disabledBackground.region.left) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-								control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST);
-					} else {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-								control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST);
-					}
-				} else {
+				if (control->backgroundColor) {
 					OSFillRectangle(message->paint.surface, control->bounds, 
 							OSColor(control->backgroundColor));
 				}
 
-				if (control->textShadow) {
+				{
+					bool found = false;
+					UIImage image;
+
+					if (control->background.region.left) {
+						found = true;
+						image = control->background;
+					}
+
+					if (control->disabledBackground.region.left && control->disabled) {
+						found = true;
+						image = control->disabledBackground;
+					}
+
+					if (control->hoverBackground.region.left && (control->window->hover == control || control->window->drag == control)) {
+						found = true;
+						image = control->hoverBackground;
+					}
+
+					if (control->dragBackground.region.left && control->window->drag == control && control->window->hover == control) {
+						found = true;
+						image = control->dragBackground;
+					}
+
+					if (found) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST);
+					}
+				}
+
+				uint32_t textColor = control->textColor;
+				uint32_t textShadowColor = 0xFFFFFF - textColor;
+
+				if (control->disabled) {
+					textColor = 0x777777;
+					textShadowColor = 0xEEEEEE;
+				}
+
+				if (control->textShadow || control->disabled) {
 					OSRectangle bounds = control->textBounds;
 					bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
 
 					OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-							OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0xFFFFFF - control->textColor, -1, control->textBold);
+							OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, textShadowColor, -1, control->textBold);
 				}
 
 				OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
-						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, control->textColor, -1, control->textBold);
+						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, textColor, -1, control->textBold);
 
 				control->repaint = false;
 			}
@@ -227,6 +264,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			OSHeapFree(control);
 		} break;
 
+		case OS_MESSAGE_HIT_TEST: {
+			message->hitTest.result = IsPointInRectangle(control->bounds, message->hitTest.positionX, message->hitTest.positionY);
+		} break;
+
 		case OS_MESSAGE_MOUSE_MOVED: {
 			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
 				break;
@@ -234,6 +275,33 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			control->window->cursor = control->cursor;
 			control->window->hover = control;
+
+			control->repaint = true;
+			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+		} break;
+
+		case OS_MESSAGE_MOUSE_DRAGGED: {
+			if (!IsPointInRectangle(control->bounds, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY)) {
+				if (control->window->hover) {
+					control->window->hover = nullptr;
+					control->repaint = true;
+					SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+				}
+			} else {
+				if (!control->window->hover) {
+					control->window->hover = control;
+					control->repaint = true;
+					SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+				}
+			}
+		} break;
+
+		case OS_MESSAGE_CLICKED: {
+			if (control->clickAction) {
+				OSMessage message;
+				message.type = OS_NOTIFICATION_ACTION;
+				OSForwardMessage(control, control->clickAction->callback, &message);
+			}
 		} break;
 
 		default: {
@@ -347,6 +415,28 @@ static OSObject CreateWindowResizeHandle(UIImage image, UIImage disabledImage, u
 			control->textSize = 11;
 		} break;
 	}
+
+	return control;
+}
+
+OSObject OSCreateButton(OSAction *action) {
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+
+	control->minimumWidth = 80;
+	control->minimumHeight = 21;
+	control->preferredWidth = 80;
+	control->preferredHeight = 21;
+
+	OSSetCallback(control, OSCallback(ProcessControlMessage, nullptr));
+	OSSetText(control, action->label, action->labelBytes);
+
+	control->background = buttonNormal;
+	control->disabledBackground = buttonDisabled;
+	control->hoverBackground = buttonHover;
+	control->dragBackground = buttonDragged;
+
+	control->clickAction = action;
 
 	return control;
 }
@@ -471,8 +561,11 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 	Control *control = (Control *) _control;
 	CreateString(text, textBytes, &control->text);
 
-	control->preferredWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 4;
-	control->preferredHeight = FONT_SIZE + 4;
+	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 4;
+	int suggestedHeight = FONT_SIZE + 8;
+
+	if (suggestedWidth > control->minimumWidth) control->preferredWidth = suggestedWidth;
+	if (suggestedHeight > control->minimumHeight) control->preferredHeight = suggestedHeight;
 
 	control->repaint = true;
 	control->relayout = true;
@@ -492,6 +585,8 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 		_grid = ((Window *) _grid)->root;
 		column = 1;
 		row = 2;
+		if (layout != OS_ADD_CHILD_GRID) OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+		((Grid *) _control)->borderSize = 8;
 	}
 
 	Grid *grid = (Grid *) _grid;
@@ -779,9 +874,25 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			window->drag = window->hover;
 			lastClickX = message->mousePressed.positionX;
 			lastClickY = message->mousePressed.positionY;
+
+			if (window->drag) {
+				window->drag->repaint = true;
+				SetParentDescendentInvalidationFlags(window->drag, DESCENDENT_REPAINT);
+			}
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
+			if (window->drag) {
+				window->drag->repaint = true;
+				SetParentDescendentInvalidationFlags(window->drag, DESCENDENT_REPAINT);
+
+				if (window->drag == window->hover) {
+					OSMessage clicked;
+					clicked.type = OS_MESSAGE_CLICKED;
+					OSSendMessage(window->drag, &clicked);
+				}
+			}
+
 			window->drag = nullptr;
 
 			OSMessage m = *message;
@@ -795,6 +906,15 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			OSSendMessage(window->root, &m);
 		} break;
 
+		case OS_MESSAGE_MOUSE_EXIT: {
+			if (window->hover) {
+				window->hover->repaint = true;
+				SetParentDescendentInvalidationFlags(window->hover, DESCENDENT_REPAINT);
+			}
+
+			window->hover = nullptr;
+		} break;
+
 		case OS_MESSAGE_MOUSE_MOVED: {
 			if (window->drag) {
 				message->type = OS_MESSAGE_MOUSE_DRAGGED;
@@ -802,12 +922,26 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				message->mouseDragged.originalPositionY = lastClickY;
 				OSSendMessage(window->drag, message);
 			} else {
-				window->hover = nullptr;
+				Control *old = window->hover;
 
-				OSSendMessage(window->root, message);
+				OSMessage hitTest;
+				hitTest.type = OS_MESSAGE_HIT_TEST;
+				hitTest.hitTest.positionX = message->mouseMoved.newPositionX;
+				hitTest.hitTest.positionY = message->mouseMoved.newPositionY;
+				OSSendMessage(old, &hitTest);
+
+				if (!hitTest.hitTest.result) {
+					window->hover = nullptr;
+					OSSendMessage(window->root, message);
+				}
 
 				if (!window->hover) {
 					window->cursor = OS_CURSOR_NORMAL;
+				}
+
+				if (window->hover != old && old) {
+					old->repaint = true;
+					SetParentDescendentInvalidationFlags(old, DESCENDENT_REPAINT);
 				}
 			}
 		} break;
@@ -916,7 +1050,7 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 
 	{
 		OSObject titlebar = CreateWindowResizeHandle(activeWindowBorder22, inactiveWindowBorder22, RESIZE_MOVE);
-		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
 
 		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, inactiveWindowBorder11, RESIZE_TOP_LEFT), 0);
@@ -963,7 +1097,12 @@ void OSInitialiseGUI() {
 	inactiveWindowBorder42 =   {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
 	inactiveWindowBorder43 =   {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, 	{16 + 10, 16 + 10, 178, 178}};
 
-	progressBarBackground = {{9, 16, 122, 143}, {11, 12, 125, 139}};
-	progressBarDisabled   = {{16 + 9, 16 + 16, 122, 143}, {16 + 11, 16 + 12, 125, 139}};
-	progressBarPellet     = {{18, 26, 69, 84}, {18, 18, 69, 69}};
+	progressBarBackground 	= {{9, 16, 122, 143}, {11, 12, 125, 139}};
+	progressBarDisabled   	= {{16 + 9, 16 + 16, 122, 143}, {16 + 11, 16 + 12, 125, 139}};
+	progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
+
+	buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
+	buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
+	buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
+	buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
 }
