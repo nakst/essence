@@ -33,10 +33,9 @@ static const int totalBorderHeight = 6 + 24 + 6;
 
 static UIImage progressBarBackground, progressBarPellet, progressBarDisabled;
 
-// TODO Notification callbacks.
-//	- Simplifying the target/generator mess.
-
 struct Control : APIObject {
+	struct Window *window;
+		
 	unsigned layout;
 	OSRectangle bounds, cellBounds;
 
@@ -69,6 +68,7 @@ struct WindowResizeControl : Control {
 };
 
 struct Grid : APIObject {
+	struct Window *window;
 	unsigned columns, rows;
 	OSObject *objects;
 	OSRectangle bounds;
@@ -102,9 +102,9 @@ static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	return true;
 }
 
-static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
+static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
-	Control *control = (Control *) message->context;
+	Control *control = (Control *) _object;
 
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
@@ -210,22 +210,21 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_PARENT_UPDATED: {
+			control->window = (Window *) message->parentUpdated.window;
 			control->repaint = true;
 			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
-			Window *window = (Window *) message->window;
-
 			if (control->timerControlItem.list) {
-				window->timerControls.Remove(&control->timerControlItem);
+				control->window->timerControls.Remove(&control->timerControlItem);
 			}
+
+			if (control->window->hover == control) control->window->hover = nullptr;
+			if (control->window->drag == control) control->window->drag = nullptr;
 
 			OSHeapFree(control->text.buffer);
 			OSHeapFree(control);
-
-			if (window->hover == control) window->hover = nullptr;
-			if (window->drag == control) window->drag = nullptr;
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -233,9 +232,8 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 				break;
 			}
 
-			Window *window = (Window *) message->window;
-			window->cursor = control->cursor;
-			window->hover = control;
+			control->window->cursor = control->cursor;
+			control->window->hover = control;
 		} break;
 
 		default: {
@@ -253,12 +251,12 @@ static void CreateString(char *text, size_t textBytes, OSString *string) {
 	OSCopyMemory(string->buffer, text, textBytes);
 }
 
-static OSCallbackResponse ProcessWindowResizeHandleMessage(OSMessage *message) {
+static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
-	WindowResizeControl *control = (WindowResizeControl *) message->context;
+	WindowResizeControl *control = (WindowResizeControl *) _object;
 
 	if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
-		Window *window = (Window *) message->window;
+		Window *window = control->window;
 		OSRectangle bounds, bounds2;
 		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
@@ -304,7 +302,7 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSMessage *message) {
 		control->textBounds = control->bounds;
 		control->textBounds.bottom -= 6;
 	} else {
-		response = OSForwardMessage(OSCallback(ProcessControlMessage, control), message);
+		response = OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -319,7 +317,7 @@ static OSObject CreateWindowResizeHandle(UIImage image, UIImage disabledImage, u
 	control->preferredHeight = image.region.bottom - image.region.top;
 	control->direction = direction;
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
-	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, control));
+	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, nullptr));
 
 	switch (direction) {
 		case RESIZE_LEFT:
@@ -359,14 +357,14 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 
 	OSSetText(control, text, textBytes);
-	OSSetCallback(control, OSCallback(ProcessControlMessage, control));
+	OSSetCallback(control, OSCallback(ProcessControlMessage, nullptr));
 
 	return control;
 }
 
-static OSCallbackResponse ProcessProgressBarMessage(OSMessage *message) {
+static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
-	ProgressBar *control = (ProgressBar *) message->context;
+	ProgressBar *control = (ProgressBar *) _object;
 
 	if (message->type == OS_MESSAGE_PAINT) {
 		if (control->repaint || message->paint.force) {
@@ -418,20 +416,18 @@ static OSCallbackResponse ProcessProgressBarMessage(OSMessage *message) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
 								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST);
 					}
-
-					if (!control->timerControlItem.list) {
-						Window *window = (Window *) message->window;
-						window->timerControls.InsertStart(&control->timerControlItem);
-					}
 				}
 			}
 
 			control->repaint = false;
 		}
+	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
+		OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
+		control->window->timerControls.InsertStart(&control->timerControlItem);
 	} else if (message->type == OS_MESSAGE_WM_TIMER) {
 		OSSetProgressBarValue(control, control->value + 1);
 	} else {
-		response = OSForwardMessage(OSCallback(ProcessControlMessage, control), message);
+		response = OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -466,7 +462,7 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 		control->timerControlItem.thisItem = control;
 	}
 
-	OSSetCallback(control, OSCallback(ProcessProgressBarMessage, control));
+	OSSetCallback(control, OSCallback(ProcessProgressBarMessage, nullptr));
 
 	return control;
 }
@@ -518,14 +514,15 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 
 	{
 		OSMessage message;
+		message.parentUpdated.window = grid->window;
 		message.type = OS_MESSAGE_PARENT_UPDATED;
 		OSSendMessage(control, &message);
 	}
 }
 
-static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
+static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
-	Grid *grid = (Grid *) message->context;
+	Grid *grid = (Grid *) _object;
 
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
@@ -664,6 +661,10 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 						message->paintBackground.top, message->paintBackground.bottom), OSColor(STANDARD_BACKGROUND_COLOR));
 		} break;
 
+		case OS_MESSAGE_PARENT_UPDATED: {
+			grid->window = (Window *) message->parentUpdated.window;
+		} break;
+
 		case OS_MESSAGE_CHILD_UPDATED: {
 			grid->relayout = true;
 			SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
@@ -710,7 +711,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
 
-	OSSetCallback(grid, OSCallback(ProcessGridMessage, grid));
+	OSSetCallback(grid, OSCallback(ProcessGridMessage, nullptr));
 
 	return grid;
 }
@@ -722,9 +723,9 @@ void OSDisableControl(OSObject _control, bool disabled) {
 	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 }
 
-static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
+static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
-	Window *window = (Window *) message->context;
+	Window *window = (Window *) _object;
 
 	static int lastClickX = 0, lastClickY = 0;
 
@@ -847,7 +848,6 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		message.layout.right = window->width;
 		message.layout.bottom = window->height;
 		message.layout.force = false;
-		message.window = window;
 		OSSendMessage(window->root, &message);
 	}
 
@@ -866,7 +866,6 @@ static OSCallbackResponse ProcessWindowMessage(OSMessage *message) {
 		message.type = OS_MESSAGE_PAINT;
 		message.paint.surface = window->surface;
 		message.paint.force = false;
-		message.window = window;
 		OSSendMessage(window->root, &message);
 		updateWindow = true;
 	}
@@ -903,13 +902,14 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
 
-	OSSetCallback(window, OSCallback(ProcessWindowMessage, window));
+	OSSetCallback(window, OSCallback(ProcessWindowMessage, nullptr));
 
 	window->root = (Grid *) OSCreateGrid(3, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
 	window->root->parent = window;
 
 	{
 		OSMessage message;
+		message.parentUpdated.window = window;
 		message.type = OS_MESSAGE_PARENT_UPDATED;
 		OSSendMessage(window->root, &message);
 	}

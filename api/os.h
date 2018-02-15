@@ -489,7 +489,6 @@ typedef enum OSMessageType {
 
 typedef struct OSMessage {
 	OSMessageType type;
-	OSObject window;
 	void *context;
 
 	union {
@@ -562,6 +561,10 @@ typedef struct OSMessage {
 			int positionX; // The cursor coordinates in the new window.
 			int positionY;
 		} windowDeactivated;
+
+		struct {
+			OSObject window;
+		} parentUpdated;
 	};
 } OSMessage;
 
@@ -581,7 +584,7 @@ typedef struct OSDebuggerMessage {
 } OSDebuggerMessage;
 
 typedef int OSCallbackResponse;
-typedef OSCallbackResponse (*OSCallbackFunction)(OSMessage *);
+typedef OSCallbackResponse (*OSCallbackFunction)(OSObject object, OSMessage *);
 
 typedef struct OSCallback {
 	OSCallbackFunction function;
@@ -745,7 +748,7 @@ OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coor
 OS_EXTERN_C void OSRedrawAll();
 
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
-OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message);
+OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message);
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
 OS_EXTERN_C void OSProcessMessages();
 

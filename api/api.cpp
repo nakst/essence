@@ -89,16 +89,16 @@ inline OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 	}
 
 	message->context = to.context;
-	return to.function(message);
+	return to.function(target, message);
 }
 
-OSCallbackResponse OSForwardMessage(OSCallback callback, OSMessage *message) {
+OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message) {
 	if (!callback.function) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
 	message->context = callback.context;
-	return callback.function(message);
+	return callback.function(target, message);
 }
 
 void OSProcessMessages() {
@@ -107,15 +107,15 @@ void OSProcessMessages() {
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
-			if (message.window) {
-				OSSendMessage(message.window, &message);
+			if (message.context) {
+				OSSendMessage(message.context, &message);
 				continue;
 			}
 
 			switch (message.type) {
 				case OS_MESSAGE_PROGRAM_CRASH: {
-					message.window = OS_CALLBACK_DEBUGGER_MESSAGES;
-					OSSendMessage(message.window, &message);
+					message.context = OS_CALLBACK_DEBUGGER_MESSAGES;
+					OSSendMessage(message.context, &message);
 				} break;
 
 				default: {

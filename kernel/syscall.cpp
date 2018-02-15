@@ -379,7 +379,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				
 				OSMessage message = {};
 				message.type = OS_MESSAGE_WINDOW_CREATED;
-				message.window = window->apiWindow;
+				message.context = window->apiWindow;
 				window->owner->messageQueue.SendMessage(message);
 
 				SYSCALL_RETURN(OS_SUCCESS, false);

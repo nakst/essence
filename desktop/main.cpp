@@ -28,7 +28,8 @@ char *errorMessages[] = {
 	(char *) "CORRUPT_HEAP",
 };
 
-OSCallbackResponse ProcessDebuggerMessage(OSMessage *message) {
+OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) {
+	(void) _object;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
 	switch (message->type) {
