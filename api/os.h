@@ -376,6 +376,12 @@ typedef struct OSRectangle {
 typedef struct OSColor {
 	OS_CONSTRUCTOR(OSColor() {})
 
+	OS_CONSTRUCTOR(OSColor(uint32_t x) {
+		red = (x & 0xFF0000) >> 16;
+		green = (x & 0xFF00) >> 8;
+		blue = (x & 0xFF) >> 0;
+	})
+
 	OS_CONSTRUCTOR(OSColor(uint8_t _red, uint8_t _green, uint8_t _blue) {
 		red = _red;
 		green = _green;
@@ -457,6 +463,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_FIND_HOVER_CONTROL		= 0x0406,
 	OS_MESSAGE_MOUSE_DRAGGED		= 0x0407,
 	OS_MESSAGE_LAYOUT_TEXT			= 0x0408,
+	OS_MESSAGE_PAINT_BACKGROUND		= 0x0409,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -544,6 +551,11 @@ typedef struct OSMessage {
 			OSHandle surface;
 			bool force;
 		} paint;
+
+		struct {
+			OSHandle surface;
+			int left, right, top, bottom;
+		} paintBackground;
 
 		struct {
 			OSObject newWindow; // nullptr if the window is not owned by the process.
@@ -727,7 +739,7 @@ OS_EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSC
 OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
-OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, unsigned flags, uint32_t color, int32_t backgroundColor);
+OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
 
 OS_EXTERN_C void OSRedrawAll();
@@ -744,6 +756,7 @@ OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
+#define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_ADD_CHILD_GRID)
 
 OS_EXTERN_C OSObject OSCreateButton(OSAction *action);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);

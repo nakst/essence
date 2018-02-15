@@ -396,18 +396,16 @@ extern "C" void ProgramEntry() {
 	
 	OSWindowSpecification ws = {};
 	ws.width = 400;
-	ws.height = 400;
-	ws.title = (char *) "Hello";
+	ws.height = 100;
+	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	OSObject window = OSCreateWindow(&ws);
 
-	OSObject content = OSCreateGrid(3, 3, 0);
-	OSAddControl(window, 0, 0, content, OS_ADD_CHILD_GRID);
+	OSObject content = OSCreateGrid(2, 1, 0);
+	OSSetRootGrid(window, content);
 
-	// OSObject progressBar = OSCreateProgressBar(0, 100, 25);
-	OSObject progressBar = OSCreateIndeterminateProgressBar();
-	OSAddControl(content, 0, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_V_PUSH | OS_CELL_H_LEFT | OS_CELL_V_TOP);
-	// OSSetProgressBarValue(progressBar, 16);
+	OSAddControl(content, 1, 0, OSCreateIndeterminateProgressBar(), OS_CELL_H_PUSH);
+	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);
 
 	OSProcessMessages();
 }

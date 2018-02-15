@@ -35,8 +35,6 @@ static UIImage progressBarBackground, progressBarPellet, progressBarDisabled;
 
 // TODO Notification callbacks.
 //	- Simplifying the target/generator mess.
-// TODO Bold titlebars!
-// TODO Background clearing of grids.
 
 struct Control : APIObject {
 	unsigned layout;
@@ -44,12 +42,15 @@ struct Control : APIObject {
 
 	uint32_t backgroundColor;
 	UIImage background, disabledBackground;
+	bool drawParentBackground;
+
 	OSCursorStyle cursor;
 
 	OSString text;
 	OSRectangle textBounds;
 	uint32_t textColor;
-	bool textShadow;
+	bool textShadow, textBold;
+	int textSize;
 
 	bool repaint, relayout;
 	int preferredWidth, preferredHeight;
@@ -73,7 +74,7 @@ struct Grid : APIObject {
 	OSRectangle bounds;
 	int *widths, *heights;
 	int width, height;
-	bool relayout;
+	bool relayout, repaint;
 	int borderSize, gapSize;
 };
 
@@ -169,6 +170,17 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 
 		case OS_MESSAGE_PAINT: {
 			if (control->repaint || message->paint.force) {
+				if (control->drawParentBackground) {
+					OSMessage m = *message;
+					m.type = OS_MESSAGE_PAINT_BACKGROUND;
+					m.paintBackground.surface = message->paint.surface;
+					m.paintBackground.left = control->bounds.left;
+					m.paintBackground.right = control->bounds.right;
+					m.paintBackground.top = control->bounds.top;
+					m.paintBackground.bottom = control->bounds.bottom;
+					OSSendMessage(control->parent, &m);
+				}
+
 				if (control->background.region.left) {
 					if (control->disabled && control->disabledBackground.region.left) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
@@ -179,21 +191,19 @@ static OSCallbackResponse ProcessControlMessage(OSMessage *message) {
 					}
 				} else {
 					OSFillRectangle(message->paint.surface, control->bounds, 
-							OSColor((control->backgroundColor & 0xFF0000) >> 16, 
-								(control->backgroundColor & 0xFF00) >> 8, 
-								(control->backgroundColor & 0xFF) >> 0));
+							OSColor(control->backgroundColor));
 				}
 
 				if (control->textShadow) {
 					OSRectangle bounds = control->textBounds;
 					bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
 
-					OSDrawString(message->paint.surface, bounds, &control->text,
-							OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0xFFFFFF - control->textColor, -1);
+					OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
+							OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, 0xFFFFFF - control->textColor, -1, control->textBold);
 				}
 
-				OSDrawString(message->paint.surface, control->textBounds, &control->text,
-						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, control->textColor, -1);
+				OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
+						OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, control->textColor, -1, control->textBold);
 
 				control->repaint = false;
 			}
@@ -335,6 +345,8 @@ static OSObject CreateWindowResizeHandle(UIImage image, UIImage disabledImage, u
 		case RESIZE_MOVE: {
 			control->textColor = 0xFFFFFF;
 			control->textShadow = true;
+			control->textBold = true;
+			control->textSize = 11;
 		} break;
 	}
 
@@ -358,6 +370,17 @@ static OSCallbackResponse ProcessProgressBarMessage(OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_PAINT) {
 		if (control->repaint || message->paint.force) {
+			{
+				OSMessage m = *message;
+				m.type = OS_MESSAGE_PAINT_BACKGROUND;
+				m.paintBackground.surface = message->paint.surface;
+				m.paintBackground.left = control->bounds.left;
+				m.paintBackground.right = control->bounds.right;
+				m.paintBackground.top = control->bounds.top;
+				m.paintBackground.bottom = control->bounds.bottom;
+				OSSendMessage(control->parent, &m);
+			}
+
 			if (control->disabled) {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
 						control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST);
@@ -436,6 +459,8 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 	control->preferredWidth = 168;
 	control->preferredHeight = 21;
 
+	control->drawParentBackground = true;
+
 	if (!control->maximum) {
 		// Indeterminate progress bar.
 		control->timerControlItem.thisItem = control;
@@ -450,7 +475,7 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 	Control *control = (Control *) _control;
 	CreateString(text, textBytes, &control->text);
 
-	control->preferredWidth = MeasureStringWidth(text, textBytes, FONT_SIZE) + 4;
+	control->preferredWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 4;
 	control->preferredHeight = FONT_SIZE + 4;
 
 	control->repaint = true;
@@ -568,6 +593,9 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 
 					posX += grid->widths[i] + grid->gapSize;
 				}
+
+				grid->repaint = true;
+				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
 			} else if (grid->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
 				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
 					if (grid->objects[i]) {
@@ -611,15 +639,29 @@ static OSCallbackResponse ProcessGridMessage(OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_PAINT: {
-			if (grid->descendentInvalidationFlags & DESCENDENT_REPAINT) {
+			if (grid->descendentInvalidationFlags & DESCENDENT_REPAINT || grid->repaint || message->paint.force) {
 				grid->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
+
+				OSMessage m = *message;
+				m.paint.force = message->paint.force || grid->repaint;
+
+				if (m.paint.force) {
+					OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
+				}
 
 				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
 					if (grid->objects[i]) {
-						OSSendMessage(grid->objects[i], message);
+						OSSendMessage(grid->objects[i], &m);
 					}
 				}
+
+				grid->repaint = false;
 			}
+		} break;
+
+		case OS_MESSAGE_PAINT_BACKGROUND: {
+			OSFillRectangle(message->paint.surface, OSRectangle(message->paintBackground.left, message->paintBackground.right, 
+						message->paintBackground.top, message->paintBackground.bottom), OSColor(STANDARD_BACKGROUND_COLOR));
 		} break;
 
 		case OS_MESSAGE_CHILD_UPDATED: {

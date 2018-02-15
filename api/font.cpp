@@ -1,8 +1,10 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+typedef FT_Face Font;
+
 static FT_Library freetypeLibrary;
-static FT_Face guiRegularFont;
+static Font fontRegular, fontBold;
 
 static bool fontRendererInitialised;
 
@@ -11,13 +13,14 @@ struct FontCacheEntry {
 	int character, size;
 	int width, height, xoff, yoff;
 	int advanceWidth, glyphIndex;
+	Font *font;
 };
 
 #define FONT_CACHE_SIZE 256
 static FontCacheEntry fontCache[FONT_CACHE_SIZE];
 static uintptr_t fontCachePosition;
 
-static FontCacheEntry *LookupFontCacheEntry(int character, int size) {
+static FontCacheEntry *LookupFontCacheEntry(int character, int size, Font &font) {
 	// TODO Is there a faster way to do this?
 
 	for (uintptr_t i = 0; i < FONT_CACHE_SIZE; i++) {
@@ -25,6 +28,7 @@ static FontCacheEntry *LookupFontCacheEntry(int character, int size) {
 
 		if (entry->character != character) continue;
 		if (entry->size != size) continue;
+		if (entry->font != &font) continue;
 
 		return entry;
 	}
@@ -37,20 +41,22 @@ static void OSFontRendererInitialise() {
 		return;
 	}
 
-	OSNodeInformation node;
-	OSError error = OSOpenNode(OSLiteral("/os/noto_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
+	OSError error;
 
-	if (error != OS_SUCCESS) {
-		OSPrint("Could not open font file.\n");
-		return;
-	}
+	OSNodeInformation nodeRegular;
+	error = OSOpenNode(OSLiteral("/os/noto_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeRegular);
+	if (error != OS_SUCCESS) return;
+	void *loadedFontRegular = OSMapObject(nodeRegular.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
+	if (!loadedFontRegular) return;
 
-	void *loadedFont = OSMapObject(node.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
+	OSNodeInformation nodeBold;
+	error = OSOpenNode(OSLiteral("/os/noto_sans/bold.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeBold);
+	if (error != OS_SUCCESS) return;
+	void *loadedFontBold = OSMapObject(nodeBold.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
+	if (!loadedFontBold) return;
 
-	if (!loadedFont) {
-		OSPrint("Could not map font file.\n");
-		return;
-	}
+	OSCloseHandle(nodeRegular.handle);
+	OSCloseHandle(nodeBold.handle);
 
 	{
 		FT_Error error;
@@ -62,10 +68,11 @@ static void OSFontRendererInitialise() {
 			return;
 		}
 
-		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFont, node.fileSize, 0, &guiRegularFont);
+		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFontRegular, nodeRegular.fileSize, 0, &fontRegular);
+		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFontBold, nodeBold.fileSize, 0, &fontBold);
 
 		if (error) {
-			OSPrint("Could not load font into freetype.\n");
+			OSPrint("Could not load the fonts into freetype.\n");
 			return;
 		}
 	}
@@ -73,21 +80,21 @@ static void OSFontRendererInitialise() {
 	fontRendererInitialised = true;
 }
 
-static int MeasureStringWidth(char *string, size_t stringLength, int size) {
+static int MeasureStringWidth(char *string, size_t stringLength, int size, Font &font) {
 	char *stringEnd = string + stringLength;
 	int totalWidth = 0;
 
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) return -1;
 
-	FT_Set_Char_Size(guiRegularFont, 0, size * 64, 100, 100);
+	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
 
 	while (string < stringEnd) {
 		int character = utf8_value(string);
 
-		int glyphIndex = FT_Get_Char_Index(guiRegularFont, character);
-		FT_Load_Glyph(guiRegularFont, glyphIndex, FT_LOAD_DEFAULT);
-		int advanceWidth = guiRegularFont->glyph->advance.x >> 6;
+		int glyphIndex = FT_Get_Char_Index(font, character);
+		FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
+		int advanceWidth = font->glyph->advance.x >> 6;
 
 		totalWidth += advanceWidth;
 		string = utf8_advance(string);
@@ -125,16 +132,16 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		OSString *string,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
 		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink,
-		int size) {
+		int size, Font &font) {
 	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) OSCrashProcess(OS_FATAL_ERROR_COULD_NOT_LOAD_FONT);
 
-	FT_Set_Char_Size(guiRegularFont, 0, size * 64, 100, 100);
+	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
 
-	int lineHeight = guiRegularFont->size->metrics.height >> 6; 
-	int ascent = guiRegularFont->size->metrics.ascender >> 6; 
+	int lineHeight = font->size->metrics.height >> 6; 
+	int ascent = font->size->metrics.ascender >> 6; 
 
 	char *stringEnd = string->buffer + string->bytes;
 
@@ -145,7 +152,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		bitmap = OSMapObject(linearBuffer.handle, 0, linearBuffer.stride * linearBuffer.height, OS_MAP_OBJECT_READ_WRITE);
 	}
 
-	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, size);
+	int totalWidth = MeasureStringWidth(string->buffer, string->bytes, size, font);
 
 	OSPoint outputPosition;
 
@@ -196,7 +203,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		uint8_t *output = nullptr;
 		int glyphIndex, advanceWidth;
 
-		FontCacheEntry *cacheEntry = LookupFontCacheEntry(character, size);
+		FontCacheEntry *cacheEntry = LookupFontCacheEntry(character, size, font);
 
 		if (cacheEntry) {
 			output = cacheEntry->data;
@@ -207,9 +214,9 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			glyphIndex = cacheEntry->glyphIndex;
 			advanceWidth = cacheEntry->advanceWidth;
 		} else {
-			glyphIndex = FT_Get_Char_Index(guiRegularFont, character);
-			FT_Load_Glyph(guiRegularFont, glyphIndex, FT_LOAD_DEFAULT);
-			advanceWidth = guiRegularFont->glyph->advance.x >> 6;
+			glyphIndex = FT_Get_Char_Index(font, character);
+			FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
+			advanceWidth = font->glyph->advance.x >> 6;
 		}
 
 		bool selected = false;
@@ -277,13 +284,13 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		if (!output) {
-			FT_Render_Glyph(guiRegularFont->glyph, FT_RENDER_MODE_NORMAL);
+			FT_Render_Glyph(font->glyph, FT_RENDER_MODE_NORMAL);
 
-			FT_Bitmap *bitmap = &guiRegularFont->glyph->bitmap;
+			FT_Bitmap *bitmap = &font->glyph->bitmap;
 			width = bitmap->width;
 			height = bitmap->rows;
-			xoff = guiRegularFont->glyph->bitmap_left;
-			yoff = -guiRegularFont->glyph->bitmap_top;
+			xoff = font->glyph->bitmap_left;
+			yoff = -font->glyph->bitmap_top;
 
 			output = (uint8_t *) OSHeapAllocate(width * height, false);
 			OSCopyMemory(output, bitmap->buffer, width * height);
@@ -300,6 +307,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				entry->advanceWidth = advanceWidth;
 				entry->glyphIndex = glyphIndex;
 				entry->size = size;
+				entry->font = &font;
 				fontCachePosition = (fontCachePosition + 1) % FONT_CACHE_SIZE;
 			} else {
 				goto skipCharacter;
@@ -401,21 +409,21 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;
 }
 
-#define FONT_SIZE (10)
+#define FONT_SIZE (9)
 
 OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, 
 		OSString *string, unsigned alignment, OSCaret *caret) {
 	return DrawString(OS_INVALID_HANDLE, region, 
 			string,
 			alignment, 0, 0, 0,
-			coordinate, caret, -1, -1, false, FONT_SIZE);
+			coordinate, caret, -1, -1, false, FONT_SIZE, fontRegular);
 }
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
-		OSString *string,
-		unsigned alignment, uint32_t color, int32_t backgroundColor) {
+		OSString *string, int fontSize,
+		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold) {
 	return DrawString(surface, region, 
 			string,
 			alignment, color, backgroundColor, 0,
-			OSPoint(0, 0), nullptr, -1, -1, false, FONT_SIZE);
+			OSPoint(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular);
 }
