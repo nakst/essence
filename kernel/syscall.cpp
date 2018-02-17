@@ -313,7 +313,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			_OSDrawSurfaceArguments *arguments = (_OSDrawSurfaceArguments *) argument2;
 			SYSCALL_BUFFER(argument2, sizeof(_OSDrawSurfaceArguments), 1);
 
-			destination->Draw(*source, arguments->destination, arguments->source, arguments->border, (OSDrawMode) argument3);
+			destination->Draw(*source, arguments->destination, arguments->source, arguments->border, (OSDrawMode) argument3, arguments->alpha, false);
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;

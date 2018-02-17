@@ -1,3 +1,5 @@
+// TODO VirtualBox's serial output gets spammed with errors.
+
 #ifndef IMPLEMENTATION
 
 #define AHCI_TIMEOUT (1000)

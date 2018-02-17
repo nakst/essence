@@ -70,7 +70,7 @@ extern "C" void _start() {
 
 static OSCallback debuggerMessageCallback;
 
-inline OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
+OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 	APIObject *object = (APIObject *) target;
 	OSCallback to;
 

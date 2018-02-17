@@ -423,12 +423,13 @@ extern "C" void ProgramEntry() {
 	OSObject content = OSCreateGrid(2, 2, 0);
 	OSSetRootGrid(window, content);
 
-	actionOK.label = (char *) "Enable Something";
+	actionOK.label = (char *) "Do Something";
 	actionOK.labelBytes = OSCStringLength(actionOK.label);
 	actionOK.callback = OSCallback(ProcessActionOK, nullptr);
-	actionOK.checkable = true;
+	actionOK.checkable = false;
 
-	progressBar = OSCreateProgressBar(0, 5, 0);
+	// progressBar = OSCreateProgressBar(0, 5, 0);
+	progressBar = OSCreateIndeterminateProgressBar();
 	OSObject button = OSCreateButton(&actionOK);
 	OSAddControl(content, 1, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);

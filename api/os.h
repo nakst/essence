@@ -410,6 +410,7 @@ typedef struct _OSRectangleAndColor {
 
 typedef struct _OSDrawSurfaceArguments {
 	OSRectangle source, destination, border;
+	uint8_t alpha;
 } _OSDrawSurfaceArguments;
 
 typedef enum OSCallbackType {
@@ -746,7 +747,7 @@ OS_EXTERN_C OSError OSCopyToScreen(OSHandle source, OSPoint point, uint16_t dept
 OS_EXTERN_C OSError OSForceScreenUpdate();
 OS_EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
 OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
-OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode);
+OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha);
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);

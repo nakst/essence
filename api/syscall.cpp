@@ -78,11 +78,12 @@ OSError OSWaitMessage(uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT_MESSAGE, timeoutMs, 0, 0, 0);
 }
 
-OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode) {
+OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha) {
 	_OSDrawSurfaceArguments arg;
 	arg.destination = destinationRegion;
 	arg.source = sourceRegion;
 	arg.border = borderRegion;
+	arg.alpha = alpha;
 
 	return OSSyscall(OS_SYSCALL_DRAW_SURFACE, destination, source, (uintptr_t) &arg, mode);
 }

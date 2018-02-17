@@ -10,7 +10,7 @@
 struct Window {
 	void Update();
 	void SetCursorStyle(OSCursorStyle style);
-	void NeedWMTimer(bool value);
+	void NeedWMTimer(int hz);
 	void Destroy();
 	bool Move(OSRectangle &newBounds);
 	void Resize(size_t newWidth, size_t newHeight);
@@ -24,7 +24,7 @@ struct Window {
 	Process *owner;
 	OSObject apiWindow;
 	OSCursorStyle cursorStyle;
-	bool needsTimerMessages;
+	int needsTimerMessagesHz, timerMessageTick;
 
 	volatile unsigned handles;
 };
@@ -410,7 +410,7 @@ void WMTimerMessages(WindowManager *windowManager) {
 	uint64_t tick = 0;
 
 	while (true) {
-		timer.Set(200, true);
+		timer.Set(30, true);
 		timer.event.Wait(OS_WAIT_NO_TIMEOUT);
 		timer.Remove();
 		tick++;
@@ -420,11 +420,17 @@ void WMTimerMessages(WindowManager *windowManager) {
 		for (uintptr_t i = 0; i < windowManager->windowsCount; i++) {
 			Window *window = windowManager->windows[i];
 
-			if (window->needsTimerMessages) {
-				OSMessage message = {};
-				message.type = OS_MESSAGE_WM_TIMER;
-				message.context = window->apiWindow;
-				window->owner->messageQueue.SendMessage(message);
+			if (window->needsTimerMessagesHz) {
+				int ticksPerMessage = 1000 / window->needsTimerMessagesHz / 30;
+				window->timerMessageTick++;
+
+				if (window->timerMessageTick >= ticksPerMessage) {
+					OSMessage message = {};
+					message.type = OS_MESSAGE_WM_TIMER;
+					message.context = window->apiWindow;
+					window->owner->messageQueue.SendMessage(message);
+					window->timerMessageTick = 0;
+				}
 			}
 		}
 
@@ -695,9 +701,9 @@ void Window::SetCursorStyle(OSCursorStyle style) {
 	windowManager.mutex.Release();
 }
 
-void Window::NeedWMTimer(bool value) {
+void Window::NeedWMTimer(int hz) {
 	windowManager.mutex.Acquire();
-	needsTimerMessages = value;
+	needsTimerMessagesHz = hz;
 	windowManager.mutex.Release();
 }
 

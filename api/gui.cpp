@@ -39,6 +39,8 @@ static UIImage checkboxNormal, checkboxHover, checkboxDragged, checkboxDisabled;
 static UIImage checkboxNormalChecked, checkboxHoverChecked, checkboxDraggedChecked, checkboxDisabledChecked;
 
 struct Control : APIObject {
+	// TODO Reduce the size of the structure.
+
 	struct Window *window;
 		
 	unsigned layout;
@@ -66,6 +68,9 @@ struct Control : APIObject {
 	bool disabled;
 
 	LinkedItem<Control> timerControlItem;
+	int timerHz, timerStep;
+
+	int animationStep;
 };
 
 struct ProgressBar : Control {
@@ -100,7 +105,7 @@ struct Window : APIObject {
 	int minimumWidth, minimumHeight;
 
 	LinkedList<Control> timerControls;
-	bool currentlyGettingTimerMessages;
+	int currentlyGettingTimerMessagesHz;
 };
 
 static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
@@ -210,8 +215,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				{
-					bool found = false;
-					UIImage image;
+					bool found = false, fadeFound = false;
+					UIImage image, fadeImage;
 
 					if (control->background.region.left) {
 						found = true;
@@ -224,8 +229,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 
 					if (control->hoverBackground.region.left && (control->window->hover == control || control->window->drag == control)) {
-						found = true;
-						image = control->hoverBackground;
+						if (control->animationStep == 16) {
+							found = true;
+							image = control->hoverBackground;
+						} else {
+							fadeFound = true;
+							fadeImage = control->hoverBackground;
+						}
 					}
 
 					if (control->dragBackground.region.left && control->window->drag == control && control->window->hover == control) {
@@ -235,7 +245,12 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 					if (found) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST);
+								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+
+						if (fadeFound) {
+							OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+									fadeImage.region, fadeImage.border, OS_DRAW_MODE_REPEAT_FIRST, control->animationStep * 16);
+						}
 					}
 				}
 
@@ -269,7 +284,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						bounds.top += (bounds.bottom - bounds.top) / 2 - (image.region.bottom - image.region.top) / 2;
 						bounds.bottom = bounds.top + image.region.bottom - image.region.top;
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
-								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST);
+								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 				}
 
@@ -326,8 +341,25 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			control->window->cursor = control->cursor;
 			control->window->hover = control;
 
+			if (!control->timerControlItem.list) {
+				control->animationStep = 0;
+				control->timerHz = 30;
+				control->window->timerControls.InsertStart(&control->timerControlItem);
+				control->timerControlItem.thisItem = control;
+			}
+
 			control->repaint = true;
 			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+		} break;
+
+		case OS_MESSAGE_WM_TIMER: {
+			if (control->animationStep == 16) {
+				control->window->timerControls.Remove(&control->timerControlItem);
+			} else {
+				control->animationStep++;
+				control->repaint = true;
+				SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+			}
 		} break;
 
 		case OS_MESSAGE_MOUSE_DRAGGED: {
@@ -482,11 +514,11 @@ OSObject OSCreateButton(OSAction *action) {
 	control->preferredHeight = 21;
 
 	control->action = action;
+	control->drawParentBackground = true;
 
 	if (action->checkable) {
 		UpdateCheckboxIcons(control);
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-		control->drawParentBackground = true;
 		control->minimumHeight = control->icon.region.bottom - control->icon.region.top;
 	} else {
 		control->background = buttonNormal;
@@ -533,10 +565,10 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 
 			if (control->disabled) {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST);
+						control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 			} else {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST);
+						control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 
 				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
 
@@ -552,7 +584,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 						bounds.left += 3 + i * 9;
 						bounds.right = bounds.left + 8;
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST);
+								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 				} else {
 					if (control->value >= pelletCount) control->value -= pelletCount;
@@ -566,7 +598,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 						bounds.left += 3 + j * 9;
 						bounds.right = bounds.left + 8;
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST);
+								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 				}
 			}
@@ -575,6 +607,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 		}
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
 		OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
+		control->timerHz = 5;
 		control->window->timerControls.InsertStart(&control->timerControlItem);
 	} else if (message->type == OS_MESSAGE_WM_TIMER) {
 		OSSetProgressBarValue(control, control->value + 1);
@@ -623,7 +656,7 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 	Control *control = (Control *) _control;
 	CreateString(text, textBytes, &control->text);
 
-	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 4;
+	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 8;
 	int suggestedHeight = FONT_SIZE + 8;
 
 	if (control->icon.region.left) {
@@ -994,9 +1027,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				hitTest.type = OS_MESSAGE_HIT_TEST;
 				hitTest.hitTest.positionX = message->mouseMoved.newPositionX;
 				hitTest.hitTest.positionY = message->mouseMoved.newPositionY;
-				OSSendMessage(old, &hitTest);
+				OSCallbackResponse response = OSSendMessage(old, &hitTest);
 
-				if (!hitTest.hitTest.result) {
+				if (!hitTest.hitTest.result || response == OS_CALLBACK_NOT_HANDLED) {
 					window->hover = nullptr;
 					OSSendMessage(window->root, message);
 				}
@@ -1016,7 +1049,14 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			LinkedItem<Control> *item = window->timerControls.firstItem;
 
 			while (item) {
-				OSSendMessage(item->thisItem, message);
+				int ticksPerMessage = window->currentlyGettingTimerMessagesHz / item->thisItem->timerHz;
+				item->thisItem->timerStep++;
+
+				if (item->thisItem->timerStep >= ticksPerMessage) {
+					item->thisItem->timerStep = 0;
+					OSSendMessage(item->thisItem, message);
+				}
+
 				item = item->nextItem;
 			}
 		} break;
@@ -1030,12 +1070,22 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		return response;
 	}
 
-	if (window->currentlyGettingTimerMessages && !window->timerControls.count) {
-		OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, false, 0, 0);
-		window->currentlyGettingTimerMessages = false;
-	} else if (!window->currentlyGettingTimerMessages && window->timerControls.count) {
-		OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, true, 0, 0);
-		window->currentlyGettingTimerMessages = true;
+	{
+		// TODO Only do this if the list has changed.
+
+		LinkedItem<Control> *item = window->timerControls.firstItem;
+		int largestHz = 0;
+
+		while (item) {
+			int thisHz = item->thisItem->timerHz;
+			if (thisHz > largestHz) largestHz = thisHz;
+			item = item->nextItem;
+		}
+
+		if (window->currentlyGettingTimerMessagesHz != largestHz) {
+			window->currentlyGettingTimerMessagesHz = largestHz;
+			OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, largestHz, 0, 0);
+		}
 	}
 
 	if (window->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {

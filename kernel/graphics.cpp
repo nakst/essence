@@ -39,7 +39,7 @@ struct Surface {
 	// Alpha blend the contents of the source region from the source surface to the destination region on this surface.
 	// The draw mode determines how the border is used.
 	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
-			OSRectangle borderDimensions, OSDrawMode mode, bool alreadyLocked = false);
+			OSRectangle borderDimensions, OSDrawMode mode, uint8_t alpha, bool alreadyLocked);
 
 	// Fill a region of this surface with the specified color.
 	void FillRectangle(OSRectangle region, OSColor color);
@@ -233,7 +233,7 @@ void Graphics::UpdateScreen() {
 	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + cursorImageWidth,
 						     cursorY, cursorY + cursorImageHeight),
 					 OSRectangle(cursorImageX, cursorImageX + cursorImageWidth, cursorImageY, cursorImageY + cursorImageHeight),
-					 OSRectangle(cursorImageX + 2, cursorImageX + 3, cursorImageY + 2, cursorImageY + 3), OS_DRAW_MODE_REPEAT_FIRST, true);
+					 OSRectangle(cursorImageX + 2, cursorImageX + 3, cursorImageY + 2, cursorImageY + 3), OS_DRAW_MODE_REPEAT_FIRST, 0xFF, true);
 		
 	switch (colorMode) {
 		case VIDEO_COLOR_24_RGB: {
@@ -572,7 +572,7 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 }
 
 void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
-		OSRectangle borderDimensions, OSDrawMode mode, bool alreadyLocked) {
+		OSRectangle borderDimensions, OSDrawMode mode, uint8_t alpha, bool alreadyLocked) {
 	if (destinationRegion.left >= destinationRegion.right 
 			|| destinationRegion.top >= destinationRegion.bottom
 			|| destinationRegion.right < 0
@@ -605,7 +605,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 			inBorderY = false;
 		}
 
-		// TODO There's currently no checking that the border dimensions are valid.
+		if (sy < sourceRegion.top || sy >= sourceRegion.bottom) continue;
 
 		InvalidateScanline(y, destinationRegion.left < 0 ? 0 : destinationRegion.left, 
 				      destinationRegion.right >= (intptr_t) resX ? (intptr_t) resX : destinationRegion.right);
@@ -625,10 +625,15 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 				}
 			}
 
+			if (sx < sourceRegion.left || sx >= sourceRegion.right) continue;
+
 			uint32_t *destinationPixel = (uint32_t *) (linearBuffer + x * 4 + y * stride);
 			uint32_t *sourcePixel = (uint32_t *) (source.linearBuffer + sx * 4 + sy * source.stride);
-
 			uint32_t modified = *sourcePixel;
+
+			if (alpha != 0xFF) {
+				modified = (modified & 0xFFFFFF) | (((((modified & 0xFF000000) >> 24) * alpha) << 16) & 0xFF000000);
+			}
 
 			if ((modified & 0xFF000000) == 0xFF000000) {
 				*destinationPixel = modified;
