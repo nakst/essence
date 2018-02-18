@@ -100,6 +100,15 @@ int CompareIntegers(const void *a, const void *b) {
 	return *c - *d;
 }
 
+bool state;
+
+OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
+	(void) object;
+	OSEnableControl(message->context, state);
+	state = !state;
+	return OS_CALLBACK_HANDLED;
+}
+
 extern "C" void ProgramEntry() {
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
@@ -434,11 +443,19 @@ extern "C" void ProgramEntry() {
 	window = OSCreateWindow(&ws);
 
 	actionOK.label = (char *) "Do Something";
+	actionOK.checkable = true;
 	actionOK.labelBytes = OSCStringLength(actionOK.label);
 	
-	OSObject content = OSCreateGrid(3, 3, 0);
+	OSObject b;
+	OSObject content = OSCreateGrid(2, 1, 0);
 	OSSetRootGrid(window, content);
-	OSAddControl(content, 1, 1, OSCreateButton(&actionOK), 0);
+	OSAddControl(content, 1, 0, b = OSCreateButton(&actionOK), 0);
+
+	OSAction action2 = {};
+	action2.label = (char *) "Toggle Enabled";
+	action2.labelBytes = OSCStringLength(action2.label);
+	action2.callback = OSCallback(ToggleEnabled, b);
+	OSAddControl(content, 0, 0, OSCreateButton(&action2), 0);
 
 #if 0
 	OSObject content = OSCreateGrid(2, 2, 0);

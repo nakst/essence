@@ -1,6 +1,8 @@
 #ifndef IncludedEssenceAPIHeader
 #define IncludedEssenceAPIHeader
 
+// TODO Remove constructors.
+
 #include <stdint.h>
 #include <limits.h>
 #include <stddef.h>

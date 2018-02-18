@@ -1,3 +1,5 @@
+// TODO I really want rounded corners.......
+
 #ifndef IMPLEMENTATION
 
 #define SCANCODE_KEY_RELEASED (1 << 15)

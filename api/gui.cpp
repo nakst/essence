@@ -160,6 +160,25 @@ static void UpdateCheckboxIcons(Control *control) {
 	control->dragIcon = action->isChecked ? &checkboxDraggedChecked : &checkboxDragged;
 }
 
+void OSAnimateControl(OSObject _control, bool fast) {
+	Control *control = (Control *) _control;
+
+	control->from1 = control->current1;
+	control->from2 = control->current2;
+	control->from3 = control->current3;
+	control->from4 = control->current4;
+	control->animationStep = 0;
+	control->finalAnimationStep = fast ? 4 : 16;
+
+	if (!control->timerControlItem.list) {
+		control->timerHz = 30;
+		control->window->timerControls.InsertStart(&control->timerControlItem);
+		control->timerControlItem.thisItem = control;
+	}
+
+	OSRepaintControl(control);
+}
+
 static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Control *control = (Control *) _object;
@@ -250,69 +269,62 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 							OSColor(control->backgroundColor));
 				}
 
-				{
-					bool disabled = control->disabled && control->disabledBackground, 
-					     drag = control->window->drag == control && control->window->hover == control && !disabled && control->dragBackground,
-					     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled && control->hoverBackground,
-					     normal = !hover && !drag && !disabled && control->background;
+				bool disabled = control->disabled,
+				     drag = control->window->drag == control && control->window->hover == control && !disabled,
+				     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled,
+				     normal = !hover && !drag && !disabled;
 
-					control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
-					control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
-					control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
-					control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
+				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
+				control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
+				control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
+				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
-					if (control->current1 && control->background) {
+				if (control->background) {
+					if (control->current1) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background->region, 
-								control->background->border, OS_DRAW_MODE_REPEAT_FIRST, control->current1 == 15 ? 0xFF : 0xF * control->current1);
+								control->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 
-					if (control->current2 && control->hoverBackground) {
+					if (control->current2) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->hoverBackground->region, 
 								control->hoverBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
 					}
 
-					if (control->current3 && control->dragBackground) {
+					if (control->current3) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->dragBackground->region, 
 								control->dragBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
 					}
 
-					if (control->current4 && control->disabledBackground) {
+					if (control->current4) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->disabledBackground->region, 
 								control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
 					}
 				}
 
-				{
-					bool found = false;
-					UIImage image;
+				if (control->icon) {
+					OSRectangle bounds = control->bounds;
+					bounds.right = bounds.left + control->icon->region.right - control->icon->region.left;
+					bounds.top += (bounds.bottom - bounds.top) / 2 - (control->icon->region.bottom - control->icon->region.top) / 2;
+					bounds.bottom = bounds.top + control->icon->region.bottom - control->icon->region.top;
 
-					if (control->icon) {
-						found = true;
-						image = *control->icon;
+					if (control->current1) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icon->region, 
+								control->icon->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 
-					if (control->disabledIcon && control->disabled) {
-						found = true;
-						image = *control->disabledIcon;
+					if (control->current2) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->hoverIcon->region, 
+								control->hoverIcon->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
 					}
 
-					if (control->hoverIcon && (control->window->hover == control || control->window->drag == control)) {
-						found = true;
-						image = *control->hoverIcon;
+					if (control->current3) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->dragIcon->region, 
+								control->dragIcon->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
 					}
 
-					if (control->dragIcon && control->window->drag == control && control->window->hover == control) {
-						found = true;
-						image = *control->dragIcon;
-					}
-
-					if (found) {
-						OSRectangle bounds = control->bounds;
-						bounds.right = bounds.left + image.region.right - image.region.left;
-						bounds.top += (bounds.bottom - bounds.top) / 2 - (image.region.bottom - image.region.top) / 2;
-						bounds.bottom = bounds.top + image.region.bottom - image.region.top;
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
-								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					if (control->current4) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->disabledIcon->region, 
+								control->disabledIcon->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
 					}
 				}
 
@@ -366,20 +378,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		case OS_MESSAGE_END_HOVER:
 		case OS_MESSAGE_START_DRAG:
 		case OS_MESSAGE_END_DRAG: {
-			control->from1 = control->current1;
-			control->from2 = control->current2;
-			control->from3 = control->current3;
-			control->from4 = control->current4;
-			control->animationStep = 0;
-			control->finalAnimationStep = message->type != OS_MESSAGE_START_DRAG ? 16 : 4;
-
-			if (!control->timerControlItem.list) {
-				control->timerHz = 30;
-				control->window->timerControls.InsertStart(&control->timerControlItem);
-				control->timerControlItem.thisItem = control;
-			}
-
-			OSRepaintControl(control);
+			OSAnimateControl(control, message->type == OS_MESSAGE_START_DRAG);
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -495,6 +494,8 @@ static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage,
 	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
 	control->type = API_OBJECT_CONTROL;
 	control->background = image;
+	control->hoverBackground = image;
+	control->dragBackground = image;
 	control->disabledBackground = disabledImage;
 	control->preferredWidth = image->region.right - image->region.left;
 	control->preferredHeight = image->region.bottom - image->region.top;
@@ -658,6 +659,8 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 	control->type = API_OBJECT_CONTROL;
 	control->background = &progressBarBackground;
 	control->disabledBackground = &progressBarDisabled;
+	control->hoverBackground = &progressBarBackground;
+	control->dragBackground = &progressBarBackground;
 
 	control->minimum = minimum;
 	control->maximum = maximum;
@@ -938,7 +941,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 void OSDisableControl(OSObject _control, bool disabled) {
 	Control *control = (Control *) _control;
 	control->disabled = disabled;
-	OSRepaintControl(control);
+	OSAnimateControl(control, false);
 }
 
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
@@ -994,7 +997,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
-			window->drag = window->hover;
+			if (window->hover && !window->hover->disabled) {
+				window->drag = window->hover;
+			}
+
 			lastClickX = message->mousePressed.positionX;
 			lastClickY = message->mousePressed.positionY;
 
