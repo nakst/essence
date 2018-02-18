@@ -762,6 +762,7 @@ OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
+#define OSAddGrid(_grid, _column, _row, _child) OSAddControl(_grid, _column, _row, _child, OS_ADD_CHILD_GRID)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_ADD_CHILD_GRID)
 
 OS_EXTERN_C OSObject OSCreateButton(OSAction *action);

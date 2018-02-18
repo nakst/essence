@@ -20,8 +20,9 @@ OSCallbackResponse ProcessActionOK(OSObject object, OSMessage *message) {
 
 	static int progress = 0;
 	progress++;
-	if (progress <= 5) OSSetProgressBarValue(progressBar, progress);
-	else {
+	if (progress <= 5) {
+		// OSSetProgressBarValue(progressBar, progress);
+	} else {
 		OSMessage message;
 		message.type = OS_MESSAGE_DESTROY;
 		OSSendMessage(window, &message);
@@ -432,6 +433,14 @@ extern "C" void ProgramEntry() {
 	ws.titleBytes = OSCStringLength(ws.title);
 	window = OSCreateWindow(&ws);
 
+	actionOK.label = (char *) "Do Something";
+	actionOK.labelBytes = OSCStringLength(actionOK.label);
+	
+	OSObject content = OSCreateGrid(3, 3, 0);
+	OSSetRootGrid(window, content);
+	OSAddControl(content, 1, 1, OSCreateButton(&actionOK), 0);
+
+#if 0
 	OSObject content = OSCreateGrid(2, 2, 0);
 	OSSetRootGrid(window, content);
 
@@ -450,6 +459,7 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);
 	OSAddControl(content, 1, 1, button, OS_CELL_H_RIGHT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSAddControl(content, 0, 1, OSCreateButton(&actionOK2), 0);
+#endif
 
 	OSProcessMessages();
 }

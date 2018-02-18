@@ -98,7 +98,7 @@ struct Control : APIObject {
 	LinkedItem<Control> timerControlItem;
 	uint16_t timerHz, timerStep;
 
-	uint8_t animationStep;
+	uint8_t animationStep, finalAnimationStep;
 	uint8_t from1, from2, from3, from4;
 	uint8_t current1, current2, current3, current4;
 };
@@ -256,10 +256,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled && control->hoverBackground,
 					     normal = !hover && !drag && !disabled && control->background;
 
-					control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / 16 + control->from1;
-					control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / 16 + control->from2;
-					control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / 16 + control->from3;
-					control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / 16 + control->from4;
+					control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
+					control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
+					control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
+					control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
 					if (control->current1 && control->background) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background->region, 
@@ -342,6 +342,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		case OS_MESSAGE_PARENT_UPDATED: {
 			control->window = (Window *) message->parentUpdated.window;
 			control->animationStep = 16;
+			control->finalAnimationStep = 16;
 			OSRepaintControl(control);
 		} break;
 
@@ -370,6 +371,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			control->from3 = control->current3;
 			control->from4 = control->current4;
 			control->animationStep = 0;
+			control->finalAnimationStep = message->type != OS_MESSAGE_START_DRAG ? 16 : 4;
 
 			if (!control->timerControlItem.list) {
 				control->timerHz = 30;
@@ -396,7 +398,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_WM_TIMER: {
-			if (control->animationStep == 16) {
+			if (control->animationStep == control->finalAnimationStep) {
 				control->window->timerControls.Remove(&control->timerControlItem);
 			} else {
 				control->animationStep++;
