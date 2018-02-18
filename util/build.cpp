@@ -30,7 +30,9 @@ void Build(bool enableOptimisations) {
 
 	printf("Building utilities...\n");
 	system("g++ util/esfs.cpp -o esfs -g");
+	system("g++ util/manifest_parser.cpp -o manifest_parser -g");
 	system("chmod +x esfs");
+	system("chmod +x manifest_parser");
 
 	printf("Creating output directories...\n");
 	system("mkdir -p bin/os");
