@@ -20,8 +20,6 @@ struct UIImage {
 	OSRectangle border;
 };
 
-// static UIImage blankImage 		= {{0, 0, 0, 0}, {0, 0, 0, 0}};
-
 static UIImage activeWindowBorder11	= {{1, 1 + 6, 144, 144 + 6}, 	{1, 1, 144, 144}};
 static UIImage activeWindowBorder12	= {{8, 8 + 1, 144, 144 + 6}, 	{7, 8, 144, 144}};
 static UIImage activeWindowBorder13	= {{10, 10 + 6, 144, 144 + 6}, 	{10, 10, 144, 144}};
@@ -29,7 +27,6 @@ static UIImage activeWindowBorder21	= {{1, 1 + 6, 151, 151 + 24}, 	{1, 1, 151, 1
 static UIImage activeWindowBorder22	= {{8, 8 + 1, 151, 151 + 24}, 	{7, 8, 151, 151}};
 static UIImage activeWindowBorder23	= {{10, 10 + 6, 151, 151 + 24},	{10, 10, 151, 151}};
 static UIImage activeWindowBorder31	= {{1, 1 + 6, 176, 176 + 1}, 	{1, 1, 175, 176}};
-// static UIImage activeWindowBorder32	= {{8, 8 + 1, 176, 176 + 1}, 	{7, 8, 175, 176}};
 static UIImage activeWindowBorder33	= {{10, 10 + 6, 176, 176 + 1}, 	{10, 10, 175, 176}};
 static UIImage activeWindowBorder41	= {{1, 1 + 6, 178, 178 + 6}, 	{1, 1, 178, 178}};
 static UIImage activeWindowBorder42	= {{8, 8 + 1, 178, 178 + 6}, 	{7, 8, 178, 178}};
@@ -42,7 +39,6 @@ static UIImage inactiveWindowBorder21	= {{16 + 1, 16 + 1 + 6, 151, 151 + 24}, {1
 static UIImage inactiveWindowBorder22	= {{16 + 8, 16 + 8 + 1, 151, 151 + 24}, {16 + 7, 16 + 8, 151, 151}};
 static UIImage inactiveWindowBorder23	= {{16 + 10, 16 + 10 + 6, 151, 151 + 24},{16 + 10, 16 + 10, 151, 151}};
 static UIImage inactiveWindowBorder31	= {{16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176}};
-// static UIImage inactiveWindowBorder32	= {{16 + 8, 16 + 8 + 1, 176, 176 + 1}, 	{16 + 7, 16 + 8, 175, 176}};
 static UIImage inactiveWindowBorder33	= {{16 + 10, 16 + 10 + 6, 176, 176 + 1}, {16 + 10, 16 + 10, 175, 176}};
 static UIImage inactiveWindowBorder41	= {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178}};
 static UIImage inactiveWindowBorder42	= {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
@@ -103,6 +99,8 @@ struct Control : APIObject {
 	uint16_t timerHz, timerStep;
 
 	uint8_t animationStep;
+	uint8_t from1, from2, from3, from4;
+	uint8_t current1, current2, current3, current4;
 };
 
 struct ProgressBar : Control {
@@ -253,43 +251,34 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				{
-					UIImage *image = nullptr, *fadeImage = nullptr;
+					bool disabled = control->disabled && control->disabledBackground, 
+					     drag = control->window->drag == control && control->window->hover == control && !disabled && control->dragBackground,
+					     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled && control->hoverBackground,
+					     normal = !hover && !drag && !disabled && control->background;
 
-					bool disabled = control->disabled, 
-					     drag = control->window->drag == control && control->window->hover == control && !disabled,
-					     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled,
-					     normal = !hover && !drag && !disabled;
+					control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / 16 + control->from1;
+					control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / 16 + control->from2;
+					control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / 16 + control->from3;
+					control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / 16 + control->from4;
 
-					if (control->background) {
-						if (control->animationStep < 16 && normal) fadeImage = control->background;
-						else image = control->background;
+					if (control->current1 && control->background) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background->region, 
+								control->background->border, OS_DRAW_MODE_REPEAT_FIRST, control->current1 == 15 ? 0xFF : 0xF * control->current1);
 					}
 
-					if (control->disabledBackground) {
-						if (disabled) image = control->disabledBackground;
+					if (control->current2 && control->hoverBackground) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->hoverBackground->region, 
+								control->hoverBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
 					}
 
-					if (control->hoverBackground) {
-						if (control->animationStep < 16 && hover) fadeImage = control->hoverBackground;
-						else if (hover) image = control->hoverBackground;
-						else if (control->animationStep < 16 && !hover) image = control->hoverBackground;
+					if (control->current3 && control->dragBackground) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->dragBackground->region, 
+								control->dragBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
 					}
 
-					if (control->dragBackground) {
-						if (drag) image = control->dragBackground;
-					}
-
-					if (image) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-								image->region, image->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
-
-						if (fadeImage) {
-							OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-									fadeImage->region, fadeImage->border, OS_DRAW_MODE_REPEAT_FIRST, control->animationStep * 16);
-						}
-					} else if (fadeImage) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-								fadeImage->region, fadeImage->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					if (control->current4 && control->disabledBackground) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->disabledBackground->region, 
+								control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
 					}
 				}
 
@@ -372,16 +361,17 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			message->hitTest.result = IsPointInRectangle(control->bounds, message->hitTest.positionX, message->hitTest.positionY);
 		} break;
 
-		case OS_MESSAGE_MOUSE_MOVED: {
-			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
-				break;
-			}
-
-			control->window->cursor = control->cursor;
-			control->window->hover = control;
+		case OS_MESSAGE_START_HOVER:
+		case OS_MESSAGE_END_HOVER:
+		case OS_MESSAGE_START_DRAG:
+		case OS_MESSAGE_END_DRAG: {
+			control->from1 = control->current1;
+			control->from2 = control->current2;
+			control->from3 = control->current3;
+			control->from4 = control->current4;
+			control->animationStep = 0;
 
 			if (!control->timerControlItem.list) {
-				control->animationStep = 0;
 				control->timerHz = 30;
 				control->window->timerControls.InsertStart(&control->timerControlItem);
 				control->timerControlItem.thisItem = control;
@@ -390,26 +380,27 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			OSRepaintControl(control);
 		} break;
 
+		case OS_MESSAGE_MOUSE_MOVED: {
+			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				break;
+			}
+
+			control->window->cursor = control->cursor;
+			control->window->hover = control;
+
+			{
+				OSMessage message;
+				message.type = OS_MESSAGE_START_HOVER;
+				OSSendMessage(control, &message);
+			}
+		} break;
+
 		case OS_MESSAGE_WM_TIMER: {
 			if (control->animationStep == 16) {
 				control->window->timerControls.Remove(&control->timerControlItem);
 			} else {
 				control->animationStep++;
 				OSRepaintControl(control);
-			}
-		} break;
-
-		case OS_MESSAGE_MOUSE_DRAGGED: {
-			if (!IsPointInRectangle(control->bounds, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY)) {
-				if (control->window->hover) {
-					control->window->hover = nullptr;
-					OSRepaintControl(control);
-				}
-			} else {
-				if (!control->window->hover) {
-					control->window->hover = control;
-					OSRepaintControl(control);
-				}
 			}
 		} break;
 
@@ -424,17 +415,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					UpdateCheckboxIcons(control);
 				}
 			}
-		} break;
-
-		case OS_MESSAGE_LOST_FOCUS: {
-			if (!control->timerControlItem.list) {
-				control->animationStep = 0;
-				control->timerHz = 30;
-				control->window->timerControls.InsertStart(&control->timerControlItem);
-				control->timerControlItem.thisItem = control;
-			}
-
-			OSRepaintControl(control);
 		} break;
 
 		default: {
@@ -1017,7 +997,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			lastClickY = message->mousePressed.positionY;
 
 			if (window->drag) {
-				OSRepaintControl(window->drag);
+				OSMessage message;
+				message.type = OS_MESSAGE_START_DRAG;
+				OSSendMessage(window->drag, &message);
 			}
 		} break;
 
@@ -1030,9 +1012,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					clicked.type = OS_MESSAGE_CLICKED;
 					OSSendMessage(window->drag, &clicked);
 				}
-			}
 
-			window->drag = nullptr;
+				OSMessage message;
+				message.type = OS_MESSAGE_END_DRAG;
+				OSSendMessage(window->drag, &message);
+				window->drag = nullptr;
+			}
 
 			OSMessage m = *message;
 			m.type = OS_MESSAGE_MOUSE_MOVED;
@@ -1047,14 +1032,33 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 		case OS_MESSAGE_MOUSE_EXIT: {
 			if (window->hover) {
-				OSRepaintControl(window->hover);
+				OSMessage message;
+				message.type = OS_MESSAGE_END_HOVER;
+				OSSendMessage(window->hover, &message);
+				window->hover = nullptr;
 			}
-
-			window->hover = nullptr;
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
 			if (window->drag) {
+				OSMessage hitTest;
+				hitTest.type = OS_MESSAGE_HIT_TEST;
+				hitTest.hitTest.positionX = message->mouseMoved.newPositionX;
+				hitTest.hitTest.positionY = message->mouseMoved.newPositionY;
+				OSCallbackResponse response = OSSendMessage(window->drag, &hitTest);
+
+				if (response == OS_CALLBACK_HANDLED && !hitTest.hitTest.result && window->hover) {
+					OSMessage message;
+					message.type = OS_MESSAGE_END_HOVER;
+					OSSendMessage(window->hover, &message);
+					window->hover = nullptr;
+				} else if (response == OS_CALLBACK_HANDLED && hitTest.hitTest.result && !window->hover) {
+					OSMessage message;
+					message.type = OS_MESSAGE_START_HOVER;
+					window->hover = window->drag;
+					OSSendMessage(window->hover, &message);
+				}
+
 				message->type = OS_MESSAGE_MOUSE_DRAGGED;
 				message->mouseDragged.originalPositionX = lastClickX;
 				message->mouseDragged.originalPositionY = lastClickY;
@@ -1079,7 +1083,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 				if (window->hover != old && old) {
 					OSMessage message;
-					message.type = OS_MESSAGE_LOST_FOCUS;
+					message.type = OS_MESSAGE_END_HOVER;
 					OSSendMessage(old, &message);
 				}
 			}

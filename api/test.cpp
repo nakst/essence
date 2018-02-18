@@ -448,7 +448,7 @@ extern "C" void ProgramEntry() {
 	OSObject button = OSCreateButton(&actionOK);
 	OSAddControl(content, 1, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);
-	OSAddControl(content, 1, 1, button, OS_CELL_H_RIGHT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
+	OSAddControl(content, 1, 1, button, OS_CELL_H_RIGHT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSAddControl(content, 0, 1, OSCreateButton(&actionOK2), 0);
 
 	OSProcessMessages();
