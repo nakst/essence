@@ -20,37 +20,69 @@ struct UIImage {
 	OSRectangle border;
 };
 
-static UIImage blankImage;
+// static UIImage blankImage 		= {{0, 0, 0, 0}, {0, 0, 0, 0}};
 
-static UIImage activeWindowBorder11, activeWindowBorder12, activeWindowBorder13, 
-	activeWindowBorder21, activeWindowBorder22, activeWindowBorder23, 
-	activeWindowBorder31, activeWindowBorder32, activeWindowBorder33, 
-	activeWindowBorder41, activeWindowBorder42, activeWindowBorder43;
-static UIImage inactiveWindowBorder11, inactiveWindowBorder12, inactiveWindowBorder13, 
-	inactiveWindowBorder21, inactiveWindowBorder22, inactiveWindowBorder23, 
-	inactiveWindowBorder31, inactiveWindowBorder32, inactiveWindowBorder33, 
-	inactiveWindowBorder41, inactiveWindowBorder42, inactiveWindowBorder43;
+static UIImage activeWindowBorder11	= {{1, 1 + 6, 144, 144 + 6}, 	{1, 1, 144, 144}};
+static UIImage activeWindowBorder12	= {{8, 8 + 1, 144, 144 + 6}, 	{7, 8, 144, 144}};
+static UIImage activeWindowBorder13	= {{10, 10 + 6, 144, 144 + 6}, 	{10, 10, 144, 144}};
+static UIImage activeWindowBorder21	= {{1, 1 + 6, 151, 151 + 24}, 	{1, 1, 151, 151}};
+static UIImage activeWindowBorder22	= {{8, 8 + 1, 151, 151 + 24}, 	{7, 8, 151, 151}};
+static UIImage activeWindowBorder23	= {{10, 10 + 6, 151, 151 + 24},	{10, 10, 151, 151}};
+static UIImage activeWindowBorder31	= {{1, 1 + 6, 176, 176 + 1}, 	{1, 1, 175, 176}};
+// static UIImage activeWindowBorder32	= {{8, 8 + 1, 176, 176 + 1}, 	{7, 8, 175, 176}};
+static UIImage activeWindowBorder33	= {{10, 10 + 6, 176, 176 + 1}, 	{10, 10, 175, 176}};
+static UIImage activeWindowBorder41	= {{1, 1 + 6, 178, 178 + 6}, 	{1, 1, 178, 178}};
+static UIImage activeWindowBorder42	= {{8, 8 + 1, 178, 178 + 6}, 	{7, 8, 178, 178}};
+static UIImage activeWindowBorder43	= {{10, 10 + 6, 178, 178 + 6}, 	{10, 10, 178, 178}};
+
+static UIImage inactiveWindowBorder11	= {{16 + 1, 16 + 1 + 6, 144, 144 + 6}, 	{16 + 1, 16 + 1, 144, 144}};
+static UIImage inactiveWindowBorder12	= {{16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 7, 16 + 8, 144, 144}};
+static UIImage inactiveWindowBorder13	= {{16 + 10, 16 + 10 + 6, 144, 144 + 6},{16 + 10, 16 + 10, 144, 144}};
+static UIImage inactiveWindowBorder21	= {{16 + 1, 16 + 1 + 6, 151, 151 + 24}, {16 + 1, 16 + 1, 151, 151}};
+static UIImage inactiveWindowBorder22	= {{16 + 8, 16 + 8 + 1, 151, 151 + 24}, {16 + 7, 16 + 8, 151, 151}};
+static UIImage inactiveWindowBorder23	= {{16 + 10, 16 + 10 + 6, 151, 151 + 24},{16 + 10, 16 + 10, 151, 151}};
+static UIImage inactiveWindowBorder31	= {{16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176}};
+// static UIImage inactiveWindowBorder32	= {{16 + 8, 16 + 8 + 1, 176, 176 + 1}, 	{16 + 7, 16 + 8, 175, 176}};
+static UIImage inactiveWindowBorder33	= {{16 + 10, 16 + 10 + 6, 176, 176 + 1}, {16 + 10, 16 + 10, 175, 176}};
+static UIImage inactiveWindowBorder41	= {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178}};
+static UIImage inactiveWindowBorder42	= {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
+static UIImage inactiveWindowBorder43	= {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, {16 + 10, 16 + 10, 178, 178}};
+
+static UIImage progressBarBackground 	= {{9, 16, 122, 143}, {11, 12, 125, 139}};
+static UIImage progressBarDisabled   	= {{16 + 9, 16 + 16, 122, 143}, {16 + 11, 16 + 12, 125, 139}};
+static UIImage progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
+
+static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
+static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
+static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
+static UIImage buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
+
+static UIImage checkboxNormal		= {{95, 108, 120, 133}, {95, 95, 120, 120}};
+static UIImage checkboxDragged		= {{14 + 95, 14 + 108, 120, 133}, {14 + 95, 14 + 95, 120, 120}};
+static UIImage checkboxHover		= {{-14 + 95, -14 + 108, 120, 133}, {-14 + 95, -14 + 95, 120, 120}};
+static UIImage checkboxDisabled		= {{28 + 95, 28 + 108, 120, 133}, {28 + 95, 28 + 95, 120, 120}};
+static UIImage checkboxNormalChecked	= {{95, 108, 14 + 120, 14 + 133}, {95, 95, 14 + 120, 14 + 120}};
+static UIImage checkboxDraggedChecked	= {{14 + 95, 14 + 108, 14 + 120, 14 + 133}, {14 + 95, 14 + 95, 14 + 120, 14 + 120}};
+static UIImage checkboxHoverChecked	= {{-14 + 95, -14 + 108, 14 + 120, 14 + 133}, {-14 + 95, -14 + 95, 14 + 120, 14 + 120}};
+static UIImage checkboxDisabledChecked	= {{28 + 95, 28 + 108, 14 + 120, 14 + 133}, {28 + 95, 28 + 95, 14 + 120, 14 + 120}};
+
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
-static UIImage progressBarBackground, progressBarPellet, progressBarDisabled;
-static UIImage buttonNormal, buttonHover, buttonDragged, buttonDisabled;
-static UIImage checkboxNormal, checkboxHover, checkboxDragged, checkboxDisabled;
-static UIImage checkboxNormalChecked, checkboxHoverChecked, checkboxDraggedChecked, checkboxDisabledChecked;
-
 struct Control : APIObject {
-	// TODO Reduce the size of the structure.
-
+	// Current size: ~320 bytes.
+	// Is this too big?
+	
 	struct Window *window;
 		
-	unsigned layout;
 	OSRectangle bounds, cellBounds;
+	uint16_t layout;
 
 	uint32_t backgroundColor;
 	bool drawParentBackground;
 
-	UIImage background, disabledBackground, hoverBackground, dragBackground;
-	UIImage icon, disabledIcon, hoverIcon, dragIcon;
+	UIImage *background, *disabledBackground, *hoverBackground, *dragBackground;
+	UIImage *icon, *disabledIcon, *hoverIcon, *dragIcon;
 
 	OSAction *action;
 	OSCursorStyle cursor;
@@ -58,19 +90,19 @@ struct Control : APIObject {
 	OSString text;
 	OSRectangle textBounds;
 	uint32_t textColor;
-	bool textShadow, textBold;
-	int textSize, textAlign;
+	uint8_t textShadow : 1, textBold : 1;
+	uint8_t textSize, textAlign;
 
-	bool repaint, relayout;
-	int preferredWidth, preferredHeight;
-	int minimumWidth, minimumHeight; // Used by OSSetText.
+	uint8_t repaint : 1, relayout : 1;
+	uint16_t preferredWidth, preferredHeight;
+	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
 
 	bool disabled;
 
 	LinkedItem<Control> timerControlItem;
-	int timerHz, timerStep;
+	uint16_t timerHz, timerStep;
 
-	int animationStep;
+	uint8_t animationStep;
 };
 
 struct ProgressBar : Control {
@@ -108,6 +140,12 @@ struct Window : APIObject {
 	int currentlyGettingTimerMessagesHz;
 };
 
+static void OSRepaintControl(OSObject _control) {
+	Control *control = (Control *) _control;
+	control->repaint = true;
+	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+}
+
 static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	if (rectangle.left > x || rectangle.right <= x || rectangle.top > y || rectangle.bottom <= y) {
 		return false;
@@ -118,10 +156,10 @@ static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 
 static void UpdateCheckboxIcons(Control *control) {
 	OSAction *action = control->action;
-	control->icon = action->isChecked ? checkboxNormalChecked : checkboxNormal;
-	control->disabledIcon = action->isChecked ? checkboxDisabledChecked : checkboxDisabled;
-	control->hoverIcon = action->isChecked ? checkboxHoverChecked : checkboxHover;
-	control->dragIcon = action->isChecked ? checkboxDraggedChecked : checkboxDragged;
+	control->icon = action->isChecked ? &checkboxNormalChecked : &checkboxNormal;
+	control->disabledIcon = action->isChecked ? &checkboxDisabledChecked : &checkboxDisabled;
+	control->hoverIcon = action->isChecked ? &checkboxHoverChecked : &checkboxHover;
+	control->dragIcon = action->isChecked ? &checkboxDraggedChecked : &checkboxDragged;
 }
 
 static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
@@ -138,7 +176,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				break;
 			}
 
-			control->cellBounds = control->bounds = OSRectangle(
+			control->cellBounds = control->bounds = OS_MAKE_RECTANGLE(
 					message->layout.left, message->layout.right,
 					message->layout.top, message->layout.bottom);
 
@@ -170,7 +208,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 
 			control->relayout = false;
-			control->repaint = true;
+			OSRepaintControl(control);
 			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 
 			{
@@ -183,8 +221,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		case OS_MESSAGE_LAYOUT_TEXT: {
 			control->textBounds = control->bounds;
 
-			if (control->icon.region.left) {
-				control->textBounds.left += control->icon.region.right - control->icon.region.left + 4;
+			if (control->icon) {
+				control->textBounds.left += control->icon->region.right - control->icon->region.left + 4;
 			}
 		} break;
 
@@ -215,42 +253,43 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				{
-					bool found = false, fadeFound = false;
-					UIImage image, fadeImage;
+					UIImage *image = nullptr, *fadeImage = nullptr;
 
-					if (control->background.region.left) {
-						found = true;
-						image = control->background;
+					bool disabled = control->disabled, 
+					     drag = control->window->drag == control && control->window->hover == control && !disabled,
+					     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled,
+					     normal = !hover && !drag && !disabled;
+
+					if (control->background) {
+						if (control->animationStep < 16 && normal) fadeImage = control->background;
+						else image = control->background;
 					}
 
-					if (control->disabledBackground.region.left && control->disabled) {
-						found = true;
-						image = control->disabledBackground;
+					if (control->disabledBackground) {
+						if (disabled) image = control->disabledBackground;
 					}
 
-					if (control->hoverBackground.region.left && (control->window->hover == control || control->window->drag == control)) {
-						if (control->animationStep == 16) {
-							found = true;
-							image = control->hoverBackground;
-						} else {
-							fadeFound = true;
-							fadeImage = control->hoverBackground;
-						}
+					if (control->hoverBackground) {
+						if (control->animationStep < 16 && hover) fadeImage = control->hoverBackground;
+						else if (hover) image = control->hoverBackground;
+						else if (control->animationStep < 16 && !hover) image = control->hoverBackground;
 					}
 
-					if (control->dragBackground.region.left && control->window->drag == control && control->window->hover == control) {
-						found = true;
-						image = control->dragBackground;
+					if (control->dragBackground) {
+						if (drag) image = control->dragBackground;
 					}
 
-					if (found) {
+					if (image) {
 						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-								image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+								image->region, image->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 
-						if (fadeFound) {
+						if (fadeImage) {
 							OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-									fadeImage.region, fadeImage.border, OS_DRAW_MODE_REPEAT_FIRST, control->animationStep * 16);
+									fadeImage->region, fadeImage->border, OS_DRAW_MODE_REPEAT_FIRST, control->animationStep * 16);
 						}
+					} else if (fadeImage) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+								fadeImage->region, fadeImage->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 				}
 
@@ -258,24 +297,24 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					bool found = false;
 					UIImage image;
 
-					if (control->icon.region.left) {
+					if (control->icon) {
 						found = true;
-						image = control->icon;
+						image = *control->icon;
 					}
 
-					if (control->disabledIcon.region.left && control->disabled) {
+					if (control->disabledIcon && control->disabled) {
 						found = true;
-						image = control->disabledIcon;
+						image = *control->disabledIcon;
 					}
 
-					if (control->hoverIcon.region.left && (control->window->hover == control || control->window->drag == control)) {
+					if (control->hoverIcon && (control->window->hover == control || control->window->drag == control)) {
 						found = true;
-						image = control->hoverIcon;
+						image = *control->hoverIcon;
 					}
 
-					if (control->dragIcon.region.left && control->window->drag == control && control->window->hover == control) {
+					if (control->dragIcon && control->window->drag == control && control->window->hover == control) {
 						found = true;
-						image = control->dragIcon;
+						image = *control->dragIcon;
 					}
 
 					if (found) {
@@ -313,8 +352,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 		case OS_MESSAGE_PARENT_UPDATED: {
 			control->window = (Window *) message->parentUpdated.window;
-			control->repaint = true;
-			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+			control->animationStep = 16;
+			OSRepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
@@ -348,8 +387,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->timerControlItem.thisItem = control;
 			}
 
-			control->repaint = true;
-			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+			OSRepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_WM_TIMER: {
@@ -357,8 +395,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->window->timerControls.Remove(&control->timerControlItem);
 			} else {
 				control->animationStep++;
-				control->repaint = true;
-				SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+				OSRepaintControl(control);
 			}
 		} break;
 
@@ -366,14 +403,12 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (!IsPointInRectangle(control->bounds, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY)) {
 				if (control->window->hover) {
 					control->window->hover = nullptr;
-					control->repaint = true;
-					SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+					OSRepaintControl(control);
 				}
 			} else {
 				if (!control->window->hover) {
 					control->window->hover = control;
-					control->repaint = true;
-					SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+					OSRepaintControl(control);
 				}
 			}
 		} break;
@@ -389,6 +424,17 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					UpdateCheckboxIcons(control);
 				}
 			}
+		} break;
+
+		case OS_MESSAGE_LOST_FOCUS: {
+			if (!control->timerControlItem.list) {
+				control->animationStep = 0;
+				control->timerHz = 30;
+				control->window->timerControls.InsertStart(&control->timerControlItem);
+				control->timerControlItem.thisItem = control;
+			}
+
+			OSRepaintControl(control);
 		} break;
 
 		default: {
@@ -463,13 +509,13 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 	return response;
 }
 
-static OSObject CreateWindowResizeHandle(UIImage image, UIImage disabledImage, unsigned direction) {
+static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage, unsigned direction) {
 	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
 	control->type = API_OBJECT_CONTROL;
 	control->background = image;
 	control->disabledBackground = disabledImage;
-	control->preferredWidth = image.region.right - image.region.left;
-	control->preferredHeight = image.region.bottom - image.region.top;
+	control->preferredWidth = image->region.right - image->region.left;
+	control->preferredHeight = image->region.bottom - image->region.top;
 	control->direction = direction;
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, nullptr));
@@ -519,12 +565,12 @@ OSObject OSCreateButton(OSAction *action) {
 	if (action->checkable) {
 		UpdateCheckboxIcons(control);
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-		control->minimumHeight = control->icon.region.bottom - control->icon.region.top;
+		control->minimumHeight = control->icon->region.bottom - control->icon->region.top;
 	} else {
-		control->background = buttonNormal;
-		control->disabledBackground = buttonDisabled;
-		control->hoverBackground = buttonHover;
-		control->dragBackground = buttonDragged;
+		control->background = &buttonNormal;
+		control->disabledBackground = &buttonDisabled;
+		control->hoverBackground = &buttonHover;
+		control->dragBackground = &buttonDragged;
 		control->minimumWidth = 80;
 		control->minimumHeight = 21;
 	}
@@ -565,10 +611,10 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 
 			if (control->disabled) {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->disabledBackground.region, control->disabledBackground.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						control->disabledBackground->region, control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 			} else {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->background.region, control->background.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						control->background->region, control->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 
 				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
 
@@ -621,17 +667,15 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 void OSSetProgressBarValue(OSObject _control, int newValue) {
 	ProgressBar *control = (ProgressBar *) _control;
 	control->value = newValue;
-
-	control->repaint = true;
-	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+	OSRepaintControl(control);
 }
 
 OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 	ProgressBar *control = (ProgressBar *) OSHeapAllocate(sizeof(ProgressBar), true);
 
 	control->type = API_OBJECT_CONTROL;
-	control->background = progressBarBackground;
-	control->disabledBackground = progressBarDisabled;
+	control->background = &progressBarBackground;
+	control->disabledBackground = &progressBarDisabled;
 
 	control->minimum = minimum;
 	control->maximum = maximum;
@@ -659,16 +703,15 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 8;
 	int suggestedHeight = FONT_SIZE + 8;
 
-	if (control->icon.region.left) {
-		suggestedWidth += control->icon.region.right - control->icon.region.left + 4;
+	if (control->icon) {
+		suggestedWidth += control->icon->region.right - control->icon->region.left + 4;
 	}
 
 	if (suggestedWidth > control->minimumWidth) control->preferredWidth = suggestedWidth;
 	if (suggestedHeight > control->minimumHeight) control->preferredHeight = suggestedHeight;
 
-	control->repaint = true;
 	control->relayout = true;
-	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+	OSRepaintControl(control);
 
 	{
 		OSMessage message;
@@ -723,7 +766,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			if (grid->relayout || message->layout.force) {
 				grid->relayout = false;
 
-				grid->bounds = OSRectangle(
+				grid->bounds = OS_MAKE_RECTANGLE(
 						message->layout.left, message->layout.right,
 						message->layout.top, message->layout.bottom);
 
@@ -851,7 +894,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		} break;
 
 		case OS_MESSAGE_PAINT_BACKGROUND: {
-			OSFillRectangle(message->paint.surface, OSRectangle(message->paintBackground.left, message->paintBackground.right, 
+			OSFillRectangle(message->paint.surface, OS_MAKE_RECTANGLE(message->paintBackground.left, message->paintBackground.right, 
 						message->paintBackground.top, message->paintBackground.bottom), OSColor(STANDARD_BACKGROUND_COLOR));
 		} break;
 
@@ -913,8 +956,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 void OSDisableControl(OSObject _control, bool disabled) {
 	Control *control = (Control *) _control;
 	control->disabled = disabled;
-	control->repaint = true;
-	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+	OSRepaintControl(control);
 }
 
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
@@ -975,15 +1017,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			lastClickY = message->mousePressed.positionY;
 
 			if (window->drag) {
-				window->drag->repaint = true;
-				SetParentDescendentInvalidationFlags(window->drag, DESCENDENT_REPAINT);
+				OSRepaintControl(window->drag);
 			}
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
 			if (window->drag) {
-				window->drag->repaint = true;
-				SetParentDescendentInvalidationFlags(window->drag, DESCENDENT_REPAINT);
+				OSRepaintControl(window->drag);
 
 				if (window->drag == window->hover) {
 					OSMessage clicked;
@@ -1007,8 +1047,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 		case OS_MESSAGE_MOUSE_EXIT: {
 			if (window->hover) {
-				window->hover->repaint = true;
-				SetParentDescendentInvalidationFlags(window->hover, DESCENDENT_REPAINT);
+				OSRepaintControl(window->hover);
 			}
 
 			window->hover = nullptr;
@@ -1039,8 +1078,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 
 				if (window->hover != old && old) {
-					old->repaint = true;
-					SetParentDescendentInvalidationFlags(old, DESCENDENT_REPAINT);
+					OSMessage message;
+					message.type = OS_MESSAGE_LOST_FOCUS;
+					OSSendMessage(old, &message);
 				}
 			}
 		} break;
@@ -1165,69 +1205,24 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	}
 
 	{
-		OSObject titlebar = CreateWindowResizeHandle(activeWindowBorder22, inactiveWindowBorder22, RESIZE_MOVE);
+		OSObject titlebar = CreateWindowResizeHandle(&activeWindowBorder22, &inactiveWindowBorder22, RESIZE_MOVE);
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
 
-		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(activeWindowBorder11, inactiveWindowBorder11, RESIZE_TOP_LEFT), 0);
-		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(activeWindowBorder12, inactiveWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(activeWindowBorder13, inactiveWindowBorder13, RESIZE_TOP_RIGHT), 0);
-		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(activeWindowBorder21, inactiveWindowBorder21, RESIZE_LEFT), 0);
-		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(activeWindowBorder23, inactiveWindowBorder23, RESIZE_RIGHT), 0);
-		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(activeWindowBorder31, inactiveWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(activeWindowBorder33, inactiveWindowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(activeWindowBorder41, inactiveWindowBorder41, RESIZE_BOTTOM_LEFT), 0);
-		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(activeWindowBorder42, inactiveWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(activeWindowBorder43, inactiveWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
+		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(&activeWindowBorder11, &inactiveWindowBorder11, RESIZE_TOP_LEFT), 0);
+		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(&activeWindowBorder12, &inactiveWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(&activeWindowBorder13, &inactiveWindowBorder13, RESIZE_TOP_RIGHT), 0);
+		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(&activeWindowBorder21, &inactiveWindowBorder21, RESIZE_LEFT), 0);
+		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(&activeWindowBorder23, &inactiveWindowBorder23, RESIZE_RIGHT), 0);
+		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(&activeWindowBorder31, &inactiveWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(&activeWindowBorder33, &inactiveWindowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(&activeWindowBorder41, &inactiveWindowBorder41, RESIZE_BOTTOM_LEFT), 0);
+		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(&activeWindowBorder42, &inactiveWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(&activeWindowBorder43, &inactiveWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
 	}
 
 	return window;
 }
 
 void OSInitialiseGUI() {
-	blankImage = {{0, 0, 0, 0}, {0, 0, 0, 0}};
-
-	activeWindowBorder11 =     {{1, 1 + 6, 144, 144 + 6}, 			{1, 1, 144, 144}};
-	activeWindowBorder12 =     {{8, 8 + 1, 144, 144 + 6}, 			{7, 8, 144, 144}};
-	activeWindowBorder13 =     {{10, 10 + 6, 144, 144 + 6}, 		{10, 10, 144, 144}};
-	activeWindowBorder21 =     {{1, 1 + 6, 151, 151 + 24}, 			{1, 1, 151, 151}};
-	activeWindowBorder22 =     {{8, 8 + 1, 151, 151 + 24}, 			{7, 8, 151, 151}};
-	activeWindowBorder23 =     {{10, 10 + 6, 151, 151 + 24}, 		{10, 10, 151, 151}};
-	activeWindowBorder31 =     {{1, 1 + 6, 176, 176 + 1}, 			{1, 1, 175, 176}};
-	activeWindowBorder32 =     {{8, 8 + 1, 176, 176 + 1}, 			{7, 8, 175, 176}};
-	activeWindowBorder33 =     {{10, 10 + 6, 176, 176 + 1}, 		{10, 10, 175, 176}};
-	activeWindowBorder41 =     {{1, 1 + 6, 178, 178 + 6}, 			{1, 1, 178, 178}};
-	activeWindowBorder42 =     {{8, 8 + 1, 178, 178 + 6}, 			{7, 8, 178, 178}};
-	activeWindowBorder43 =     {{10, 10 + 6, 178, 178 + 6}, 		{10, 10, 178, 178}};
-
-	inactiveWindowBorder11 =   {{16 + 1, 16 + 1 + 6, 144, 144 + 6}, 	{16 + 1, 16 + 1, 144, 144}};
-	inactiveWindowBorder12 =   {{16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 7, 16 + 8, 144, 144}};
-	inactiveWindowBorder13 =   {{16 + 10, 16 + 10 + 6, 144, 144 + 6}, 	{16 + 10, 16 + 10, 144, 144}};
-	inactiveWindowBorder21 =   {{16 + 1, 16 + 1 + 6, 151, 151 + 24}, 	{16 + 1, 16 + 1, 151, 151}};
-	inactiveWindowBorder22 =   {{16 + 8, 16 + 8 + 1, 151, 151 + 24}, 	{16 + 7, 16 + 8, 151, 151}};
-	inactiveWindowBorder23 =   {{16 + 10, 16 + 10 + 6, 151, 151 + 24}, 	{16 + 10, 16 + 10, 151, 151}};
-	inactiveWindowBorder31 =   {{16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176}};
-	inactiveWindowBorder32 =   {{16 + 8, 16 + 8 + 1, 176, 176 + 1}, 	{16 + 7, 16 + 8, 175, 176}};
-	inactiveWindowBorder33 =   {{16 + 10, 16 + 10 + 6, 176, 176 + 1}, 	{16 + 10, 16 + 10, 175, 176}};
-	inactiveWindowBorder41 =   {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178}};
-	inactiveWindowBorder42 =   {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
-	inactiveWindowBorder43 =   {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, 	{16 + 10, 16 + 10, 178, 178}};
-
-	progressBarBackground 	= {{9, 16, 122, 143}, {11, 12, 125, 139}};
-	progressBarDisabled   	= {{16 + 9, 16 + 16, 122, 143}, {16 + 11, 16 + 12, 125, 139}};
-	progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
-
-	buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
-	buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
-	buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
-	buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
-
-	checkboxNormal		= {{95, 108, 120, 133}, {95, 95, 120, 120}};
-	checkboxDragged		= {{14 + 95, 14 + 108, 120, 133}, {14 + 95, 14 + 95, 120, 120}};
-	checkboxHover		= {{-14 + 95, -14 + 108, 120, 133}, {-14 + 95, -14 + 95, 120, 120}};
-	checkboxDisabled	= {{28 + 95, 28 + 108, 120, 133}, {28 + 95, 28 + 95, 120, 120}};
-	checkboxNormalChecked	= {{95, 108, 14 + 120, 14 + 133}, {95, 95, 14 + 120, 14 + 120}};
-	checkboxDraggedChecked	= {{14 + 95, 14 + 108, 14 + 120, 14 + 133}, {14 + 95, 14 + 95, 14 + 120, 14 + 120}};
-	checkboxHoverChecked	= {{-14 + 95, -14 + 108, 14 + 120, 14 + 133}, {-14 + 95, -14 + 95, 14 + 120, 14 + 120}};
-	checkboxDisabledChecked	= {{28 + 95, 28 + 108, 14 + 120, 14 + 133}, {28 + 95, 28 + 95, 14 + 120, 14 + 120}};
 }

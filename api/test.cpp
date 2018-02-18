@@ -3,8 +3,16 @@
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
 
-OSAction actionOK;
+OSAction actionOK, actionOK2;
 OSObject progressBar, window;
+
+int x = 5;
+
+struct y {
+	int a, b;
+};
+
+y y2 = {1, 2};
 
 OSCallbackResponse ProcessActionOK(OSObject object, OSMessage *message) {
 	(void) object;
@@ -92,6 +100,10 @@ int CompareIntegers(const void *a, const void *b) {
 }
 
 extern "C" void ProgramEntry() {
+	if (x != 5) OSCrashProcess(600);
+	if (y2.a != 1) OSCrashProcess(601);
+	if (y2.b != 2) OSCrashProcess(602);
+
 	jmpState = 1;
 	if (setjmp(buf) == 0) {
 		if (jmpState++ != 1) OSCrashProcess(230);
@@ -427,6 +439,9 @@ extern "C" void ProgramEntry() {
 	actionOK.labelBytes = OSCStringLength(actionOK.label);
 	actionOK.callback = OSCallback(ProcessActionOK, nullptr);
 	actionOK.checkable = false;
+	actionOK2.label = (char*) "toggle";
+	actionOK2.labelBytes = OSCStringLength(actionOK2.label);
+	actionOK2.checkable = true;
 
 	// progressBar = OSCreateProgressBar(0, 5, 0);
 	progressBar = OSCreateIndeterminateProgressBar();
@@ -434,6 +449,7 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 1, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);
 	OSAddControl(content, 1, 1, button, OS_CELL_H_RIGHT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH);
+	OSAddControl(content, 0, 1, OSCreateButton(&actionOK2), 0);
 
 	OSProcessMessages();
 }

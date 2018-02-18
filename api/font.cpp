@@ -184,7 +184,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 	outputPosition.y += ascent;
 
-	OSRectangle invalidatedRegion = OSRectangle(outputPosition.x, outputPosition.x,
+	OSRectangle invalidatedRegion = OS_MAKE_RECTANGLE(outputPosition.x, outputPosition.x,
 			outputPosition.y, outputPosition.y);
 
 	uintptr_t characterIndex = 0;

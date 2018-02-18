@@ -223,17 +223,17 @@ void Graphics::UpdateScreen() {
 	frameBuffer.mutex.Acquire();
 	Defer(frameBuffer.mutex.Release());
 
-	OSRectangle sourceRectangle = OSRectangle(cursorX, cursorX + CURSOR_SWAP_SIZE, cursorY, cursorY + CURSOR_SWAP_SIZE);
+	OSRectangle sourceRectangle = OS_MAKE_RECTANGLE(cursorX, cursorX + CURSOR_SWAP_SIZE, cursorY, cursorY + CURSOR_SWAP_SIZE);
 	if (sourceRectangle.left < 0) sourceRectangle.left = 0;
 	if (sourceRectangle.top < 0) sourceRectangle.top = 0;
 	if (sourceRectangle.right > (int) frameBuffer.resX) sourceRectangle.right = frameBuffer.resX;
 	if (sourceRectangle.bottom > (int) frameBuffer.resY) sourceRectangle.bottom = frameBuffer.resY;
 	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), sourceRectangle, false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
-	frameBuffer.Draw(uiSheetSurface, OSRectangle(cursorX, cursorX + cursorImageWidth,
+	frameBuffer.Draw(uiSheetSurface, OS_MAKE_RECTANGLE(cursorX, cursorX + cursorImageWidth,
 						     cursorY, cursorY + cursorImageHeight),
-					 OSRectangle(cursorImageX, cursorImageX + cursorImageWidth, cursorImageY, cursorImageY + cursorImageHeight),
-					 OSRectangle(cursorImageX + 2, cursorImageX + 3, cursorImageY + 2, cursorImageY + 3), OS_DRAW_MODE_REPEAT_FIRST, 0xFF, true);
+					 OS_MAKE_RECTANGLE(cursorImageX, cursorImageX + cursorImageWidth, cursorImageY, cursorImageY + cursorImageHeight),
+					 OS_MAKE_RECTANGLE(cursorImageX + 2, cursorImageX + 3, cursorImageY + 2, cursorImageY + 3), OS_DRAW_MODE_REPEAT_FIRST, 0xFF, true);
 		
 	switch (colorMode) {
 		case VIDEO_COLOR_24_RGB: {
@@ -252,7 +252,7 @@ void Graphics::UpdateScreen() {
 	if (cursorX < 0) cursorX = 0;
 	if (cursorY < 0) cursorY = 0;
 	frameBuffer.Copy(cursorSwap, OSPoint(cursorX, cursorY), 
-			OSRectangle(0, sourceRectangle.right - sourceRectangle.left, 
+			OS_MAKE_RECTANGLE(0, sourceRectangle.right - sourceRectangle.left, 
 				0, sourceRectangle.bottom - sourceRectangle.top),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
 }
@@ -313,7 +313,7 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 		stride = resX * 4;
 	}
 
-	Copy(oldState, OSPoint(0, 0), OSRectangle(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
+	Copy(oldState, OSPoint(0, 0), OS_MAKE_RECTANGLE(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
 	kernelVMM.Free(oldState.memory); 
 }
 
@@ -357,7 +357,7 @@ bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
 	KernelLog(LOG_VERBOSE, "Created surface using %dKB.\n", memoryNeeded / 1024);
 
 	// We probably want to invalidate the whole surface when it is created.
-	InvalidateRectangle(OSRectangle(0, resX, 0, resY));
+	InvalidateRectangle(OS_MAKE_RECTANGLE(0, resX, 0, resY));
 
 	// We created the surface successfully!
 	return true;
@@ -446,7 +446,7 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 		return;
 	}
 
-	OSRectangle destinationRegion = OSRectangle(destinationPoint.x,
+	OSRectangle destinationRegion = OS_MAKE_RECTANGLE(destinationPoint.x,
 						    destinationPoint.x + sourceRegion.right - sourceRegion.left,
 						    destinationPoint.y,
 						    destinationPoint.y + sourceRegion.bottom - sourceRegion.top);

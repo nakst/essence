@@ -256,7 +256,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSPoint *point = (OSPoint *) argument1;
 			SYSCALL_BUFFER(argument1, sizeof(OSPoint), 1);
 
-			graphics.frameBuffer.Copy(*surface, *point, OSRectangle(0, surface->resX, 0, surface->resY), true, (uint16_t) argument2);
+			graphics.frameBuffer.Copy(*surface, *point, OS_MAKE_RECTANGLE(0, surface->resX, 0, surface->resY), true, (uint16_t) argument2);
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
@@ -294,7 +294,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSPoint *point = (OSPoint *) argument2;
 			SYSCALL_BUFFER(argument2, sizeof(OSPoint), 1);
 
-			destination->Copy(*source, *point, OSRectangle(0, source->resX, 0, source->resY), true, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
+			destination->Copy(*source, *point, OS_MAKE_RECTANGLE(0, source->resX, 0, source->resY), true, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;

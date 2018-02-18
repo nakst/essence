@@ -552,7 +552,7 @@ bool Window::Move(OSRectangle &rectangle) {
 			surface->Resize(width, height);
 		}
 
-		surface->InvalidateRectangle(OSRectangle(0, width, 0, height));
+		surface->InvalidateRectangle(OS_MAKE_RECTANGLE(0, width, 0, height));
 	}
 
 	done:;
@@ -675,7 +675,7 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 		}
 
 		window->surface->InvalidateRectangle(rectangle);
-		graphics.frameBuffer.Copy(*window->surface, window->position, OSRectangle(0, window->width, 0, window->height), true, window->z + 1);
+		graphics.frameBuffer.Copy(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), true, window->z + 1);
 
 		window->surface->mutex.Acquire();
 		window->surface->ClearModifiedRegion();
@@ -686,7 +686,7 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 void Window::Update() {
 	mutex.AssertLocked();
 
-	graphics.frameBuffer.Copy(*surface, position, OSRectangle(0, width, 0, height), true, z + 1);
+	graphics.frameBuffer.Copy(*surface, position, OS_MAKE_RECTANGLE(0, width, 0, height), true, z + 1);
 	graphics.UpdateScreen();
 
 	surface->mutex.Acquire();

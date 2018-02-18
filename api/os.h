@@ -358,20 +358,13 @@ typedef struct OSPoint {
 } OSPoint;
 
 typedef struct OSRectangle {
-	OS_CONSTRUCTOR(OSRectangle() {})
-
-	OS_CONSTRUCTOR(OSRectangle(intptr_t _left, intptr_t _right, intptr_t _top, intptr_t _bottom) {
-		left = _left;
-		right = _right;
-		top = _top;
-		bottom = _bottom;
-	})
-
 	intptr_t left;   // Inclusive.
 	intptr_t right;  // Exclusive.
 	intptr_t top;    // Inclusive.
 	intptr_t bottom; // Exclusive.
 } OSRectangle;
+
+#define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(intptr_t)(l),(intptr_t)(r),(intptr_t)(t),(intptr_t)(b)})
 
 typedef struct OSColor {
 	OS_CONSTRUCTOR(OSColor() {})
@@ -467,6 +460,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_PAINT_BACKGROUND		= 0x0409,
 	OS_MESSAGE_HIT_TEST			= 0x040A,
 	OS_MESSAGE_CLICKED			= 0x040B,
+	OS_MESSAGE_LOST_FOCUS			= 0x040C,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
