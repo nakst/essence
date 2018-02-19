@@ -1,5 +1,3 @@
-// TODO I really want rounded corners.......
-
 #ifndef IMPLEMENTATION
 
 #define SCANCODE_KEY_RELEASED (1 << 15)
@@ -471,6 +469,7 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 	window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
 	window->apiWindow = apiWindow;
+	// window->surface->roundCorners = true;
 
 	size_t width = bounds.right - bounds.left;
 	size_t height = bounds.bottom - bounds.top;

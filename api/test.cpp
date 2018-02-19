@@ -14,6 +14,15 @@ struct y {
 
 y y2 = {1, 2};
 
+OSCallbackResponse Crash(OSObject object, OSMessage *message) {
+	(void) object;
+	(void) message;
+
+	OSCrashProcess(10000);
+
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse ProcessActionOK(OSObject object, OSMessage *message) {
 	(void) object;
 	(void) message;
@@ -448,6 +457,7 @@ extern "C" void ProgramEntry() {
 	actionOK.label = (char *) "Do Something";
 	actionOK.checkable = true;
 	actionOK.labelBytes = OSCStringLength(actionOK.label);
+	actionOK.callback = OSCallback(Crash, nullptr);
 	
 	OSObject b;
 	OSObject content = OSCreateGrid(2, 1, 0);

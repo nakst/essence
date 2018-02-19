@@ -69,6 +69,9 @@ struct Surface {
 	// Only valid if the corresponding bit is set in the modified scanline bitset.
 	ModifiedScanline *modifiedScanlines;
 
+	// Prevent invalidating the corners on the surface, so that they will never be copied (i.e. transparent).
+	bool roundCorners;
+
 	// 'memory' consists of 3 sections:
 	// 	  Contents				Size					Offset					Optional?
 	// 	- Pixel data				resX * resY * 4				0					No
@@ -371,6 +374,22 @@ void Surface::ClearModifiedRegion() {
 
 void Surface::InvalidateScanline(uintptr_t y, uintptr_t from, uintptr_t to) {
 	mutex.AssertLocked();
+
+	if (roundCorners) {
+		if (y == 0 || y == resY - 1) {
+			if (from < 5) from = 5;
+			if (to >= resX - 5) to = resX - 5;
+		} else if (y == 1 || y == resY - 2) {
+			if (from < 3) from = 3;
+			if (to >= resX - 3) to = resX - 3;
+		} else if (y == 2 || y == resY - 3) {
+			if (from < 2) from = 2;
+			if (to >= resX - 2) to = resX - 2;
+		} else if (y == 3 || y == 4 || y == resY - 4 || y == resY - 5) {
+			if (from < 1) from = 1;
+			if (to >= resX - 1) to = resX - 1;
+		}
+	}
 
 	if ((modifiedScanlineBitset[y >> 3] & 1 << (y & 7))) {
 		if (modifiedScanlines[y].minimumX > from)

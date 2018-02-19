@@ -14,7 +14,7 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Prevent flickering during window resize.
-// TODO Buggy animations with window resize handles.
+// TODO Bottom of titlebar text cutoff.
 
 struct UIImage {
 	OSRectangle region;
@@ -99,7 +99,7 @@ struct Control : APIObject {
 	LinkedItem<Control> timerControlItem;
 	uint16_t timerHz, timerStep;
 
-	uint8_t animationStep, finalAnimationStep;
+	uint8_t animationStep, finalAnimationStep, noAnimations : 1;
 	uint8_t from1, from2, from3, from4;
 	uint8_t current1, current2, current3, current4;
 };
@@ -164,17 +164,22 @@ static void UpdateCheckboxIcons(Control *control) {
 void OSAnimateControl(OSObject _control, bool fast) {
 	Control *control = (Control *) _control;
 
-	control->from1 = control->current1;
-	control->from2 = control->current2;
-	control->from3 = control->current3;
-	control->from4 = control->current4;
-	control->animationStep = 0;
-	control->finalAnimationStep = fast ? 4 : 16;
+	if (!control->noAnimations) {
+		control->from1 = control->current1;
+		control->from2 = control->current2;
+		control->from3 = control->current3;
+		control->from4 = control->current4;
+		control->animationStep = 0;
+		control->finalAnimationStep = fast ? 4 : 16;
 
-	if (!control->timerControlItem.list) {
-		control->timerHz = 30;
-		control->window->timerControls.InsertStart(&control->timerControlItem);
-		control->timerControlItem.thisItem = control;
+		if (!control->timerControlItem.list) {
+			control->timerHz = 30;
+			control->window->timerControls.InsertStart(&control->timerControlItem);
+			control->timerControlItem.thisItem = control;
+		}
+	} else {
+		control->animationStep = 16;
+		control->finalAnimationStep = 16;
 	}
 
 	OSRepaintControl(control);
@@ -281,25 +286,23 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
 				if (control->background) {
-					if (control->current1) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background->region, 
-								control->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
-					}
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background->region, 
+							control->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+				}
 
-					if (control->current2) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->hoverBackground->region, 
-								control->hoverBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
-					}
+				if (control->hoverBackground && control->current2) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->hoverBackground->region, 
+							control->hoverBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
+				}
 
-					if (control->current3) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->dragBackground->region, 
-								control->dragBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
-					}
+				if (control->dragBackground && control->current3) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->dragBackground->region, 
+							control->dragBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
+				}
 
-					if (control->current4) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->disabledBackground->region, 
-								control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
-					}
+				if (control->disabledBackground && control->current4) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->disabledBackground->region, 
+							control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
 				}
 
 				if (control->icon) {
@@ -502,6 +505,7 @@ static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage,
 	control->preferredHeight = image->region.bottom - image->region.top;
 	control->direction = direction;
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
+	control->noAnimations = true;
 	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, nullptr));
 
 	switch (direction) {

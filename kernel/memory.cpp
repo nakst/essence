@@ -86,6 +86,7 @@ enum VMMMapPolicy {
 #define VMM_REGION_FLAG_READ_ONLY    (64)
 #define VMM_REGION_FLAG_OVERWRITABLE (128)
 #define VMM_REGION_FLAG_COPIED       (256)
+#define VAS_SKIP_1MB		     (512)
 
 struct VMMRegion {
 	bool used;
@@ -773,9 +774,13 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		for (uintptr_t address = region->baseAddress;
 				address < region->baseAddress + (region->pageCount << PAGE_BITS);
 				address += PAGE_SIZE) {
-			// TODO Optimise this for non-existant page tables.
 			uint64_t flags;
 			uintptr_t mappedAddress = virtualAddressSpace->Get(address, false, &flags);
+
+			if (flags & VAS_SKIP_1MB) {
+				address += 0x100000;
+				continue;
+			}
 
 			if (mappedAddress) {
 				switch (region->type) {
@@ -791,7 +796,6 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 						// This memory will be freed when the last handle to the shared memory region is closed.
 						
 						// ...unless we copied it.
-						// TODO Test this.
 						if (flags & VMM_REGION_FLAG_COPIED) {
 							pmm.FreePage(mappedAddress);
 						}
@@ -1507,6 +1511,11 @@ uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force, uint64_
 	}
 
 	if ((PAGE_TABLE_L2[indexL2] & 1) == 0) {
+		if (!(indexL1 & 0xFF) && flags) {
+			// All these addresses must also point to 0.
+			*flags |= VAS_SKIP_1MB;
+		}
+
 		return 0;
 	}
 
@@ -1523,7 +1532,7 @@ uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force, uint64_
 			}
 		}
 
-		return physicalAddress & 0xFFFFFFFFFFFFF000;
+		return physicalAddress & 0x000FFFFFFFFFF000;
 	} else {
 		return 0;
 	}
