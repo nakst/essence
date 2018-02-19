@@ -603,6 +603,7 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 		newNode->region.node = newNode;
 
 		sharedMemoryManager.mutex.Acquire();
+		newNode->region.access = SharedMemoryRegion::COPY_ON_WRITE;
 		sharedMemoryManager.ResizeSharedMemory(&newNode->region, newNode->data.file.fileSize);
 		sharedMemoryManager.mutex.Release();
 	}

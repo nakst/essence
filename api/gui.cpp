@@ -14,6 +14,7 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Prevent flickering during window resize.
+// TODO Buggy animations with window resize handles.
 
 struct UIImage {
 	OSRectangle region;

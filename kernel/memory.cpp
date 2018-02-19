@@ -85,6 +85,7 @@ enum VMMMapPolicy {
 #define VMM_REGION_FLAG_SUPERVISOR   (32)
 #define VMM_REGION_FLAG_READ_ONLY    (64)
 #define VMM_REGION_FLAG_OVERWRITABLE (128)
+#define VMM_REGION_FLAG_COPIED       (256)
 
 struct VMMRegion {
 	bool used;
@@ -112,7 +113,7 @@ struct VirtualAddressSpace {
 		 uintptr_t virtualAddress,
 		 unsigned flags);
 	void Remove(uintptr_t virtualAddress, size_t pageCount);
-	uintptr_t Get(uintptr_t virtualAddress, bool force = false, bool returnZeroIfReadOnly = false);
+	uintptr_t Get(uintptr_t virtualAddress, bool force = false, uint64_t *flags = nullptr);
 	
 	bool userland;
 	Mutex lock;
@@ -208,6 +209,12 @@ struct SharedMemoryRegion {
 	size_t mappingsCount, mappingsAllocated;
 
 	struct Node *node;
+
+	enum {
+		READ_WRITE = 0,
+		COPY_ON_WRITE,
+		READ_ONLY,
+	} access;
 };
 
 struct NamedSharedMemoryRegion {
@@ -230,6 +237,7 @@ struct FaultInformation {
 
 #define FAULT_TYPE_NONE (0)
 #define FAULT_TYPE_READ (1)
+#define FAULT_TYPE_WRITE (2)
 	int type;
 
 	SharedMemoryRegion *region;
@@ -766,7 +774,8 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 				address < region->baseAddress + (region->pageCount << PAGE_BITS);
 				address += PAGE_SIZE) {
 			// TODO Optimise this for non-existant page tables.
-			uintptr_t mappedAddress = virtualAddressSpace->Get(address);
+			uint64_t flags;
+			uintptr_t mappedAddress = virtualAddressSpace->Get(address, false, &flags);
 
 			if (mappedAddress) {
 				switch (region->type) {
@@ -780,6 +789,12 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 
 					case VMM_REGION_SHARED: {
 						// This memory will be freed when the last handle to the shared memory region is closed.
+						
+						// ...unless we copied it.
+						// TODO Test this.
+						if (flags & VMM_REGION_FLAG_COPIED) {
+							pmm.FreePage(mappedAddress);
+						}
 					} break;
 
 					case VMM_REGION_COPY: {
@@ -836,10 +851,6 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limit, FaultInformation *fault) {
 	lock.AssertLocked();
 
-	if (fault && fault->wantWriteAccess && (region->flags & VMM_REGION_FLAG_READ_ONLY)) {
-		return false;
-	}
-
 	uintptr_t postCount;
 
 	if (limit) {
@@ -853,6 +864,25 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 		page += region->baseAddress;
 	} else {
 		postCount = 16;
+	}
+
+	if (fault && fault->wantWriteAccess && (region->flags & VMM_REGION_FLAG_READ_ONLY)) {
+		if (region->type == VMM_REGION_SHARED) {
+			SharedMemoryRegion *sharedRegion = (SharedMemoryRegion *) region->object;
+			sharedRegion->mutex.AssertLocked();
+
+			if (sharedRegion->access == SharedMemoryRegion::COPY_ON_WRITE) {
+				fault->type = FAULT_TYPE_WRITE;
+				fault->region = sharedRegion;
+				fault->destination = (void *) page;
+				fault->regionFlags = region->flags;
+				fault->addressSpace = virtualAddressSpace;
+				fault->maxCount = region->baseAddress + region->pageCount * PAGE_SIZE - page;
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	uintptr_t pageInRegion = (page - region->baseAddress) >> PAGE_BITS;
@@ -1082,12 +1112,53 @@ bool VMM::HandlePageFault(uintptr_t address, size_t limit, bool lookupRegionsOnl
 
 bool FaultInformation::Handle() {
 	bool result = true;
-	if (type != FAULT_TYPE_READ) return result;
+
+	if (type == FAULT_TYPE_NONE) {
+		return true;
+	}
 
 	uintptr_t count = MM_FILE_CHUNK_BYTES;
 	if (count > maxCount) count = maxCount;
 	void *readBuffer = OSHeapAllocate(count, false);
 	Defer(OSHeapFree(readBuffer));
+
+	if (type == FAULT_TYPE_WRITE) {
+		result = false;
+
+		void *buffer = OSHeapAllocate(count, false);
+		if (!buffer) goto done;
+
+		CopyMemory(buffer, destination, count);
+
+		region->mutex.Acquire();
+
+		uint64_t flags;
+		addressSpace->lock.Acquire();
+		addressSpace->Get((uintptr_t) destination, false, &flags);
+		addressSpace->lock.Release();
+
+		if (!(flags & VMM_REGION_FLAG_COPIED)) {
+			addressSpace->lock.Acquire();
+			addressSpace->Remove((uintptr_t) destination, count / PAGE_SIZE);
+			addressSpace->lock.Release();
+
+			for (uintptr_t i = 0; i < count / PAGE_SIZE; i++) {
+				uintptr_t physicalPage = pmm.AllocatePage(true);
+				CopyIntoPhysicalMemory(physicalPage, (char *) buffer + i * PAGE_SIZE, 1);
+
+				addressSpace->lock.Acquire();
+				addressSpace->Map(physicalPage, (uintptr_t) destination + i * PAGE_SIZE, (regionFlags & ~VMM_REGION_FLAG_READ_ONLY) | VMM_REGION_FLAG_COPIED);
+				addressSpace->lock.Release();
+			}
+		}
+
+		region->mutex.Release();
+
+		OSHeapFree(buffer);
+		result = true;
+
+		goto done;
+	}
 
 	{
 		IORequest *request = (IORequest *) ioRequestPool.Add();
@@ -1161,7 +1232,9 @@ bool HandlePageFault(uintptr_t page, bool write) {
 			virtualAddressSpace = kernelVMM.virtualAddressSpace;
 		}
 
-		if (virtualAddressSpace->Get(page, true, write)) {
+		uint64_t flags;
+
+		if (virtualAddressSpace->Get(page, true, &flags) && (!(flags & VMM_REGION_FLAG_READ_ONLY) || !write)) {
 			// If the processor "remembers" a non-present page then we'll get a page fault here.
 			// ...so invalidate the page.
 			ProcessorInvalidatePage(page);
@@ -1411,10 +1484,12 @@ void PMM::FreePage(uintptr_t address, bool bypassStack) {
 }
 
 #ifdef ARCH_X86_64
-uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force, bool returnZeroIfReadOnly) {
+uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force, uint64_t *flags) {
 	if (!force) {
 		lock.AssertLocked();
 	}
+
+	if (flags) *flags = 0;
 
 	virtualAddress  &= 0x0000FFFFFFFFF000;
 
@@ -1438,11 +1513,17 @@ uintptr_t VirtualAddressSpace::Get(uintptr_t virtualAddress, bool force, bool re
 	uintptr_t physicalAddress = PAGE_TABLE_L1[indexL1];
 
 	if (physicalAddress & 1) {
-		if (returnZeroIfReadOnly && !(physicalAddress & 2)) {
-			return 0;
-		} else {
-			return physicalAddress & 0xFFFFFFFFFFFFF000;
+		if (flags) {
+			if (!(physicalAddress & 2)) {
+				*flags |= VMM_REGION_FLAG_READ_ONLY;
+			}
+
+			if (physicalAddress & ((uint64_t) 1 << 52)) {
+				*flags |= VMM_REGION_FLAG_COPIED;
+			}
 		}
+
+		return physicalAddress & 0xFFFFFFFFFFFFF000;
 	} else {
 		return 0;
 	}
@@ -1531,6 +1612,7 @@ void VirtualAddressSpace::Map(uintptr_t physicalAddress, uintptr_t virtualAddres
 
 	uintptr_t value = physicalAddress | ((userland && !(flags & VMM_REGION_FLAG_SUPERVISOR)) ? 7 : 0x103) | (flags & VMM_REGION_FLAG_CACHABLE ? 0 : 24);
 	if (flags & VMM_REGION_FLAG_READ_ONLY) value &= ~2;
+	if (flags & VMM_REGION_FLAG_COPIED) value |= ((uint64_t) 1 << 52);
 	PAGE_TABLE_L1[indexL1] = value;
 
 	if (flags & VMM_REGION_FLAG_OVERWRITABLE) {

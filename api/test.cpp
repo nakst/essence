@@ -109,10 +109,13 @@ OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
+int z = 1;
+
 extern "C" void ProgramEntry() {
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
+	if (++z != 2) OSCrashProcess(603);
 
 	jmpState = 1;
 	if (setjmp(buf) == 0) {
