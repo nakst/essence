@@ -1,5 +1,8 @@
 #include "../api/os.h"
 
+#define OS_MANIFEST_DEFINITIONS
+#include "../bin/os/test.manifest.h"
+
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
 
@@ -466,11 +469,8 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 0, 1, b = OSCreateTextbox(), 0);
 
-	OSAction action2 = {};
-	action2.label = (char *) "Toggle Enabled";
-	action2.labelBytes = OSCStringLength(action2.label);
-	action2.callback = OSCallback(ToggleEnabled, b);
-	OSAddControl(content, 0, 0, OSCreateButton(&action2), 0);
+	actionToggleEnabled->callback = OSCallback(ToggleEnabled, b);
+	OSAddControl(content, 0, 0, OSCreateButton(actionToggleEnabled), 0);
 
 	OSAddControl(content, 1, 1, OSCreateTextbox(), 0);
 

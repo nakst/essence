@@ -192,16 +192,18 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 void GenerateDefinitions(Token attribute, Token section, Token name, Token value, int event) {
 	if (event == EVENT_START_SECTION) { 
 		if (CompareTokens(attribute, "action")) {
-			fprintf(output, "OSAction _%.*s = {\n", section.bytes, section.text);
+			actionCount++;
+			fprintf(output, "OSAction _%.*s = {\n\t.identifier = %d,\n", section.bytes, section.text, actionCount);
 		}
 	}
 
 	if (event == EVENT_ATTRIBUTE) { 
 		if (CompareTokens(attribute, "action")) {
-			fprintf(output, "\t.%.*s = %.*s,\n", name.bytes, name.text, value.bytes, value.text);
-
 			if (value.type == Token::STRING) {
+				fprintf(output, "\t.%.*s = (char *) %.*s,\n", name.bytes, name.text, value.bytes, value.text);
 				fprintf(output, "\t.%.*sBytes = %d,\n", name.bytes, name.text, value.bytes - 2);
+			} else {
+				fprintf(output, "\t.%.*s = %.*s,\n", name.bytes, name.text, value.bytes, value.text);
 			}
 		}
 	}
@@ -216,7 +218,6 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 void GenerateActionList(Token attribute, Token section, Token name, Token value, int event) {
 	if (event == EVENT_START_SECTION) { 
 		if (CompareTokens(attribute, "action")) {
-			actionCount++;
 			fprintf(output, "\t%.*s,\n", section.bytes, section.text);
 		}
 	}

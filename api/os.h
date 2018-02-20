@@ -608,6 +608,8 @@ typedef struct OSCallback {
 } OSCallback;
 
 typedef struct OSAction {
+	unsigned identifier;
+
 	char *label;
 	size_t labelBytes;
 	OSCallback callback;
