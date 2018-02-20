@@ -460,15 +460,19 @@ extern "C" void ProgramEntry() {
 	actionOK.callback = OSCallback(Crash, nullptr);
 	
 	OSObject b;
-	OSObject content = OSCreateGrid(2, 1, 0);
+	OSObject content = OSCreateGrid(2, 2, 0);
 	OSSetRootGrid(window, content);
 	OSAddControl(content, 1, 0, b = OSCreateButton(&actionOK), 0);
+
+	OSAddControl(content, 0, 1, b = OSCreateTextbox(), 0);
 
 	OSAction action2 = {};
 	action2.label = (char *) "Toggle Enabled";
 	action2.labelBytes = OSCStringLength(action2.label);
 	action2.callback = OSCallback(ToggleEnabled, b);
 	OSAddControl(content, 0, 0, OSCreateButton(&action2), 0);
+
+	OSAddControl(content, 1, 1, OSCreateTextbox(), 0);
 
 #if 0
 	OSObject content = OSCreateGrid(2, 2, 0);

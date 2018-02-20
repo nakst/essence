@@ -104,7 +104,7 @@ static int MeasureStringWidth(char *string, size_t stringLength, int size, Font 
 }
 
 static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap) {
-	for (int y = 0; y < lineHeight; y++) {
+	for (int y = 1; y < lineHeight - 1; y++) {
 		int oY = outputPosition.y - lineHeight + y + 4;
 
 		if (oY < region.top) continue;

@@ -1,6 +1,8 @@
 #define UI_IMAGE(_image) _image.region, _image.border
 #define DIMENSION_PUSH (-1)
 
+#define CARET_BLINK_HZ (2)
+
 #define RESIZE_LEFT 		(1)
 #define RESIZE_RIGHT 		(2)
 #define RESIZE_TOP 		(4)
@@ -63,6 +65,11 @@ static UIImage checkboxDraggedChecked	= {{14 + 95, 14 + 108, 14 + 120, 14 + 133}
 static UIImage checkboxHoverChecked	= {{-14 + 95, -14 + 108, 14 + 120, 14 + 133}, {-14 + 95, -14 + 95, 14 + 120, 14 + 120}};
 static UIImage checkboxDisabledChecked	= {{28 + 95, 28 + 108, 14 + 120, 14 + 133}, {28 + 95, 28 + 95, 14 + 120, 14 + 120}};
 
+static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
+static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
+static UIImage textboxHover		= {{-11 + 52, -11 + 61, 166, 189}, {-11 + 55, -11 + 58, 169, 186}};
+static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 58, 169, 186}};
+
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
@@ -76,7 +83,6 @@ struct Control : APIObject {
 	uint16_t layout;
 
 	uint32_t backgroundColor;
-	bool drawParentBackground;
 
 	UIImage *background, *disabledBackground, *hoverBackground, *dragBackground;
 	UIImage *icon, *disabledIcon, *hoverIcon, *dragIcon;
@@ -87,10 +93,19 @@ struct Control : APIObject {
 	OSString text;
 	OSRectangle textBounds;
 	uint32_t textColor;
-	uint8_t textShadow : 1, textBold : 1;
 	uint8_t textSize, textAlign;
 
-	uint8_t repaint : 1, relayout : 1;
+	uint32_t textShadow : 1, 
+		textBold : 1,
+		repaint : 1, 
+		relayout : 1,
+		noAnimations : 1,
+		focusable : 1,
+		customTextRendering : 1,
+		drawParentBackground : 1,
+		noDisabledTextColorChange : 1,
+		keepCustomCursorWhenDisabled : 1;
+
 	uint16_t preferredWidth, preferredHeight;
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
 
@@ -99,9 +114,14 @@ struct Control : APIObject {
 	LinkedItem<Control> timerControlItem;
 	uint16_t timerHz, timerStep;
 
-	uint8_t animationStep, finalAnimationStep, noAnimations : 1;
+	uint8_t animationStep, finalAnimationStep;
 	uint8_t from1, from2, from3, from4;
 	uint8_t current1, current2, current3, current4;
+};
+
+struct Textbox : Control {
+	OSCaret caret, caret2;
+	bool caretBlink;
 };
 
 struct ProgressBar : Control {
@@ -129,14 +149,14 @@ struct Window : APIObject {
 
 	unsigned flags;
 	OSCursorStyle cursor, cursorOld;
-	struct Control *drag, *hover;
+	struct Control *drag, *hover, *focus;
 	bool destroyed, created;
 
 	int width, height;
 	int minimumWidth, minimumHeight;
 
 	LinkedList<Control> timerControls;
-	int currentlyGettingTimerMessagesHz;
+	int timerHz, caretBlinkStep;
 };
 
 static void OSRepaintControl(OSObject _control) {
@@ -276,7 +296,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				bool disabled = control->disabled,
-				     drag = control->window->drag == control && control->window->hover == control && !disabled,
+				     drag = ((control->window->drag == control && control->window->hover == control) || control->window->focus == control) && !disabled,
 				     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled,
 				     normal = !hover && !drag && !disabled;
 
@@ -335,21 +355,29 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				uint32_t textColor = control->textColor;
 				uint32_t textShadowColor = 0xFFFFFF - textColor;
 
-				if (control->disabled) {
+				if (control->disabled && !control->noDisabledTextColorChange) {
 					textColor = 0x777777;
 					textShadowColor = 0xEEEEEE;
 				}
 
-				if (control->textShadow || control->disabled) {
-					OSRectangle bounds = control->textBounds;
-					bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
+				if (!control->customTextRendering) {
+					if (control->textShadow || control->disabled) {
+						OSRectangle bounds = control->textBounds;
+						bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
 
-					OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-							control->textAlign, textShadowColor, -1, control->textBold);
+						OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
+								control->textAlign, textShadowColor, -1, control->textBold);
+					}
+
+					OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
+							control->textAlign, textColor, -1, control->textBold);
 				}
 
-				OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
-						control->textAlign, textColor, -1, control->textBold);
+				{
+					OSMessage m = *message;
+					m.type = OS_MESSAGE_CUSTOM_PAINT;
+					OSSendMessage(control, &m);
+				}
 
 				control->repaint = false;
 			}
@@ -369,6 +397,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			if (control->window->hover == control) control->window->hover = nullptr;
 			if (control->window->drag == control) control->window->drag = nullptr;
+			if (control->window->focus == control) control->window->focus = nullptr;
 
 			OSHeapFree(control->text.buffer);
 			OSHeapFree(control);
@@ -380,9 +409,26 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 		case OS_MESSAGE_START_HOVER:
 		case OS_MESSAGE_END_HOVER:
+		case OS_MESSAGE_START_FOCUS:
+		case OS_MESSAGE_END_FOCUS:
 		case OS_MESSAGE_START_DRAG:
 		case OS_MESSAGE_END_DRAG: {
-			OSAnimateControl(control, message->type == OS_MESSAGE_START_DRAG);
+			OSMessage m;
+			OSAnimateControl(control, message->type == OS_MESSAGE_START_DRAG || message->type == OS_MESSAGE_START_FOCUS);
+
+			if (message->type == OS_MESSAGE_START_DRAG) {
+				if (control->window->focus) {
+					m.type = OS_MESSAGE_END_FOCUS;
+					OSSendMessage(control->window->focus, &m);
+					control->window->focus = nullptr;
+				}
+
+				if (control->focusable) {
+					control->window->focus = control;
+					m.type = OS_MESSAGE_START_FOCUS;
+					OSSendMessage(control, &m);
+				}
+			}
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -390,7 +436,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				break;
 			}
 
-			control->window->cursor = control->cursor;
+			if (!control->disabled || control->keepCustomCursorWhenDisabled) {
+				control->window->cursor = control->cursor;
+			}
+
 			control->window->hover = control;
 
 			{
@@ -506,6 +555,8 @@ static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage,
 	control->direction = direction;
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	control->noAnimations = true;
+	control->noDisabledTextColorChange = true;
+	control->keepCustomCursorWhenDisabled = true;
 	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, nullptr));
 
 	switch (direction) {
@@ -536,6 +587,64 @@ static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage,
 			control->textSize = 11;
 		} break;
 	}
+
+	return control;
+}
+
+OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
+	Textbox *control = (Textbox *) object;
+	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
+		DrawString(message->paint.surface, control->textBounds, 
+				&control->text, control->textAlign, control->textColor, 0xFFFFFF, 0x5050E0,
+				{0, 0}, nullptr, 0, 0, control->window->focus != control || control->caretBlink,
+				control->textSize, fontRegular);
+		result = OS_CALLBACK_HANDLED;
+	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
+		control->textBounds = control->bounds;
+		control->textBounds.left += 6;
+		control->textBounds.right -= 6;
+		result = OS_CALLBACK_HANDLED;
+	} else if (message->type == OS_MESSAGE_CARET_BLINK) {
+		control->caretBlink = !control->caretBlink;
+		result = OS_CALLBACK_HANDLED;
+		OSRepaintControl(control);
+	} else if (message->type == OS_MESSAGE_START_FOCUS) {
+		control->caretBlink = false;
+		control->window->caretBlinkStep = -10;
+	}
+
+	if (result == OS_CALLBACK_NOT_HANDLED) {
+		result = ProcessControlMessage(object, message);
+	}
+
+	return result;
+}
+
+OSObject OSCreateTextbox() {
+	Textbox *control = (Textbox *) OSHeapAllocate(sizeof(Textbox), true);
+	control->type = API_OBJECT_CONTROL;
+
+	control->preferredWidth = 160;
+	control->preferredHeight = 23;
+
+	control->drawParentBackground = true;
+
+	control->background = &textboxNormal;
+	control->disabledBackground = &textboxDisabled;
+	control->hoverBackground = &textboxHover;
+	control->dragBackground = &textboxFocus;
+
+	control->cursor = OS_CURSOR_TEXT;
+	control->focusable = true;
+
+	control->customTextRendering = true;
+	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
+	control->textSize = FONT_SIZE;
+	control->textColor = 0x000000;
+
+	OSSetCallback(control, OSCallback(ProcessTextboxMessage, nullptr));
 
 	return control;
 }
@@ -946,7 +1055,15 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 void OSDisableControl(OSObject _control, bool disabled) {
 	Control *control = (Control *) _control;
 	control->disabled = disabled;
+
 	OSAnimateControl(control, false);
+
+	if (control->window->focus == control) {
+		OSMessage message;
+		message.type = OS_MESSAGE_END_FOCUS;
+		OSSendMessage(control, &message);
+		control->window->focus = nullptr;
+	}
 }
 
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
@@ -979,6 +1096,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			for (int i = 0; i < 12; i++) {
 				if (i == 7) continue;
 				OSDisableControl(window->root->objects[i], true);
+			}
+
+			if (window->focus) {
+				OSMessage message;
+				message.type = OS_MESSAGE_END_FOCUS;
+				OSSendMessage(window->focus, &message);
+				window->focus = nullptr;
 			}
 		} break;
 
@@ -1013,6 +1137,11 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSMessage message;
 				message.type = OS_MESSAGE_START_DRAG;
 				OSSendMessage(window->drag, &message);
+			} else if (window->focus) {
+				OSMessage message;
+				message.type = OS_MESSAGE_END_FOCUS;
+				OSSendMessage(window->focus, &message);
+				window->focus = nullptr;
 			}
 		} break;
 
@@ -1106,7 +1235,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			LinkedItem<Control> *item = window->timerControls.firstItem;
 
 			while (item) {
-				int ticksPerMessage = window->currentlyGettingTimerMessagesHz / item->thisItem->timerHz;
+				int ticksPerMessage = window->timerHz / item->thisItem->timerHz;
 				item->thisItem->timerStep++;
 
 				if (item->thisItem->timerStep >= ticksPerMessage) {
@@ -1115,6 +1244,17 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 
 				item = item->nextItem;
+			}
+
+			if (window->focus) {
+				window->caretBlinkStep++;
+
+				if (window->caretBlinkStep >= window->timerHz / CARET_BLINK_HZ) {
+					window->caretBlinkStep = 0;
+					OSMessage message;
+					message.type = OS_MESSAGE_CARET_BLINK;
+					OSSendMessage(window->focus, &message);
+				}
 			}
 		} break;
 
@@ -1128,10 +1268,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	}
 
 	{
-		// TODO Only do this if the list has changed.
+		// TODO Only do this if the list or focus has changed.
 
 		LinkedItem<Control> *item = window->timerControls.firstItem;
-		int largestHz = 0;
+		int largestHz = window->focus ? CARET_BLINK_HZ : 0;
 
 		while (item) {
 			int thisHz = item->thisItem->timerHz;
@@ -1139,8 +1279,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			item = item->nextItem;
 		}
 
-		if (window->currentlyGettingTimerMessagesHz != largestHz) {
-			window->currentlyGettingTimerMessagesHz = largestHz;
+		if (window->timerHz != largestHz) {
+			window->timerHz = largestHz;
 			OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, largestHz, 0, 0);
 		}
 	}
