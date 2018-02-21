@@ -1,5 +1,7 @@
 // Timing problems:
-// 	- Qemu's timer (sometimes) runs too slow
+// 	- Qemu's timer (sometimes) runs too slow on SMP.
+
+// TODO VirtualBox gets a lot of bugs - most of which I think are to do with the AHCI implementation?
 
 #include "kernel.h"
 #define IMPLEMENTATION

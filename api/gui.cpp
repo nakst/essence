@@ -16,7 +16,6 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Prevent flickering during window resize.
-// TODO Bottom of titlebar text cutoff.
 
 struct UIImage {
 	OSRectangle region;
@@ -156,7 +155,7 @@ struct Window : APIObject {
 	int minimumWidth, minimumHeight;
 
 	LinkedList<Control> timerControls;
-	int timerHz, caretBlinkStep;
+	int timerHz, caretBlinkStep, caretBlinkPause;
 };
 
 static void OSRepaintControl(OSObject _control) {
@@ -483,7 +482,15 @@ static void CreateString(char *text, size_t textBytes, OSString *string) {
 	OSHeapFree(string->buffer);
 	string->buffer = (char *) OSHeapAllocate(textBytes, false);
 	string->bytes = textBytes;
+	string->characters = 0;
 	OSCopyMemory(string->buffer, text, textBytes);
+
+	char *m = string->buffer;
+
+	while (m < string->buffer + textBytes) {
+		m = utf8_advance(m);
+		string->characters++;
+	}
 }
 
 static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSMessage *message) {
@@ -535,7 +542,8 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 		OSSendMessage(window->root, &layout);
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
 		control->textBounds = control->bounds;
-		control->textBounds.bottom -= 6;
+		control->textBounds.top -= 3;
+		control->textBounds.bottom -= 3;
 	} else {
 		response = OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
 	}
@@ -591,14 +599,99 @@ static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage,
 	return control;
 }
 
+enum CharacterType {
+	CHARACTER_INVALID,
+	CHARACTER_IDENTIFIER, // A-Z, a-z, 0-9, _, >= 0x7F
+	CHARACTER_WHITESPACE, // space, tab, newline
+	CHARACTER_OTHER,
+};
+
+static CharacterType GetCharacterType(int character) {
+	if ((character >= '0' && character <= '9') 
+			|| (character >= 'a' && character <= 'z')
+			|| (character >= 'A' && character <= 'Z')
+			|| (character == '_')
+			|| (character >= 0x80)) {
+		return CHARACTER_IDENTIFIER;
+	}
+
+	if (character == '\n' || character == '\t' || character == ' ') {
+		return CHARACTER_WHITESPACE;
+	}
+
+	// TODO Treat escape-sequence-likes in the textbox as words?
+	return CHARACTER_OTHER;
+}
+
+static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool strongWhitespace = false) {
+	CharacterType type = CHARACTER_INVALID;
+
+	if (word && right) goto checkCharacterType;
+
+	while (true) {
+		if (!right) {
+			if (caret->character) {
+				caret->character--;
+				caret->byte = utf8_retreat(string->buffer + caret->byte) - string->buffer;
+			} else {
+				return; // We cannot move any further left.
+			}
+		} else {
+			if (caret->character != string->characters) {
+				caret->character++;
+				caret->byte = utf8_advance(string->buffer + caret->byte) - string->buffer;
+			} else {
+				return; // We cannot move any further right.
+			}
+		}
+
+		if (!word) {
+			return;
+		}
+
+		checkCharacterType:;
+		CharacterType newType = GetCharacterType(utf8_value(string->buffer + caret->byte));
+
+		if (type == CHARACTER_INVALID) {
+			if (newType != CHARACTER_WHITESPACE || strongWhitespace) {
+				type = newType;
+			}
+		} else {
+			if (newType != type) {
+				if (!right) {
+					// We've gone too far.
+					MoveCaret(string, caret, true, false);
+				}
+
+				break;
+			}
+		}
+	}
+}
+
+static void RemoveSelectedText(Textbox *control) {
+	if (control->caret.byte == control->caret2.byte) return;
+	if (control->caret.byte < control->caret2.byte) {
+		OSCaret temp = control->caret2;
+		control->caret2 = control->caret;
+		control->caret = temp;
+	}
+	int bytes = control->caret.byte - control->caret2.byte;
+	OSCopyMemory(control->text.buffer + control->caret2.byte, control->text.buffer + control->caret.byte, control->text.bytes - control->caret.byte);
+	control->text.characters -= control->caret.character - control->caret2.character;
+	control->text.bytes -= bytes;
+	control->caret = control->caret2;
+}
+
 OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	Textbox *control = (Textbox *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		DrawString(message->paint.surface, control->textBounds, 
-				&control->text, control->textAlign, control->textColor, 0xFFFFFF, 0x5050E0,
-				{0, 0}, nullptr, 0, 0, control->window->focus != control || control->caretBlink,
+				&control->text, control->textAlign, control->textColor, 0xFFFFFF, 0xFFC4D9F9,
+				{0, 0}, nullptr, control->caret.character, control->caret2.character, 
+				control->window->focus != control || control->caretBlink,
 				control->textSize, fontRegular);
 		result = OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
@@ -612,7 +705,163 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSRepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
-		control->window->caretBlinkStep = -10;
+		control->window->caretBlinkPause = 2;
+	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
+		control->caretBlink = false;
+		control->window->caretBlinkPause = 2;
+
+		int ic = -1, isc = -1;
+
+		switch (message->keyboard.scancode) {
+			case OS_SCANCODE_A: ic = 'a'; isc = 'A'; break;
+			case OS_SCANCODE_B: ic = 'b'; isc = 'B'; break;
+			case OS_SCANCODE_C: ic = 'c'; isc = 'C'; break;
+			case OS_SCANCODE_D: ic = 'd'; isc = 'D'; break;
+			case OS_SCANCODE_E: ic = 'e'; isc = 'E'; break;
+			case OS_SCANCODE_F: ic = 'f'; isc = 'F'; break;
+			case OS_SCANCODE_G: ic = 'g'; isc = 'G'; break;
+			case OS_SCANCODE_H: ic = 'h'; isc = 'H'; break;
+			case OS_SCANCODE_I: ic = 'i'; isc = 'I'; break;
+			case OS_SCANCODE_J: ic = 'j'; isc = 'J'; break;
+			case OS_SCANCODE_K: ic = 'k'; isc = 'K'; break;
+			case OS_SCANCODE_L: ic = 'l'; isc = 'L'; break;
+			case OS_SCANCODE_M: ic = 'm'; isc = 'M'; break;
+			case OS_SCANCODE_N: ic = 'n'; isc = 'N'; break;
+			case OS_SCANCODE_O: ic = 'o'; isc = 'O'; break;
+			case OS_SCANCODE_P: ic = 'p'; isc = 'P'; break;
+			case OS_SCANCODE_Q: ic = 'q'; isc = 'Q'; break;
+			case OS_SCANCODE_R: ic = 'r'; isc = 'R'; break;
+			case OS_SCANCODE_S: ic = 's'; isc = 'S'; break;
+			case OS_SCANCODE_T: ic = 't'; isc = 'T'; break;
+			case OS_SCANCODE_U: ic = 'u'; isc = 'U'; break;
+			case OS_SCANCODE_V: ic = 'v'; isc = 'V'; break;
+			case OS_SCANCODE_W: ic = 'w'; isc = 'W'; break;
+			case OS_SCANCODE_X: ic = 'x'; isc = 'X'; break;
+			case OS_SCANCODE_Y: ic = 'y'; isc = 'Y'; break;
+			case OS_SCANCODE_Z: ic = 'z'; isc = 'Z'; break;
+			case OS_SCANCODE_0: ic = '0'; isc = ')'; break;
+			case OS_SCANCODE_1: ic = '1'; isc = '!'; break;
+			case OS_SCANCODE_2: ic = '2'; isc = '@'; break;
+			case OS_SCANCODE_3: ic = '3'; isc = '#'; break;
+			case OS_SCANCODE_4: ic = '4'; isc = '$'; break;
+			case OS_SCANCODE_5: ic = '5'; isc = '%'; break;
+			case OS_SCANCODE_6: ic = '6'; isc = '^'; break;
+			case OS_SCANCODE_7: ic = '7'; isc = '&'; break;
+			case OS_SCANCODE_8: ic = '8'; isc = '*'; break;
+			case OS_SCANCODE_9: ic = '9'; isc = '('; break;
+			case OS_SCANCODE_SLASH: 	ic = '/';  isc = '?'; break;
+			case OS_SCANCODE_BACKSLASH: 	ic = '\\'; isc = '|'; break;
+			case OS_SCANCODE_LEFT_BRACE: 	ic = '[';  isc = '{'; break;
+			case OS_SCANCODE_RIGHT_BRACE: 	ic = ']';  isc = '}'; break;
+			case OS_SCANCODE_EQUALS: 	ic = '=';  isc = '+'; break;
+			case OS_SCANCODE_BACKTICK: 	ic = '`';  isc = '~'; break;
+			case OS_SCANCODE_HYPHEN: 	ic = '-';  isc = '_'; break;
+			case OS_SCANCODE_SEMICOLON: 	ic = ';';  isc = ':'; break;
+			case OS_SCANCODE_QUOTE: 	ic = '\''; isc = '"'; break;
+			case OS_SCANCODE_COMMA: 	ic = ',';  isc = '<'; break;
+			case OS_SCANCODE_PERIOD: 	ic = '.';  isc = '>'; break;
+			case OS_SCANCODE_SPACE: 	ic = ' ';  isc = ' '; break;
+
+			case OS_SCANCODE_BACKSPACE: {
+				if (control->caret.byte == control->caret2.byte && control->caret.byte) {
+					MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
+					int bytes = control->caret.byte - control->caret2.byte;
+					OSCopyMemory(control->text.buffer + control->caret2.byte, control->text.buffer + control->caret.byte, control->text.bytes - control->caret.byte);
+					control->text.characters -= 1;
+					control->text.bytes -= bytes;
+					control->caret = control->caret2;
+				} else {
+					RemoveSelectedText(control);
+				}
+			} break;
+
+			case OS_SCANCODE_DELETE: {
+				if (control->caret.byte == control->caret2.byte && control->caret.byte != control->text.bytes) {
+					MoveCaret(&control->text, &control->caret, true, message->keyboard.ctrl);
+					int bytes = control->caret.byte - control->caret2.byte;
+					OSCopyMemory(control->text.buffer + control->caret2.byte, control->text.buffer + control->caret.byte, control->text.bytes - control->caret.byte);
+					control->text.characters -= 1;
+					control->text.bytes -= bytes;
+					control->caret = control->caret2;
+				} else {
+					RemoveSelectedText(control);
+				}
+			} break;
+
+			case OS_SCANCODE_LEFT_ARROW: {
+				if (message->keyboard.shift) {
+					MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
+				} else {
+					bool move = control->caret2.byte == control->caret.byte;
+
+					if (control->caret2.byte < control->caret.byte) control->caret = control->caret2;
+					else control->caret2 = control->caret;
+
+					if (move) {
+						MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
+						control->caret = control->caret2;
+					}
+				}
+			} break;
+
+			case OS_SCANCODE_RIGHT_ARROW: {
+				if (message->keyboard.shift) {
+					MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
+				} else {
+					bool move = control->caret2.byte == control->caret.byte;
+
+					if (control->caret2.byte > control->caret.byte) control->caret = control->caret2;
+					else control->caret2 = control->caret;
+
+					if (move) {
+						MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
+						control->caret = control->caret2;
+					}
+				}
+			} break;
+
+			case OS_SCANCODE_HOME: {
+				control->caret2.byte = 0;
+				control->caret2.character = 0;
+				if (!message->keyboard.shift) control->caret = control->caret2;
+			} break;
+
+			case OS_SCANCODE_END: {
+				control->caret2.byte = control->text.bytes;
+				control->caret2.character = control->text.characters;
+				if (!message->keyboard.shift) control->caret = control->caret2;
+			} break;
+		}
+
+		if (message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift) {
+			if (message->keyboard.scancode == OS_SCANCODE_A) {
+				control->caret.byte = 0;
+				control->caret.character = 0;
+
+				control->caret2.byte = control->text.bytes;
+				control->caret2.character = control->text.characters;
+			}
+		}
+
+		if (ic != -1 && !message->keyboard.alt && !message->keyboard.ctrl) {
+			RemoveSelectedText(control);
+
+			char data[4];
+			int bytes = utf8_encode(message->keyboard.shift ? isc : ic, data);
+			char *old = control->text.buffer;
+			control->text.buffer = (char *) OSHeapAllocate(control->text.bytes + bytes, false);
+			OSCopyMemory(control->text.buffer, old, control->caret.byte);
+			OSCopyMemory(control->text.buffer + control->caret.byte + bytes, old + control->caret.byte, control->text.bytes - control->caret.byte);
+			OSHeapFree(old);
+			OSCopyMemory(control->text.buffer + control->caret.byte, data, bytes);
+			control->text.characters += 1;
+			control->caret.character++;
+			control->caret.byte += bytes;
+			control->text.bytes += bytes;
+			control->caret2 = control->caret;
+		}
+
+		OSRepaintControl(control);
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
@@ -1115,6 +1364,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
 				message->type = OS_MESSAGE_DESTROY;
 				OSSendMessage(window, message);
+			} else if (window->focus) {
+				message->type = OS_MESSAGE_KEY_TYPED;
+				OSSendMessage(window->focus, message);
 			}
 		} break;
 
@@ -1251,9 +1503,14 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 				if (window->caretBlinkStep >= window->timerHz / CARET_BLINK_HZ) {
 					window->caretBlinkStep = 0;
-					OSMessage message;
-					message.type = OS_MESSAGE_CARET_BLINK;
-					OSSendMessage(window->focus, &message);
+
+					if (window->caretBlinkPause) {
+						window->caretBlinkPause--;
+					} else {
+						OSMessage message;
+						message.type = OS_MESSAGE_CARET_BLINK;
+						OSSendMessage(window->focus, &message);
+					}
 				}
 			}
 		} break;

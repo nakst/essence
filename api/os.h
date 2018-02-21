@@ -430,7 +430,7 @@ typedef enum OSCursorStyle {
 
 typedef struct OSString {
 	char *buffer;
-	size_t bytes;
+	size_t bytes, characters;
 } OSString;
 
 typedef struct OSCaret {
@@ -469,6 +469,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_END_FOCUS			= 0x0210,
 	OS_MESSAGE_CUSTOM_PAINT			= 0x0211,
 	OS_MESSAGE_CARET_BLINK			= 0x0212,
+	OS_MESSAGE_KEY_TYPED			= 0x0213,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
