@@ -46,8 +46,8 @@ static UIImage inactiveWindowBorder41	= {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{1
 static UIImage inactiveWindowBorder42	= {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
 static UIImage inactiveWindowBorder43	= {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, {16 + 10, 16 + 10, 178, 178}};
 
-static UIImage progressBarBackground 	= {{9, 16, 122, 143}, {11, 12, 125, 139}};
-static UIImage progressBarDisabled   	= {{16 + 9, 16 + 16, 122, 143}, {16 + 11, 16 + 12, 125, 139}};
+static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
+static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
 static UIImage progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
 
 static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
@@ -121,6 +121,7 @@ struct Control : APIObject {
 struct Textbox : Control {
 	OSCaret caret, caret2;
 	bool caretBlink;
+	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
 };
 
 struct ProgressBar : Control {
@@ -624,6 +625,8 @@ static CharacterType GetCharacterType(int character) {
 }
 
 static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool strongWhitespace = false) {
+	if (!string->bytes) return;
+
 	CharacterType type = CHARACTER_INVALID;
 
 	if (word && right) goto checkCharacterType;
@@ -669,6 +672,41 @@ static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, b
 	}
 }
 
+static void FindCaret(Textbox *control, int positionX, int positionY, bool secondCaret, unsigned clickChainCount) {
+	if (clickChainCount >= 3) {
+		control->caret.byte = 0;
+		control->caret.character = 0;
+		control->caret2.byte = control->text.bytes;
+		control->caret2.character = control->text.characters;
+	} else {
+		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
+				&control->text, control->textAlign, &control->caret2, control->textSize);
+
+		if (!secondCaret) {
+			control->caret = control->caret2;
+
+			if (clickChainCount == 2) {
+				MoveCaret(&control->text, &control->caret, false, true, true);
+				MoveCaret(&control->text, &control->caret2, true, true, true);
+				control->wordSelectionAnchor  = control->caret;
+				control->wordSelectionAnchor2 = control->caret2;
+			}
+		} else {
+			if (clickChainCount == 2) {
+				if (control->caret2.byte < control->caret.byte) {
+					MoveCaret(&control->text, &control->caret2, false, true);
+					control->caret = control->wordSelectionAnchor2;
+				} else {
+					MoveCaret(&control->text, &control->caret2, true, true);
+					control->caret = control->wordSelectionAnchor;
+				}
+			}
+		}
+	}
+
+	control->window->caretBlinkPause = 2;
+}
+
 static void RemoveSelectedText(Textbox *control) {
 	if (control->caret.byte == control->caret2.byte) return;
 	if (control->caret.byte < control->caret2.byte) {
@@ -686,6 +724,7 @@ static void RemoveSelectedText(Textbox *control) {
 OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	Textbox *control = (Textbox *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+	static int lastClickChainCount = 1;
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		DrawString(message->paint.surface, control->textBounds, 
@@ -693,6 +732,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				{0, 0}, nullptr, control->caret.character, control->caret2.character, 
 				control->window->focus != control || control->caretBlink,
 				control->textSize, fontRegular);
+
 		result = OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
 		control->textBounds = control->bounds;
@@ -706,6 +746,13 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = 2;
+	} else if (message->type == OS_MESSAGE_START_DRAG) {
+		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
+		lastClickChainCount = message->mousePressed.clickChainCount;
+		OSRepaintControl(control);
+	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
+		OSRepaintControl(control);
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = 2;
@@ -1386,9 +1433,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			lastClickY = message->mousePressed.positionY;
 
 			if (window->drag) {
-				OSMessage message;
-				message.type = OS_MESSAGE_START_DRAG;
-				OSSendMessage(window->drag, &message);
+				OSMessage m = *message;
+				m.type = OS_MESSAGE_START_DRAG;
+				OSSendMessage(window->drag, &m);
 			} else if (window->focus) {
 				OSMessage message;
 				message.type = OS_MESSAGE_END_FOCUS;

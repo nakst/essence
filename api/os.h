@@ -513,6 +513,7 @@ typedef struct OSMessage {
 		} mouseMoved;
 
 		struct {
+			// Structure must match `mouseMoved`.
 			int originalPositionX;
 			int newPositionX;
 			int originalPositionY;
@@ -755,7 +756,7 @@ OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint
 OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha);
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold);
-OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position);
+OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize);
 
 OS_EXTERN_C void OSRedrawAll();
 

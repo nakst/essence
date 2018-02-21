@@ -411,6 +411,13 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 #define FONT_SIZE (9)
 
+OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize) {
+	return DrawString(OS_INVALID_HANDLE, region, string,
+			flags, 0, 0, 0,
+			coordinate, position, -1, -1, false,
+			fontSize ? fontSize : FONT_SIZE, fontRegular);
+}
+
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
 		OSString *string, int fontSize,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold) {

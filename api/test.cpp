@@ -463,7 +463,7 @@ extern "C" void ProgramEntry() {
 	actionOK.callback = OSCallback(Crash, nullptr);
 	
 	OSObject b;
-	OSObject content = OSCreateGrid(2, 2, 0);
+	OSObject content = OSCreateGrid(4, 4, 0);
 	OSSetRootGrid(window, content);
 	OSAddControl(content, 1, 0, b = OSCreateButton(&actionOK), 0);
 
@@ -474,6 +474,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 1, OSCreateTextbox(), 0);
 
+	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
 #if 0
 	OSObject content = OSCreateGrid(2, 2, 0);
 	OSSetRootGrid(window, content);
