@@ -147,7 +147,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/os/UISheet.png", OS_SURFACE_UI_SHEET, false);
 
-#if 1
+#if 0
 	LoadImageIntoSurface((char *) "/os/sample_images/Winter.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;

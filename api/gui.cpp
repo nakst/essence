@@ -16,6 +16,7 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Prevent flickering during window resize.
+// TODO Cell layouts for child grids.
 
 struct UIImage {
 	OSRectangle region;

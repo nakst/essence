@@ -6,6 +6,53 @@
 
 #ifdef IMPLEMENTATION
 
+uint64_t font[] = {
+	0x0000000000000000, 0x2200880022008800, 0xAA00AA00AA00AA00, 0xAB54AB54AB54AB54, 
+	0xFFFFFFFFFFFFFFFE, 0x10386C44C0808000, 0x0088D87070D88800, 0x041C78F0781C0400, 
+	0x2828282828282828, 0x000001FE01FE0000, 0x282829E809F80000, 0x2828282E203E0000, 
+	0x000001F809E82828, 0x0000003E202E2828, 0x0000000000000000, 0x0000000000000000, 
+	0x282829E809E82828, 0x2828282E202E2828, 0x282829EE01FE0000, 0x000001FE01EE2828, 
+	0x282829EE01EE2828, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
+	0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
+	0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 
+	0x0000000000000000, 0x3030003030303030, 0x000000000048D8D8, 0x4848FC4848FC4848, 
+	0x51FD51FC5455FC50, 0x00C4C810204C8C00, 0x00B844A418242418, 0x0000000000103030, 
+	0x6030181818183060, 0x1830606060603018, 0x0000000050207020, 0x303030FC30303000, 
+	0x1020303000000000, 0x000000FC00000000, 0x3030000000000000, 0x0404080810102020, 
+	0x30488494A4844830, 0x7820202020283020, 0xF810204080808870, 0x7088807080808870, 
+	0x404040FC48506040, 0x3048404038080878, 0x3844443C04044438, 0x101020202020407C, 
+	0x7884847884848478, 0x808080F088888870, 0x0030300030300000, 0x1020303000303000, 
+	0x4020100810204000, 0x0000780000780000, 0x0810204020100800, 0x1818003840404038, 
+	0xF804B34B4AB24438, 0x4848487848484830, 0x7888888878484838, 0x7008080808080870, 
+	0x7888888888888878, 0x7808087808080878, 0x0808087808080878, 0x7048484808080870, 
+	0x4848484878484848, 0xF8202020202020F8, 0x30484040404041F8, 0x4424140C0C141424, 
+	0xF808080808080808, 0x252555558D8D0504, 0x88C8C8A8A8989888, 0x7088888888888870, 
+	0x04043C444444443C, 0x8078A49484848478, 0x4424143C4444443C, 0x7080807008080870, 
+	0x20202020202020F8, 0x7088888888888888, 0x1010282828284444, 0x4848D4D4B4B52322, 
+	0x4428281010282844, 0x2020202020505088, 0x7C0808101020207C, 0x3808080808080838, 
+	0x2020101008080404, 0x3820202020202038, 0x0000000000442810, 0xFC00000000000000, 
+	0x0000000020301800, 0x7088F08088700000, 0x748C848C74040404, 0x6010081060000000, 
+	0xF048487040404000, 0x7008784830000000, 0x182020F82020C000, 0x3840704848700000, 
+	0x8888986808080800, 0x6010101000100000, 0x3840404040004000, 0x4828281828280800, 
+	0x3048080808080800, 0x545454542C000000, 0x8888885828000000, 0x3048483000000000, 
+	0x1010305030000000, 0x4040605060000000, 0x0808186800000000, 0x3840300870000000, 
+	0x7008080808780808, 0x7844444400000000, 0x1028284400000000, 0x2838544400000000, 
+	0x4850284800000000, 0x3840784848000000, 0x7808304078000000, 0x6010100810101060, 
+	0x2020202020202020, 0x1820204020202018, 0x0000285000000000, 0x0000000000000000, 
+};
+
+#if 0
+Font usage example:
+uint64_t a = font['a'];
+for (int j = 0; j < 8; j++) {
+	for (int i = 0; i < 8; i++) {
+		printf("%c", (a & 1) ? '=' : ' ');
+		a >>= 1;
+	}
+	printf("\n");
+}
+#endif
+
 #define TERMINAL_ADDRESS (LOW_MEMORY_MAP_START + 0xB8000)
 
 #if 1
@@ -16,7 +63,10 @@ Mutex terminalLock;
 Mutex printLock; 
 #endif
 
-bool printToTerminal, printToSerialOutput = true;
+void DebugWriteCharacter(uintptr_t character);
+
+#ifdef ARCH_X86_64
+bool printToTerminal, printToSerialOutput = true, printToDebugger = false;
 uintptr_t terminalPosition = 80;
 
 static void TerminalCallback(int character, void *data) {
@@ -61,301 +111,74 @@ static void TerminalCallback(int character, void *data) {
 			ProcessorDebugOutputByte((uint8_t) 13);
 		}
 	}
-}
 
-#if 0
-
-int ReadScancode() {
-	while (!(ProcessorIn8(0x64) & 1));
-
-	int s = ProcessorIn8(0x60);
-
-	if (s == 224) {
-		return 256 + ProcessorIn8(0x60);
-	} else {
-		return s;
+	if (printToDebugger) {
+		DebugWriteCharacter(character);
 	}
 }
-
-#define SCANCODE_ENTER (28)
-#define SCANCODE_UP (72)
-#define SCANCODE_DOWN (80)
-
-int debuggerSelection = 0;
-int debuggerSelectionHistory[256];
-int debuggerSelectionHistoryIndex = 0;
-int debuggerIndex = 0;
-
-int debuggerScancode;
-bool debuggerEnter;
-
-bool DebuggerOption(bool back = false) {
-	Print("\n");
-
-	if (debuggerSelection == debuggerIndex) {
-		for (uintptr_t i = terminalPosition - 80; i < terminalPosition; i++) {
-			((uint8_t *) TERMINAL_ADDRESS)[i * 2 + 1] = 0x4F;
-		}
-	}
-
-	if (debuggerSelection == debuggerIndex && debuggerScancode == SCANCODE_ENTER) {
-		debuggerScancode = -1;
-		if (!back) {
-			debuggerSelectionHistory[debuggerSelectionHistoryIndex++] = debuggerSelection = debuggerSelection;
-			debuggerSelection = 0;
-		}
-		return true;
-	}
-
-	debuggerIndex++;
-	return false;
-}
-
-bool DebuggerStart(bool back = true) {
-	if (debuggerSelection >= debuggerIndex) debuggerSelection = 0;
-	debuggerIndex = 0;
-	terminalPosition = 0;
-	ZeroMemory((void *) TERMINAL_ADDRESS, 80 * 25 * 2);
-
-	Print("                             --- KERNEL DEBUGGER ---\n");
-	for (uintptr_t i = terminalPosition - 80; i < terminalPosition; i++) {
-		((uint8_t *) TERMINAL_ADDRESS)[i * 2 + 1] = 0x3F;
-	}
-
-	if (back) {
-		Print("<- Back");
-		if (DebuggerOption(true)) {
-			debuggerSelection = debuggerSelectionHistory[--debuggerSelectionHistoryIndex];
-			return true;
-		} else {
-			return false;
-		}
-	} else return false;
-}
-
-void DebuggerFinish() {
-	terminalPosition = 80 * 25 - 80;
-	Print("up/down - move; enter - okay; %d/%d\n", debuggerSelection + 1, debuggerIndex);
-	for (uintptr_t i = terminalPosition - 80; i < terminalPosition; i++) {
-		((uint8_t *) TERMINAL_ADDRESS)[i * 2 + 1] = 0x3F;
-	}
-
-	GetScancode:
-	if (!debuggerEnter) {
-		debuggerScancode = ReadScancode();
-	} else {
-		debuggerScancode = SCANCODE_DOWN;
-		debuggerEnter = false;
-		debuggerIndex = 0;
-	}
-
-	if (debuggerScancode == SCANCODE_UP && debuggerSelection) debuggerSelection--;
-	else if (debuggerScancode == SCANCODE_DOWN && debuggerSelection != debuggerIndex - 1) debuggerSelection++;
-	else if (debuggerScancode != SCANCODE_ENTER && !debuggerEnter) goto GetScancode;
-
-	if (debuggerScancode == SCANCODE_ENTER) {
-		debuggerEnter = true;
-	}
-
-	Print("...\n");
-}
-
-void DebuggerThread(Thread *thread);
-
-void DebuggerMutex(Mutex *mutex) {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		Print("owner thread %x", mutex->owner);
-		if (DebuggerOption()) {
-			DebuggerThread(mutex->owner);
-		}
-
-		Print("this: %x\n", mutex);
-		Print("acquireAddress: %x\n", mutex->acquireAddress);
-		Print("releaseAddress: %x\n", mutex->releaseAddress);
-
-		DebuggerFinish();
-	}
-}
-
-void DebuggerVMM(VMM *vmm) {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		Print("mutex"); if (DebuggerOption()) DebuggerMutex(&vmm->lock);
-
-		Print("regionsCount: %d\n", vmm->regionsCount);
-		Print("lookupRegionsCount: %d\n", vmm->lookupRegionsCount);
-
-		Print("allocatedVirtualMemory = %x\n", vmm->allocatedVirtualMemory);
-		Print("allocatedPhysicalMemory = %x\n", vmm->allocatedPhysicalMemory);
-
-		DebuggerFinish();
-	}
-}
-
-void DebuggerProcess(Process *process);
-
-void DebuggerThread(Thread *thread) {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		Print("owner Process %d", thread->process->id);
-		if (DebuggerOption()) {
-			DebuggerProcess(thread->process);
-		}
-
-		Print("state = %z\n", thread->state == THREAD_ACTIVE ? "Active" : (thread->state == THREAD_TERMINATED ? "Dead" : "Waiting"));
-		Print("type = %z\n", thread->type == THREAD_NORMAL ? "Normal" : (thread->type == THREAD_IDLE ? "Idle" : "AsyncTask"));
-
-		if (thread->executing) {
-			Print("Executing on CPU %d\n", thread->executingProcessorID);
-		} else {
-			Print("not executing\n");
-		}
-
-		Print("interruptContext = %x\n", thread->interruptContext);
-
-		if (thread->isKernelThread)
-			Print("kernel thread\n");
-
-		DebuggerFinish();
-	}
-}
-
-void DebuggerProcess(Process *process) {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		Print("VMM");
-		if (DebuggerOption()) {
-			DebuggerVMM(process->vmm);
-		}
-
-		LinkedItem *item = process->threads.firstItem;
-
-		while (item) {
-			Thread *thread = (Thread *) item->thisItem;
-			Print("Thread %d (%x)", thread->id, thread);
-
-			if (DebuggerOption()) {
-				DebuggerThread(thread);
-			}
-
-			item = item->nextItem;
-		}
-
-		Print("executable: %s\n", process->executablePathLength, process->executablePath);
-		Print("handles: %d\n", process->handles);
-		Print("id: %d\n", process->id);
-		Print("image state: %z\n", process->executableState == PROCESS_EXECUTABLE_NOT_LOADED ? "not loaded" : 
-				(process->executableState == PROCESS_EXECUTABLE_FAILED_TO_LOAD ? "failed to load" : "correctly loaded"));
-
-		DebuggerFinish();
-	}
-}
-
-void DebuggerProcesses() {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		LinkedItem *item = scheduler.allProcesses.firstItem;
-
-		while (item) {
-			Process *process = (Process *) item->thisItem;
-			Print("Process %d - %s", process->id, process->executablePathLength, process->executablePath);
-
-			if (DebuggerOption()) {
-				DebuggerProcess(process);
-			}
-
-			item = item->nextItem;
-		}
-
-		DebuggerFinish();
-	}
-}
-
-void DebuggerThreads(LinkedList &list) {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		LinkedItem *item = list.firstItem;
-
-		while (item) {
-			Thread *thread = (Thread *) item->thisItem;
-			Print("Thread %d (%x)", thread->id, thread);
-
-			Print(" %z", thread->state == THREAD_ACTIVE ? "Active" : (thread->state == THREAD_TERMINATED ? "Terminated" : "Waiting"));
-			Print("/%z", thread->type == THREAD_NORMAL ? "Normal" : (thread->type == THREAD_IDLE ? "Idle" : "AsyncTask"));
-			Print("/Proc %d", thread->process->id);
-
-			if (thread->executing) {
-				Print("/CPU %d", thread->executingProcessorID);
-			}
-
-			if (DebuggerOption()) {
-				DebuggerThread(thread);
-			}
-
-			item = item->nextItem;
-		}
-
-		DebuggerFinish();
-	}
-}
-
-void DebuggerVFS() {
-	while (true) {
-		if (DebuggerStart()) break;
-
-		DebuggerFinish();
-	}
-}
-
-void EnterDebugger() {
-	printToSerialOutput = false;
-	while (ReadScancode() != SCANCODE_ENTER);
-
-	debuggerSelection = 0;
-	debuggerScancode = -1;
-
-	while (true) {
-		DebuggerStart(false);
-
-		Print("all processes");
-		if (DebuggerOption()) {
-			DebuggerProcesses();
-		}
-
-		Print("all threads");
-		if (DebuggerOption()) {
-			DebuggerThreads(scheduler.allThreads);
-		}
-
-		Print("active threads");
-		if (DebuggerOption()) {
-			DebuggerThreads(scheduler.activeThreads);
-		}
-
-		Print("kernelVMM");
-		if (DebuggerOption()) {
-			DebuggerVMM(&kernelVMM);
-		}
-
-		Print("VFS");
-		if (DebuggerOption()) {
-			DebuggerVFS();
-		}
-
-		DebuggerFinish();
-	}
-}
-
 #endif
 
+size_t debugRows, debugColumns, debugCurrentRow, debugCurrentColumn;
+
+void DebugWriteCharacter(uintptr_t character) {
+	uintptr_t &row = debugCurrentRow;
+	uintptr_t &column = debugCurrentColumn;
+
+	if (character == '\n') {
+		debugCurrentRow++;
+		debugCurrentColumn = 0;
+		return;
+	}
+
+	if (character > 127) character = ' ';
+	if (row >= debugRows) return;
+	if (column >= debugColumns) return;
+
+	uint64_t a = font[character];
+
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			uint8_t bit = (a & 1);
+
+			switch (graphics.colorMode) {
+				case VIDEO_COLOR_24_RGB: {
+					uintptr_t y = row * 18 + j * 2;
+					uintptr_t x = column * 18 + i * 2;
+					uint8_t c = bit ? 0xEE : 0x44;
+					graphics.linearBuffer[y * graphics.resX * 3 + x * 3 + 0] = c;
+					graphics.linearBuffer[y * graphics.resX * 3 + x * 3 + 1] = c;
+					graphics.linearBuffer[y * graphics.resX * 3 + x * 3 + 2] = c;
+					graphics.linearBuffer[y * graphics.resX * 3 + (x + 1) * 3 + 0] = c;
+					graphics.linearBuffer[y * graphics.resX * 3 + (x + 1) * 3 + 1] = c;
+					graphics.linearBuffer[y * graphics.resX * 3 + (x + 1) * 3 + 2] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + x * 3 + 0] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + x * 3 + 1] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + x * 3 + 2] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + (x + 1) * 3 + 0] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + (x + 1) * 3 + 1] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + (x + 1) * 3 + 2] = c;
+				} break;
+			
+				default:;
+			}
+
+			a >>= 1;
+		}
+	}
+
+	debugCurrentColumn++;
+
+	if (debugCurrentColumn == debugColumns) {
+		debugCurrentRow++;
+		debugCurrentColumn = 0;
+	}
+}
+
 void KernelPanic(const char *format, ...) {
+	printToDebugger = true;
+	debugRows = graphics.resY / 18;
+	debugColumns = graphics.resX / 18;
+
 	ProcessorDisableInterrupts();
 	scheduler.panic = true;
 	ProcessorSendIPI(KERNEL_PANIC_IPI, true);
@@ -371,24 +194,29 @@ void KernelPanic(const char *format, ...) {
 
 	Print("Current thread = %x\n", GetCurrentThread());
 	Print("Trace: %x\n", __builtin_return_address(0));
-	Print("Press <ENTER> to enter the kernel debugger...\n");
 
-	for (int i = 0; i < 80 * 25; i++) {
-		((uint8_t *) TERMINAL_ADDRESS)[i * 2 + 1] = 0x4F;
-	}
+	{
+		LinkedItem<Thread> *item = scheduler.allThreads.firstItem;
 
-	switch (graphics.colorMode) {
-		case VIDEO_COLOR_24_RGB: {
-			for (uintptr_t i = 0; i < graphics.resX; i++) {
-				graphics.linearBuffer[i * 3 + 2] = 0xFF;
+		while (item) {
+			Thread *thread = item->thisItem;
+
+			if (thread->type == THREAD_NORMAL) {
+				Print("- %d %d %x ", thread->id, thread->state, thread);
+
+				if (thread->state == THREAD_WAITING_EVENT) {
+					Print("ev %d %x", thread->blockingEventCount, thread->blockingEvents[0]);
+				} else if (thread->state == THREAD_WAITING_MUTEX) {
+					Print("mu %x", thread->blockingMutex);
+				}
+
+				Print("\n");
 			}
-		} break;
 
-		default:;
+			item = item->nextItem;
+		}
 	}
 
-	while (true);
-	// EnterDebugger();
 	ProcessorHalt();
 }
 
@@ -442,10 +270,4 @@ void KernelLog(LogLevel level, const char *format, ...) {
 #endif
 }
 
-#if 0
-void PrintStats() {
-	Print("stats: [pmmalloc] %d; [vmmlook] %d; [vmmreg] %d; [vmmalloc] %d\n", pmm.pagesAllocated * PAGE_SIZE, 
-			kernelVMM.lookupRegionsCount, kernelVMM.regionsCount, kernelVMM.allocatedVirtualMemory * PAGE_SIZE);
-}
-#endif
 #endif

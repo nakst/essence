@@ -116,6 +116,11 @@ bool PS2::PollRead(uint8_t *value, bool forMouse) {
 
 	if (status & PS2_OUTPUT_FULL) {
 		*value = ProcessorIn8(PS2_PORT_DATA);
+
+		if (*value == OS_SCANCODE_PAUSE && !forMouse) {
+			KernelPanic("Pause key pressed.\n");
+		}
+		
 		osRandomByteSeed ^= *value;
 		return true;
 	} else {

@@ -39,6 +39,7 @@ void Build(bool enableOptimisations) {
 
 	printf("Creating MBR...\n");
 	system("nasm -fbin boot/x86/mbr.s -obin/mbr");
+	system("dd if=partition_table of=drive bs=512 count=1 conv=notrunc status=none");
 	system("dd if=bin/mbr of=drive bs=436 count=1 conv=notrunc status=none");
 
 	printf("Installing bootloader...\n");
@@ -144,6 +145,12 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "test") || 0 == strcmp(l, "t")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, false);
+		} else if (0 == strcmp(l, "ata")) {
+			Build(false);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
+		} else if (0 == strcmp(l, "bochs")) {
+			Build(false);
+			Run(EMULATOR_BOCHS, 0, 0, 0, 0, false);
 		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
@@ -173,7 +180,9 @@ int main(int argc, char **argv) {
 			printf("(b) build - Unoptimised build\n");
 			printf("(o) optimise - Optimised build\n");
 			printf("(t) test - Qemu (SMP/AHCI/64MB)\n");
+			printf("( ) ata - Qemu (SMP/ATA/64MB)\n");
 			printf("( ) test-without-smp - Qemu (AHCI/64MB)\n");
+			printf("( ) bochs - Bochs\n");
 			printf("( ) low-memory - Qemu (SMP/AHCI/32MB)\n");
 			printf("(d) debug - Qemu (AHCI/64MB/GDB)\n");
 			printf("( ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
