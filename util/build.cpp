@@ -113,6 +113,8 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 			system("rm vmuuid.txt");
 			sprintf(buffer, "VBoxManage convertfromraw drive vbox.vdi --format VDI --uuid %s", uuid);
 			system(buffer);
+
+			system("VirtualBox --dbg --startvm OS");
 		} break;
 	}
 }
@@ -166,6 +168,9 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "vbox") || 0 == strcmp(l, "v")) {
 			Build(true);
 			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
+		} else if (0 == strcmp(l, "vbox-without-opt") || 0 == strcmp(l, "v2")) {
+			Build(false);
+			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
 		} else if (0 == strcmp(l, "exit") || 0 == strcmp(l, "x")) {
 			break;
 		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
@@ -187,6 +192,7 @@ int main(int argc, char **argv) {
 			printf("(d) debug - Qemu (AHCI/64MB/GDB)\n");
 			printf("( ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
 			printf("(v) vbox - VirtualBox (optimised)\n");
+			printf("( ) vbox-without-opt - VirtualBox (unoptimised)\n");
 			printf("(x) exit - Exit the build system.\n");
 			printf("(h) help - Show the help prompt.\n");
 			printf("(l) lua - Execute a Lua expression.\n");

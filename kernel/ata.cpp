@@ -176,11 +176,12 @@ bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offse
 		if (timeout->event.Poll()) return false;
 
 		// Start the transfer.
+		// TODO Properly investigate the order of starting the DMA transfer and sending the ATA command.
+		// 	Bochs doesn't work if you issue the ATA command first.
+		// 	...and VirtualBox doesn't work if you start the DMA transfer first (except it sometimes does work??).
 		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 1 : 9);
 		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
 		if (ProcessorIn8(ATA_REGISTER(bus, ATA_DCR)) & 33) return false;
-
-		Print("...\n");
 	}
 
 	return true;
@@ -194,21 +195,14 @@ bool ATADriver::AccessEnd(int bus, int slave) {
 		// Wait for the command to complete.
 		event->Wait(ATA_TIMEOUT);
 
-		Print("a %x, %x\n", ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)), device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)));
-
 		// Check for error.
 		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) & 33) return false;
 		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 3) return false;
 
-		Print("b\n");
-
 		// Check if the command has completed.
 		if (!event->Poll()) {
-			Print("c\n");
 			return false;
 		}
-
-		Print("d\n");
 
 		return true;
 	}
@@ -282,8 +276,6 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 		blockedPacketsMutex.Release();
 	}
 
-	Print("ATA Access (%z)\n", operation == DRIVE_ACCESS_READ ? "read" : "write");
-
 	op.packet = packet;
 	op.bus = bus;
 	op.slave = slave;
@@ -311,8 +303,6 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 
 void ATAIRQHandler2(void *argument) {
 	(void) argument;
-
-	Print("got an ata irq\n");
 
 	ATAOperation *op = (ATAOperation *) &ata.op;
 	bool cancelled = false;
@@ -426,7 +416,7 @@ void ATADriver::Initialise() {
 	}
 
 	KernelLog(LOG_VERBOSE, "ATADriver::Initialise - Found an ATA controller.\n");
-	
+
 	for (uintptr_t bus = 0; bus < ATA_BUSES; bus++) {
 		// If the status is 0xFF, then the bus does not exist.
 		if (ProcessorIn8(ATA_REGISTER(bus, ATA_STATUS)) == 0xFF) {
@@ -515,7 +505,7 @@ void ATADriver::Initialise() {
 				sectorCount[bus * 2 + 0] = sectorCount[bus * 2 + 1] = 0;
 				drivesOnBus = 0;
 			} else {
-				uintptr_t dataVirtual = (uintptr_t) kernelVMM.Allocate("ATADMA", 131072, VMM_MAP_ALL, VMM_REGION_PHYSICAL, dataPhysical, 0 /*do not cache reads/writes*/);
+				uintptr_t dataVirtual = (uintptr_t) kernelVMM.Allocate("ATADMA", 131072, VMM_MAP_ALL, VMM_REGION_PHYSICAL, dataPhysical, VMM_REGION_FLAG_NOT_CACHABLE /*do not cache reads/writes*/);
 
 				PRD *prdt = (PRD *) dataVirtual;
 				prdt->end = 0x8000;

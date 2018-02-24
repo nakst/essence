@@ -196,6 +196,8 @@ void KernelPanic(const char *format, ...) {
 	Print("Trace: %x\n", __builtin_return_address(0));
 
 	{
+		Print("Threads:\n");
+
 		LinkedItem<Thread> *item = scheduler.allThreads.firstItem;
 
 		while (item) {

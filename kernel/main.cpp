@@ -1,7 +1,7 @@
 // Timing problems:
 // 	- Qemu's timer (sometimes) runs too slow on SMP.
 
-// TODO VirtualBox gets a lot of bugs - most of which I think are to do with the AHCI implementation?
+// TODO Fix AHCI driver on VirtualBox.
 
 #include "kernel.h"
 #define IMPLEMENTATION
@@ -10,9 +10,9 @@
 void KernelInitialisation() {
 	pmm.Initialise2();
 	InitialiseObjectManager();
+	graphics.Initialise(); 
 	vfs.Initialise();
 	deviceManager.Initialise();
-	graphics.Initialise(); 
 	windowManager.Initialise();
 
 	char *desktop = (char *) "/os/desktop";
