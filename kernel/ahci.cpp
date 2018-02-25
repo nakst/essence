@@ -1,5 +1,3 @@
-// TODO VirtualBox's serial output gets spammed with errors.
-
 #ifndef IMPLEMENTATION
 
 #define AHCI_TIMEOUT (1000)
@@ -315,20 +313,8 @@ bool AHCIFinishOperation(void *argument) {
 	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Command %d complete.\n", commandIndex);
 
 	ahci.blockedPacketsMutex.Acquire();
-
-#if 0
-	if (drive->commandsInUse == (1 << AHCI_COMMAND_COUNT) - 1) {
-		drive->commandAvailable.Set();
-	}
-
-	drive->mutexStart.Acquire();
-	drive->commandsInUse &= ~(1 << commandIndex);
-	drive->mutexStart.Release();
-#endif
-
 	drive->commandsInUse &= ~(1 << operation->commandIndex);
 	semaphore.Return(1);
-
 	ahci.blockedPacketsMutex.Release();
 
 	if (port->interruptStatus & (1 << 30)) {

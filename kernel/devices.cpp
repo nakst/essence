@@ -349,6 +349,8 @@ void IORequest::Start(bool canResize) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
+	Print("IORequest %x start\n", this);
+
 	if (!count) {
 		Complete();
 		return;
@@ -520,6 +522,7 @@ void IORequest::Cancel(OSError _error) {
 void IORequest::Complete() {
 	mutex.AssertLocked();
 	kernelVMM.Free(buffer);
+	Print("IORequest %x complete\n", this);
 	complete.Set();
 }
 

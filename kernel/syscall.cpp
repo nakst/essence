@@ -344,7 +344,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 		case OS_SYSCALL_WAIT_MESSAGE: {
 			while (!currentProcess->messageQueue.count) {
-				currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
+				if (!fromKernel) currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 				// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
 				
 				if (!currentProcess->messageQueue.notEmpty.Wait(argument0 /*Timeout*/)) {
@@ -352,6 +352,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				}
 			}
 
+			currentThread->terminatableState = THREAD_IN_SYSCALL;
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
@@ -427,9 +428,9 @@ uintptr_t DoSyscall(OSSyscallType index,
 			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
 			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
-			currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
-			// KernelLog(LOG_VERBOSE, "Thread %x in block request\n", currentThread);
+			if (!fromKernel) currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 			mutex->Acquire();
+			currentThread->terminatableState = THREAD_IN_SYSCALL;
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
@@ -851,8 +852,9 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 
 			uintptr_t waitReturnValue;
-			currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
+			if (!fromKernel) currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
 			waitReturnValue = scheduler.WaitEvents(events, waitObjectCount);
+			currentThread->terminatableState = THREAD_IN_SYSCALL;
 
 			if (waitReturnValue == argument1) {
 				waitReturnValue = OS_ERROR_TIMEOUT_REACHED;

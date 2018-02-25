@@ -470,6 +470,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_CUSTOM_PAINT			= 0x0211,
 	OS_MESSAGE_CARET_BLINK			= 0x0212,
 	OS_MESSAGE_KEY_TYPED			= 0x0213,
+	OS_MESSAGE_END_LAST_FOCUS		= 0x0214,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,

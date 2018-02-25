@@ -150,7 +150,7 @@ struct Window : APIObject {
 
 	unsigned flags;
 	OSCursorStyle cursor, cursorOld;
-	struct Control *drag, *hover, *focus;
+	struct Control *drag, *hover, *focus, *lastFocus;
 	bool destroyed, created;
 
 	int width, height;
@@ -399,6 +399,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (control->window->hover == control) control->window->hover = nullptr;
 			if (control->window->drag == control) control->window->drag = nullptr;
 			if (control->window->focus == control) control->window->focus = nullptr;
+			if (control->window->lastFocus == control) control->window->lastFocus = nullptr;
 
 			OSHeapFree(control->text.buffer);
 			OSHeapFree(control);
@@ -412,6 +413,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		case OS_MESSAGE_END_HOVER:
 		case OS_MESSAGE_START_FOCUS:
 		case OS_MESSAGE_END_FOCUS:
+		case OS_MESSAGE_END_LAST_FOCUS:
 		case OS_MESSAGE_START_DRAG:
 		case OS_MESSAGE_END_DRAG: {
 			OSMessage m;
@@ -425,7 +427,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				if (control->focusable) {
+					if (control->window->lastFocus) {
+						m.type = OS_MESSAGE_END_LAST_FOCUS;
+						OSSendMessage(control->window->lastFocus, &m);
+					}
+
 					control->window->focus = control;
+					control->window->lastFocus = control;
 					m.type = OS_MESSAGE_START_FOCUS;
 					OSSendMessage(control, &m);
 				}
@@ -729,8 +737,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		DrawString(message->paint.surface, control->textBounds, 
-				&control->text, control->textAlign, control->textColor, 0xFFFFFF, 0xFFC4D9F9,
-				{0, 0}, nullptr, control->caret.character, control->caret2.character, 
+				&control->text, control->textAlign, control->textColor, 0xFFFFFF, control->window->focus == control ? 0xFFC4D9F9 : 0xFFDDDDDD,
+				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control ? control->caret2.character : control->caret.character, 
 				control->window->focus != control || control->caretBlink,
 				control->textSize, fontRegular);
 

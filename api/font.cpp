@@ -256,7 +256,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		if (selected) {
-			for (int y = 0; y < lineHeight; y++) {
+			for (int y = 1; y < lineHeight; y++) {
 				int oY = outputPosition.y - lineHeight + y + 4;
 
 				if (oY < region.top) continue;

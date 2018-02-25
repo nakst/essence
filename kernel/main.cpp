@@ -1,8 +1,6 @@
 // Timing problems:
 // 	- Qemu's timer (sometimes) runs too slow on SMP.
 
-// TODO Fix AHCI driver on VirtualBox.
-
 #include "kernel.h"
 #define IMPLEMENTATION
 #include "kernel.h"
