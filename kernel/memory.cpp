@@ -1205,6 +1205,7 @@ bool FaultInformation::Handle() {
 	region->mutex.Release();
 
 	done:;
+	if (!result) KernelLog(LOG_WARNING, "FaultInformation::Handle - Could not load memory mapped file section.\n");
 	reference.vmm->UnlockRegion(reference);
 	return result;
 }

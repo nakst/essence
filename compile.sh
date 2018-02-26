@@ -5,7 +5,7 @@ Optimise=$1
 OptimiseKernel=$2
 
 BuildFlags="-ffreestanding -Wall -Wextra -Wno-missing-field-initializers -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address -Ifreetype"
-LinkFlags="-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi -lfreetype"
+LinkFlags="-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/os -lapi -lfreetype -Lfreetype"
 KernelLinkFlags="-ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000"
 
 echo -e "-> Building ${ColorBlue}API${ColorNormal}..."

@@ -17,6 +17,8 @@
 
 // TODO Prevent flickering during window resize.
 // TODO Cell layouts for child grids.
+// TODO Disabling textbox with last focus and selection
+// TODO Gain focus - make what selection with textbox, with/without last focus, with/without previous selection?
 
 struct UIImage {
 	OSRectangle region;

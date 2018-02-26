@@ -252,7 +252,7 @@ struct AHCIPresentDrive {
 	AHCIOperation operations[AHCI_COMMAND_COUNT];
 
 	LinkedList<struct AHCIBlockedOperation> blockedPackets;
-	Semaphore available;
+	Semaphore available; // The number of available commands.
 };
 
 struct AHCIBlockedOperation {
@@ -305,20 +305,20 @@ bool AHCIFinishOperation(void *argument) {
 	volatile AHCIPort *port = ahci.r->ports + drive->port;
 	Semaphore &semaphore = drive->available;
 
+	uint8_t ataStatus = drive->receivedPacket[operation->commandIndex].deviceToHost.status;
+
 	if (port->commandIssue & (1 << operation->commandIndex)) {
-		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive.\n");
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (1).\n");
 		goto finish;
 	}
 
-	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Command %d complete.\n", commandIndex);
-
-	ahci.blockedPacketsMutex.Acquire();
-	drive->commandsInUse &= ~(1 << operation->commandIndex);
-	semaphore.Return(1);
-	ahci.blockedPacketsMutex.Release();
-
 	if (port->interruptStatus & (1 << 30)) {
-		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive.\n");
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (3).\n");
+		goto finish;
+	}
+
+	if (ataStatus & 1) {
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (2, %x).\n", drive->receivedPacket[operation->commandIndex].deviceToHost.error);
 		goto finish;
 	}
 
@@ -345,6 +345,13 @@ bool AHCIFinishOperation(void *argument) {
 
 		request->mutex.Release();
 	}
+
+	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Command %d complete with result %d.\n", operation->commandIndex, result);
+
+	ahci.blockedPacketsMutex.Acquire();
+	drive->commandsInUse &= ~(1 << operation->commandIndex);
+	semaphore.Return(1);
+	ahci.blockedPacketsMutex.Release();
 
 	return result;
 }
@@ -513,7 +520,11 @@ bool AHCIDriver::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offset, s
 		if (timeout->event.Poll()) return false;
 	}
 
-	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Issuing command %d (%d).\n", commandIndex, header->prdEntryCount);
+	// static int requestIndex = 0;
+	// KernelLog(LOG_VERBOSE, "AHCIDriver::Access - Issuing command %d (%x/%x). requestIndex = %d.\n", commandIndex, sector, countBytes, requestIndex++);
+
+	// Clear the received packet information.
+	ZeroMemory(drive->receivedPacket + commandIndex, sizeof(AHCIReceivedPacket));
 
 	// Issue the command.
 	drive->completeCommands[commandIndex].Reset();
@@ -546,7 +557,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 	(void) interruptIndex;
 
 	uint32_t pendingInterrupts = ahci.r->interruptStatus;
-	ahci.r->interruptStatus = pendingInterrupts;
+	Defer(ahci.r->interruptStatus = pendingInterrupts);
 
 	bool switchThread = false;
 
@@ -561,64 +572,66 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 			volatile AHCIPort *port = ahci.r->ports + i;
 
 			uint32_t interruptStatus = port->interruptStatus;
-			port->interruptStatus = interruptStatus;
+			Defer(port->interruptStatus = interruptStatus);
 
-			if (interruptStatus & 1) {
-				// Find the drive this interrupt is for.
-				for (uintptr_t i = 0; i < ahci.driveCount; i++) {
-					AHCIPresentDrive *drive = ahci.drives + i;
+			// Print("AHCI IRQ - port %d, status %x\n", i, interruptStatus);
 
-					if (drive->port == portIndex) {
-						uint16_t commandsFinished = (~port->commandIssue) & (drive->commandsInUse);
+			AHCIPresentDrive *drive = nullptr;
 
-						if (!commandsFinished) {
-							KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected (3).\n"); 
-						}
-
-						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
-							if (!(drive->commandsInUse & (1 << i)) || !(drive->commandsReady & (1 << i))) {
-								continue;
-							}
-
-							// Is the command finished?
-							if (port->commandIssue & (1 << i)) {
-								continue;
-							}
-
-							if (drive->completeCommands[i].state) {
-								// Hmmm... 
-								// I think this means we finished multiple commands in a previous interrupt,
-								// even though multiple interrupts were sent.
-								// So I don't think this matters?
-							} else {
-								// KernelLog(LOG_VERBOSE, "AHCIIRQHandler - Received interrupt to complete operation %d.\n", i);
-								drive->completeCommands[i].Set();
-
-								if (drive->operations[i].ioPacket) {
-									// This operation is asynchronous, so make an asynchronous task to complete it.
-									scheduler.lock.Acquire();
-									RegisterAsyncTask((AsyncTaskCallback) AHCIFinishOperation, drive->operations + i, nullptr, true);
-									scheduler.lock.Release();
-									switchThread = true;
-								}
-
-								if (drive->completeCommands[i].blockedThreads.count) {
-									switchThread = true;
-								}
-							}
-						}
-					}
+			// Find the drive this interrupt is for.
+			for (uintptr_t i = 0; i < ahci.driveCount; i++) {
+				if (ahci.drives[i].port == portIndex) {
+					drive = ahci.drives + i;
 				}
-			} else {
-				for (uintptr_t i = 0; i < ahci.driveCount; i++) {
-					AHCIPresentDrive *drive = ahci.drives + i;
+			}
 
-					if (drive->port == portIndex) {
-						for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
-							if (drive->receivedPacket[i].deviceToHost.status & 1) {
-								KernelLog(LOG_WARNING, "AHCIIRQHandler - Detected error for port %d, command %d.\n", portIndex, i);
-							}
-						}
+			if (!drive) {
+				KernelLog(LOG_WARNING, "AHCIIRQHandler - Received interrupt from uninitialised/non-present drive.\n"); 
+				continue;
+			}
+
+			uint16_t commandsFinished = (~port->commandIssue) & (drive->commandsInUse);
+
+			if (!commandsFinished) {
+				KernelLog(LOG_WARNING, "AHCIIRQHandler - Received more interrupts than expected (3).\n"); 
+			}
+
+			for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
+				if (!(drive->commandsInUse & (1 << i)) || !(drive->commandsReady & (1 << i))) {
+					continue;
+				}
+
+				// Is the command finished?
+				if (port->commandIssue & (1 << i)) {
+					continue;
+				}
+
+				uint8_t ataStatus = drive->receivedPacket[i].deviceToHost.status;
+				// Print("ataStatus for com %d = %x\n", i, ataStatus);
+
+				// Either the BSY or DRQ bits are set.
+				if (ataStatus & 0x88) {
+					continue;
+				}
+
+				if (drive->completeCommands[i].state) {
+					// Hmmm... 
+					// I think this means we finished multiple commands in a previous interrupt,
+					// even though multiple interrupts were sent.
+					// So I don't think this matters?
+				} else {
+					drive->completeCommands[i].Set();
+
+					if (drive->operations[i].ioPacket) {
+						// This operation is asynchronous, so make an asynchronous task to complete it.
+						scheduler.lock.Acquire();
+						RegisterAsyncTask((AsyncTaskCallback) AHCIFinishOperation, drive->operations + i, nullptr, true);
+						scheduler.lock.Release();
+						switchThread = true;
+					}
+
+					if (drive->completeCommands[i].blockedThreads.count) {
+						switchThread = true;
 					}
 				}
 			}
