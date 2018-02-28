@@ -202,8 +202,14 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		int width, height, xoff, yoff;
 		uint8_t *output = nullptr;
 		int glyphIndex, advanceWidth;
+		bool selected = false;
+		FontCacheEntry *cacheEntry;
 
-		FontCacheEntry *cacheEntry = LookupFontCacheEntry(character, size, font);
+		if (character == 0x11 || character == 0x12) {
+			goto invisibleCharacter;
+		}
+
+		cacheEntry = LookupFontCacheEntry(character, size, font);
 
 		if (cacheEntry) {
 			output = cacheEntry->data;
@@ -218,8 +224,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
 			advanceWidth = font->glyph->advance.x >> 6;
 		}
-
-		bool selected = false;
 
 		if (outputPosition.x + advanceWidth < region.left) {
 			goto skipCharacter;
@@ -383,6 +387,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		outputPosition.x += advanceWidth;
+
+		invisibleCharacter:
 		buffer = utf8_advance(buffer);
 		characterIndex++;
 	}

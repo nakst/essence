@@ -200,6 +200,8 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_CORRUPT_LINKED_LIST,
 } OSFatalError;
 
+// These must be negative.
+// See OSReadFileSync.
 #define OS_ERROR_BUFFER_TOO_SMALL		(-2)
 #define OS_ERROR_UNKNOWN_OPERATION_FAILURE 	(-7)
 #define OS_ERROR_NO_MESSAGES_AVAILABLE		(-9)
@@ -615,6 +617,10 @@ typedef struct OSAction {
 
 	char *label;
 	size_t labelBytes;
+
+	char *shortcut;
+	size_t shortcutBytes;
+
 	OSCallback callback;
 
 	bool checkable, isChecked;

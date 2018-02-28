@@ -386,7 +386,7 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 			bool rejectedByAll = !handledInterrupt;
 			if (rejectedByAll) {
 				// TODO Now what?
-				KernelLog(LOG_WARNING, "InterruptHandler - Unhandled IRQ %d, rejected by %d overloads\n", interrupt, overloads);
+				KernelLog(LOG_WARNING, "InterruptHandler - Unhandled IRQ %d, rejected by %d %z\n", interrupt, overloads, (overloads != 1) ? "overloads" : "overload");
 			}
 		}
 

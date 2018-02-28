@@ -20,12 +20,14 @@ struct Semaphore {
 };
 
 struct Timer {
-	void Set(uint64_t triggerInMs, bool autoReset);
+	void Set(uint64_t triggerInMs, bool autoReset, AsyncTaskCallback callback = nullptr, void *argument = nullptr);
 	void Remove();
 
 	Event event;
 	LinkedItem<Timer> item;
 	uint64_t triggerTimeMs;
+	AsyncTaskCallback callback;
+	void *argument;
 };
 
 struct InterruptContext {
@@ -1004,6 +1006,10 @@ void Scheduler::Yield(InterruptContext *context) {
 		if (timer->triggerTimeMs <= timeMs) {
 			activeTimers.Remove(_timer);
 			timer->event.Set(true); // The scheduler is already locked at this point.
+
+			if (timer->callback) {
+				RegisterAsyncTask(timer->callback, timer->argument, nullptr, true);
+			}
 		}
 
 		_timer = next;
@@ -1347,13 +1353,15 @@ bool Event::Wait(uint64_t timeoutMs) {
 	}
 }
 
-void Timer::Set(uint64_t triggerInMs, bool autoReset) {
+void Timer::Set(uint64_t triggerInMs, bool autoReset, AsyncTaskCallback _callback, void *_argument) {
 	scheduler.lock.Acquire();
 	Defer(scheduler.lock.Release());
 
 	event.Reset();
 	event.autoReset = autoReset;
 	triggerTimeMs = triggerInMs + scheduler.timeMs;
+	callback = _callback;
+	argument = _argument;
 	item.thisItem = this;
 	scheduler.activeTimers.InsertStart(&item);
 }

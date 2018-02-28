@@ -1,5 +1,11 @@
 #ifndef IMPLEMENTATION
 
+// TODO REWRITE.
+
+// TODO How do we prevent against performing AHCIFinishOperation multiple times?
+// TODO Spurious errors and timeouts.
+// 	- Seems to be causing above?
+
 #define AHCI_TIMEOUT (1000)
 #define AHCI_SECTOR_SIZE (512)
 
@@ -245,6 +251,7 @@ struct AHCIPresentDrive {
 	uint64_t sectorCount;
 	Event completeCommands[AHCI_COMMAND_COUNT];
 	Timer timeout;
+	Timer packetTimeouts[AHCI_COMMAND_COUNT];
 
 	uintptr_t physicalBuffers[AHCI_COMMAND_COUNT];
 	void *buffers[AHCI_COMMAND_COUNT];
@@ -284,6 +291,8 @@ struct AHCIDriver {
 
 AHCIDriver ahci;
 
+void AHCIPacketTimeout(void *argument);
+
 #else
 
 #define AHCI_DRIVER_IDENTFIY (2)
@@ -306,6 +315,11 @@ bool AHCIFinishOperation(void *argument) {
 	Semaphore &semaphore = drive->available;
 
 	uint8_t ataStatus = drive->receivedPacket[operation->commandIndex].deviceToHost.status;
+
+	if (drive->packetTimeouts[operation->commandIndex].event.Poll()) {
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (4).\n");
+		goto finish;
+	}
 
 	if (port->commandIssue & (1 << operation->commandIndex)) {
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (1).\n");
@@ -331,6 +345,8 @@ bool AHCIFinishOperation(void *argument) {
 	finish:;
 
 	if (packet) {
+		drive->packetTimeouts[operation->commandIndex].Remove();
+
 		IORequest *request = packet->request;
 
 		ahci.Unblock(drive);
@@ -530,6 +546,12 @@ bool AHCIDriver::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offset, s
 	drive->completeCommands[commandIndex].Reset();
 	port->commandIssue = 1 << commandIndex; 
 	drive->commandsReady |= 1 << commandIndex;
+
+	if (ioPacket) {
+		// Start a timeout timer.
+		drive->packetTimeouts[commandIndex].Set(AHCI_TIMEOUT, true, AHCIPacketTimeout, drive->operations + commandIndex);
+	}
+
 	drive->mutex.Release();
 
 	if (ioPacket) {
@@ -643,6 +665,11 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 	}
 
 	return true;
+}
+
+void AHCIPacketTimeout(void *argument) {
+	AHCIOperation *operation = (AHCIOperation *) argument;
+	AHCIFinishOperation(operation);
 }
 
 void AHCIDriver::Initialise() {

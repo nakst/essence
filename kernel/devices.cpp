@@ -349,8 +349,6 @@ void IORequest::Start(bool canResize) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	// Print("IORequest %x start\n", this);
-
 	if (!count) {
 		Complete();
 		return;
@@ -511,6 +509,7 @@ void IOPacket::QueuedChildren() {
 }
 
 void IORequest::Cancel(OSError _error) {
+	Print("Cancelling IORequest %x, error = %d\n", this, _error);
 	mutex.AssertLocked();
 	if (complete.state) return;
 	if (cancelled) return; else cancelled = true;
