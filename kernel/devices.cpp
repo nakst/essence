@@ -64,6 +64,19 @@ enum IOPacketType {
 	IO_PACKET_ATA,
 };
 
+enum IOPacketDriverState {
+	// The packet has been sent to the driver, and it's waiting to get a turn.
+	IO_PACKET_DRIVER_BLOCKING,
+
+	// The packet has been issued. The driver is waiting for something like an interrupt,
+	// at which point the packet will be completed, and it can unblock another packet.
+	IO_PACKET_DRIVER_ISSUED,
+
+	// The packet has been completed. 
+	// This is set before IOPacket::Complete is called by the driver.
+	IO_PACKET_DRIVER_COMPLETE,
+};
+
 struct IOPacket {
 	void Complete(OSError error);
 	void QueuedChildren();
@@ -84,7 +97,7 @@ struct IOPacket {
 	uint64_t offset, count; 
 	void *parameter1, *parameter2;
 	
-	bool driverRunning;
+	IOPacketDriverState driverState;
 	void *driverTemp;
 };
 
@@ -423,52 +436,55 @@ void IOPacket::Complete(OSError error) {
 
 			case IO_PACKET_AHCI: {
 				if (!success) {
-					bool cont = true;
+					// The IO request was cancelled.
+
+					bool deallocatePacket = true;
+
 					ahci.blockedPacketsMutex.Acquire();
 
-					if (driverRunning) {
-						if (driverTemp) {
-							AHCIBlockedOperation *op = (AHCIBlockedOperation *) driverTemp;
-							op->item.list->Remove(&op->item);
-						} else {
-							// We need to wait for the driver to finish with this packet.
-							// They will send a Complete() when it is done.
-							// Because the packet has already been cancelled, 
-							// this will just free the packet and close the request's handle.
-							cont = false;
-						}
+					if (driverState == IO_PACKET_DRIVER_BLOCKING) {
+						ahci.RemoveBlockingPacket(this);
+					} else if (driverState == IO_PACKET_DRIVER_ISSUED) {
+						// We need to wait for the driver to finish with this packet.
+						// They will send a Complete() when it is done.
+						// Because the packet has already been cancelled, 
+						// this will just free the packet and close the request's handle.
+						deallocatePacket = false;
+					} else if (driverState == IO_PACKET_DRIVER_COMPLETE) {
+						// We were the packet that caused the request failure.
+						// TODO Add the block to a damaged list in the filesystem driver.
 					}
 
 					ahci.blockedPacketsMutex.Release();
-					if (!cont) return; 
-				}
 
-				// TODO If unsuccessful, add block to damaged list in EsFS.
+					if (!deallocatePacket) return; 
+				}
 			} break;
 
 			case IO_PACKET_ATA: {
 				if (!success) {
-					bool cont = true;
+					// The IO request was cancelled.
+
+					bool deallocatePacket = true;
 					ata.blockedPacketsMutex.Acquire();
 
-					if (driverRunning) {
-						if (driverTemp) {
-							ATABlockedOperation *op = (ATABlockedOperation *) driverTemp;
-							ata.blockedPackets.Remove(&op->item);
-						} else {
-							// We need to wait for the driver to finish with this packet.
-							// They will send a Complete() when it is done.
-							// Because the packet has already been cancelled, 
-							// this will just free the packet and close the request's handle.
-							cont = false;
-						}
+					if (driverState == IO_PACKET_DRIVER_BLOCKING) {
+						ATABlockedOperation *op = (ATABlockedOperation *) driverTemp;
+						op->item.list->Remove(&op->item);
+					} else if (driverState == IO_PACKET_DRIVER_ISSUED) {
+						// We need to wait for the driver to finish with this packet.
+						// They will send a Complete() when it is done.
+						// Because the packet has already been cancelled, 
+						// this will just free the packet and close the request's handle.
+						deallocatePacket = false;
+					} else if (driverState == IO_PACKET_DRIVER_COMPLETE) {
+						// We were the packet that caused the request failure.
+						// TODO Add the block to a damaged list in the filesystem driver.
 					}
 
 					ata.blockedPacketsMutex.Release();
-					if (!cont) return; 
+					if (!deallocatePacket) return; 
 				}
-
-				// TODO If unsuccessful, add block to damaged list in EsFS.
 			} break;
 		}
 

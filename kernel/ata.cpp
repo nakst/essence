@@ -217,7 +217,6 @@ void ATADriver::Unblock() {
 	if (blockedPackets.firstItem) {
 		operation = blockedPackets.firstItem->thisItem;
 		blockedPackets.Remove(blockedPackets.firstItem);
-		operation->packet->driverTemp = nullptr;
 	}
 
 	blockedPacketsMutex.Release();
@@ -244,7 +243,8 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 
 	// Lock the driver.
 	if (packet) {
-		packet->driverRunning = true;
+		packet->driverState = IO_PACKET_DRIVER_BLOCKING;
+
 		blockedPacketsMutex.Acquire();
 		if (semaphore.units == 0) {
 			ATABlockedOperation *op = (ATABlockedOperation *) OSHeapAllocate(sizeof(ATABlockedOperation), true);
@@ -263,6 +263,8 @@ bool ATADriver::Access(IOPacket *packet, uintptr_t drive, uint64_t offset, size_
 			semaphore.Take(1);
 		}
 		blockedPacketsMutex.Release();
+
+		packet->driverState = IO_PACKET_DRIVER_ISSUED;
 	} else {
 		while (true) {
 			semaphore.available.Wait(OS_WAIT_NO_TIMEOUT);
@@ -347,7 +349,7 @@ void ATAIRQHandler2(void *argument) {
 
 		bool result = ata.AccessEnd(op->bus, op->slave);
 		ata.Unblock();
-		packet->driverRunning = false;
+		packet->driverState = IO_PACKET_DRIVER_COMPLETE;
 
 		if (!result) {
 			request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
