@@ -194,6 +194,7 @@ void KernelPanic(const char *format, ...) {
 
 	Print("Current thread = %x\n", GetCurrentThread());
 	Print("Trace: %x\n", __builtin_return_address(0));
+	Print("RSP: %x\n", ProcessorGetRSP());
 
 	{
 		Print("Threads:\n");

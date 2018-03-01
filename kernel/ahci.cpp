@@ -1,8 +1,12 @@
+// TODO Timeout with packet IO.
+// TODO Doesn't work 100% of the time on VirtualBox.
+// 	- Mutex incorrectly acquired on interrupt?
+
 #ifndef IMPLEMENTATION
 
 #define AHCI_TIMEOUT (1000)
 #define AHCI_SECTOR_SIZE (512)
-#define AHCI_COMMAND_COUNT (32)
+#define AHCI_COMMAND_COUNT (16)
 #define AHCI_DRIVE_COUNT (32)
 #define AHCI_IDENTIFY (-1)
 
@@ -221,6 +225,27 @@ struct AHCIHBA {
 	AHCIPort ports[32];
 };
 
+struct AHCIOperation {
+	struct IOPacket *ioPacket;
+	uint64_t offset;
+	size_t countBytes;
+	uint8_t *userBuffer;
+
+	union {
+		struct {
+			Event receivedIRQ;
+			uint8_t commandIndex;
+			volatile uint32_t status;
+		} issued;
+
+		struct {
+			LinkedItem<AHCIOperation> item;
+		} blocking;
+	};
+
+	uint8_t _drive, operation;
+};
+
 struct AHCIDrive {
 	bool present;
 
@@ -239,13 +264,15 @@ struct AHCIDrive {
 	uintptr_t physicalBuffers[AHCI_COMMAND_COUNT];
 	volatile void *buffers[AHCI_COMMAND_COUNT];
 
-	Event receivedIRQ[AHCI_COMMAND_COUNT];
+	AHCIOperation operations[AHCI_COMMAND_COUNT];
+	LinkedList<AHCIOperation> blockedOperations;
 };
 
 struct AHCIController {
 	void Initialise();
 	void RemoveBlockingPacket(struct IOPacket *packet);
 	bool Access(struct IOPacket *packet, uintptr_t drive, uint64_t offset, size_t count, int operation, uint8_t *buffer); // Returns true on success.
+	bool FinishOperation(AHCIOperation *operation);
 
 	bool present;
 	struct PCIDevice *pciDevice;
@@ -254,11 +281,105 @@ struct AHCIController {
 
 	// Acquire to check/change a packet's driverState or modify the blocked packets lists.
 	Mutex blockedPacketsMutex;
+	Pool blockedOperationsPool;
 };
 
 AHCIController ahci;
 
 #else
+
+bool AHCIController::FinishOperation(AHCIOperation *operation) {
+	bool success = false;
+
+	IOPacket *ioPacket = operation->ioPacket;
+	uintptr_t _drive = operation->_drive;
+	uint64_t offset = operation->offset;
+	size_t countBytes = operation->countBytes;
+	int operationType = operation->operation;
+	uint8_t *userBuffer = operation->userBuffer;
+	uintptr_t commandIndex = operation->issued.commandIndex;
+
+	AHCIDrive *drive = drives + _drive;
+	volatile AHCIPort *port = r->ports + _drive;
+	volatile void *buffer = drive->buffers[commandIndex];
+	uint64_t offsetIntoSector = offset % AHCI_SECTOR_SIZE;
+
+	if (operation->issued.status & 0xFD800000) {
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (drive error, %x).\n", operation->issued.status);
+		goto finish;
+	}
+
+	if (!(drive->commandsInUse & (1 << commandIndex))) {
+		KernelPanic("AHCIController::FinishOperation - Command not in use?\n");
+	}
+
+	if (port->commandIssue & (1 << commandIndex)) {
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (timeout).\n");
+		goto finish;
+	}
+
+	// TODO Proper error handling.
+
+	success = true;
+	finish:;
+
+	if (ioPacket) {
+		ioPacket->request->mutex.Acquire();
+		if (ioPacket->request->cancelled) success = false;
+	}
+
+	if (success && operationType != DRIVE_ACCESS_WRITE) {
+		// Copy to the output buffer.
+		CopyMemory(userBuffer, (uint8_t *) buffer + offsetIntoSector, countBytes);
+	}
+
+	if (ioPacket) {
+		// Complete the IO packet.
+		ioPacket->driverState = IO_PACKET_DRIVER_COMPLETE;
+		if (!success && !ioPacket->request->cancelled) ioPacket->request->Cancel(OS_ERROR_DRIVE_CONTROLLER_REPORTED);
+		else ioPacket->Complete(OS_SUCCESS);
+		ioPacket->request->mutex.Release();
+	}
+
+	// Mark the command index as available.
+	drive->mutex.Acquire();
+	drive->commandsInUse &= ~(1 << commandIndex);
+	drive->mutex.Release();
+
+	{
+		// Unblock a packet.
+		ahci.blockedPacketsMutex.Acquire();
+		drive->available.Return(1);
+
+		AHCIOperation *operation = nullptr;
+
+		if (drive->blockedOperations.firstItem) {
+			operation = drive->blockedOperations.firstItem->thisItem;
+			drive->blockedOperations.Remove(drive->blockedOperations.firstItem);
+		}
+
+		ahci.blockedPacketsMutex.Release();
+
+		if (operation) {
+			operation->ioPacket->request->mutex.Acquire();
+
+			// Try to issue the unblocked packet.
+			if (!Access(operation->ioPacket, operation->_drive, operation->offset, operation->countBytes, operation->operation, operation->userBuffer)) {
+				operation->ioPacket->request->Cancel(OS_ERROR_COULD_NOT_ISSUE_PACKET);
+			}
+
+			operation->ioPacket->request->mutex.Release();
+		}
+
+		blockedOperationsPool.Remove(operation);
+	}
+
+	return success;
+}
+
+void _AHCIFinishOperation(void *argument) {
+	ahci.FinishOperation((AHCIOperation *) argument);
+}
 
 bool AHCIIRQHandler(uintptr_t interruptIndex) {
 	(void) interruptIndex;
@@ -270,7 +391,7 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 		return false;
 	}
 
-	for (uint32_t i = 0; i < 32; i++) {
+	for (uint32_t i = 0; i < AHCI_DRIVE_COUNT; i++) {
 		if (pendingInterrupts & (1 << i)) {
 			AHCIDrive *drive = ahci.drives + i;
 			volatile AHCIPort *port = ahci.r->ports + i;
@@ -283,12 +404,24 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 			uint32_t interruptStatus = port->interruptStatus;
 			Defer(port->interruptStatus = interruptStatus);
 
+			if (!interruptStatus) {
+				continue;
+			}
+
 			for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
 				if ((drive->commandsInUse & (1 << i)) 
-						&& !(port->commandIssue & (1 << i))) {
-					if (drive->receivedIRQ[i].state) continue;
+						&& (!(port->commandIssue & (1 << i)) || (interruptStatus & 0xFD800000))) {
+					if (drive->operations[i].issued.receivedIRQ.state) continue;
 
-					drive->receivedIRQ[i].Set();
+					drive->operations[i].issued.status = interruptStatus;
+					drive->operations[i].issued.receivedIRQ.Set();
+
+					if (drive->operations[i].ioPacket) {
+						// Nobody is waiting on the event, so queue the finish operation.
+						scheduler.lock.Acquire();
+						RegisterAsyncTask(_AHCIFinishOperation, drive->operations + i, nullptr, true);
+						scheduler.lock.Release();
+					}
 				}
 			}
 		}
@@ -299,6 +432,8 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 
 void AHCIRegisterController(PCIDevice *pciDevice) {
 	KernelLog(LOG_VERBOSE, "AHCIRegisterController - Found AHCI controller.\n");
+
+	ahci.blockedOperationsPool.Initialise(sizeof(AHCIOperation));
 
 	ahci.pciDevice = pciDevice;
 	ahci.present = true;
@@ -364,6 +499,7 @@ void AHCIRegisterController(PCIDevice *pciDevice) {
 	uintptr_t receivedPacketPage = 0;
 	uint8_t *commandListPageVirtual = nullptr;
 	uint8_t *receivedPacketPageVirtual = nullptr;
+	uintptr_t presentDriveIndex = 0;
 
 	// Setup present drives.
 	for (uintptr_t i = 0; i < AHCI_DRIVE_COUNT; i++) {
@@ -376,15 +512,17 @@ void AHCIRegisterController(PCIDevice *pciDevice) {
 
 		// Allocate necessary structures for the port.
 
-		if ((i % (PAGE_SIZE / 1024)) == 0) {
+		if ((presentDriveIndex % (PAGE_SIZE / 1024)) == 0) {
 			commandListPage = pmm.AllocatePage(true);
 			commandListPageVirtual = (uint8_t *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), VMM_MAP_LAZY, VMM_REGION_PHYSICAL, commandListPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 		}
 
-		if ((i % (PAGE_SIZE / 256)) == 0) {
+		if ((presentDriveIndex % (PAGE_SIZE / 256)) == 0) {
 			receivedPacketPage = pmm.AllocatePage(true);
 			receivedPacketPageVirtual = (uint8_t *) kernelVMM.Allocate("AHCI", sizeof(PAGE_SIZE), VMM_MAP_LAZY, VMM_REGION_PHYSICAL, receivedPacketPage, VMM_REGION_FLAG_NOT_CACHABLE, nullptr);
 		}
+
+		presentDriveIndex++;
 
 		// Start a timeout.
 		Timer timeout = {};
@@ -437,7 +575,7 @@ void AHCIRegisterController(PCIDevice *pciDevice) {
 
 		// Get the IDENTIFY data.
 		uint16_t identifyData[256];
-		bool success = ahci.Access(nullptr, i, 0, 512, AHCI_IDENTIFY, (uint8_t *) identifyData);
+		bool success = ahci.Access(nullptr, i, 0, AHCI_SECTOR_SIZE, AHCI_IDENTIFY, (uint8_t *) identifyData);
 		if (!success) { drive->present = false; continue; }
 
 		// Work out the number of sectors in the drive.
@@ -470,9 +608,9 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	AHCIDrive *drive = drives + _drive;
 	volatile AHCIPort *port = r->ports + _drive;
 
-	uint64_t sector = offset / 512;
-	uint64_t offsetIntoSector = offset % 512;
-	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + 511) / 512;
+	uint64_t sector = offset / AHCI_SECTOR_SIZE;
+	uint64_t offsetIntoSector = offset % AHCI_SECTOR_SIZE;
+	uint64_t sectorsNeededToLoad = (countBytes + offsetIntoSector + (AHCI_SECTOR_SIZE - 1)) / AHCI_SECTOR_SIZE;
 
 	if (countBytes > 65536) {
 		KernelPanic("AHCIController::Access - Attempt to access more than 64KiB in one command.\n");
@@ -480,12 +618,34 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 		KernelPanic("AHCIController::Access - Attempt to partially write to a sector.\n");
 	}
 
+	AHCIOperation _operation = {};
+	_operation.ioPacket = ioPacket;
+	_operation._drive = _drive;
+	_operation.offset = offset;
+	_operation.countBytes = countBytes;
+	_operation.operation = operation;
+	_operation.userBuffer = userBuffer;
+
 	uintptr_t commandIndex = AHCI_COMMAND_COUNT;
 
 	// Wait for an available command.
 	if (ioPacket) {
-		// TODO.Packets.
-		return false;
+		ioPacket->driverState = IO_PACKET_DRIVER_BLOCKING;
+
+		blockedPacketsMutex.Acquire();
+
+		if (!drive->available.units) {
+			// Queue the operation to be performed when a command is freed up.
+			AHCIOperation *blockedOperation = (AHCIOperation *) blockedOperationsPool.Add();
+			CopyMemory(blockedOperation, &_operation, sizeof(AHCIOperation));
+			blockedOperation->blocking.item.thisItem = blockedOperation;
+			drive->blockedOperations.InsertEnd(&blockedOperation->blocking.item);
+			ioPacket->driverTemp = blockedOperation;
+			blockedPacketsMutex.Release();
+			return true;
+		}
+
+		ioPacket->driverState = IO_PACKET_DRIVER_ISSUED;
 	} else {
 		while (true) {
 			drive->available.available.Wait(OS_WAIT_NO_TIMEOUT);
@@ -517,7 +677,9 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 		KernelPanic("AHCIController::Access - Could not find an available command even though available.units != 0.\n");
 	}
 
-	drive->receivedIRQ[commandIndex].Reset();
+	drive->operations[commandIndex] = _operation;
+	drive->operations[commandIndex].issued.receivedIRQ.Reset();
+	drive->operations[commandIndex].issued.commandIndex = commandIndex;
 
 	volatile AHCICommandHeader *header = drive->commandList + commandIndex;
 	volatile AHCICommandTable *table = drive->commandTable + commandIndex;
@@ -536,7 +698,7 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	header->prdEntryCount = 1;
 	table->prdtEntries[0].targetAddressLow = (uint32_t) (physicalBuffer >> 0);
 	table->prdtEntries[0].targetAddressHigh = (uint32_t) (physicalBuffer >> 32);
-	table->prdtEntries[0].byteCount = countBytes + offsetIntoSector;
+	table->prdtEntries[0].byteCount = sectorsNeededToLoad * AHCI_SECTOR_SIZE;
 	table->prdtEntries[0].interruptOnCompletion = true;
 
 	// Setup the ATA command.
@@ -589,44 +751,22 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	port->commandIssue = 1 << commandIndex; 
 	drive->mutex.Release();
 
-	// Wait for the command to complete.
-	drive->receivedIRQ[commandIndex].Wait(AHCI_TIMEOUT);
+	if (ioPacket) {
+		// The packet was issued.
+		return true;
+	} else {
+		// Wait for the command to complete.
+		drive->operations[commandIndex].issued.receivedIRQ.Wait(AHCI_TIMEOUT);
 
-	bool success = false;
-
-	if (port->commandIssue & (1 << commandIndex)) {
-		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (timeout).\n");
-		goto finish;
+		return FinishOperation(drive->operations + commandIndex);
 	}
-
-	if (port->interruptStatus & (1 << 30)) {
-		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (drive error).\n");
-		goto finish;
-	}
-
-	// TODO Proper error handling.
-
-	// Copy to the output buffer.
-	if (operation != DRIVE_ACCESS_WRITE) {
-		CopyMemory(userBuffer, (uint8_t *) buffer + offsetIntoSector, countBytes);
-	}
-
-	success = true;
-	finish:;
-
-	// Mark the command index as available.
-	drive->mutex.Acquire();
-	drive->commandsInUse &= ~(1 << commandIndex);
-	drive->mutex.Release();
-	ahci.blockedPacketsMutex.Acquire();
-	drive->available.Return(1);
-	ahci.blockedPacketsMutex.Release();
-	
-	return success;
 }
 
 void AHCIController::RemoveBlockingPacket(IOPacket *packet) {
-	(void) packet;
+	AHCIOperation *operation = (AHCIOperation *) packet;
+	blockedPacketsMutex.Acquire();
+	operation->blocking.item.list->Remove(&operation->blocking.item);
+	blockedPacketsMutex.Release();
 }
 
 #endif

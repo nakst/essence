@@ -1665,6 +1665,8 @@ void Pool::Remove(void *address) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
+	if (!address) return;
+
 #if 1
 	if (cacheEntries == POOL_CACHE_COUNT) {
 		OSHeapFree(address, elementSize);

@@ -224,6 +224,8 @@ typedef enum OSFatalError {
 #define OS_ERROR_FILE_ON_READ_ONLY_VOLUME	(-32)
 #define OS_ERROR_USER_CANCELED_IO		(-33)
 #define OS_ERROR_INVALID_DIMENSIONS		(-34)
+#define OS_ERROR_DRIVE_CONTROLLER_REPORTED	(-35)
+#define OS_ERROR_COULD_NOT_ISSUE_PACKET		(-36)
 
 typedef intptr_t OSError;
 

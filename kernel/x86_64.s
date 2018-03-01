@@ -690,6 +690,11 @@ ProcessorGetAddressSpace:
 	mov	rax,cr3
 	ret
 
+[global ProcessorGetRSP]
+ProcessorGetRSP:
+	mov	rax,rsp
+	ret
+
 [extern PostContextSwitch]
 [global DoContextSwitch]
 DoContextSwitch:
