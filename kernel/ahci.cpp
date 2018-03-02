@@ -6,7 +6,7 @@
 
 #define AHCI_TIMEOUT (1000)
 #define AHCI_SECTOR_SIZE (512)
-#define AHCI_COMMAND_COUNT (16)
+#define AHCI_COMMAND_COUNT (4)
 #define AHCI_DRIVE_COUNT (32)
 #define AHCI_IDENTIFY (-1)
 
@@ -234,8 +234,9 @@ struct AHCIOperation {
 	union {
 		struct {
 			Event receivedIRQ;
-			uint8_t commandIndex;
+			Timer timeout;
 			volatile uint32_t status;
+			uint8_t commandIndex;
 		} issued;
 
 		struct {
@@ -303,6 +304,8 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 	volatile AHCIPort *port = r->ports + _drive;
 	volatile void *buffer = drive->buffers[commandIndex];
 	uint64_t offsetIntoSector = offset % AHCI_SECTOR_SIZE;
+
+	operation->issued.timeout.Remove();
 
 	if (operation->issued.status & 0xFD800000) {
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (drive error, %x).\n", operation->issued.status);
@@ -381,6 +384,18 @@ void _AHCIFinishOperation(void *argument) {
 	ahci.FinishOperation((AHCIOperation *) argument);
 }
 
+void AHCITimeoutCallback(void *argument) {
+	AHCIOperation *operation = (AHCIOperation *) argument;
+
+	if (operation->ioPacket) {
+		operation->issued.receivedIRQ.Set();
+
+		scheduler.lock.Acquire();
+		RegisterAsyncTask(_AHCIFinishOperation, operation, nullptr, true);
+		scheduler.lock.Release();
+	}
+}
+
 bool AHCIIRQHandler(uintptr_t interruptIndex) {
 	(void) interruptIndex;
 
@@ -413,8 +428,8 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 						&& (!(port->commandIssue & (1 << i)) || (interruptStatus & 0xFD800000))) {
 					if (drive->operations[i].issued.receivedIRQ.state) continue;
 
-					drive->operations[i].issued.status = interruptStatus;
 					drive->operations[i].issued.receivedIRQ.Set();
+					drive->operations[i].issued.status = interruptStatus;
 
 					if (drive->operations[i].ioPacket) {
 						// Nobody is waiting on the event, so queue the finish operation.
@@ -468,6 +483,10 @@ void AHCIRegisterController(PCIDevice *pciDevice) {
 		AHCIDrive *drive = ahci.drives + i;
 		volatile AHCIPort *port = ahci.r->ports + i;
 
+		if (!(ahci.r->portImplemented & (1 << i)) && i /*Always check the first port*/) {
+			continue;
+		}
+
 		uint32_t driveStatus = port->sataStatus;
 
 		if ((driveStatus & 0xF) == 3 && (driveStatus & 0xF0) && (driveStatus & 0xF00) == 0x100) {
@@ -509,6 +528,14 @@ void AHCIRegisterController(PCIDevice *pciDevice) {
 		if (!drive->present) {
 			continue;
 		}
+
+		// Disable transitions to the partial/slumber states.
+		port->sataControl |= (3 << 8);
+
+		// Start up the device.
+		port->command |= 1 << 2;
+		port->command |= 1 << 1;
+		port->command = (port->command & 0x0FFFFFFF) | (1 << 28);
 
 		// Allocate necessary structures for the port.
 
@@ -749,6 +776,7 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	// Issue the command.
 	drive->commandsInUse |= 1 << commandIndex;
 	port->commandIssue = 1 << commandIndex; 
+	drive->operations[commandIndex].issued.timeout.Set(AHCI_TIMEOUT, true, AHCITimeoutCallback, drive->operations + commandIndex);
 	drive->mutex.Release();
 
 	if (ioPacket) {
