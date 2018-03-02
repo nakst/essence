@@ -47,10 +47,8 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 						"Error code: %d (%s)", code, OSCStringLength(errorMessages[code]), errorMessages[code]);
 			} else {
 				crashMessageLength = OSFormatString(crashMessage, 256, 
-						"Error code: %d (user error)", code);
+						"Error code: %d (user defined error)", code);
 			}
-
-			(void) crashMessageLength;
 
 			OSWindowSpecification specification = {};
 			specification.width = 320;
@@ -60,24 +58,11 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 			specification.flags = OS_CREATE_WINDOW_ALERT;
 			specification.title = (char *) "Program Crashed";
 			specification.titleBytes = OSCStringLength(specification.title);
-			OSCreateWindow(&specification);
+			OSObject window = OSCreateWindow(&specification);
 
-#if 0
-			OSSetGrid(dialog, 1 /* Columns */, 2 /* Rows */);
-
-			OSSetControl(OSGetGridCell(dialog, 0, 0), 
-					OSCreateLabel(crashMessage, crashMessageLength), 
-					OS_CELL_H_PUSH | OS_CELL_H_CENTER | OS_CELL_V_TOP);
-
-			OSAction actionOK = {
-				OSLiteral("OK"),		// Label
-				OS_ICON_NONE,			// Icon
-				OSCallbackCloseWindow, dialog,	// Callback
-			};
-
-			OSSetControl(OSGetGridCell(dialog, 0, 1),
-					OSCreateButton(&actionOK), 0);
-#endif
+			OSObject content = OSCreateGrid(1, 1, 0);
+			OSSetRootGrid(window, content);
+			OSAddControl(content, 0, 0, OSCreateLabel(crashMessage, crashMessageLength), 0);
 
 			response = OS_CALLBACK_HANDLED;
 		} break;

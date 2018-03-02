@@ -1,2 +1,4 @@
 [action actionToggleEnabled]
-label = "Toggle Enabled";
+label = "Toggle Disabled";
+shortcut = "Ctrl+T";
+checkable = 1;

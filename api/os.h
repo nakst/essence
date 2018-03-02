@@ -623,9 +623,9 @@ typedef struct OSAction {
 	char *shortcut;
 	size_t shortcutBytes;
 
-	OSCallback callback;
+	uint8_t checkable, isChecked;
 
-	bool checkable, isChecked;
+	OSCallback callback;
 } OSAction;
 
 typedef struct OSWindowSpecification {

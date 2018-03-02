@@ -457,8 +457,8 @@ extern "C" void ProgramEntry() {
 	ws.titleBytes = OSCStringLength(ws.title);
 	window = OSCreateWindow(&ws);
 
-	actionOK.label = (char *) "Do Something";
-	actionOK.checkable = true;
+	actionOK.label = (char *) "Crash!";
+	actionOK.checkable = false;
 	actionOK.labelBytes = OSCStringLength(actionOK.label);
 	actionOK.callback = OSCallback(Crash, nullptr);
 	
@@ -472,7 +472,7 @@ extern "C" void ProgramEntry() {
 	actionToggleEnabled->callback = OSCallback(ToggleEnabled, b);
 	OSAddControl(content, 0, 0, OSCreateButton(actionToggleEnabled), 0);
 
-	OSAddControl(content, 1, 1, OSCreateTextbox(), 0);
+	OSAddControl(content, 1, 1, OSCreateTextbox(), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
 	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
 #if 0
