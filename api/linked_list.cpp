@@ -9,6 +9,8 @@ struct LinkedList;
 
 template <class T>
 struct LinkedItem {
+	void RemoveFromList();
+
 	struct LinkedItem<T> *previousItem;
 	T *thisItem;
 	struct LinkedItem<T> *nextItem;
@@ -30,6 +32,15 @@ struct LinkedList {
 
 	bool modCheck;
 };
+
+template <class T>
+void LinkedItem<T>::RemoveFromList() {
+	if (!list) {
+		LLPanic("LinkedItem::RemoveFromList - Item not in list.\n");
+	}
+
+	list->Remove(this);
+}
 
 template <class T>
 void LinkedList<T>::InsertStart(LinkedItem<T> *item) {

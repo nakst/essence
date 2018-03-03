@@ -1,5 +1,8 @@
 #include "../api/os.h"
 
+#define OS_MANIFEST_DEFINITIONS
+#include "../bin/os/desktop.manifest.h"
+
 char *errorMessages[] = {
 	(char *) "INVALID_BUFFER",
 	(char *) "UNKNOWN_SYSCALL",

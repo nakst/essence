@@ -112,12 +112,9 @@ int CompareIntegers(const void *a, const void *b) {
 	return *c - *d;
 }
 
-bool state;
-
 OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
 	(void) object;
-	OSEnableControl(message->context, state);
-	state = !state;
+	OSEnableControl(message->context, message->command.checked);
 	return OS_CALLBACK_HANDLED;
 }
 
@@ -127,7 +124,7 @@ extern "C" void ProgramEntry() {
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
-	if (++z != 2) OSCrashProcess(603);
+	if (++z != 2) OSCrashProcess(603); // Is the data segment writable?
 
 	jmpState = 1;
 	if (setjmp(buf) == 0) {
@@ -410,7 +407,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 0, 1, b = OSCreateTextbox(), 0);
 
-	actionToggleEnabled->callback = OSCallback(ToggleEnabled, b);
+	actionToggleEnabled->callback.context = b;
 	OSAddControl(content, 0, 0, OSCreateButton(actionToggleEnabled), 0);
 
 	OSAddControl(content, 1, 1, OSCreateTextbox(), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
@@ -418,10 +415,13 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
 
 	{
-		OSObject grid = OSCreateGrid(1, 1, 0);
+		OSObject grid = OSCreateGrid(1, 2, 0);
 		OSAddGrid(content, 1, 3, grid, OS_CELL_H_RIGHT);
 		OSAddControl(grid, 0, 0, OSCreateTextbox(), OS_CELL_H_LEFT);
+		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
+
+	OSDisableCommand(window, actionToggleEnabled, false);
 
 	OSProcessMessages();
 }

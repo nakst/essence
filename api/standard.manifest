@@ -1,31 +1,31 @@
-[command osActionCopy]
+[command osCommandCopy]
 label = "\$Copy";
 shortcut = "Ctrl+C";
 
-[command osActionPaste]
+[command osCommandPaste]
 label = "\$Paste";
 shortcut = "Ctrl+V";
 
-[command osActionCut]
+[command osCommandCut]
 label = "Cu\$t";
 shortcut = "Ctrl+X";
 
-[command osActionDelete]
+[command osCommandDelete]
 label = "\$Delete";
 shortcut = "Del";
 
-[command osActionUndo]
+[command osCommandUndo]
 label = "\$Undo";
 shortcut = "Ctrl+Z";
 
-[command osActionRedo]
+[command osCommandRedo]
 label = "\$Redo";
 shortcut = "Ctrl+Y";
 
-[command osActionRepeat]
+[command osCommandRepeat]
 label = "R\$epeat";
 shortcut = "Ctrl+Shift+Z";
 
-[command osActionSelectAll]
+[command osCommandSelectAll]
 label = "Select \$All";
 shortcut = "Ctrl+A";

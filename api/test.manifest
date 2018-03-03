@@ -1,6 +1,9 @@
+[program]
+name = "Test Program";
+
 [command actionToggleEnabled]
 label = "Toggle Disabled";
 shortcut = "Ctrl+T";
 checkable = true;
-callbackArgument = 10;
+callback = ToggleEnabled;
 isDisabled = false;

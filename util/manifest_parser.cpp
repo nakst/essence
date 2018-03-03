@@ -230,7 +230,6 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 		if (CompareTokens(attribute, "command")) {
 			commandCount++;
 			propertyCount = 0;
-			fprintf(output, "OSCommand _%.*s = {\n\t.identifier = %d,\n", section.bytes, section.text, commandCount);
 		}
 	}
 
@@ -252,6 +251,13 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 	if (event == EVENT_END_SECTION) { 
 		if (CompareTokens(attribute, "command")) {
 			Token value;
+
+			if (FindProperty("callback", &value)) {
+// typedef OSCallbackResponse (*OSCallbackFunction)(OSObject object, OSMessage *);
+				fprintf(output, "OSCallbackResponse %.*s(OSObject object, OSMessage *message);\n\n", value.bytes, value.text);
+			}
+
+			fprintf(output, "OSCommand _%.*s = {\n\t.identifier = %d,\n", section.bytes, section.text, commandCount - 1);
 
 			if (FindProperty("label", &value)) {
 				fprintf(output, "\t.label = (char *) %.*s,\n", value.bytes, value.text);
@@ -275,16 +281,16 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.checkable = false,\n");
 			}
 
-			if (FindProperty("isChecked", &value)) {
-				fprintf(output, "\t.isChecked = %.*s,\n", value.bytes, value.text);
+			if (FindProperty("defaultCheck", &value)) {
+				fprintf(output, "\t.defaultCheck = %.*s,\n", value.bytes, value.text);
 			} else {
-				fprintf(output, "\t.isChecked = false,\n");
+				fprintf(output, "\t.defaultCheck = false,\n");
 			}
 
-			if (FindProperty("isDisabled", &value)) {
-				fprintf(output, "\t.isDisabled = %.*s,\n", value.bytes, value.text);
+			if (FindProperty("defaultDisabled", &value)) {
+				fprintf(output, "\t.defaultDisabled = %.*s,\n", value.bytes, value.text);
 			} else {
-				fprintf(output, "\t.isDisabled = %s,\n", FindProperty("callback", &value) ? "false" : "true");
+				fprintf(output, "\t.defaultDisabled = %s,\n", FindProperty("callback", &value) ? "false" : "true");
 			}
 
 			fprintf(output, "\t.callback = { ");
@@ -309,7 +315,7 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 void GenerateActionList(Token attribute, Token section, Token name, Token value, int event) {
 	if (event == EVENT_START_SECTION) { 
 		if (CompareTokens(attribute, "command")) {
-			fprintf(output, "\t%.*s,\n", section.bytes, section.text);
+			fprintf(output, "\t&_%.*s,\n", section.bytes, section.text);
 		}
 	}
 }

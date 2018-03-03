@@ -1,4 +1,3 @@
-// TODO Timeout with packet IO.
 // TODO Doesn't work 100% of the time on VirtualBox.
 // 	- Mutex incorrectly acquired on interrupt?
 
@@ -702,6 +701,11 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 
 	if (commandIndex == AHCI_COMMAND_COUNT) {
 		KernelPanic("AHCIController::Access - Could not find an available command even though available.units != 0.\n");
+	}
+
+	// TODO This sometimes happens?!?
+	if (drive->operations[commandIndex].issued.timeout.item.list) {
+		KernelPanic("AHCIController::Access - Operation hasn't removed timer.\n");
 	}
 
 	drive->operations[commandIndex] = _operation;

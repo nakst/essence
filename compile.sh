@@ -14,6 +14,7 @@ x86_64-elf-g++ -c api/api.cpp -o bin/os/api2.o $BuildFlags -Wno-unused-function 
 x86_64-elf-ar -rcs bin/os/libapi.a bin/os/api1.o bin/os/api2.o 
 
 echo -e "-> Building ${ColorBlue}desktop${ColorNormal}..."
+./manifest_parser desktop/desktop.manifest bin/os/desktop.manifest.h
 x86_64-elf-g++ -c desktop/main.cpp -o bin/os/desktop.o $BuildFlags  $Optimise
 x86_64-elf-gcc -o bin/os/desktop bin/os/desktop.o $LinkFlags
 cp bin/os/desktop bin/os/desktop_symbols

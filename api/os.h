@@ -491,7 +491,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
 
 	// Notifications:
-	OS_NOTIFICATION_ACTION			= 0x2000,
+	OS_NOTIFICATION_COMMAND			= 0x2000,
 
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -585,6 +585,11 @@ typedef struct OSMessage {
 			int positionX, positionY;
 			bool result;
 		} hitTest;
+
+		struct {
+			OSObject window;
+			bool checked;
+		} command;
 	};
 } OSMessage;
 
@@ -624,8 +629,8 @@ typedef struct OSCommand {
 	size_t shortcutBytes;
 
 	uint8_t checkable : 1, 
-		isChecked : 1, 
-		isDisabled : 1;
+		defaultCheck : 1, 
+		defaultDisabled : 1;
 
 	OSCallback callback;
 } OSCommand;
@@ -778,6 +783,8 @@ OS_EXTERN_C void OSProcessMessages();
 OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
 OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
+OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
+#define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
 
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);

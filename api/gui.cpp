@@ -137,7 +137,7 @@ static void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mas
 #define DESCENDENT_RELAYOUT (2)
 
 struct Control : GUIObject {
-	// Current size: ~280 bytes.
+	// Current size: ~300 bytes.
 	// Is this too big?
 	
 	struct Window *window;
@@ -149,6 +149,7 @@ struct Control : GUIObject {
 	UIImage **backgrounds, **icons;
 
 	OSCommand *command;
+	LinkedItem<Control> commandItem;
 	OSCallback notificationCallback;
 
 	OSString text;
@@ -205,6 +206,13 @@ struct Grid : GUIObject {
 	int borderSize, gapSize;
 };
 
+struct CommandWindow {
+	// Data each window stores for each command specified in the program's manifest.
+	LinkedList<Control> controls; // Controls bound to this command.
+	uintptr_t disabled : 1, checked : 1;
+	uintptr_t state;
+};
+
 struct Window : GUIObject {
 	OSHandle window, surface;
 	Grid *root;
@@ -219,6 +227,8 @@ struct Window : GUIObject {
 
 	LinkedList<Control> timerControls;
 	int timerHz, caretBlinkStep, caretBlinkPause;
+
+	CommandWindow *commands;
 };
 
 static void OSRepaintControl(OSObject _control) {
@@ -237,6 +247,20 @@ static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 
 static void UpdateCheckboxIcons(Control *control) {
 	control->icons = control->isChecked ? checkboxIconsChecked : checkboxIcons;
+}
+
+static void SetControlCommand(Control *control, OSCommand *_command) {
+	control->command = _command;
+	control->commandItem.thisItem = control;
+	control->checkable = _command->checkable;
+	control->notificationCallback = _command->callback;
+
+	if (control->window) {
+		CommandWindow *command = control->window->commands + _command->identifier;
+		command->controls.InsertEnd(&control->commandItem);
+		control->isChecked = command->checked;
+		control->disabled = command->disabled;
+	}
 }
 
 void OSAnimateControl(OSObject _control, bool fast) {
@@ -451,11 +475,19 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			control->animationStep = 16;
 			control->finalAnimationStep = 16;
 			OSRepaintControl(control);
+
+			if (control->command) {
+				SetControlCommand(control, control->command);
+			}
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
 			if (control->timerControlItem.list) {
 				control->window->timerControls.Remove(&control->timerControlItem);
+			}
+
+			if (control->commandItem.list) {
+				control->commandItem.RemoveFromList();
 			}
 
 			if (control->window->hover == control) control->window->hover = nullptr;
@@ -530,14 +562,32 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_CLICKED: {
-			OSMessage message;
-			message.type = OS_NOTIFICATION_ACTION;
-			OSForwardMessage(control, control->notificationCallback, &message);
-
 			if (control->checkable) {
+				// Update the checked state.
 				control->isChecked = !control->isChecked;
-				UpdateCheckboxIcons(control);
+
+				if (control->command) {
+					// Update the command.
+					CommandWindow *command = control->window->commands + control->command->identifier;
+					command->checked = control->isChecked;
+					LinkedItem<Control> *item = command->controls.firstItem;
+
+					while (item) {
+						item->thisItem->isChecked = control->isChecked;
+						UpdateCheckboxIcons(item->thisItem);
+						OSRepaintControl(item->thisItem);
+						item = item->nextItem;
+					}
+				} else {
+					UpdateCheckboxIcons(control);
+				}
 			}
+
+			OSMessage message;
+			message.type = OS_NOTIFICATION_COMMAND;
+			message.command.checked = control->isChecked;
+			message.command.window = control->window;
+			OSForwardMessage(control, control->notificationCallback, &message);
 		} break;
 
 		default: {
@@ -1018,10 +1068,7 @@ OSObject OSCreateButton(OSCommand *command) {
 
 	control->drawParentBackground = true;
 
-	control->checkable = command->checkable;
-	control->isChecked = command->isChecked;
-	control->notificationCallback = command->callback;
-	control->disabled = command->isDisabled;
+	SetControlCommand(control, command);
 
 	if (control->checkable) {
 		UpdateCheckboxIcons(control);
@@ -1434,6 +1481,20 @@ void OSDisableControl(OSObject _control, bool disabled) {
 	}
 }
 
+void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
+	Window *window = (Window *) _window;
+	CommandWindow *command = window->commands + _command->identifier;
+	command->disabled = disabled;
+
+	LinkedItem<Control> *item = command->controls.firstItem;
+
+	while (item) {
+		Control *control = item->thisItem;
+		OSDisableControl(control, disabled);
+		item = item->nextItem;
+	}
+}
+
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Window *window = (Window *) _object;
@@ -1475,6 +1536,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
+			OSHeapFree(window->commands);
 			OSHeapFree(window);
 			return response;
 		} break;
@@ -1700,6 +1762,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
+extern size_t _commandCount;
+extern OSCommand *_commands[];
+
 OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	specification->width += totalBorderWidth;
 	specification->minimumWidth += totalBorderWidth;
@@ -1724,6 +1789,14 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	window->cursor = OS_CURSOR_NORMAL;
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
+
+	window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
+
+	for (uintptr_t i = 0; i < _commandCount; i++) {
+		CommandWindow *command = window->commands + i;
+		command->disabled = _commands[i]->defaultDisabled;
+		command->checked = _commands[i]->defaultCheck;
+	}
 
 	OSSetCallback(window, OSCallback(ProcessWindowMessage, nullptr));
 
