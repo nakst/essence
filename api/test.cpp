@@ -321,6 +321,7 @@ extern "C" void ProgramEntry() {
 	{
 		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);
 		void *pointer = OSMapObject(region, 0, 0, OS_MAP_OBJECT_READ_WRITE);
+		// Commented out because of the memory requirements.
 #if 0
 		OSResizeSharedMemory(region, 300 * 1024 * 1024); // Big -> big
 		OSResizeSharedMemory(region, 200 * 1024 * 1024); // Big -> small
@@ -351,66 +352,6 @@ extern "C" void ProgramEntry() {
 		if (handle2 != OS_INVALID_HANDLE) OSCrashProcess(140);
 	}
 
-#if 0
-	OSObject window = OSCreateWindow((char *) "Test Program", 12, 320, 200, 
-			OS_CREATE_WINDOW_WITH_MENU_BAR);
-
-	OSObject menuBar = OSGetWindowMenuBar(window);
-	OSSetMenuBarMenus(menuBar, 2);
-
-	OSObject fileMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "File", 4, OS_CONTROL_MENU_HAS_CHILDREN | OS_CONTROL_MENU_STYLE_BAR);
-	OSObject editMenu = OSCreateControl(OS_CONTROL_MENU, (char *) "Edit", 4, OS_CONTROL_MENU_HAS_CHILDREN | OS_CONTROL_MENU_STYLE_BAR);
-
-	OSSetMenuBarMenu(menuBar, 0, fileMenu);
-	OSSetMenuBarMenu(menuBar, 1, editMenu);
-
-	OSSetObjectCallback(fileMenu, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_FILE);
-	OSSetObjectCallback(editMenu, OS_OBJECT_CONTROL, OS_CALLBACK_POPULATE_MENU, PopulateMenu, (void *) MENU_EDIT);
-#endif
-
-#if 0
-	OSObject window = OSCreateWindow((char *) "Test Program", 12, 640, 400, OS_CREATE_WINDOW_WITH_MENU_BAR);
-	contentPane = OSGetWindowContentPane(window);
-	OSObject menuBar = OSGetWindowMenuBar(window);
-	OSObject button1 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Button 1", 8, 0);
-	OSObject button2 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Button 2", 8, 0);
-	OSObject button3 = OSCreateControl(OS_CONTROL_BUTTON, (char *) "Button 3", 8, 0);
-	OSObject textbox1 = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Textbox 1", 9, 0);
-	OSObject textbox2 = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Textbox 2", 9, 0);
-	OSObject textbox3 = OSCreateControl(OS_CONTROL_TEXTBOX, (char *) "Textbox 3", 9, 0);
-	OSObject menu1 = OSCreateControl(OS_CONTROL_MENU, (char *) "Menu 1", 6, 0);
-	OSObject menu2 = OSCreateControl(OS_CONTROL_MENU, (char *) "Menu 2", 6, 0);
-	OSObject menu3 = OSCreateControl(OS_CONTROL_MENU, (char *) "Menu 3", 6, 0);
-	OSConfigurePane(contentPane, 2, 3, 0);
-	OSSetMenuBarMenus(menuBar, 3);
-	OSSetPaneObject(OSGetPane(contentPane, 0, 0), button1, OS_SET_PANE_OBJECT_HORIZONTAL_LEFT | OS_SET_PANE_OBJECT_VERTICAL_CENTER);
-	OSSetPaneObject(OSGetPane(contentPane, 1, 1), button2, OS_SET_PANE_OBJECT_HORIZONTAL_PUSH | OS_SET_PANE_OBJECT_VERTICAL_CENTER);
-	OSSetPaneObject(OSGetPane(contentPane, 0, 2), button3, OS_SET_PANE_OBJECT_HORIZONTAL_CENTER | OS_SET_PANE_OBJECT_VERTICAL_CENTER);
-	OSSetPaneObject(OSGetPane(contentPane, 1, 0), textbox1, OS_SET_PANE_OBJECT_VERTICAL_PUSH);
-	OSSetPaneObject(OSGetPane(contentPane, 0, 1), textbox2, 0);
-	OSSetPaneObject(OSGetPane(contentPane, 1, 2), textbox3, OS_SET_PANE_OBJECT_VERTICAL_PUSH);
-	OSSetMenuBarMenu(menuBar, 0, menu1);
-	OSSetMenuBarMenu(menuBar, 1, menu2);
-	OSSetMenuBarMenu(menuBar, 2, menu3);
-	OSLayoutPane(contentPane);
-	OSLayoutPane(menuBar);
-	OSSetObjectCallback(button1, OS_OBJECT_CONTROL, OS_CALLBACK_ACTION, Test, nullptr);
-#endif
-
-#if 0
-	while (true) {
-		OSMessage message;
-		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
-
-		if (OSGetMessage(&message) == OS_SUCCESS) {
-			if (OS_SUCCESS == OSProcessGUIMessage(&message)) {
-				continue;
-			} else {
-				// Message not handled.
-			}
-		}
-	}
-#endif
 	{
 		OSNodeInformation node;
 		OSOpenNode(OSLiteral("/os/source_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
@@ -452,7 +393,7 @@ extern "C" void ProgramEntry() {
 	
 	OSWindowSpecification ws = {};
 	ws.width = 400;
-	ws.height = 100;
+	ws.height = 200;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	window = OSCreateWindow(&ws);
@@ -475,26 +416,12 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 1, 1, OSCreateTextbox(), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
 	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
-#if 0
-	OSObject content = OSCreateGrid(2, 2, 0);
-	OSSetRootGrid(window, content);
 
-	actionOK.label = (char *) "Do Something";
-	actionOK.labelBytes = OSCStringLength(actionOK.label);
-	actionOK.callback = OSCallback(ProcessActionOK, nullptr);
-	actionOK.checkable = false;
-	actionOK2.label = (char*) "toggle";
-	actionOK2.labelBytes = OSCStringLength(actionOK2.label);
-	actionOK2.checkable = true;
-
-	// progressBar = OSCreateProgressBar(0, 5, 0);
-	progressBar = OSCreateIndeterminateProgressBar();
-	OSObject button = OSCreateButton(&actionOK);
-	OSAddControl(content, 1, 0, progressBar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-	OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Progress:")), 0);
-	OSAddControl(content, 1, 1, button, OS_CELL_H_RIGHT | OS_CELL_V_BOTTOM | OS_CELL_V_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
-	OSAddControl(content, 0, 1, OSCreateButton(&actionOK2), 0);
-#endif
+	{
+		OSObject grid = OSCreateGrid(1, 1, 0);
+		OSAddGrid(content, 1, 3, grid, OS_CELL_H_RIGHT);
+		OSAddControl(grid, 0, 0, OSCreateTextbox(), OS_CELL_H_LEFT);
+	}
 
 	OSProcessMessages();
 }

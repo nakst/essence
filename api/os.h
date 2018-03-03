@@ -656,7 +656,6 @@ typedef struct OSWindowSpecification {
 #define OS_CELL_V_TOP     (128)
 #define OS_CELL_V_CENTER  (256)
 #define OS_CELL_V_BOTTOM  (512)
-#define OS_ADD_CHILD_GRID (1024)
 
 #define OS_CREATE_GRID_NO_BORDER (1)
 #define OS_CREATE_GRID_NO_GAP    (2)
@@ -783,8 +782,8 @@ OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
-#define OSAddGrid(_grid, _column, _row, _child) OSAddControl(_grid, _column, _row, _child, OS_ADD_CHILD_GRID)
-#define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_ADD_CHILD_GRID)
+#define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
+#define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, 0)
 
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox();

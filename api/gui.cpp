@@ -1,4 +1,3 @@
-#define UI_IMAGE(_image) _image.region, _image.border
 #define DIMENSION_PUSH (-1)
 
 #define CARET_BLINK_HZ (2)
@@ -16,8 +15,7 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Prevent flickering during window resize.
-// TODO Cell layouts for child grids.
-// TODO Gain focus - make what selection with textbox, with/without last focus, with/without previous selection?
+// TODO If a textbox has no focus or last focus and it then gains focus, should all its text be selected?
 
 struct UIImage {
 	OSRectangle region;
@@ -121,21 +119,36 @@ static UIImage *windowBorder43[] = {&activeWindowBorder43, &inactiveWindowBorder
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
-struct Control : APIObject {
+struct GUIObject : APIObject {
+	OSRectangle bounds, cellBounds;
+	uint16_t descendentInvalidationFlags;
+	uint16_t layout;
+	uint16_t preferredWidth, preferredHeight;
+};
+
+static void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
+	do {
+		object->descendentInvalidationFlags |= mask;
+		object = (GUIObject *) object->parent;
+	} while (object);
+}
+
+#define DESCENDENT_REPAINT  (1)
+#define DESCENDENT_RELAYOUT (2)
+
+struct Control : GUIObject {
 	// Current size: ~280 bytes.
 	// Is this too big?
 	
 	struct Window *window;
 		
-	OSRectangle bounds, cellBounds;
-	uint16_t layout;
-
 #define UI_IMAGE_NORMAL (0)
 #define UI_IMAGE_DISABLED (1)
 #define UI_IMAGE_HOVER (2)
 #define UI_IMAGE_DRAG (3)
 	UIImage **backgrounds, **icons;
 
+	OSCommand *command;
 	OSCallback notificationCallback;
 
 	OSString text;
@@ -159,7 +172,6 @@ struct Control : APIObject {
 		checkable : 1,
 		cursor : 5;
 
-	uint16_t preferredWidth, preferredHeight;
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
 
 	LinkedItem<Control> timerControlItem;
@@ -184,18 +196,16 @@ struct WindowResizeControl : Control {
 	unsigned direction;
 };
 
-struct Grid : APIObject {
+struct Grid : GUIObject {
 	struct Window *window;
 	unsigned columns, rows;
 	OSObject *objects;
-	OSRectangle bounds;
 	int *widths, *heights;
-	int width, height;
 	bool relayout, repaint;
 	int borderSize, gapSize;
 };
 
-struct Window : APIObject {
+struct Window : GUIObject {
 	OSHandle window, surface;
 	Grid *root;
 
@@ -253,6 +263,37 @@ void OSAnimateControl(OSObject _control, bool fast) {
 	OSRepaintControl(control);
 }
 
+static void StandardCellLayout(GUIObject *object) {
+	object->cellBounds = object->bounds;
+
+	int width = object->bounds.right - object->bounds.left;
+	int height = object->bounds.bottom - object->bounds.top;
+
+	if (width > object->preferredWidth) {
+		if (object->layout & OS_CELL_H_EXPAND) {
+		} else if (object->layout & OS_CELL_H_LEFT) {
+			object->bounds.right = object->bounds.left + object->preferredWidth;
+		} else if (object->layout & OS_CELL_H_RIGHT) {
+			object->bounds.left = object->bounds.right - object->preferredWidth;
+		} else {
+			object->bounds.left = object->bounds.left + width / 2 - object->preferredWidth / 2;
+			object->bounds.right = object->bounds.left + object->preferredWidth;
+		}
+	}
+
+	if (height > object->preferredHeight) {
+		if (object->layout & OS_CELL_V_EXPAND) {
+		} else if (object->layout & OS_CELL_V_TOP) {
+			object->bounds.bottom = object->bounds.top + object->preferredHeight;
+		} else if (object->layout & OS_CELL_V_BOTTOM) {
+			object->bounds.top = object->bounds.bottom - object->preferredHeight;
+		} else {
+			object->bounds.top = object->bounds.top + height / 2 - object->preferredHeight / 2;
+			object->bounds.bottom = object->bounds.top + object->preferredHeight;
+		}
+	}
+}
+
 static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Control *control = (Control *) _object;
@@ -267,36 +308,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				break;
 			}
 
-			control->cellBounds = control->bounds = OS_MAKE_RECTANGLE(
+			control->bounds = OS_MAKE_RECTANGLE(
 					message->layout.left, message->layout.right,
 					message->layout.top, message->layout.bottom);
-
-			int width = control->bounds.right - control->bounds.left;
-			int height = control->bounds.bottom - control->bounds.top;
-
-			if (width > control->preferredWidth) {
-				if (control->layout & OS_CELL_H_EXPAND) {
-				} else if (control->layout & OS_CELL_H_LEFT) {
-					control->bounds.right = control->bounds.left + control->preferredWidth;
-				} else if (control->layout & OS_CELL_H_RIGHT) {
-					control->bounds.left = control->bounds.right - control->preferredWidth;
-				} else {
-					control->bounds.left = control->bounds.left + width / 2 - control->preferredWidth / 2;
-					control->bounds.right = control->bounds.left + control->preferredWidth;
-				}
-			}
-
-			if (height > control->preferredHeight) {
-				if (control->layout & OS_CELL_V_EXPAND) {
-				} else if (control->layout & OS_CELL_V_TOP) {
-					control->bounds.bottom = control->bounds.top + control->preferredHeight;
-				} else if (control->layout & OS_CELL_V_BOTTOM) {
-					control->bounds.top = control->bounds.bottom - control->preferredHeight;
-				} else {
-					control->bounds.top = control->bounds.top + height / 2 - control->preferredHeight / 2;
-					control->bounds.bottom = control->bounds.top + control->preferredHeight;
-				}
-			}
+			StandardCellLayout(control);
 
 			control->relayout = false;
 			OSRepaintControl(control);
@@ -1163,13 +1178,12 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 }
 
 void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _control, unsigned layout) {
-	APIObject *_object = (APIObject *) _grid;
+	GUIObject *_object = (GUIObject *) _grid;
 
 	if (_object->type == API_OBJECT_WINDOW) {
 		_grid = ((Window *) _grid)->root;
 		column = 1;
 		row = 2;
-		if (layout != OS_ADD_CHILD_GRID) OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
 		((Grid *) _control)->borderSize = 8;
 	}
 
@@ -1183,8 +1197,8 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	}
 
 	Control *control = (Control *) _control;
-	if (control->type != API_OBJECT_CONTROL && layout != OS_ADD_CHILD_GRID) OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
-	if (layout != OS_ADD_CHILD_GRID) control->layout = layout;
+	if (control->type != API_OBJECT_CONTROL && control->type != API_OBJECT_GRID) OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+	control->layout = layout;
 	control->parent = grid;
 
 	OSObject *object = grid->objects + (row * grid->columns + column);
@@ -1211,6 +1225,17 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				grid->bounds = OS_MAKE_RECTANGLE(
 						message->layout.left, message->layout.right,
 						message->layout.top, message->layout.bottom);
+
+				if (grid->preferredWidth == (uint16_t) DIMENSION_PUSH) {
+					grid->preferredWidth = message->layout.right - message->layout.left;
+				}
+				
+				if (grid->preferredHeight == (uint16_t) DIMENSION_PUSH) {
+					grid->preferredHeight = message->layout.bottom - message->layout.top;
+				}
+
+				if (!grid->layout) grid->layout = OS_CELL_H_EXPAND | OS_CELL_V_EXPAND;
+				StandardCellLayout(grid);
 
 				OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
 				OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
@@ -1310,8 +1335,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + (i == grid->columns - 1 ? grid->borderSize : grid->gapSize);
 			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + (j == grid->rows - 1 ? grid->borderSize : grid->gapSize);
 
-			grid->width = message->measure.width = width;
-			grid->height = message->measure.height = height;
+			grid->preferredWidth = message->measure.width = width;
+			grid->preferredHeight = message->measure.height = height;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
