@@ -6,7 +6,7 @@
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
 
-OSAction actionOK, actionOK2;
+OSCommand actionOK, actionOK2;
 OSObject progressBar, window;
 
 int x = 5;

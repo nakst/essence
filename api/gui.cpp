@@ -17,7 +17,6 @@
 
 // TODO Prevent flickering during window resize.
 // TODO Cell layouts for child grids.
-// TODO Disabling textbox with last focus and selection
 // TODO Gain focus - make what selection with textbox, with/without last focus, with/without previous selection?
 
 struct UIImage {
@@ -72,11 +71,58 @@ static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58,
 static UIImage textboxHover		= {{-11 + 52, -11 + 61, 166, 189}, {-11 + 55, -11 + 58, 169, 186}};
 static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 58, 169, 186}};
 
+static UIImage *checkboxIcons[] = {
+	&checkboxNormal, 
+	&checkboxDisabled, 
+	&checkboxHover, 
+	&checkboxDragged,
+};
+
+static UIImage *checkboxIconsChecked[] = {
+	&checkboxNormalChecked, 
+	&checkboxDisabledChecked, 
+	&checkboxHoverChecked, 
+	&checkboxDraggedChecked,
+};
+
+static UIImage *textboxBackgrounds[] = {
+	&textboxNormal,
+	&textboxDisabled,
+	&textboxHover,
+	&textboxFocus,
+};
+
+static UIImage *buttonBackgrounds[] = {
+	&buttonNormal,
+	&buttonDisabled,
+	&buttonHover,
+	&buttonDragged,
+};
+
+static UIImage *progressBarBackgrounds[] = {
+	&progressBarBackground,
+	&progressBarDisabled,
+	&progressBarBackground,
+	&progressBarBackground,
+};
+
+static UIImage *windowBorder11[] = {&activeWindowBorder11, &inactiveWindowBorder11, &activeWindowBorder11, &activeWindowBorder11};
+static UIImage *windowBorder12[] = {&activeWindowBorder12, &inactiveWindowBorder12, &activeWindowBorder12, &activeWindowBorder12};
+static UIImage *windowBorder13[] = {&activeWindowBorder13, &inactiveWindowBorder13, &activeWindowBorder13, &activeWindowBorder13};
+static UIImage *windowBorder21[] = {&activeWindowBorder21, &inactiveWindowBorder21, &activeWindowBorder21, &activeWindowBorder21};
+static UIImage *windowBorder22[] = {&activeWindowBorder22, &inactiveWindowBorder22, &activeWindowBorder22, &activeWindowBorder22};
+static UIImage *windowBorder23[] = {&activeWindowBorder23, &inactiveWindowBorder23, &activeWindowBorder23, &activeWindowBorder23};
+static UIImage *windowBorder31[] = {&activeWindowBorder31, &inactiveWindowBorder31, &activeWindowBorder31, &activeWindowBorder31};
+static UIImage *windowBorder33[] = {&activeWindowBorder33, &inactiveWindowBorder33, &activeWindowBorder33, &activeWindowBorder33};
+static UIImage *windowBorder41[] = {&activeWindowBorder41, &inactiveWindowBorder41, &activeWindowBorder41, &activeWindowBorder41};
+static UIImage *windowBorder42[] = {&activeWindowBorder42, &inactiveWindowBorder42, &activeWindowBorder42, &activeWindowBorder42};
+static UIImage *windowBorder43[] = {&activeWindowBorder43, &inactiveWindowBorder43, &activeWindowBorder43, &activeWindowBorder43};
+
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
 struct Control : APIObject {
-	// Current size: ~320 bytes.
+	// Current size: ~280 bytes.
 	// Is this too big?
 	
 	struct Window *window;
@@ -84,18 +130,19 @@ struct Control : APIObject {
 	OSRectangle bounds, cellBounds;
 	uint16_t layout;
 
-	uint32_t backgroundColor;
+#define UI_IMAGE_NORMAL (0)
+#define UI_IMAGE_DISABLED (1)
+#define UI_IMAGE_HOVER (2)
+#define UI_IMAGE_DRAG (3)
+	UIImage **backgrounds, **icons;
 
-	UIImage *background, *disabledBackground, *hoverBackground, *dragBackground;
-	UIImage *icon, *disabledIcon, *hoverIcon, *dragIcon;
-
-	OSAction *action;
-	OSCursorStyle cursor;
+	OSCallback notificationCallback;
 
 	OSString text;
 	OSRectangle textBounds;
 	uint32_t textColor;
 	uint8_t textSize, textAlign;
+	uint32_t backgroundColor;
 
 	uint32_t textShadow : 1, 
 		textBold : 1,
@@ -106,12 +153,14 @@ struct Control : APIObject {
 		customTextRendering : 1,
 		drawParentBackground : 1,
 		noDisabledTextColorChange : 1,
-		keepCustomCursorWhenDisabled : 1;
+		keepCustomCursorWhenDisabled : 1,
+		disabled : 1, 
+		isChecked : 1, 
+		checkable : 1,
+		cursor : 5;
 
 	uint16_t preferredWidth, preferredHeight;
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
-
-	bool disabled;
 
 	LinkedItem<Control> timerControlItem;
 	uint16_t timerHz, timerStep;
@@ -177,11 +226,7 @@ static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 }
 
 static void UpdateCheckboxIcons(Control *control) {
-	OSAction *action = control->action;
-	control->icon = action->isChecked ? &checkboxNormalChecked : &checkboxNormal;
-	control->disabledIcon = action->isChecked ? &checkboxDisabledChecked : &checkboxDisabled;
-	control->hoverIcon = action->isChecked ? &checkboxHoverChecked : &checkboxHover;
-	control->dragIcon = action->isChecked ? &checkboxDraggedChecked : &checkboxDragged;
+	control->icons = control->isChecked ? checkboxIconsChecked : checkboxIcons;
 }
 
 void OSAnimateControl(OSObject _control, bool fast) {
@@ -267,8 +312,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		case OS_MESSAGE_LAYOUT_TEXT: {
 			control->textBounds = control->bounds;
 
-			if (control->icon) {
-				control->textBounds.left += control->icon->region.right - control->icon->region.left + 4;
+			if (control->icons) {
+				control->textBounds.left += control->icons[0]->region.right - control->icons[0]->region.left + 4;
 			}
 		} break;
 
@@ -308,50 +353,50 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
-				if (control->background) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->background->region, 
-							control->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+				if (control->backgrounds && control->backgrounds[0]) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
+							control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 				}
 
-				if (control->hoverBackground && control->current2) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->hoverBackground->region, 
-							control->hoverBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
+				if (control->backgrounds && control->backgrounds[2] && control->current2) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
+							control->backgrounds[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
 				}
 
-				if (control->dragBackground && control->current3) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->dragBackground->region, 
-							control->dragBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
+				if (control->backgrounds && control->backgrounds[3] && control->current3) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
+							control->backgrounds[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
 				}
 
-				if (control->disabledBackground && control->current4) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->disabledBackground->region, 
-							control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
+				if (control->backgrounds && control->backgrounds[1] && control->current4) {
+					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
+							control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
 				}
 
-				if (control->icon) {
+				if (control->icons) {
 					OSRectangle bounds = control->bounds;
-					bounds.right = bounds.left + control->icon->region.right - control->icon->region.left;
-					bounds.top += (bounds.bottom - bounds.top) / 2 - (control->icon->region.bottom - control->icon->region.top) / 2;
-					bounds.bottom = bounds.top + control->icon->region.bottom - control->icon->region.top;
+					bounds.right = bounds.left + control->icons[0]->region.right - control->icons[0]->region.left;
+					bounds.top += (bounds.bottom - bounds.top) / 2 - (control->icons[0]->region.bottom - control->icons[0]->region.top) / 2;
+					bounds.bottom = bounds.top + control->icons[0]->region.bottom - control->icons[0]->region.top;
 
 					if (control->current1) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icon->region, 
-								control->icon->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[0]->region, 
+								control->icons[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					}
 
 					if (control->current2) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->hoverIcon->region, 
-								control->hoverIcon->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[2]->region, 
+								control->icons[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
 					}
 
 					if (control->current3) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->dragIcon->region, 
-								control->dragIcon->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[3]->region, 
+								control->icons[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
 					}
 
 					if (control->current4) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->disabledIcon->region, 
-								control->disabledIcon->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[1]->region, 
+								control->icons[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
 					}
 				}
 
@@ -448,7 +493,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 
 			if (!control->disabled || control->keepCustomCursorWhenDisabled) {
-				control->window->cursor = control->cursor;
+				control->window->cursor = (OSCursorStyle) control->cursor;
 			}
 
 			control->window->hover = control;
@@ -470,15 +515,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_CLICKED: {
-			if (control->action) {
-				OSMessage message;
-				message.type = OS_NOTIFICATION_ACTION;
-				OSForwardMessage(control, control->action->callback, &message);
+			OSMessage message;
+			message.type = OS_NOTIFICATION_ACTION;
+			OSForwardMessage(control, control->notificationCallback, &message);
 
-				if (control->action->checkable) {
-					control->action->isChecked = !control->action->isChecked;
-					UpdateCheckboxIcons(control);
-				}
+			if (control->checkable) {
+				control->isChecked = !control->isChecked;
+				UpdateCheckboxIcons(control);
 			}
 		} break;
 
@@ -563,15 +606,12 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 	return response;
 }
 
-static OSObject CreateWindowResizeHandle(UIImage *image, UIImage *disabledImage, unsigned direction) {
+static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
 	control->type = API_OBJECT_CONTROL;
-	control->background = image;
-	control->hoverBackground = image;
-	control->dragBackground = image;
-	control->disabledBackground = disabledImage;
-	control->preferredWidth = image->region.right - image->region.left;
-	control->preferredHeight = image->region.bottom - image->region.top;
+	control->backgrounds = images;
+	control->preferredWidth = images[0]->region.right - images[0]->region.left;
+	control->preferredHeight = images[0]->region.bottom - images[0]->region.top;
 	control->direction = direction;
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	control->noAnimations = true;
@@ -740,7 +780,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		DrawString(message->paint.surface, control->textBounds, 
 				&control->text, control->textAlign, control->textColor, 0xFFFFFF, control->window->focus == control ? 0xFFC4D9F9 : 0xFFDDDDDD,
-				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control ? control->caret2.character : control->caret.character, 
+				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
+				&& !control->disabled ? control->caret2.character : control->caret.character, 
 				control->window->focus != control || control->caretBlink,
 				control->textSize, fontRegular);
 
@@ -938,10 +979,7 @@ OSObject OSCreateTextbox() {
 
 	control->drawParentBackground = true;
 
-	control->background = &textboxNormal;
-	control->disabledBackground = &textboxDisabled;
-	control->hoverBackground = &textboxHover;
-	control->dragBackground = &textboxFocus;
+	control->backgrounds = textboxBackgrounds;
 
 	control->cursor = OS_CURSOR_TEXT;
 	control->focusable = true;
@@ -956,31 +994,32 @@ OSObject OSCreateTextbox() {
 	return control;
 }
 
-OSObject OSCreateButton(OSAction *action) {
+OSObject OSCreateButton(OSCommand *command) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
 	control->preferredWidth = 80;
 	control->preferredHeight = 21;
 
-	control->action = action;
 	control->drawParentBackground = true;
 
-	if (action->checkable) {
+	control->checkable = command->checkable;
+	control->isChecked = command->isChecked;
+	control->notificationCallback = command->callback;
+	control->disabled = command->isDisabled;
+
+	if (control->checkable) {
 		UpdateCheckboxIcons(control);
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-		control->minimumHeight = control->icon->region.bottom - control->icon->region.top;
+		control->minimumHeight = control->icons[0]->region.bottom - control->icons[0]->region.top;
 	} else {
-		control->background = &buttonNormal;
-		control->disabledBackground = &buttonDisabled;
-		control->hoverBackground = &buttonHover;
-		control->dragBackground = &buttonDragged;
+		control->backgrounds = buttonBackgrounds;
 		control->minimumWidth = 80;
 		control->minimumHeight = 21;
 	}
 
 	OSSetCallback(control, OSCallback(ProcessControlMessage, nullptr));
-	OSSetText(control, action->label, action->labelBytes);
+	OSSetText(control, command->label, command->labelBytes);
 
 	return control;
 }
@@ -1015,10 +1054,10 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 
 			if (control->disabled) {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->disabledBackground->region, control->disabledBackground->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						control->backgrounds[1]->region, control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 			} else {
 				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->background->region, control->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						control->backgrounds[0]->region, control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 
 				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
 
@@ -1078,10 +1117,7 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 	ProgressBar *control = (ProgressBar *) OSHeapAllocate(sizeof(ProgressBar), true);
 
 	control->type = API_OBJECT_CONTROL;
-	control->background = &progressBarBackground;
-	control->disabledBackground = &progressBarDisabled;
-	control->hoverBackground = &progressBarBackground;
-	control->dragBackground = &progressBarBackground;
+	control->backgrounds = progressBarBackgrounds;
 
 	control->minimum = minimum;
 	control->maximum = maximum;
@@ -1109,8 +1145,8 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 8;
 	int suggestedHeight = FONT_SIZE + 8;
 
-	if (control->icon) {
-		suggestedWidth += control->icon->region.right - control->icon->region.left + 4;
+	if (control->icons && control->icons[UI_IMAGE_NORMAL]) {
+		suggestedWidth += control->icons[UI_IMAGE_NORMAL]->region.right - control->icons[0]->region.left + 4;
 	}
 
 	if (suggestedWidth > control->minimumWidth) control->preferredWidth = suggestedWidth;
@@ -1677,20 +1713,20 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	}
 
 	{
-		OSObject titlebar = CreateWindowResizeHandle(&activeWindowBorder22, &inactiveWindowBorder22, RESIZE_MOVE);
+		OSObject titlebar = CreateWindowResizeHandle(windowBorder22, RESIZE_MOVE);
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
 
-		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(&activeWindowBorder11, &inactiveWindowBorder11, RESIZE_TOP_LEFT), 0);
-		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(&activeWindowBorder12, &inactiveWindowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(&activeWindowBorder13, &inactiveWindowBorder13, RESIZE_TOP_RIGHT), 0);
-		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(&activeWindowBorder21, &inactiveWindowBorder21, RESIZE_LEFT), 0);
-		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(&activeWindowBorder23, &inactiveWindowBorder23, RESIZE_RIGHT), 0);
-		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(&activeWindowBorder31, &inactiveWindowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(&activeWindowBorder33, &inactiveWindowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(&activeWindowBorder41, &inactiveWindowBorder41, RESIZE_BOTTOM_LEFT), 0);
-		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(&activeWindowBorder42, &inactiveWindowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(&activeWindowBorder43, &inactiveWindowBorder43, RESIZE_BOTTOM_RIGHT), 0);
+		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(windowBorder11, RESIZE_TOP_LEFT), 0);
+		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(windowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(windowBorder13, RESIZE_TOP_RIGHT), 0);
+		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(windowBorder21, RESIZE_LEFT), 0);
+		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(windowBorder23, RESIZE_RIGHT), 0);
+		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(windowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(windowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(windowBorder41, RESIZE_BOTTOM_LEFT), 0);
+		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(windowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(windowBorder43, RESIZE_BOTTOM_RIGHT), 0);
 	}
 
 	return window;

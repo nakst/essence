@@ -614,8 +614,8 @@ typedef struct OSCallback {
 	OS_CONSTRUCTOR(OSCallback(OSCallbackFunction _function, void *_context) { function = _function; context = _context; })
 } OSCallback;
 
-typedef struct OSAction {
-	unsigned identifier;
+typedef struct OSCommand {
+	uint32_t identifier;
 
 	char *label;
 	size_t labelBytes;
@@ -623,10 +623,12 @@ typedef struct OSAction {
 	char *shortcut;
 	size_t shortcutBytes;
 
-	uint8_t checkable, isChecked;
+	uint8_t checkable : 1, 
+		isChecked : 1, 
+		isDisabled : 1;
 
 	OSCallback callback;
-} OSAction;
+} OSCommand;
 
 typedef struct OSWindowSpecification {
 	unsigned width, height;
@@ -784,7 +786,7 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 #define OSAddGrid(_grid, _column, _row, _child) OSAddControl(_grid, _column, _row, _child, OS_ADD_CHILD_GRID)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_ADD_CHILD_GRID)
 
-OS_EXTERN_C OSObject OSCreateButton(OSAction *action);
+OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox();
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);

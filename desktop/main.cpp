@@ -133,11 +133,11 @@ extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/os/UISheet.png", OS_SURFACE_UI_SHEET, false);
 
 #if 0
-	LoadImageIntoSurface((char *) "/os/sample_images/Winter.jpg", OS_SURFACE_WALLPAPER, true);
+	LoadImageIntoSurface((char *) "/os/sample_images/Water.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(0, 128, 128));
+	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(32, 64, 128));
 #endif
 
 	OSRedrawAll();

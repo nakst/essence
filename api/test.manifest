@@ -1,4 +1,6 @@
-[action actionToggleEnabled]
+[command actionToggleEnabled]
 label = "Toggle Disabled";
 shortcut = "Ctrl+T";
-checkable = 1;
+checkable = true;
+callbackArgument = 10;
+isDisabled = false;
