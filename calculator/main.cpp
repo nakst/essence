@@ -100,6 +100,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 	Token left = NEXT_TOKEN(), right;
 	double number = 0;
 
+	char *string2;
+	size_t stringBytes2;
+
 	switch (left.type) {
 		case Token::NUMBER: {
 			number = left.number;
@@ -128,6 +131,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 		} break;
 	}
 
+	string2 = string;
+	stringBytes2 = stringBytes;
+
 	right = NEXT_TOKEN();
 
 	while (right.type != Token::EOL && right.type != Token::ERROR) {
@@ -138,7 +144,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 					if (e.error) goto error;
 					number += e.value;
 				} else {
-					break;
+					string = string2;
+					stringBytes = stringBytes2;
+					goto done;
 				}
 			} break;
 
@@ -148,7 +156,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 					if (e.error) goto error;
 					number -= e.value;
 				} else {
-					break;
+					string = string2;
+					stringBytes = stringBytes2;
+					goto done;
 				}
 			} break;
 
@@ -158,7 +168,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 					if (e.error) goto error;
 					number *= e.value;
 				} else {
-					break;
+					string = string2;
+					stringBytes = stringBytes2;
+					goto done;
 				}
 			} break;
 
@@ -169,7 +181,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 					if (e.value == 0) goto error;
 					number /= e.value;
 				} else {
-					break;
+					string = string2;
+					stringBytes = stringBytes2;
+					goto done;
 				}
 			} break;
 
@@ -178,12 +192,18 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 			} break;
 
 			default: {
-				break;
+				string = string2;
+				stringBytes = stringBytes2;
+				goto done;
 			} break;
 		}
 
+		string2 = string;
+		stringBytes2 = stringBytes;
 		right = NEXT_TOKEN();
 	}
+
+	done:;
 
 	if (right.type == Token::ERROR) {
 		goto error;
