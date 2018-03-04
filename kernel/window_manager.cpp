@@ -56,6 +56,7 @@ struct WindowManager {
 
 	unsigned lastButtons;
 	bool shift, alt, ctrl;
+	bool shift2, alt2, ctrl2;
 
 	uint64_t clickChainStartMs;
 	unsigned clickChainCount;
@@ -154,8 +155,8 @@ void WindowManager::PressKey(unsigned scancode) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
-	// TODO Right alt/ctrl/shift.
 	// TODO Caps/num lock.
+
 	if (scancode == OS_SCANCODE_LEFT_CTRL) ctrl = true;
 	if (scancode == (OS_SCANCODE_LEFT_CTRL | SCANCODE_KEY_RELEASED)) ctrl = false;
 	if (scancode == OS_SCANCODE_LEFT_SHIFT) shift = true;
@@ -163,15 +164,22 @@ void WindowManager::PressKey(unsigned scancode) {
 	if (scancode == OS_SCANCODE_LEFT_ALT) alt = true;
 	if (scancode == (OS_SCANCODE_LEFT_ALT | SCANCODE_KEY_RELEASED)) alt = false;
 
+	if (scancode == OS_SCANCODE_RIGHT_CTRL) ctrl2 = true;
+	if (scancode == (OS_SCANCODE_RIGHT_CTRL | SCANCODE_KEY_RELEASED)) ctrl2 = false;
+	if (scancode == OS_SCANCODE_RIGHT_SHIFT) shift2 = true;
+	if (scancode == (OS_SCANCODE_RIGHT_SHIFT | SCANCODE_KEY_RELEASED)) shift2 = false;
+	if (scancode == OS_SCANCODE_RIGHT_ALT) alt2 = true;
+	if (scancode == (OS_SCANCODE_RIGHT_ALT | SCANCODE_KEY_RELEASED)) alt2 = false;
+
 	if (activeWindow) {
 		Window *window = activeWindow;
 
 		OSMessage message = {};
 		message.type = (scancode & SCANCODE_KEY_RELEASED) ? OS_MESSAGE_KEY_RELEASED : OS_MESSAGE_KEY_PRESSED;
 		message.context = window->apiWindow;
-		message.keyboard.alt = alt;
-		message.keyboard.ctrl = ctrl;
-		message.keyboard.shift = shift;
+		message.keyboard.alt = alt | alt2;
+		message.keyboard.ctrl = ctrl | ctrl2;
+		message.keyboard.shift = shift | shift2;
 		message.keyboard.scancode = scancode & ~SCANCODE_KEY_RELEASED;
 		window->owner->messageQueue.SendMessage(message);
 	}

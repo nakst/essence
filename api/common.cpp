@@ -229,6 +229,94 @@ void CF(_FormatString)(CF(PutCharacterCallback) callback, void *callbackData, co
 						position++;
 					}
 				} break;
+
+				case 'F': {
+					double number = va_arg(arguments, double);
+
+					if (number < 0) {
+						callback('-', callbackData);
+						number = -number;
+					}
+
+					uint64_t integer = (uint64_t) number;
+					uint64_t fractional = 0;
+
+					const int max = 15;
+					int o = 0;
+					double m = 1, n;
+
+					number -= integer;
+
+					while (o < max) {
+						n = number * m;
+						fractional = (uint64_t) n;
+
+						if ((double) fractional == n) {
+							break;
+						} else {
+							m *= 10;
+							o++;
+						}
+					}
+
+					if (o == max) {
+						o--;
+					}
+
+#if 0
+					double m = 1, n;
+					uint64_t x = (int) number, o = 0;
+					number -= x;
+
+					while (o < max) {
+						n = number * m;
+						x = (uint64_t) n;
+
+						if ((double) x == n) {
+							break;
+						} else {
+							m *= 10;
+							o++;
+						}
+					}
+
+					uint64_t integer = x / m;
+					uint64_t fractional = x - integer * m;
+#endif
+
+					int bp = 0;
+
+					if (!integer) {
+						callback('0', callbackData);
+					}
+
+					while (integer) {
+						buffer[bp++] = (integer % 10) + '0';
+						integer /= 10;
+					}
+
+					while (--bp != -1) {
+						callback(buffer[bp], callbackData);
+					}
+
+					if (fractional) {
+						callback('.', callbackData);
+
+						bp = 0;
+
+						while (fractional) {
+							buffer[bp++] = (fractional % 10) + '0';
+							fractional /= 10;
+							o--;
+						}
+
+						while (o--) buffer[bp++] = '0';
+
+						while (--bp != -1) {
+							callback(buffer[bp], callbackData);
+						}
+					}
+				} break;
 			}
 		} else {
 			callback(c, callbackData);
@@ -498,6 +586,7 @@ long int strtol(const char *nptr, char **endptr, int base) {
 			base = 16;
 			nptr += 2;
 		} else if (nptr[0] == '0') {
+			CF(Print)("WARNING: strtol with base=0, detected octal\n");
 			base = 8; // Why?!?
 			nptr++;
 		} else {

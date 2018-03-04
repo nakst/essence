@@ -89,6 +89,23 @@ static bool NextToken(char *&buffer, Token *token, bool expect = false) {
 			buffer = token->text + token->bytes;
 			c = utf8_value(buffer);
 		}
+	} else if (c == '\'') {
+		token->type = Token::STRING;
+		buffer = token->text + token->bytes;
+		c = utf8_value(buffer);
+
+		while (c != '\'' && c) {
+			token->bytes += utf8_length_char(buffer);
+			buffer = token->text + token->bytes;
+			c = utf8_value(buffer);
+		}
+
+		if (!c) {
+			printf("Unexpected end of file in string\n");
+			return false;
+		}
+
+		token->bytes++;
 	} else if (c == '"') {
 		token->type = Token::STRING;
 		buffer = token->text + token->bytes;
@@ -227,24 +244,17 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 
 void GenerateDefinitions(Token attribute, Token section, Token name, Token value, int event) {
 	if (event == EVENT_START_SECTION) { 
+		propertyCount = 0;
+
 		if (CompareTokens(attribute, "command")) {
 			commandCount++;
-			propertyCount = 0;
+		} else if (CompareTokens(attribute, "window")) {
 		}
 	}
 
 	if (event == EVENT_ATTRIBUTE) { 
-		if (CompareTokens(attribute, "command")) {
+		if (CompareTokens(attribute, "command") || CompareTokens(attribute, "window")) {
 			properties[propertyCount++] = { name, value };
-
-#if 0
-			if (value.type == Token::STRING) {
-				fprintf(output, "\t.%.*s = (char *) %.*s,\n", name.bytes, name.text, value.bytes, value.text);
-				fprintf(output, "\t.%.*sBytes = %d,\n", name.bytes, name.text, value.bytes - 2);
-			} else {
-				fprintf(output, "\t.%.*s = %.*s,\n", name.bytes, name.text, value.bytes, value.text);
-			}
-#endif
 		}
 	}
 
@@ -308,6 +318,58 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			}
 
 			fprintf(output, "};\n\nOSCommand *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
+		} else if (CompareTokens(attribute, "window")) {
+			fprintf(output, "OSWindowSpecification _%.*s = {\n", section.bytes, section.text);
+
+typedef struct OSWindowSpecification {
+	unsigned width, height;
+	unsigned minimumWidth, minimumHeight;
+
+	unsigned flags;
+
+	char *title;
+	size_t titleBytes;
+} OSWindowSpecification;
+
+			if (FindProperty("width", &value)) {
+				fprintf(output, "\t.width = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.width = 800,\n");
+			}
+
+			if (FindProperty("height", &value)) {
+				fprintf(output, "\t.height = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.height = 600,\n");
+			}
+
+			if (FindProperty("minimumWidth", &value)) {
+				fprintf(output, "\t.minimumWidth = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.minimumWidth = 200,\n");
+			}
+
+			if (FindProperty("minimumHeight", &value)) {
+				fprintf(output, "\t.minimumHeight = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.minimumHeight = 160,\n");
+			}
+
+			if (FindProperty("flags", &value)) {
+				fprintf(output, "\t.flags = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.flags = 0,\n");
+			}
+
+			if (FindProperty("title", &value)) {
+				fprintf(output, "\t.title = (char *) %.*s,\n", value.bytes, value.text);
+				fprintf(output, "\t.titleBytes = %d,\n", value.bytes - 2);
+			} else {
+				fprintf(output, "\t.title = \"New Window\",\n");
+				fprintf(output, "\t.titleBytes = 10,\n");
+			}
+
+			fprintf(output, "};\n\nOSWindowSpecification *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
 		}
 	}
 }

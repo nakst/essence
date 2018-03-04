@@ -371,6 +371,7 @@ typedef struct OSRectangle {
 } OSRectangle;
 
 #define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(intptr_t)(l),(intptr_t)(r),(intptr_t)(t),(intptr_t)(b)})
+#define OS_MAKE_CALLBACK(a, b) ((OSCallback){(a),(b)})
 
 typedef struct OSColor {
 	OS_CONSTRUCTOR(OSColor() {})
@@ -411,17 +412,6 @@ typedef struct _OSDrawSurfaceArguments {
 	OSRectangle source, destination, border;
 	uint8_t alpha;
 } _OSDrawSurfaceArguments;
-
-typedef enum OSCallbackType {
-	OS_CALLBACK_INVALID,
-	OS_CALLBACK_ACTION,
-	OS_CALLBACK_GET_TEXT,
-	OS_CALLBACK_INSERT_TEXT,
-	OS_CALLBACK_REMOVE_TEXT,
-	OS_CALLBACK_MEASURE_PANE,
-	OS_CALLBACK_LAYOUT_PANE,
-	OS_CALLBACK_POPULATE_MENU,
-} OSCallbackType;
 
 typedef enum OSCursorStyle {
 	OS_CURSOR_NORMAL, 
@@ -475,6 +465,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_CARET_BLINK			= 0x0212,
 	OS_MESSAGE_KEY_TYPED			= 0x0213,
 	OS_MESSAGE_END_LAST_FOCUS		= 0x0214,
+	OS_MESSAGE_TEXT_UPDATED			= 0x0215,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -614,9 +605,6 @@ typedef OSCallbackResponse (*OSCallbackFunction)(OSObject object, OSMessage *);
 typedef struct OSCallback {
 	OSCallbackFunction function;
 	void *context;
-
-	OS_CONSTRUCTOR(OSCallback() {})
-	OS_CONSTRUCTOR(OSCallback(OSCallbackFunction _function, void *_context) { function = _function; context = _context; })
 } OSCallback;
 
 typedef struct OSCommand {
@@ -661,6 +649,10 @@ typedef struct OSWindowSpecification {
 #define OS_CELL_V_TOP     (128)
 #define OS_CELL_V_CENTER  (256)
 #define OS_CELL_V_BOTTOM  (512)
+
+// Some common layouts...
+#define OS_CELL_FILL	  (99)
+#define OS_CELL_CENTER	  (264)
 
 #define OS_CREATE_GRID_NO_BORDER (1)
 #define OS_CREATE_GRID_NO_GAP    (2)
@@ -780,11 +772,15 @@ OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback call
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
 OS_EXTERN_C void OSProcessMessages();
 
+OS_EXTERN_C void OSGetText(OSObject control, OSString *string);
 OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
 OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
 OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
+
+OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
+OS_EXTERN_C void *OSGetInstance(OSObject window);
 
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
@@ -793,7 +789,7 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, 0)
 
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
-OS_EXTERN_C OSObject OSCreateTextbox();
+OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
 #define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
@@ -858,5 +854,7 @@ OS_EXTERN_C void _longjmp(jmp_buf *env, int val);
 
 OS_EXTERN_C uint64_t osRandomByteSeed;
 #endif
+
+OS_EXTERN_C void ProgramEntry();
 
 #endif

@@ -387,11 +387,13 @@ void AHCITimeoutCallback(void *argument) {
 	AHCIOperation *operation = (AHCIOperation *) argument;
 
 	if (operation->ioPacket) {
-		operation->issued.receivedIRQ.Set();
+		if (!operation->issued.receivedIRQ.state) {
+			operation->issued.receivedIRQ.Set();
 
-		scheduler.lock.Acquire();
-		RegisterAsyncTask(_AHCIFinishOperation, operation, nullptr, true);
-		scheduler.lock.Release();
+			scheduler.lock.Acquire();
+			RegisterAsyncTask(_AHCIFinishOperation, operation, nullptr, true);
+			scheduler.lock.Release();
+		}
 	}
 }
 
@@ -703,6 +705,8 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 		KernelPanic("AHCIController::Access - Could not find an available command even though available.units != 0.\n");
 	}
 
+	drive->commandsInUse |= 1 << commandIndex;
+
 	// TODO This sometimes happens?!?
 	if (drive->operations[commandIndex].issued.timeout.item.list) {
 		KernelPanic("AHCIController::Access - Operation hasn't removed timer.\n");
@@ -778,7 +782,6 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	}
 
 	// Issue the command.
-	drive->commandsInUse |= 1 << commandIndex;
 	port->commandIssue = 1 << commandIndex; 
 	drive->operations[commandIndex].issued.timeout.Set(AHCI_TIMEOUT, true, AHCITimeoutCallback, drive->operations + commandIndex);
 	drive->mutex.Release();

@@ -1,0 +1,122 @@
+[program]
+name = "Calculator";
+
+[window mainWindow]
+width = 330;
+height = 300;
+minimumWidth = 200;
+minimumHeight = 250;
+title = "Calculator";
+
+[command insert0]
+callback = Insert;
+callbackArgument = '0';
+label = "0";
+shortcut = "0";
+
+[command insert1]
+callback = Insert;
+callbackArgument = '1';
+label = "1";
+shortcut = "1";
+
+[command insert2]
+callback = Insert;
+callbackArgument = '2';
+label = "2";
+shortcut = "2";
+
+[command insert3]
+callback = Insert;
+callbackArgument = '3';
+label = "3";
+shortcut = "3";
+
+[command insert4]
+callback = Insert;
+callbackArgument = '4';
+label = "4";
+shortcut = "4";
+
+[command insert5]
+callback = Insert;
+callbackArgument = '5';
+label = "5";
+shortcut = "5";
+
+[command insert6]
+callback = Insert;
+callbackArgument = '6';
+label = "6";
+shortcut = "6";
+
+[command insert7]
+callback = Insert;
+callbackArgument = '7';
+label = "7";
+shortcut = "7";
+
+[command insert8]
+callback = Insert;
+callbackArgument = '8';
+label = "8";
+shortcut = "8";
+
+[command insert9]
+callback = Insert;
+callbackArgument = '9';
+label = "9";
+shortcut = "9";
+
+[command insertFractionalSeparator]
+callback = Insert;
+callbackArgument = '.';
+label = ".";
+shortcut = ".";
+
+[command insertPercentageSign]
+callback = Insert;
+callbackArgument = '%';
+label = "%";
+shortcut = "%";
+
+[command insertAdd]
+callback = Insert;
+callbackArgument = '+';
+label = "+";
+shortcut = "+";
+
+[command insertSubtract]
+callback = Insert;
+callbackArgument = '-';
+label = "-";
+shortcut = "-";
+
+[command insertMultiply]
+callback = Insert;
+callbackArgument = '*';
+label = "*";
+shortcut = "*";
+
+[command insertDivide]
+callback = Insert;
+callbackArgument = '/';
+label = "/";
+shortcut = "/";
+
+[command insertLeftBracket]
+callback = Insert;
+callbackArgument = '(';
+label = "(";
+shortcut = "(*";
+
+[command insertRightBracket]
+callback = Insert;
+callbackArgument = ')';
+label = ")";
+shortcut = ")";
+
+[command evaluate]
+callback = Evaluate;
+label = "=";
+shortcut = "ENTER";

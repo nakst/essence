@@ -146,10 +146,9 @@ extern "C" void ProgramEntry() {
 	OSRedrawAll();
 
 	{
-		// Start the test program.
-
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/os/test";
+			const char *path = "/os/calculator";
+			// const char *path = "/os/test";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);
@@ -157,6 +156,6 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
-	OSSetCallback(OS_CALLBACK_DEBUGGER_MESSAGES, OSCallback(ProcessDebuggerMessage, nullptr));
+	OSSetCallback(OS_CALLBACK_DEBUGGER_MESSAGES, OS_MAKE_CALLBACK(ProcessDebuggerMessage, nullptr));
 	OSProcessMessages();
 }

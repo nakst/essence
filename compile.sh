@@ -27,6 +27,13 @@ x86_64-elf-gcc -o bin/os/test bin/os/test.o $LinkFlags
 cp bin/os/test bin/os/test_symbols
 x86_64-elf-strip --strip-all bin/os/test
 
+echo -e "-> Building ${ColorBlue}calculator${ColorNormal}..."
+./manifest_parser calculator/calculator.manifest bin/os/calculator.manifest.h
+x86_64-elf-g++ -c calculator/main.cpp -o bin/os/calculator.o $BuildFlags  $Optimise 
+x86_64-elf-gcc -o bin/os/calculator bin/os/calculator.o $LinkFlags 
+cp bin/os/calculator bin/os/calculator_symbols
+x86_64-elf-strip --strip-all bin/os/calculator
+
 echo -e "-> Building ${ColorBlue}kernel${ColorNormal}..."
 nasm -felf64 kernel/x86_64.s -o bin/os/kernel_x86_64.o -Fdwarf
 x86_64-elf-g++ -c kernel/main.cpp -o bin/os/kernel.o -mno-red-zone $BuildFlags $OptimiseKernel

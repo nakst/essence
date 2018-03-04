@@ -229,6 +229,7 @@ struct Window : GUIObject {
 	int timerHz, caretBlinkStep, caretBlinkPause;
 
 	CommandWindow *commands;
+	void *instance;
 };
 
 static void OSRepaintControl(OSObject _control) {
@@ -665,7 +666,7 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 		control->textBounds.top -= 3;
 		control->textBounds.bottom -= 3;
 	} else {
-		response = OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
+		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -682,7 +683,7 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 	control->noAnimations = true;
 	control->noDisabledTextColorChange = true;
 	control->keepCustomCursorWhenDisabled = true;
-	OSSetCallback(control, OSCallback(ProcessWindowResizeHandleMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessWindowResizeHandleMessage, nullptr));
 
 	switch (direction) {
 		case RESIZE_LEFT:
@@ -870,6 +871,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
 		OSRepaintControl(control);
+	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
+		control->caret = control->caret2;
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = 2;
@@ -1035,26 +1038,22 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
-OSObject OSCreateTextbox() {
+OSObject OSCreateTextbox(unsigned fontSize) {
 	Textbox *control = (Textbox *) OSHeapAllocate(sizeof(Textbox), true);
+
 	control->type = API_OBJECT_CONTROL;
-
 	control->preferredWidth = 160;
-	control->preferredHeight = 23;
-
 	control->drawParentBackground = true;
-
 	control->backgrounds = textboxBackgrounds;
-
 	control->cursor = OS_CURSOR_TEXT;
 	control->focusable = true;
-
 	control->customTextRendering = true;
 	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-	control->textSize = FONT_SIZE;
+	control->textSize = fontSize ? fontSize : FONT_SIZE;
 	control->textColor = 0x000000;
+	control->minimumHeight = control->preferredHeight = 23 - 9 + control->textSize;
 
-	OSSetCallback(control, OSCallback(ProcessTextboxMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, nullptr));
 
 	return control;
 }
@@ -1080,7 +1079,7 @@ OSObject OSCreateButton(OSCommand *command) {
 		control->minimumHeight = 21;
 	}
 
-	OSSetCallback(control, OSCallback(ProcessControlMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 	OSSetText(control, command->label, command->labelBytes);
 
 	return control;
@@ -1092,7 +1091,7 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 
 	OSSetText(control, text, textBytes);
-	OSSetCallback(control, OSCallback(ProcessControlMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
 	return control;
 }
@@ -1157,13 +1156,13 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 			control->repaint = false;
 		}
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
-		OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
+		OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
 		control->timerHz = 5;
 		control->window->timerControls.InsertStart(&control->timerControlItem);
 	} else if (message->type == OS_MESSAGE_WM_TIMER) {
 		OSSetProgressBarValue(control, control->value + 1);
 	} else {
-		response = OSForwardMessage(_object, OSCallback(ProcessControlMessage, nullptr), message);
+		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -1195,9 +1194,22 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 		control->timerControlItem.thisItem = control;
 	}
 
-	OSSetCallback(control, OSCallback(ProcessProgressBarMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessProgressBarMessage, nullptr));
 
 	return control;
+}
+
+void OSSetInstance(OSObject _window, void *instance) {
+	((Window *) _window)->instance = instance;
+}
+
+void *OSGetInstance(OSObject _window) {
+	return ((Window *) _window)->instance;
+}
+
+void OSGetText(OSObject _control, OSString *string) {
+	Control *control = (Control *) _control;
+	*string = control->text;
 }
 
 void OSSetText(OSObject _control, char *text, size_t textBytes) {
@@ -1221,6 +1233,12 @@ void OSSetText(OSObject _control, char *text, size_t textBytes) {
 		OSMessage message;
 		message.type = OS_MESSAGE_CHILD_UPDATED;
 		OSSendMessage(control->parent, &message);
+	}
+
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_TEXT_UPDATED;
+		OSSendMessage(control, &message);
 	}
 }
 
@@ -1347,6 +1365,11 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			} else if (grid->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
 				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
 					if (grid->objects[i]) {
+						message->layout.left   = ((GUIObject *) grid->objects[i])->cellBounds.left;
+						message->layout.right  = ((GUIObject *) grid->objects[i])->cellBounds.right;
+						message->layout.top    = ((GUIObject *) grid->objects[i])->cellBounds.top;
+						message->layout.bottom = ((GUIObject *) grid->objects[i])->cellBounds.bottom;
+
 						OSSendMessage(grid->objects[i], message);
 					}
 				}
@@ -1462,7 +1485,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
 
-	OSSetCallback(grid, OSCallback(ProcessGridMessage, nullptr));
+	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
 	return grid;
 }
@@ -1798,7 +1821,7 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 		command->checked = _commands[i]->defaultCheck;
 	}
 
-	OSSetCallback(window, OSCallback(ProcessWindowMessage, nullptr));
+	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
 
 	window->root = (Grid *) OSCreateGrid(3, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
 	window->root->parent = window;
