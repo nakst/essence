@@ -134,7 +134,7 @@ typedef void (*CF(PutCharacterCallback))(int character, void *data);
 void CF(_FormatString)(CF(PutCharacterCallback) callback, void *callbackData, const char *format, va_list arguments) {
 	int c;
 
-	char buffer[16];
+	char buffer[32];
 	const char *hexChars = "0123456789ABCDEF";
 
 	while ((c = utf8_value((char *) format))) {

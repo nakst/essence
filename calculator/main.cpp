@@ -93,7 +93,7 @@ Token NextToken(char *&string, size_t &stringBytes) {
 	}
 }
 
-EvaluateResult Evaluate(char *string, size_t stringBytes, int precedence = 0) {
+EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) {
 #define NEXT_TOKEN() NextToken(string, stringBytes)
 #define EVALUATE(p) Evaluate(string, stringBytes, p)
 
