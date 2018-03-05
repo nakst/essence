@@ -440,7 +440,7 @@ void IOPacket::Complete(OSError error) {
 
 					bool deallocatePacket = true;
 
-					ahci.blockedPacketsMutex.Acquire();
+					ahci.mutex.Acquire();
 
 					if (driverState == IO_PACKET_DRIVER_BLOCKING) {
 						ahci.RemoveBlockingPacket(this);
@@ -455,7 +455,7 @@ void IOPacket::Complete(OSError error) {
 						// TODO Add the block to a damaged list in the filesystem driver.
 					}
 
-					ahci.blockedPacketsMutex.Release();
+					ahci.mutex.Release();
 
 					if (!deallocatePacket) return; 
 				}

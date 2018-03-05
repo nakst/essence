@@ -1,11 +1,11 @@
 // TODO Doesn't work 100% of the time on VirtualBox.
-// 	- Mutex incorrectly acquired on interrupt?
+// 	Timeout related things happen.
 
 #ifndef IMPLEMENTATION
 
 #define AHCI_TIMEOUT (1000)
 #define AHCI_SECTOR_SIZE (512)
-#define AHCI_COMMAND_COUNT (4)
+#define AHCI_COMMAND_COUNT (1)
 #define AHCI_DRIVE_COUNT (32)
 #define AHCI_IDENTIFY (-1)
 
@@ -253,8 +253,6 @@ struct AHCIDrive {
 	volatile AHCIReceivedPacket *receivedPacket;
 	volatile AHCICommandTable *commandTable;
 
-	Mutex mutex;
-
 	Semaphore available; // The number of available commands.
 	volatile uint32_t commandsInUse; // Bitset.
 
@@ -279,9 +277,10 @@ struct AHCIController {
 	AHCIDrive drives[AHCI_DRIVE_COUNT];
 	volatile AHCIHBA *r;
 
-	// Acquire to check/change a packet's driverState or modify the blocked packets lists.
-	Mutex blockedPacketsMutex;
 	Pool blockedOperationsPool;
+
+	Mutex mutex;
+	Spinlock receivedIRQSpinlock;
 };
 
 AHCIController ahci;
@@ -289,6 +288,8 @@ AHCIController ahci;
 #else
 
 bool AHCIController::FinishOperation(AHCIOperation *operation) {
+	ahci.mutex.Acquire();
+
 	bool success = false;
 
 	IOPacket *ioPacket = operation->ioPacket;
@@ -304,7 +305,18 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 	volatile void *buffer = drive->buffers[commandIndex];
 	uint64_t offsetIntoSector = offset % AHCI_SECTOR_SIZE;
 
-	operation->issued.timeout.Remove();
+	{
+		Timer timeout = {};
+		timeout.Set(AHCI_TIMEOUT, false);
+		Defer(timeout.Remove());
+
+		while (port->taskFileData & 0x80 && !timeout.event.Poll());
+
+		if (timeout.event.Poll()) {
+		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (busy timeout).\n");
+			goto finish;
+		}
+	}
 
 	if (operation->issued.status & 0xFD800000) {
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (drive error, %x).\n", operation->issued.status);
@@ -317,13 +329,19 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 
 	if (port->commandIssue & (1 << commandIndex)) {
 		KernelLog(LOG_WARNING, "AHCIDriver::Access - Could not read from drive (timeout).\n");
+#if 0
 		goto finish;
+#endif
 	}
 
 	// TODO Proper error handling.
 
 	success = true;
 	finish:;
+
+	operation->issued.timeout.Remove();
+
+	ahci.mutex.Release();
 
 	if (ioPacket) {
 		ioPacket->request->mutex.Acquire();
@@ -344,13 +362,14 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 	}
 
 	// Mark the command index as available.
-	drive->mutex.Acquire();
+	ahci.mutex.Acquire();
 	drive->commandsInUse &= ~(1 << commandIndex);
-	drive->mutex.Release();
+	ahci.mutex.Release();
 
 	{
+		ahci.mutex.Acquire();
+
 		// Unblock a packet.
-		ahci.blockedPacketsMutex.Acquire();
 		drive->available.Return(1);
 
 		AHCIOperation *operation = nullptr;
@@ -360,7 +379,7 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 			drive->blockedOperations.Remove(drive->blockedOperations.firstItem);
 		}
 
-		ahci.blockedPacketsMutex.Release();
+		ahci.mutex.Release();
 
 		if (operation) {
 			operation->ioPacket->request->mutex.Acquire();
@@ -379,11 +398,16 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 	return success;
 }
 
-void _AHCIFinishOperation(void *argument) {
+void AHCIFinishOperation(void *argument) {
 	ahci.FinishOperation((AHCIOperation *) argument);
 }
 
 void AHCITimeoutCallback(void *argument) {
+	ahci.receivedIRQSpinlock.Acquire();
+	Defer(ahci.receivedIRQSpinlock.Release());
+
+	Print("~~ahci timeout\n");
+
 	AHCIOperation *operation = (AHCIOperation *) argument;
 
 	if (operation->ioPacket) {
@@ -391,22 +415,15 @@ void AHCITimeoutCallback(void *argument) {
 			operation->issued.receivedIRQ.Set();
 
 			scheduler.lock.Acquire();
-			RegisterAsyncTask(_AHCIFinishOperation, operation, nullptr, true);
+			RegisterAsyncTask(AHCIFinishOperation, operation, nullptr, true);
 			scheduler.lock.Release();
 		}
+	} else {
+		KernelLog(LOG_WARNING, "AHCITimeoutCallback - Timeout on non IO-packet operation.\n");
 	}
 }
 
-bool AHCIIRQHandler(uintptr_t interruptIndex) {
-	(void) interruptIndex;
-
-	uint32_t pendingInterrupts = ahci.r->interruptStatus;
-	Defer(ahci.r->interruptStatus = pendingInterrupts);
-
-	if (!pendingInterrupts) {
-		return false;
-	}
-
+void AHCIProcessInterrupts(uint32_t pendingInterrupts) {
 	for (uint32_t i = 0; i < AHCI_DRIVE_COUNT; i++) {
 		if (pendingInterrupts & (1 << i)) {
 			AHCIDrive *drive = ahci.drives + i;
@@ -433,15 +450,30 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 					drive->operations[i].issued.status = interruptStatus;
 
 					if (drive->operations[i].ioPacket) {
-						// Nobody is waiting on the event, so queue the finish operation.
 						scheduler.lock.Acquire();
-						RegisterAsyncTask(_AHCIFinishOperation, drive->operations + i, nullptr, true);
+						RegisterAsyncTask(AHCIFinishOperation, drive->operations + i, nullptr, true);
 						scheduler.lock.Release();
 					}
 				}
 			}
 		}
 	}
+}
+
+bool AHCIIRQHandler(uintptr_t interruptIndex) {
+	(void) interruptIndex;
+
+	uint32_t pendingInterrupts = ahci.r->interruptStatus;
+	Defer(ahci.r->interruptStatus = pendingInterrupts);
+
+	if (!pendingInterrupts) {
+		return false;
+	}
+	
+	ahci.receivedIRQSpinlock.Acquire();
+	Defer(ahci.receivedIRQSpinlock.Release());
+
+	AHCIProcessInterrupts(pendingInterrupts);
 
 	return true;
 }
@@ -660,7 +692,7 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	if (ioPacket) {
 		ioPacket->driverState = IO_PACKET_DRIVER_BLOCKING;
 
-		blockedPacketsMutex.Acquire();
+		mutex.Acquire();
 
 		if (!drive->available.units) {
 			// Queue the operation to be performed when a command is freed up.
@@ -669,7 +701,7 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 			blockedOperation->blocking.item.thisItem = blockedOperation;
 			drive->blockedOperations.InsertEnd(&blockedOperation->blocking.item);
 			ioPacket->driverTemp = blockedOperation;
-			blockedPacketsMutex.Release();
+			mutex.Release();
 			return true;
 		}
 
@@ -677,20 +709,18 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	} else {
 		while (true) {
 			drive->available.available.Wait(OS_WAIT_NO_TIMEOUT);
-			blockedPacketsMutex.Acquire();
+			mutex.Acquire();
 
 			if (drive->available.units) {
 				break;
 			}
 
-			blockedPacketsMutex.Release();
+			mutex.Release();
 		}
 	}
 
 	// Get a command.
 	drive->available.Take(1);
-	blockedPacketsMutex.Release();
-	drive->mutex.Acquire();
 
 	for (uintptr_t i = 0; i < AHCI_COMMAND_COUNT; i++) {
 		if (drive->commandsInUse & (1 << i)) {
@@ -783,8 +813,8 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 
 	// Issue the command.
 	port->commandIssue = 1 << commandIndex; 
-	drive->operations[commandIndex].issued.timeout.Set(AHCI_TIMEOUT, true, AHCITimeoutCallback, drive->operations + commandIndex);
-	drive->mutex.Release();
+	if (ioPacket) drive->operations[commandIndex].issued.timeout.Set(AHCI_TIMEOUT, true, AHCITimeoutCallback, drive->operations + commandIndex);
+	mutex.Release();
 
 	if (ioPacket) {
 		// The packet was issued.
@@ -798,10 +828,9 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 }
 
 void AHCIController::RemoveBlockingPacket(IOPacket *packet) {
-	AHCIOperation *operation = (AHCIOperation *) packet;
-	blockedPacketsMutex.Acquire();
+	mutex.AssertLocked();
+	AHCIOperation *operation = (AHCIOperation *) packet->driverTemp;
 	operation->blocking.item.list->Remove(&operation->blocking.item);
-	blockedPacketsMutex.Release();
 }
 
 #endif

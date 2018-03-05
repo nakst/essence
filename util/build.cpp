@@ -156,6 +156,8 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
+		} else if (0 == strcmp(l, "test-without-smp-or-build") || 0 == strcmp(l, "t3")) {
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "low-memory")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 32, 4, LOG_NORMAL, false);

@@ -136,7 +136,7 @@ extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/os/UISheet.png", OS_SURFACE_UI_SHEET, false);
 
 #if 0
-	LoadImageIntoSurface((char *) "/os/sample_images/Water.jpg", OS_SURFACE_WALLPAPER, true);
+	LoadImageIntoSurface((char *) "/os/sample_images/Nebula.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
@@ -147,8 +147,8 @@ extern "C" void ProgramEntry() {
 
 	{
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/os/calculator";
-			// const char *path = "/os/test";
+			// const char *path = "/os/calculator";
+			const char *path = "/os/test";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);
