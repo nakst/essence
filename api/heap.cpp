@@ -102,10 +102,6 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 
 	OS_HEAP_ACQUIRE_MUTEX();
 
-	static bool concurrentModificationCheck = false;
-	if (concurrentModificationCheck) OS_HEAP_PANIC(2);
-	concurrentModificationCheck = true;
-
 	OSHeapRegion *region = nullptr;
 
 	for (int i = OSHeapCalculateIndex(size); i < 12; i++) {
@@ -120,7 +116,6 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 
 	region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(65536);
 	if (!region) {
-		concurrentModificationCheck = false;
 		OS_HEAP_RELEASE_MUTEX();
 		return nullptr; 
 	}
@@ -142,7 +137,6 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 		// If the size of this region is equal to the size of the region we're trying to allocate,
 		// return this region immediately.
 		region->used = 0xABCD;
-		concurrentModificationCheck = false;
 		OS_HEAP_RELEASE_MUTEX();
 		if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(region), originalSize);
 
@@ -167,7 +161,6 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 	OSHeapRegion *nextRegion = OS_HEAP_REGION_NEXT(freeRegion);
 	nextRegion->previous = freeRegion->size;
 
-	concurrentModificationCheck = false;
 	OS_HEAP_RELEASE_MUTEX();
 	if (zeroMemory) CF(ZeroMemory)(OS_HEAP_REGION_DATA(allocatedRegion), originalSize);
 
