@@ -422,6 +422,7 @@ extern "C" void ProgramEntry() {
 	}
 
 	OSDisableCommand(window, actionToggleEnabled, false);
+	OSDisableCommand(window, &actionOK, false);
 
 	OSProcessMessages();
 }

@@ -175,10 +175,6 @@ bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offse
 
 		if (timeout->event.Poll()) return false;
 
-		// Start the transfer.
-		// TODO Properly investigate the order of starting the DMA transfer and sending the ATA command.
-		// 	Bochs doesn't work if you issue the ATA command first.
-		// 	...and VirtualBox doesn't work if you start the DMA transfer first (except it sometimes does work??).
 		device->WriteBAR8(DMA_REGISTER(bus, DMA_COMMAND), operation == DRIVE_ACCESS_WRITE ? 1 : 9);
 		if (device->ReadBAR8(DMA_REGISTER(bus, DMA_STATUS)) & 2) return false;
 		if (ProcessorIn8(ATA_REGISTER(bus, ATA_DCR)) & 33) return false;

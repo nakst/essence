@@ -8,12 +8,11 @@
 #define RIGHT_BUTTON (4)
 
 struct Window {
-	void Update();
+	void Update(bool fromUser);
 	void SetCursorStyle(OSCursorStyle style);
 	void NeedWMTimer(int hz);
 	void Destroy();
 	bool Move(OSRectangle &newBounds);
-	void Resize(size_t newWidth, size_t newHeight);
 	void ClearImage();
 
 	Mutex mutex; // Mutex for drawing to the window. Also needed when moving the window.
@@ -25,6 +24,7 @@ struct Window {
 	OSObject apiWindow;
 	OSCursorStyle cursorStyle;
 	int needsTimerMessagesHz, timerMessageTick;
+	bool resizing;
 
 	volatile unsigned handles;
 };
@@ -559,6 +559,7 @@ bool Window::Move(OSRectangle &rectangle) {
 
 		if (oldWidth != width || oldHeight != height) {
 			surface->Resize(width, height);
+			resizing = true; // Don't draw the window again until the API actually requests it.
 		}
 
 		surface->InvalidateRectangle(OS_MAKE_RECTANGLE(0, width, 0, height));
@@ -573,7 +574,7 @@ bool Window::Move(OSRectangle &rectangle) {
 
 	windowManager.mutex.Release();
 
-	if (result) Update();
+	if (result) Update(false);
 	return result;
 }
 
@@ -684,7 +685,10 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 		}
 
 		window->surface->InvalidateRectangle(rectangle);
-		graphics.frameBuffer.Copy(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), true, window->z + 1);
+
+		if (!window->resizing) {
+			graphics.frameBuffer.Copy(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), true, window->z + 1);
+		}
 
 		window->surface->mutex.Acquire();
 		window->surface->ClearModifiedRegion();
@@ -692,8 +696,14 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 	}
 }
 
-void Window::Update() {
+void Window::Update(bool fromUser) {
 	mutex.AssertLocked();
+
+	if (fromUser && resizing) {
+		return;
+	}
+
+	resizing = false;
 
 	graphics.frameBuffer.Copy(*surface, position, OS_MAKE_RECTANGLE(0, width, 0, height), true, z + 1);
 	graphics.UpdateScreen();

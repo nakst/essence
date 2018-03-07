@@ -14,7 +14,6 @@
 
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
-// TODO Prevent flickering during window resize.
 // TODO If a textbox has no focus or last focus and it then gains focus, should all its text be selected?
 
 struct UIImage {
@@ -50,10 +49,17 @@ static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
 static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
 static UIImage progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
 
+#if 1
 static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
 static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
 static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
 static UIImage buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
+#else
+static UIImage buttonNormal		= {{86 + 76, 86 + 76 + 86, 194, 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 194 + 14, 194 + 15}};
+static UIImage buttonDragged		= {{76, 76 + 86, 29 + 194, 29 + 194 + 29}, {76 + 43, 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
+static UIImage buttonHover		= {{76, 76 + 86, 194, 194 + 29}, {76 + 43, 76 + 44, 194 + 14, 194 + 15}};
+static UIImage buttonDisabled		= {{86 + 76, 86 + 76 + 86, 29 + 194, 29 + 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
+#endif
 
 static UIImage checkboxNormal		= {{95, 108, 120, 133}, {95, 95, 120, 120}};
 static UIImage checkboxDragged		= {{14 + 95, 14 + 108, 120, 133}, {14 + 95, 14 + 95, 120, 120}};
@@ -515,7 +521,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			OSAnimateControl(control, message->type == OS_MESSAGE_START_DRAG || message->type == OS_MESSAGE_START_FOCUS);
 
 			if (message->type == OS_MESSAGE_START_DRAG) {
-				if (control->window->focus) {
+				if (control->window->focus && control->window->focus != control) {
 					m.type = OS_MESSAGE_END_FOCUS;
 					OSSendMessage(control->window->focus, &m);
 					control->window->focus = nullptr;
@@ -527,10 +533,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						OSSendMessage(control->window->lastFocus, &m);
 					}
 
-					control->window->focus = control;
-					control->window->lastFocus = control;
-					m.type = OS_MESSAGE_START_FOCUS;
-					OSSendMessage(control, &m);
+					if (control != control->window->focus) {
+						control->window->focus = control;
+						control->window->lastFocus = control;
+						m.type = OS_MESSAGE_START_FOCUS;
+						OSSendMessage(control, &m);
+						OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
+					}
 				}
 			}
 		} break;
@@ -864,6 +873,10 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = 2;
+		control->caret.byte = 0;
+		control->caret.character = 0;
+		control->caret2.byte = control->text.bytes;
+		control->caret2.character = control->text.characters;
 	} else if (message->type == OS_MESSAGE_START_DRAG) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
@@ -1062,8 +1075,13 @@ OSObject OSCreateButton(OSCommand *command) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
+#if 1
 	control->preferredWidth = 80;
 	control->preferredHeight = 21;
+#else
+	control->preferredWidth = 86;
+	control->preferredHeight = 29;
+#endif
 
 	control->drawParentBackground = true;
 

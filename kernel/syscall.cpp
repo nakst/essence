@@ -394,7 +394,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->mutex.Acquire();
-			window->Update();
+			window->Update(true);
 			window->mutex.Release();
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
@@ -1054,6 +1054,11 @@ uintptr_t DoSyscall(OSSyscallType index,
 				if (currentThread->terminating) break;
 			}
 
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_RESET_CLICK_CHAIN: {
+			windowManager.clickChainCount = 0;
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 	}
