@@ -608,6 +608,14 @@ typedef struct OSCallback {
 	void *context;
 } OSCallback;
 
+typedef struct OSMenuItem {
+	enum {
+		COMMAND, SUBMENU, SEPARATOR, END,
+	} type;
+
+	void *value;
+} OSMenuItem;
+
 typedef struct OSCommand {
 	uint32_t identifier;
 
@@ -639,6 +647,7 @@ typedef struct OSWindowSpecification {
 #define OS_CALLBACK_DEBUGGER_MESSAGES ((OSObject) 0x800)
 
 #define OS_CREATE_WINDOW_ALERT (1)
+#define OS_CREATE_WINDOW_MENU (2)
 
 #define OS_CELL_H_PUSH    (1)
 #define OS_CELL_H_EXPAND  (2)
@@ -655,9 +664,10 @@ typedef struct OSWindowSpecification {
 #define OS_CELL_FILL	  (99)
 #define OS_CELL_CENTER	  (264)
 
-#define OS_CREATE_GRID_NO_BORDER (1)
-#define OS_CREATE_GRID_NO_GAP    (2)
-#define OS_CREATE_GRID_DRAW_BOX  (4)
+#define OS_CREATE_GRID_NO_BORDER     (1)
+#define OS_CREATE_GRID_NO_GAP        (2)
+#define OS_CREATE_GRID_DRAW_BOX      (4)
+#define OS_CREATE_GRID_MENU	     (8)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
@@ -784,6 +794,7 @@ OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disa
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
 
+OS_EXTERN_C OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject sourceControl);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);

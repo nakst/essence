@@ -247,6 +247,12 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 
 	if (CompareTokens(attribute, "command")) {
 		fprintf(output, "extern OSCommand *%.*s;\n", section.bytes, section.text);
+		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::COMMAND\n", section.bytes, section.text);
+	} else if (CompareTokens(attribute, "window")) {
+		fprintf(output, "extern OSWindowSpecification *%.*s;\n", section.bytes, section.text);
+	} else if (CompareTokens(attribute, "menu")) {
+		fprintf(output, "extern OSMenuItem %.*s[];\n", section.bytes, section.text);
+		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::SUBMENU\n", section.bytes, section.text);
 	}
 }
 
@@ -257,6 +263,8 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 		if (CompareTokens(attribute, "command")) {
 			commandCount++;
 		} else if (CompareTokens(attribute, "window")) {
+		} else if (CompareTokens(attribute, "menu")) {
+			fprintf(output, "OSMenuItem %.*s[] = {\n", section.bytes, section.text);
 		}
 	}
 
@@ -266,12 +274,21 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 		}
 	}
 
+	if (event == EVENT_LISTING) {
+		if (CompareTokens(attribute, "menu")) {
+			if (CompareTokens(name, "Separator")) {
+				fprintf(output, "\t{ OSMenuItem::SEPARATOR, nullptr },\n");
+			} else {
+				fprintf(output, "\t{ _OS_MENU_ITEM_TYPE_FOR_%.*s, &_%.*s },\n", name.bytes, name.text, name.bytes, name.text);
+			}
+		}
+	}
+
 	if (event == EVENT_END_SECTION) { 
 		if (CompareTokens(attribute, "command")) {
 			Token value;
 
 			if (FindProperty("callback", &value)) {
-// typedef OSCallbackResponse (*OSCallbackFunction)(OSObject object, OSMessage *);
 				fprintf(output, "OSCallbackResponse %.*s(OSObject object, OSMessage *message);\n\n", value.bytes, value.text);
 			}
 
@@ -308,7 +325,8 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			if (FindProperty("defaultDisabled", &value)) {
 				fprintf(output, "\t.defaultDisabled = %.*s,\n", value.bytes, value.text);
 			} else {
-				fprintf(output, "\t.defaultDisabled = %s,\n", FindProperty("callback", &value) ? "false" : "true");
+				// fprintf(output, "\t.defaultDisabled = %s,\n", FindProperty("callback", &value) ? "false" : "true");
+				fprintf(output, "\t.defaultDisabled = %s,\n", "false");
 			}
 
 			fprintf(output, "\t.callback = { ");
@@ -328,16 +346,6 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			fprintf(output, "};\n\nOSCommand *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
 		} else if (CompareTokens(attribute, "window")) {
 			fprintf(output, "OSWindowSpecification _%.*s = {\n", section.bytes, section.text);
-
-typedef struct OSWindowSpecification {
-	unsigned width, height;
-	unsigned minimumWidth, minimumHeight;
-
-	unsigned flags;
-
-	char *title;
-	size_t titleBytes;
-} OSWindowSpecification;
 
 			if (FindProperty("width", &value)) {
 				fprintf(output, "\t.width = %.*s,\n", value.bytes, value.text);
@@ -378,6 +386,9 @@ typedef struct OSWindowSpecification {
 			}
 
 			fprintf(output, "};\n\nOSWindowSpecification *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
+		} else if (CompareTokens(attribute, "menu")) {
+			fprintf(output, "\t{ OSMenuItem::END, nullptr },\n");
+			fprintf(output, "};\n\n");
 		}
 	}
 }

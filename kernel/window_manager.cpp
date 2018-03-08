@@ -579,6 +579,8 @@ bool Window::Move(OSRectangle &rectangle) {
 }
 
 void Window::Destroy() {
+	Window *updateActiveWindow = nullptr;
+
 	{
 		windowManager.mutex.Acquire();
 		Defer(windowManager.mutex.Release());
@@ -586,8 +588,14 @@ void Window::Destroy() {
 		KernelLog(LOG_VERBOSE, "Window %x (api %x) is being destroyed...\n", this, apiWindow);
 
 		if (windowManager.pressedWindow == this) windowManager.pressedWindow = nullptr;
-		if (windowManager.activeWindow == this) windowManager.activeWindow = nullptr; 
 		if (windowManager.hoverWindow == this) windowManager.hoverWindow = nullptr; 
+
+		bool findActiveWindow = false;
+
+		if (windowManager.activeWindow == this) {
+			windowManager.activeWindow = nullptr; 
+			findActiveWindow = true;
+		}
 
 		{
 			graphics.frameBuffer.mutex.Acquire();
@@ -615,6 +623,10 @@ void Window::Destroy() {
 			windowManager.windows[index]->z--;
 		}
 
+		if (findActiveWindow && windowManager.windowsCount) {
+			updateActiveWindow = windowManager.windows[windowManager.windowsCount - 1];
+		}
+
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DESTROYED;
 		message.context = apiWindow;
@@ -623,6 +635,12 @@ void Window::Destroy() {
 		windowManager.Redraw(position, width, height);
 		CloseHandleToObject(surface, KERNEL_OBJECT_SURFACE);
 		OSHeapFree(this, sizeof(Window));
+	}
+
+	if (updateActiveWindow) {
+		windowManager.mutex.Acquire();
+		windowManager.SetActiveWindow(updateActiveWindow);
+		windowManager.mutex.Release();
 	}
 
 	graphics.UpdateScreen();

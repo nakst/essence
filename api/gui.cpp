@@ -1,3 +1,5 @@
+#include "../bin/os/standard.manifest.h"
+
 #define DIMENSION_PUSH (-1)
 
 #define CARET_BLINK_HZ (2)
@@ -20,6 +22,10 @@ struct UIImage {
 	OSRectangle region;
 	OSRectangle border;
 };
+
+#if 0
+#define SUPER_COOL_BUTTONS
+#endif
 
 static UIImage activeWindowBorder11	= {{1, 1 + 6, 144, 144 + 6}, 	{1, 1, 144, 144}};
 static UIImage activeWindowBorder12	= {{8, 8 + 1, 144, 144 + 6}, 	{7, 8, 144, 144}};
@@ -49,7 +55,7 @@ static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
 static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
 static UIImage progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
 
-#if 1
+#ifndef SUPER_COOL_BUTTONS
 static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
 static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
 static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
@@ -74,6 +80,19 @@ static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
 static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
 static UIImage textboxHover		= {{-11 + 52, -11 + 61, 166, 189}, {-11 + 55, -11 + 58, 169, 186}};
 static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 58, 169, 186}};
+
+static UIImage gridBox 			= {{20, 26, 85, 91}, {22, 23, 87, 88}};
+static UIImage menuBox 			= {{199, 229, 4, 17}, {225, 227, 7, 9}};
+
+static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
+static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
+
+static UIImage *menuItemBackgrounds[] = {
+	nullptr,
+	nullptr,
+	&menuItemHover,
+	&menuItemDragged,
+};
 
 static UIImage *checkboxIcons[] = {
 	&checkboxNormal, 
@@ -209,7 +228,7 @@ struct Grid : GUIObject {
 	OSObject *objects;
 	int *widths, *heights;
 	uint8_t relayout : 1, repaint : 1;
-	uint8_t drawBox : 1;
+	unsigned flags;
 	int borderSize, gapSize;
 };
 
@@ -237,6 +256,8 @@ struct Window : GUIObject {
 
 	CommandWindow *commands;
 	void *instance;
+
+	struct Window *parent;
 };
 
 static void OSRepaintControl(OSObject _control) {
@@ -1072,16 +1093,60 @@ OSObject OSCreateTextbox(unsigned fontSize) {
 	return control;
 }
 
+OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
+	Control *control = (Control *) object;
+	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
+		control->textBounds = control->bounds;
+		control->textBounds.left += 24;
+		control->textBounds.right -= 4;
+		result = OS_CALLBACK_HANDLED;
+	}
+
+	if (result == OS_CALLBACK_NOT_HANDLED) {
+		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	return result;
+}
+
+static OSObject CreateMenuItem(OSMenuItem item) {
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+
+	control->preferredWidth = 100;
+	control->preferredHeight = 21;
+	control->minimumWidth = 100;
+	control->minimumHeight = 21;
+	control->drawParentBackground = true;
+	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
+	control->backgrounds = menuItemBackgrounds;
+
+	OSCommand *command = (OSCommand *) item.value;
+	SetControlCommand(control, command);
+
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, nullptr));
+	OSSetText(control, command->label, command->labelBytes);
+
+	return control;
+}
+
 OSObject OSCreateButton(OSCommand *command) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
-#if 1
+#ifndef SUPER_COOL_BUTTONS
 	control->preferredWidth = 80;
 	control->preferredHeight = 21;
 #else
 	control->preferredWidth = 86;
 	control->preferredHeight = 29;
+
+	if (!command->checkable) {
+		control->textColor = 0xFFFFFF;
+		control->textShadow = true;
+	}
 #endif
 
 	control->drawParentBackground = true;
@@ -1265,10 +1330,16 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	GUIObject *_object = (GUIObject *) _grid;
 
 	if (_object->type == API_OBJECT_WINDOW) {
-		_grid = ((Window *) _grid)->root;
-		column = 1;
-		row = 2;
-		((Grid *) _control)->borderSize = 8;
+		Window *window = (Window *) _grid;
+		_grid = window->root;
+		if (window->flags & OS_CREATE_WINDOW_MENU) {
+			column = 0;
+			row = 0;
+		} else {
+			column = 1;
+			row = 2;
+			((Grid *) _control)->borderSize = 8;
+		}
 	}
 
 	Grid *grid = (Grid *) _grid;
@@ -1436,9 +1507,12 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				m.paint.force = message->paint.force || grid->repaint;
 
 				if (m.paint.force) {
-					if (grid->drawBox) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, {20, 26, 85, 91}, 
-								{22, 23, 87, 88}, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					if (grid->flags & OS_CREATE_GRID_DRAW_BOX) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, gridBox.region,
+								gridBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					} else if (grid->flags & OS_CREATE_GRID_MENU) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, menuBox.region,
+								menuBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					} else {
 						OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
 					}
@@ -1505,10 +1579,11 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	grid->objects = (OSObject *) (memory + sizeof(Grid));
 	grid->widths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows);
 	grid->heights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns);
+	grid->flags = flags;
 
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
-	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->drawBox = true; grid->borderSize += 4; }
+	if (flags & OS_CREATE_GRID_DRAW_BOX) grid->borderSize += 4;
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
@@ -1562,7 +1637,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			if (!window->created) break;
 
 			for (int i = 0; i < 12; i++) {
-				if (i == 7) continue;
+				if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
 				OSDisableControl(window->root->objects[i], false);
 			}
 		} break;
@@ -1571,7 +1646,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			if (!window->created) break;
 
 			for (int i = 0; i < 12; i++) {
-				if (i == 7) continue;
+				if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
 				OSDisableControl(window->root->objects[i], true);
 			}
 
@@ -1584,7 +1659,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
-			OSHeapFree(window->commands);
+			if (!window->parent) OSHeapFree(window->commands);
 			OSHeapFree(window);
 			return response;
 		} break;
@@ -1810,23 +1885,22 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
-extern size_t _commandCount;
-extern OSCommand *_commands[];
-
-OSObject OSCreateWindow(OSWindowSpecification *specification) {
-	specification->width += totalBorderWidth;
-	specification->minimumWidth += totalBorderWidth;
-	specification->height += totalBorderHeight;
-	specification->minimumHeight += totalBorderHeight;
+static Window *CreateWindow(OSWindowSpecification *specification, Window *parent, unsigned x = 0, unsigned y = 0) {
+	if (!(specification->flags & OS_CREATE_WINDOW_MENU)) {
+		specification->width += totalBorderWidth;
+		specification->minimumWidth += totalBorderWidth;
+		specification->height += totalBorderHeight;
+		specification->minimumHeight += totalBorderHeight;
+	}
 
 	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
 	window->type = API_OBJECT_WINDOW;
 
 	OSRectangle bounds;
-	bounds.left = 0;
-	bounds.right = specification->width;
-	bounds.top = 0;
-	bounds.bottom = specification->height;
+	bounds.left = x;
+	bounds.right = x + specification->width;
+	bounds.top = y;
+	bounds.bottom = y + specification->height;
 
 	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, 0);
 	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
@@ -1838,12 +1912,18 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
 
-	window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
+	window->parent = parent;
 
-	for (uintptr_t i = 0; i < _commandCount; i++) {
-		CommandWindow *command = window->commands + i;
-		command->disabled = _commands[i]->defaultDisabled;
-		command->checked = _commands[i]->defaultCheck;
+	if (!parent) {
+		window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
+
+		for (uintptr_t i = 0; i < _commandCount; i++) {
+			CommandWindow *command = window->commands + i;
+			command->disabled = _commands[i]->defaultDisabled;
+			command->checked = _commands[i]->defaultCheck;
+		}
+	} else {
+		window->commands = parent->commands;
 	}
 
 	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
@@ -1858,7 +1938,7 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 		OSSendMessage(window->root, &message);
 	}
 
-	{
+	if (!(window->flags & OS_CREATE_WINDOW_MENU)) {
 		OSObject titlebar = CreateWindowResizeHandle(windowBorder22, RESIZE_MOVE);
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
@@ -1876,6 +1956,73 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	}
 
 	return window;
+}
+
+OSObject OSCreateWindow(OSWindowSpecification *specification) {
+	return CreateWindow(specification, nullptr);
+}
+
+OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source) {
+	Control *source = (Control *) _source;
+
+	size_t itemCount = 0;
+
+	{
+		OSMenuItem *item = menuSpecification;;
+
+		while (true) {
+			if (item->type != OSMenuItem::END) {
+				item++;
+				itemCount++;
+			} else {
+				break;
+			}
+		}
+	}
+
+	Control *items[itemCount];
+	int width = 0, height = 8;
+
+	for (uintptr_t i = 0; i < itemCount; i++) {
+		items[i] = (Control *) CreateMenuItem(menuSpecification[i]);
+
+		if (items[i]->preferredWidth > width) {
+			width = items[i]->preferredWidth;
+		}
+
+		height += items[i]->preferredHeight;
+	}
+
+	width += 8;
+
+	OSWindowSpecification specification = {};
+	specification.width = width;
+	specification.height = height;
+	specification.flags = OS_CREATE_WINDOW_MENU;
+
+	Window *window;
+	
+	{
+		unsigned x = source->bounds.left;
+		unsigned y = source->bounds.bottom;
+
+		OSRectangle bounds;
+		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, source->window->window, (uintptr_t) &bounds, 0, 0);
+
+		x += bounds.left;
+		y += bounds.top;
+
+		window = CreateWindow(&specification, source->window, x, y);
+	}
+
+	OSObject grid = OSCreateGrid(1, itemCount, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP);
+	OSSetRootGrid(window, grid);
+
+	for (uintptr_t i = 0; i < itemCount; i++) {
+		OSAddControl(grid, 0, i, items[i], OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
+	}
+
+	return nullptr;
 }
 
 void OSInitialiseGUI() {

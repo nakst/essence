@@ -9,6 +9,7 @@ LinkFlags="-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max
 KernelLinkFlags="-ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000"
 
 echo -e "-> Building ${ColorBlue}API${ColorNormal}..."
+./manifest_parser api/standard.manifest bin/os/standard.manifest.h
 nasm -felf64 api/api.s -o bin/os/api1.o -Fdwarf
 x86_64-elf-g++ -c api/api.cpp -o bin/os/api2.o $BuildFlags -Wno-unused-function $Optimise
 x86_64-elf-ar -rcs bin/os/libapi.a bin/os/api1.o bin/os/api2.o 

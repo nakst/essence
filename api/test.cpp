@@ -21,7 +21,8 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) object;
 	(void) message;
 
-	OSCrashProcess(10000);
+	OSPrint("object = %x\n", object);
+	OSCreateMenu(osMenuTextboxContext, object);
 
 	return OS_CALLBACK_HANDLED;
 }
@@ -119,6 +120,8 @@ OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
 }
 
 int z = 1;
+
+extern "C" OSObject CreateMenuItem(OSMenuItem item);
 
 extern "C" void ProgramEntry() {
 	if (x != 5) OSCrashProcess(600);
@@ -389,7 +392,7 @@ extern "C" void ProgramEntry() {
 	// OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	
 	OSWindowSpecification ws = {};
-	ws.width = 400;
+	ws.width = 600;
 	ws.height = 200;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
@@ -415,7 +418,7 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
 
 	{
-		OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_DRAW_BOX);
+		OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_DRAW_BOX);
 		OSAddGrid(content, 1, 3, grid, OS_CELL_H_RIGHT);
 		OSAddControl(grid, 0, 0, OSCreateTextbox(0), OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);

@@ -35,5 +35,4 @@ osCommandCut;
 osCommandCopy;
 osCommandPaste;
 osCommandDelete;
-Separator;
 osCommandSelectAll;
