@@ -29,3 +29,11 @@ shortcut = "Ctrl+Shift+Z";
 [command osCommandSelectAll]
 label = "Select \$All";
 shortcut = "Ctrl+A";
+
+[menu osMenuTextboxContext]
+osCommandCut;
+osCommandCopy;
+osCommandPaste;
+osCommandDelete;
+Separator;
+osCommandSelectAll;

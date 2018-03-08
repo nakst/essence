@@ -657,6 +657,7 @@ typedef struct OSWindowSpecification {
 
 #define OS_CREATE_GRID_NO_BORDER (1)
 #define OS_CREATE_GRID_NO_GAP    (2)
+#define OS_CREATE_GRID_DRAW_BOX  (4)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)

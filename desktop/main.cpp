@@ -146,9 +146,9 @@ extern "C" void ProgramEntry() {
 	OSRedrawAll();
 
 	{
-		for (int i = 0; i < 20; i++) {
-			const char *path = "/os/calculator";
-			// const char *path = "/os/test";
+		for (int i = 0; i < 1; i++) {
+			// const char *path = "/os/calculator";
+			const char *path = "/os/test";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

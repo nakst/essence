@@ -415,7 +415,7 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
 
 	{
-		OSObject grid = OSCreateGrid(1, 2, 0);
+		OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_DRAW_BOX);
 		OSAddGrid(content, 1, 3, grid, OS_CELL_H_RIGHT);
 		OSAddControl(grid, 0, 0, OSCreateTextbox(0), OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);

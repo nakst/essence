@@ -29,6 +29,7 @@ struct Token {
 #define EVENT_END_SECTION (0)
 #define EVENT_START_SECTION (1)
 #define EVENT_ATTRIBUTE (2)
+#define EVENT_LISTING (3)
 
 typedef void (*ParseCallback)(Token attribute, Token section, Token variable, Token value, int event);
 
@@ -184,21 +185,28 @@ static bool ParseManifest(char *text, ParseCallback callback) {
 		} else if (token.type == Token::IDENTIFIER) {
 			Token name = token;
 
-			token.type = Token::EQUALS;
-			if (!NextToken(text, &token, true)) return false;
 			if (!NextToken(text, &token)) return false;
 
-			if (token.type != Token::IDENTIFIER
-					&& token.type != Token::STRING
-					&& token.type != Token::NUMERIC) {
+			if (token.type == Token::SEMICOLON) {
+				callback(attribute, section, name, token, EVENT_LISTING);
+			} else if (token.type == Token::EQUALS) {
+				if (!NextToken(text, &token)) return false;
+
+				if (token.type != Token::IDENTIFIER
+						&& token.type != Token::STRING
+						&& token.type != Token::NUMERIC) {
+					printf("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
+					return false;
+				}
+
+				callback(attribute, section, name, token, EVENT_ATTRIBUTE);
+
+				token.type = Token::SEMICOLON;
+				if (!NextToken(text, &token, true)) return false;
+			} else {
 				printf("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
 				return false;
 			}
-
-			callback(attribute, section, name, token, EVENT_ATTRIBUTE);
-
-			token.type = Token::SEMICOLON;
-			if (!NextToken(text, &token, true)) return false;
 		} else {
 			printf("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
 			return false;

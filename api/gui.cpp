@@ -14,7 +14,7 @@
 
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
-// TODO If a textbox has no focus or last focus and it then gains focus, should all its text be selected?
+// TODO Calculator textbox - selection extends out of top of textbox
 
 struct UIImage {
 	OSRectangle region;
@@ -208,7 +208,8 @@ struct Grid : GUIObject {
 	unsigned columns, rows;
 	OSObject *objects;
 	int *widths, *heights;
-	bool relayout, repaint;
+	uint8_t relayout : 1, repaint : 1;
+	uint8_t drawBox : 1;
 	int borderSize, gapSize;
 };
 
@@ -1435,7 +1436,12 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				m.paint.force = message->paint.force || grid->repaint;
 
 				if (m.paint.force) {
-					OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
+					if (grid->drawBox) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, {20, 26, 85, 91}, 
+								{22, 23, 87, 88}, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					} else {
+						OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
+					}
 				}
 
 				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
@@ -1502,6 +1508,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
+	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->drawBox = true; grid->borderSize += 4; }
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
