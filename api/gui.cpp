@@ -17,6 +17,8 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Calculator textbox - selection extends out of top of textbox
+// TODO Increase left border of highlight on menus.
+// TODO Keyboard controls.
 
 struct UIImage {
 	OSRectangle region;
@@ -196,6 +198,7 @@ struct Control : GUIObject {
 		disabled : 1, 
 		isChecked : 1, 
 		checkable : 1,
+		ignoreActivationClicks : 1,
 		cursor : 5;
 
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
@@ -827,7 +830,7 @@ static void FindCaret(Textbox *control, int positionX, int positionY, bool secon
 		control->caret2.byte = control->text.bytes;
 		control->caret2.character = control->text.characters;
 	} else {
-		OSFindCharacterAtCoordinate(control->textBounds, OSPoint(positionX, positionY), 
+		OSFindCharacterAtCoordinate(control->textBounds, OS_MAKE_POINT(positionX, positionY), 
 				&control->text, control->textAlign, &control->caret2, control->textSize);
 
 		if (!secondCaret) {
@@ -1150,6 +1153,7 @@ OSObject OSCreateButton(OSCommand *command) {
 #endif
 
 	control->drawParentBackground = true;
+	control->ignoreActivationClicks = true;
 
 	SetControlCommand(control, command);
 
@@ -1623,6 +1627,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	Window *window = (Window *) _object;
 
 	static int lastClickX = 0, lastClickY = 0;
+	bool updateWindow = false;
 
 	if (window->destroyed && message->type != OS_MESSAGE_WINDOW_DESTROYED) {
 		return OS_CALLBACK_NOT_HANDLED;
@@ -1631,6 +1636,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	switch (message->type) {
 		case OS_MESSAGE_WINDOW_CREATED: {
 			window->created = true;
+			updateWindow = true;
 		} break;
 
 		case OS_MESSAGE_WINDOW_ACTIVATED: {
@@ -1655,6 +1661,11 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				message.type = OS_MESSAGE_END_FOCUS;
 				OSSendMessage(window->focus, &message);
 				window->focus = nullptr;
+			}
+
+			if (window->flags & OS_CREATE_WINDOW_MENU) {
+				message->type = OS_MESSAGE_DESTROY;
+				OSSendMessage(window, message);
 			}
 		} break;
 
@@ -1682,7 +1693,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
-			if (window->hover && !window->hover->disabled) {
+			if (window->hover && !window->hover->disabled
+				&& (!message->mousePressed.activationClick || !window->hover->ignoreActivationClicks)) {
 				window->drag = window->hover;
 			}
 
@@ -1859,8 +1871,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		OSSendMessage(window->root, &message);
 	}
 
-	bool updateWindow = false;
-
 	if (window->cursor != window->cursorOld) {
 		OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, window->window, window->cursor, 0, 0);
 		window->cursorOld = window->cursor;
@@ -1902,7 +1912,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 	bounds.top = y;
 	bounds.bottom = y + specification->height;
 
-	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, 0);
+	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, parent ? (uintptr_t) parent->window : 0);
 	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
 	window->width = bounds.right - bounds.left;
@@ -1962,9 +1972,7 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	return CreateWindow(specification, nullptr);
 }
 
-OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source) {
-	Control *source = (Control *) _source;
-
+OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint position) {
 	size_t itemCount = 0;
 
 	{
@@ -2001,19 +2009,31 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source) {
 	specification.flags = OS_CREATE_WINDOW_MENU;
 
 	Window *window;
+	int x = position.x;
+	int y = position.y;
 	
-	{
-		unsigned x = source->bounds.left;
-		unsigned y = source->bounds.bottom;
+	Control *source = (Control *) _source;
+
+	if (x == -1 && y == -1 && source && x != -2) {
+		x = source->bounds.left;
+		y = source->bounds.bottom;
 
 		OSRectangle bounds;
 		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, source->window->window, (uintptr_t) &bounds, 0, 0);
 
 		x += bounds.left;
 		y += bounds.top;
-
-		window = CreateWindow(&specification, source->window, x, y);
 	}
+
+	if ((x == -1 && y == -1) || x == -2) {
+		OSPoint position;
+		OSGetMousePosition(nullptr, &position);
+
+		x = position.x;
+		y = position.y;
+	}
+
+	window = CreateWindow(&specification, source ? source->window : nullptr, x, y);
 
 	OSObject grid = OSCreateGrid(1, itemCount, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP);
 	OSSetRootGrid(window, grid);
@@ -2022,7 +2042,19 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source) {
 		OSAddControl(grid, 0, i, items[i], OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	}
 
-	return nullptr;
+	return window;
+}
+
+void OSGetMousePosition(OSObject relativeWindow, OSPoint *position) {
+	OSSyscall(OS_SYSCALL_GET_CURSOR_POSITION, (uintptr_t) position, 0, 0, 0);
+
+	if (relativeWindow) {
+		OSRectangle bounds;
+		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, ((Window *) relativeWindow)->window, (uintptr_t) &bounds, 0, 0);
+
+		position->x -= bounds.left;
+		position->y -= bounds.top;
+	}
 }
 
 void OSInitialiseGUI() {

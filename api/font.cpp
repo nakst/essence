@@ -429,5 +429,5 @@ OSError OSDrawString(OSHandle surface, OSRectangle region,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold) {
 	return DrawString(surface, region, string,
 			alignment ? alignment : OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, color, backgroundColor, 0,
-			OSPoint(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular);
+			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular);
 }

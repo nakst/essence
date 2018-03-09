@@ -24,14 +24,15 @@ struct Window {
 	OSObject apiWindow;
 	OSCursorStyle cursorStyle;
 	int needsTimerMessagesHz, timerMessageTick;
-	bool resizing;
+	bool resizing; // Don't draw the window until the program calls UPDATE_WINDOW.
+	Window *parent;
 
 	volatile unsigned handles;
 };
 
 struct WindowManager {
 	void Initialise();
-	Window *CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow);
+	Window *CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *parentWindow);
 	void MoveCursor(int xMovement, int yMovement);
 	void ClickCursor(unsigned buttons);
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
@@ -194,30 +195,33 @@ int MeasureDistance(int x1, int y1, int x2, int y2) {
 void WindowManager::SetActiveWindow(Window *window) {
 	mutex.AssertLocked();
 
-	// KernelLog(LOG_VERBOSE, "SetActiveWindow - from %x to %x\n", activeWindow, window);
-
 	if (activeWindow == window) {
 		return;
 	}
 
-	Window *oldActiveWindow = activeWindow;
-	activeWindow = window;
+	{
+		Window *oldActiveWindow = activeWindow;
+		activeWindow = window;
 
-	if (oldActiveWindow) {
-		OSMessage message = {};
-		message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
-		message.context = oldActiveWindow->apiWindow;
+		Window *check = window;
 
-		if (window && window->owner == oldActiveWindow->owner) {
-			message.windowDeactivated.newWindow = window->apiWindow;
-			message.windowDeactivated.positionX = cursorX - window->position.x;
-			message.windowDeactivated.positionY = cursorY - window->position.y;
-		} else {
-			message.windowDeactivated.positionX = -1;
-			message.windowDeactivated.positionY = -1;
+		while (check) {
+			if (check == oldActiveWindow) {
+				break;
+			}
+
+			check = check->parent;
 		}
 
-		oldActiveWindow->owner->messageQueue.SendMessage(message);
+		if (check != oldActiveWindow) {
+			while (oldActiveWindow && oldActiveWindow != window) {
+				OSMessage message = {};
+				message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
+				message.context = oldActiveWindow->apiWindow;
+				oldActiveWindow->owner->messageQueue.SendMessage(message);
+				oldActiveWindow = oldActiveWindow->parent;
+			}
+		}
 	}
 
 	if (!window) {
@@ -285,7 +289,13 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			// The cursor is not in a window.
 		}
 
+		bool activationClick = false;
+
 		if (buttons & LEFT_BUTTON) {
+			if (activeWindow != window) {
+				activationClick = true;
+			}
+
 			SetActiveWindow(window);
 
 #define CLICK_CHAIN_TIMEOUT (500)
@@ -324,6 +334,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 				message.mousePressed.positionXScreen = cursorX;
 				message.mousePressed.positionYScreen = cursorY;
 				message.mousePressed.clickChainCount = clickChainCount;
+				message.mousePressed.activationClick = activationClick;
 				message.context = window->apiWindow;
 
 				RefreshCursor(window);
@@ -458,7 +469,7 @@ void WindowManager::Initialise() {
 	RefreshCursor(nullptr);
 
 	// Draw the background.
-	Redraw(OSPoint(0, 0), graphics.resX, graphics.resY);
+	Redraw(OS_MAKE_POINT(0, 0), graphics.resX, graphics.resY);
 	mutex.Release();
 	graphics.UpdateScreen();
 
@@ -468,7 +479,7 @@ void WindowManager::Initialise() {
 	initialised = true;
 }
 
-Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow) {
+Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *parentWindow) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -489,13 +500,14 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 	}
 
 	window->surface->handles++;
-	window->position = bounds.left == 0 && bounds.top == 0 ? OSPoint(cx += 20, cy += 20) : OSPoint(bounds.left, bounds.top);
+	window->position = bounds.left == 0 && bounds.top == 0 ? OS_MAKE_POINT(cx += 20, cy += 20) : OS_MAKE_POINT(bounds.left, bounds.top);
 	window->width = width;
 	window->height = height;
 	window->owner = process;
+	window->parent = parentWindow;
 	window->handles = 1;
 
-	KernelLog(LOG_VERBOSE, "Created window %x, handles = %d\n", window, window->handles);
+	KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, parent = %x\n", window, window->handles, window->parent);
 
 	window->z = windowsCount;
 	ArrayAdd(windows, window, false);
@@ -550,7 +562,7 @@ bool Window::Move(OSRectangle &rectangle) {
 		}
 
 		ClearImage();
-		position = OSPoint(rectangle.left, rectangle.top);
+		position = OS_MAKE_POINT(rectangle.left, rectangle.top);
 
 		size_t oldWidth = width;
 		size_t oldHeight = height;
@@ -585,7 +597,7 @@ void Window::Destroy() {
 		windowManager.mutex.Acquire();
 		Defer(windowManager.mutex.Release());
 
-		KernelLog(LOG_VERBOSE, "Window %x (api %x) is being destroyed...\n", this, apiWindow);
+		// KernelLog(LOG_VERBOSE, "Window %x (api %x) is being destroyed...\n", this, apiWindow);
 
 		if (windowManager.pressedWindow == this) windowManager.pressedWindow = nullptr;
 		if (windowManager.hoverWindow == this) windowManager.hoverWindow = nullptr; 
@@ -595,6 +607,12 @@ void Window::Destroy() {
 		if (windowManager.activeWindow == this) {
 			windowManager.activeWindow = nullptr; 
 			findActiveWindow = true;
+		}
+
+		for (uintptr_t i = 0; i < windowManager.windowsCount; i++) {
+			if (windowManager.windows[i]->parent == this) {
+				windowManager.windows[i]->parent = nullptr;
+			}
 		}
 
 		{
@@ -660,7 +678,7 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 #if 0
 		graphics.frameBuffer.FillRectangle(background, OSColor(83, 114, 166));
 #else
-		graphics.frameBuffer.Copy(wallpaperSurface, OSPoint(background.left, background.top), background, false);
+		graphics.frameBuffer.Copy(wallpaperSurface, OS_MAKE_POINT(background.left, background.top), background, false);
 #endif
 	}
 

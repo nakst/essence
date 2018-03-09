@@ -231,7 +231,7 @@ void Graphics::UpdateScreen() {
 	if (sourceRectangle.top < 0) sourceRectangle.top = 0;
 	if (sourceRectangle.right > (int) frameBuffer.resX) sourceRectangle.right = frameBuffer.resX;
 	if (sourceRectangle.bottom > (int) frameBuffer.resY) sourceRectangle.bottom = frameBuffer.resY;
-	cursorSwap.Copy(frameBuffer, OSPoint(0, 0), sourceRectangle, false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
+	cursorSwap.Copy(frameBuffer, OS_MAKE_POINT(0, 0), sourceRectangle, false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
 
 	frameBuffer.Draw(uiSheetSurface, OS_MAKE_RECTANGLE(cursorX, cursorX + cursorImageWidth,
 						     cursorY, cursorY + cursorImageHeight),
@@ -254,7 +254,7 @@ void Graphics::UpdateScreen() {
 
 	if (cursorX < 0) cursorX = 0;
 	if (cursorY < 0) cursorY = 0;
-	frameBuffer.Copy(cursorSwap, OSPoint(cursorX, cursorY), 
+	frameBuffer.Copy(cursorSwap, OS_MAKE_POINT(cursorX, cursorY), 
 			OS_MAKE_RECTANGLE(0, sourceRectangle.right - sourceRectangle.left, 
 				0, sourceRectangle.bottom - sourceRectangle.top),
 			false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
@@ -316,7 +316,7 @@ void Surface::Resize(size_t newResX, size_t newResY) {
 		stride = resX * 4;
 	}
 
-	Copy(oldState, OSPoint(0, 0), OS_MAKE_RECTANGLE(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
+	Copy(oldState, OS_MAKE_POINT(0, 0), OS_MAKE_RECTANGLE(0, oldState.resX < newResX ? oldState.resX : newResX, 0, oldState.resY < newResY ? oldState.resY : newResY), false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
 	kernelVMM.Free(oldState.memory); 
 }
 

@@ -1,6 +1,10 @@
 [program]
 name = "Calculator";
 
+[build]
+output = "calculator";
+source = "calculator/main.cpp";
+
 [window mainWindow]
 width = 330;
 height = 300;

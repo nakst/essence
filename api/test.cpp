@@ -22,7 +22,7 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) message;
 
 	OSPrint("object = %x\n", object);
-	OSCreateMenu(osMenuTextboxContext, object);
+	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE);
 
 	return OS_CALLBACK_HANDLED;
 }

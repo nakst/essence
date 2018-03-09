@@ -172,6 +172,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL,
 	OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT,
 	OS_FATAL_ERROR_INVALID_HANDLE, // Note: this has to be fatal!! See the linear handle list.
+					// TODO Some system calls allow invalid handles, e.g. CREATE_WINDOW
 	OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD,
 	OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED,
 	OS_FATAL_ERROR_BUFFER_NOT_ACCESSIBLE,
@@ -198,6 +199,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS,
 	OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT,
 	OS_FATAL_ERROR_CORRUPT_LINKED_LIST,
+	OS_FATAL_ERROR_NO_MENU_POSITION,
 } OSFatalError;
 
 // These must be negative.
@@ -284,6 +286,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_BATCH,
 	OS_SYSCALL_NEED_WM_TIMER,
 	OS_SYSCALL_RESET_CLICK_CHAIN,
+	OS_SYSCALL_GET_CURSOR_POSITION,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -353,13 +356,6 @@ typedef struct OSDirectoryChild {
 } OSDirectoryChild;
 
 typedef struct OSPoint {
-	OS_CONSTRUCTOR(OSPoint() {})
-
-	OS_CONSTRUCTOR(OSPoint(intptr_t _x, intptr_t _y) {
-		x = _x;
-		y = _y;
-	})
-
 	intptr_t x;
 	intptr_t y;
 } OSPoint;
@@ -373,6 +369,7 @@ typedef struct OSRectangle {
 
 #define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(intptr_t)(l),(intptr_t)(r),(intptr_t)(t),(intptr_t)(b)})
 #define OS_MAKE_CALLBACK(a, b) ((OSCallback){(a),(b)})
+#define OS_MAKE_POINT(x, y) ((OSPoint){(intptr_t)(x),(intptr_t)(y)})
 
 typedef struct OSColor {
 	OS_CONSTRUCTOR(OSColor() {})
@@ -524,7 +521,8 @@ typedef struct OSMessage {
 			int positionY;
 			int positionXScreen;
 			int positionYScreen;
-			unsigned clickChainCount;
+			uint8_t clickChainCount;
+			bool activationClick;
 		} mousePressed;
 
 		struct {
@@ -562,12 +560,6 @@ typedef struct OSMessage {
 			OSHandle surface;
 			int left, right, top, bottom;
 		} paintBackground;
-
-		struct {
-			OSObject newWindow; // nullptr if the window is not owned by the process.
-			int positionX; // The cursor coordinates in the new window.
-			int positionY;
-		} windowDeactivated;
 
 		struct {
 			OSObject window;
@@ -794,12 +786,16 @@ OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disa
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
 
-OS_EXTERN_C OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject sourceControl);
+#define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
+#define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
+OS_EXTERN_C OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject sourceControl, OSPoint position);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
 #define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, 0)
+
+OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);

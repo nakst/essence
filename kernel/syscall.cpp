@@ -363,7 +363,11 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSRectangle *bounds = (OSRectangle *) argument1;
 			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 2);
 
-			Window *window = windowManager.CreateWindow(currentProcess, *bounds, (OSObject) argument2);
+			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			Window *parentWindow = (Window *) currentProcess->handleTable.ResolveHandle(argument3, type);
+			Defer(if (parentWindow) currentProcess->handleTable.CompleteHandle(parentWindow, argument3));
+
+			Window *window = windowManager.CreateWindow(currentProcess, *bounds, (OSObject) argument2, parentWindow);
 
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
@@ -919,6 +923,17 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(success ? OS_SUCCESS : OS_ERROR_INVALID_DIMENSIONS, false);
 		} break;
 
+		case OS_SYSCALL_GET_CURSOR_POSITION: {
+			OSPoint *point = (OSPoint *) argument0;
+			SYSCALL_BUFFER(argument0, sizeof(OSPoint), 1);
+
+			// I'll presume we don't need the mutex acquired to do this..?
+			// What's the worst that could happen?
+			point->x = windowManager.cursorX;
+			point->y = windowManager.cursorY;
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
 		case OS_SYSCALL_GET_WINDOW_BOUNDS: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
@@ -939,7 +954,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 		case OS_SYSCALL_REDRAW_ALL: {
 			windowManager.mutex.Acquire();
-			windowManager.Redraw(OSPoint(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, nullptr);
+			windowManager.Redraw(OS_MAKE_POINT(0, 0), graphics.frameBuffer.resX, graphics.frameBuffer.resY, nullptr);
 			windowManager.mutex.Release();
 			graphics.UpdateScreen();
 			SYSCALL_RETURN(OS_SUCCESS, false);
