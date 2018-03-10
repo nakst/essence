@@ -128,6 +128,66 @@ extern "C" void ProgramEntry() {
 	if (y2.b != 2) OSCrashProcess(602);
 	if (++z != 2) OSCrashProcess(603); // Is the data segment writable?
 
+	{
+		void *a = malloc(0x100000);
+		void *b = realloc(a, 0x1000);
+		void *c = realloc(b, 0x100000);
+		free(c);
+	}
+
+	if (strcasecmp("abc", "AbC")) {
+		OSCrashProcess(250);
+	}
+
+	if (strspn("123abc", "123456789") != 3) {
+		OSCrashProcess(251);
+	}
+
+	if (strcspn("abc123", "123456789") != 3) {
+		OSCrashProcess(252);
+	}
+
+	{
+		const char *s = "abcabc";
+		if (strchr(s, 'b') != s + 1) {
+			OSCrashProcess(254);
+		}
+		if (strrchr(s, 'b') != s + 4) {
+			OSCrashProcess(254);
+		}
+	}
+
+	{
+		char b[] = "abcdef";
+
+		if (strlen(b) != 6 || strnlen(b, 3) != 3 || strnlen(b, 10) != 6) {
+			OSCrashProcess(267);
+		}
+	}
+
+	if (strchr("", 'a') || strrchr("", 'a')) {
+		OSCrashProcess(255);
+	}
+
+	{
+		char b[32];
+		strcpy(b, "he");
+		strcat(b, "llo");
+		if (strcmp(b, "hello")) OSCrashProcess(253);
+	}
+
+	{
+		char text[] = "hello,world:test";
+		const char *delim = ":,";
+		char *n = text;
+		(void) n;
+		(void) delim;
+		// OSPrint("%z\n", strsep(&n, delim));
+		// OSPrint("%z\n", strsep(&n, delim));
+		// OSPrint("%z\n", strsep(&n, delim));
+		// OSPrint("%x\n", strsep(&n, delim));
+	}
+
 	jmpState = 1;
 	if (setjmp(buf) == 0) {
 		if (jmpState++ != 1) OSCrashProcess(230);

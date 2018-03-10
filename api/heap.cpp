@@ -8,8 +8,14 @@ struct OSHeapRegion {
 	uint16_t offset;
 	uint16_t used;
 
-	// Valid if the region is not in use.
-	OSHeapRegion *regionListNext;
+
+	union {
+		uintptr_t largeRegionSize;
+
+		// Valid if the region is not in use.
+		OSHeapRegion *regionListNext;
+	};
+
 	OSHeapRegion **regionListReference;
 };
 
@@ -94,6 +100,8 @@ void *OSHeapAllocate(size_t size, bool zeroMemory) {
 		// We don't need to zero this memory. (It'll be done by the PMM).
 		OSHeapRegion *region = (OSHeapRegion *) OS_HEAP_ALLOCATE_CALL(size);
 		region->used = 0xABCD;
+		region->size = 0;
+		region->largeRegionSize = originalSize;
 		if (!region) return nullptr; 
 		
 		void *address = OS_HEAP_REGION_DATA(region);
@@ -241,22 +249,3 @@ void OSHeapFree(void *address) {
 	OSHeapAddFreeRegion(region, heapRegions);
 	OS_HEAP_RELEASE_MUTEX();
 }
-
-#if 0
-void *OSHeapDuplicate(void *address) {
-	if (!address) return nullptr;
-
-	OSHeapRegion *region = OS_HEAP_REGION_HEADER(address);
-	if (region->used != 0xABCD) OS_HEAP_PANIC();
-
-	if (!region->size) {
-		// The region was allocated by itself.
-		// TODO Implement this.
-		OS_HEAP_PANIC();
-	}
-
-	void *duplicate = OSHeapAllocate(region->size, false);
-	CF(CopyMemory)(duplicate, address, region->size);
-	return duplicate;
-}
-#endif

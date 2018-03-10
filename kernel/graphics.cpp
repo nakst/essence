@@ -357,7 +357,7 @@ bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
 		return false;
 	}
 
-	KernelLog(LOG_VERBOSE, "Created surface using %dKB.\n", memoryNeeded / 1024);
+	// KernelLog(LOG_VERBOSE, "Created surface using %dKB.\n", memoryNeeded / 1024);
 
 	// We probably want to invalidate the whole surface when it is created.
 	InvalidateRectangle(OS_MAKE_RECTANGLE(0, resX, 0, resY));
