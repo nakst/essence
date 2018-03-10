@@ -1,6 +1,11 @@
 [program]
 name = "Test Program";
 
+[command actionOK]
+label = "Open Menu";
+callback = Crash;
+isDisabled = false;
+
 [command actionToggleEnabled]
 label = "Toggle Disabled";
 shortcut = "Ctrl+T";

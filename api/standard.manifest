@@ -1,38 +1,48 @@
 [command osCommandCopy]
 label = "\$Copy";
 shortcut = "Ctrl+C";
+defaultDisabled = true;
 
 [command osCommandPaste]
 label = "\$Paste";
 shortcut = "Ctrl+V";
+defaultDisabled = true;
 
 [command osCommandCut]
 label = "Cu\$t";
 shortcut = "Ctrl+X";
+defaultDisabled = true;
 
 [command osCommandDelete]
 label = "\$Delete";
 shortcut = "Del";
+defaultDisabled = true;
 
 [command osCommandUndo]
 label = "\$Undo";
 shortcut = "Ctrl+Z";
+defaultDisabled = true;
 
 [command osCommandRedo]
 label = "\$Redo";
 shortcut = "Ctrl+Y";
+defaultDisabled = true;
 
 [command osCommandRepeat]
 label = "R\$epeat";
 shortcut = "Ctrl+Shift+Z";
+defaultDisabled = true;
 
 [command osCommandSelectAll]
 label = "Select \$All";
 shortcut = "Ctrl+A";
+defaultDisabled = true;
 
 [menu osMenuTextboxContext]
 osCommandCut;
 osCommandCopy;
 osCommandPaste;
+Separator;
 osCommandDelete;
+Separator;
 osCommandSelectAll;

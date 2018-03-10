@@ -6,7 +6,6 @@
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
 
-OSCommand actionOK, actionOK2;
 OSObject progressBar, window;
 
 int x = 5;
@@ -398,15 +397,10 @@ extern "C" void ProgramEntry() {
 	ws.titleBytes = OSCStringLength(ws.title);
 	window = OSCreateWindow(&ws);
 
-	actionOK.label = (char *) "Crash!";
-	actionOK.checkable = false;
-	actionOK.labelBytes = OSCStringLength(actionOK.label);
-	actionOK.callback = OS_MAKE_CALLBACK(Crash, nullptr);
-	
 	OSObject b;
 	OSObject content = OSCreateGrid(4, 4, 0);
 	OSSetRootGrid(window, content);
-	OSAddControl(content, 1, 0, b = OSCreateButton(&actionOK), 0);
+	OSAddControl(content, 1, 0, b = OSCreateButton(actionOK), 0);
 
 	OSAddControl(content, 0, 1, b = OSCreateTextbox(0), 0);
 
@@ -425,7 +419,7 @@ extern "C" void ProgramEntry() {
 	}
 
 	OSDisableCommand(window, actionToggleEnabled, false);
-	OSDisableCommand(window, &actionOK, false);
+	OSDisableCommand(window, actionOK, false);
 
 	OSProcessMessages();
 }

@@ -572,6 +572,7 @@ typedef struct OSMessage {
 
 		struct {
 			OSObject window;
+			struct OSCommand *command;
 			bool checked;
 		} command;
 	};
@@ -782,6 +783,7 @@ OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
 OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
+OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
@@ -797,6 +799,7 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 
+OS_EXTERN_C OSObject OSCreateLine();
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);

@@ -507,7 +507,7 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 	window->parent = parentWindow;
 	window->handles = 1;
 
-	KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, parent = %x\n", window, window->handles, window->parent);
+	// KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, parent = %x\n", window, window->handles, window->parent);
 
 	window->z = windowsCount;
 	ArrayAdd(windows, window, false);

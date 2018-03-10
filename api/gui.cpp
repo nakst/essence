@@ -89,6 +89,9 @@ static UIImage menuBox 			= {{199, 229, 4, 17}, {225, 227, 7, 9}};
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
 
+static UIImage lineHorizontal		= {{20, 32, 92, 96}, {21, 22, 92, 92}};
+static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
+
 static UIImage *menuItemBackgrounds[] = {
 	nullptr,
 	nullptr,
@@ -238,6 +241,7 @@ struct Grid : GUIObject {
 struct CommandWindow {
 	// Data each window stores for each command specified in the program's manifest.
 	LinkedList<Control> controls; // Controls bound to this command.
+	OSCallback notificationCallback;
 	uintptr_t disabled : 1, checked : 1;
 	uintptr_t state;
 };
@@ -285,13 +289,13 @@ static void SetControlCommand(Control *control, OSCommand *_command) {
 	control->command = _command;
 	control->commandItem.thisItem = control;
 	control->checkable = _command->checkable;
-	control->notificationCallback = _command->callback;
 
 	if (control->window) {
 		CommandWindow *command = control->window->commands + _command->identifier;
 		command->controls.InsertEnd(&control->commandItem);
 		control->isChecked = command->checked;
 		control->disabled = command->disabled;
+		control->notificationCallback = command->notificationCallback;
 	}
 }
 
@@ -622,7 +626,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			message.type = OS_NOTIFICATION_COMMAND;
 			message.command.checked = control->isChecked;
 			message.command.window = control->window;
+			message.command.command = control->command;
 			OSForwardMessage(control, control->notificationCallback, &message);
+
+			if (control->window->flags & OS_CREATE_WINDOW_MENU) {
+				message.type = OS_MESSAGE_DESTROY;
+				OSSendMessage(control->window, &message);
+			}
 		} break;
 
 		default: {
@@ -873,7 +883,8 @@ static void RemoveSelectedText(Textbox *control) {
 }
 
 OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
-	Textbox *control = (Textbox *) object;
+	Textbox *control = (Textbox *) message->context;
+
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 	static int lastClickChainCount = 1;
 
@@ -902,6 +913,44 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->caret.character = 0;
 		control->caret2.byte = control->text.bytes;
 		control->caret2.character = control->text.characters;
+
+		OSEnableCommand(control->window, osCommandPaste, true);
+		OSEnableCommand(control->window, osCommandSelectAll, true);
+
+		OSSetCommandNotificationCallback(control->window, osCommandPaste, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+		OSSetCommandNotificationCallback(control->window, osCommandSelectAll, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+		OSSetCommandNotificationCallback(control->window, osCommandCopy, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+		OSSetCommandNotificationCallback(control->window, osCommandCut, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+		OSSetCommandNotificationCallback(control->window, osCommandDelete, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
+		OSDisableCommand(control->window, osCommandPaste, true);
+		OSDisableCommand(control->window, osCommandSelectAll, true);
+		OSDisableCommand(control->window, osCommandCopy, true);
+		OSDisableCommand(control->window, osCommandCut, true);
+		OSDisableCommand(control->window, osCommandDelete, true);
+	} else if (message->type == OS_NOTIFICATION_COMMAND) {
+		// TODO Code copy-and-pasted from KEY_TYPED below.
+
+		if (message->command.command == osCommandSelectAll) {
+			control->caret.byte = 0;
+			control->caret.character = 0;
+
+			control->caret2.byte = control->text.bytes;
+			control->caret2.character = control->text.characters;
+		} else if (message->command.command == osCommandDelete) {
+			if (control->caret.byte == control->caret2.byte && control->caret.byte != control->text.bytes) {
+				MoveCaret(&control->text, &control->caret, true, message->keyboard.ctrl);
+				int bytes = control->caret.byte - control->caret2.byte;
+				OSCopyMemory(control->text.buffer + control->caret2.byte, control->text.buffer + control->caret.byte, control->text.bytes - control->caret.byte);
+				control->text.characters -= 1;
+				control->text.bytes -= bytes;
+				control->caret = control->caret2;
+			} else {
+				RemoveSelectedText(control);
+			}
+		}
+
+		OSRepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_DRAG) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
@@ -1069,6 +1118,13 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSRepaintControl(control);
 	}
 
+	if (control->window && control->window->lastFocus == control) {
+		bool noSelection = control->caret.byte == control->caret2.byte;
+		OSDisableCommand(control->window, osCommandCopy, noSelection);
+		OSDisableCommand(control->window, osCommandCut, noSelection);
+		OSDisableCommand(control->window, osCommandDelete, noSelection);
+	}
+
 	if (result == OS_CALLBACK_NOT_HANDLED) {
 		result = ProcessControlMessage(object, message);
 	}
@@ -1091,7 +1147,7 @@ OSObject OSCreateTextbox(unsigned fontSize) {
 	control->textColor = 0x000000;
 	control->minimumHeight = control->preferredHeight = 23 - 9 + control->textSize;
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
 
 	return control;
 }
@@ -1169,6 +1225,19 @@ OSObject OSCreateButton(OSCommand *command) {
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 	OSSetText(control, command->label, command->labelBytes);
+
+	return control;
+}
+
+OSObject OSCreateLine() {
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+	control->backgrounds = lineHorizontalBackgrounds;
+
+	control->preferredWidth = 80;
+	control->preferredHeight = 4;
+
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
 	return control;
 }
@@ -1596,6 +1665,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 
 void OSDisableControl(OSObject _control, bool disabled) {
 	Control *control = (Control *) _control;
+	if (control->disabled == disabled) return;
 	control->disabled = disabled;
 
 	OSAnimateControl(control, false);
@@ -1608,9 +1678,24 @@ void OSDisableControl(OSObject _control, bool disabled) {
 	}
 }
 
+void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback) {
+	Window *window = (Window *) _window;
+	CommandWindow *command = window->commands + _command->identifier;
+	command->notificationCallback = callback;
+
+	LinkedItem<Control> *item = command->controls.firstItem;
+
+	while (item) {
+		Control *control = item->thisItem;
+		control->notificationCallback = callback;
+		item = item->nextItem;
+	}
+}
+
 void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 	Window *window = (Window *) _window;
 	CommandWindow *command = window->commands + _command->identifier;
+	if (command->disabled == disabled) return;
 	command->disabled = disabled;
 
 	LinkedItem<Control> *item = command->controls.firstItem;
@@ -1931,6 +2016,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 			CommandWindow *command = window->commands + i;
 			command->disabled = _commands[i]->defaultDisabled;
 			command->checked = _commands[i]->defaultCheck;
+			command->notificationCallback = _commands[i]->callback;
 		}
 	} else {
 		window->commands = parent->commands;
@@ -1992,7 +2078,17 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 	int width = 0, height = 8;
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
-		items[i] = (Control *) CreateMenuItem(menuSpecification[i]);
+		switch (menuSpecification[i].type) {
+			case OSMenuItem::SEPARATOR: {
+				items[i] = (Control *) OSCreateLine();
+			} break;
+
+			case OSMenuItem::COMMAND: {
+				items[i] = (Control *) CreateMenuItem(menuSpecification[i]);
+			} break;
+
+			default: {} continue;
+		}
 
 		if (items[i]->preferredWidth > width) {
 			width = items[i]->preferredWidth;
