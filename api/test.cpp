@@ -20,7 +20,7 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) object;
 	(void) message;
 
-	OSPrint("object = %x\n", object);
+	// OSPrint("object = %x\n", object);
 	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE);
 
 	return OS_CALLBACK_HANDLED;
@@ -114,6 +114,7 @@ int CompareIntegers(const void *a, const void *b) {
 
 OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
 	(void) object;
+	OSPrint("context = %x\n", message->context);
 	OSEnableControl(message->context, message->command.checked);
 	return OS_CALLBACK_HANDLED;
 }
@@ -464,7 +465,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 0, 1, b = OSCreateTextbox(0), 0);
 
-	actionToggleEnabled->callback.context = b;
+	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_CALLBACK(ToggleEnabled, b));
 	OSAddControl(content, 0, 0, OSCreateButton(actionToggleEnabled), 0);
 
 	OSAddControl(content, 1, 1, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);

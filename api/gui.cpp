@@ -156,7 +156,7 @@ struct GUIObject : APIObject {
 	uint16_t preferredWidth, preferredHeight;
 };
 
-static void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
+static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
 	do {
 		object->descendentInvalidationFlags |= mask;
 		object = (GUIObject *) object->parent;
@@ -202,6 +202,7 @@ struct Control : GUIObject {
 		isChecked : 1, 
 		checkable : 1,
 		ignoreActivationClicks : 1,
+		checkboxIcons : 1,
 		cursor : 5;
 
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
@@ -267,13 +268,20 @@ struct Window : GUIObject {
 	struct Window *parent;
 };
 
-static void OSRepaintControl(OSObject _control) {
+static void CopyText(OSString buffer) {
+	OSClipboardHeader header = {};
+	header.format = OS_CLIPBOARD_FORMAT_TEXT;
+	header.textBytes = buffer.bytes;
+	OSSyscall(OS_SYSCALL_COPY, (uintptr_t) buffer.buffer, (uintptr_t) &header, 0, 0);
+}
+
+static inline void OSRepaintControl(OSObject _control) {
 	Control *control = (Control *) _control;
 	control->repaint = true;
 	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 }
 
-static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
+static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	if (rectangle.left > x || rectangle.right <= x || rectangle.top > y || rectangle.bottom <= y) {
 		return false;
 	}
@@ -281,7 +289,7 @@ static bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	return true;
 }
 
-static void UpdateCheckboxIcons(Control *control) {
+static inline void UpdateCheckboxIcons(Control *control) {
 	control->icons = control->isChecked ? checkboxIconsChecked : checkboxIcons;
 }
 
@@ -514,6 +522,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			if (control->command) {
 				SetControlCommand(control, control->command);
+
+				if (control->checkboxIcons) {
+					UpdateCheckboxIcons(control);
+				}
 			}
 		} break;
 
@@ -948,6 +960,17 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			} else {
 				RemoveSelectedText(control);
 			}
+		} else if (message->command.command == osCommandCopy) {
+			OSString string;
+			int length = control->caret.byte - control->caret2.byte;
+			if (length < 0) length = -length;
+			string.bytes = length;
+			if (control->caret.byte > control->caret2.byte) string.buffer = control->text.buffer + control->caret2.byte;
+			else string.buffer = control->text.buffer + control->caret.byte;
+			CopyText(string);
+		} else if (message->command.command == osCommandPaste) {
+			RemoveSelectedText(control);
+			// TODO Pasting.
 		}
 
 		OSRepaintControl(control);
@@ -1217,6 +1240,7 @@ OSObject OSCreateButton(OSCommand *command) {
 		UpdateCheckboxIcons(control);
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
 		control->minimumHeight = control->icons[0]->region.bottom - control->icons[0]->region.top;
+		control->checkboxIcons = true;
 	} else {
 		control->backgrounds = buttonBackgrounds;
 		control->minimumWidth = 80;

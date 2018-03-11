@@ -173,7 +173,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_GET_CREATION_ARGUMENT: {
 			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_WINDOW);
 			void *object = currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!object) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
 			uintptr_t creationArgument;
@@ -210,7 +210,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_GET_LINEAR_BUFFER: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSLinearBuffer *linearBuffer = (OSLinearBuffer *) argument1;
@@ -236,7 +236,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_INVALIDATE_RECTANGLE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
@@ -250,7 +250,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_COPY_TO_SCREEN: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			OSPoint *point = (OSPoint *) argument1;
@@ -264,7 +264,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_FILL_RECTANGLE: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *surface = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!surface) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(surface, argument0));
 
 			_OSRectangleAndColor *arg = (_OSRectangleAndColor *) argument1;
@@ -284,11 +284,11 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 
 			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!destination) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			Surface *source = (Surface *) currentProcess->handleTable.ResolveHandle(argument1, type);
-			if (!source) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			OSPoint *point = (OSPoint *) argument2;
@@ -303,11 +303,11 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 
 			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!destination) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			Surface *source = (Surface *) currentProcess->handleTable.ResolveHandle(argument1, type);
-			if (!source) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(source, argument1));
 
 			_OSDrawSurfaceArguments *arguments = (_OSDrawSurfaceArguments *) argument2;
@@ -321,7 +321,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_CLEAR_MODIFIED_REGION: {
 			KernelObjectType type = KERNEL_OBJECT_SURFACE;
 			Surface *destination = (Surface *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!destination) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(destination, argument0));
 
 			destination->mutex.Acquire();
@@ -363,8 +363,9 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSRectangle *bounds = (OSRectangle *) argument1;
 			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 2);
 
-			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_NONE);
 			Window *parentWindow = (Window *) currentProcess->handleTable.ResolveHandle(argument3, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(if (parentWindow) currentProcess->handleTable.CompleteHandle(parentWindow, argument3));
 
 			Window *window = windowManager.CreateWindow(currentProcess, *bounds, (OSObject) argument2, parentWindow);
@@ -394,7 +395,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_UPDATE_WINDOW: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->mutex.Acquire();
@@ -428,7 +429,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_ACQUIRE_MUTEX: {
 			KernelObjectType type = KERNEL_OBJECT_MUTEX;
 			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!mutex) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
 			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
@@ -441,7 +442,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_RELEASE_MUTEX: {
 			KernelObjectType type = KERNEL_OBJECT_MUTEX;
 			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!mutex) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
 
 			if (mutex->owner != currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD, true);
@@ -451,9 +452,9 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 		case OS_SYSCALL_CLOSE_HANDLE: {
 			KernelObjectType type = CLOSABLE_OBJECT_TYPES; 
-			void *object = currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
+			currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
 
-			if (!object) {
+			if (!type) {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			}
 
@@ -464,7 +465,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_TERMINATE_THREAD: {
 			KernelObjectType type = KERNEL_OBJECT_THREAD;
 			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!thread) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
 
 			scheduler.TerminateThread(thread);
@@ -474,7 +475,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_TERMINATE_PROCESS: {
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			scheduler.TerminateProcess(process);
@@ -528,7 +529,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE);
 			Handle *handleData;
 			void *object = currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!object) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
 			unsigned flags = VMM_REGION_FLAG_CACHABLE;
@@ -567,12 +568,12 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_SHARE_MEMORY: {
 			KernelObjectType type = KERNEL_OBJECT_SHMEM;
 			SharedMemoryRegion *region = (SharedMemoryRegion *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!region) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(region, argument0));
 
 			type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument1, type);
-			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument1));
 
 			region->mutex.Acquire();
@@ -617,7 +618,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
@@ -652,7 +653,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
@@ -687,7 +688,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
@@ -716,7 +717,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
@@ -745,7 +746,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;
 			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
-			if (!file) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
 
 			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
@@ -761,7 +762,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_SET_EVENT: {
 			KernelObjectType type = KERNEL_OBJECT_EVENT;
 			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!event) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
 			event->Set();
@@ -771,7 +772,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_RESET_EVENT: {
 			KernelObjectType type = KERNEL_OBJECT_EVENT;
 			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!event) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
 			event->Reset();
@@ -781,7 +782,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_POLL_EVENT: {
 			KernelObjectType type = KERNEL_OBJECT_EVENT;
 			Event *event = (Event *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!event) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
 			bool eventWasSet = event->Poll();
@@ -812,7 +813,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				KernelObjectType type = waitableObjectTypes;
 				void *object = (void *) currentProcess->handleTable.ResolveHandle(handles[i], type);
 
-				if (!object) {
+				if (!type) {
 					for (uintptr_t j = 0; j < i; j++) {
 						currentProcess->handleTable.CompleteHandle(objects[j], handles[j]);
 					}
@@ -883,7 +884,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			volatile OSHandle handle = information->handle;
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Node *node = (Node *) currentProcess->handleTable.ResolveHandle(handle, type);
-			if (!node) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(node, handle));
 
 			node->CopyInformation((OSNodeInformation *) argument0);
@@ -893,7 +894,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_NEED_WM_TIMER: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->NeedWMTimer(argument1);
@@ -903,7 +904,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_SET_CURSOR_STYLE: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			window->SetCursorStyle((OSCursorStyle) argument1);
@@ -913,7 +914,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_MOVE_WINDOW: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
@@ -937,7 +938,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_GET_WINDOW_BOUNDS: {
 			KernelObjectType type = KERNEL_OBJECT_WINDOW;
 			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!window) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
 
 			OSRectangle *rectangle = (OSRectangle *) argument1;
@@ -963,7 +964,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_PAUSE_PROCESS: {
 			KernelObjectType type = KERNEL_OBJECT_PROCESS;
 			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!process) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
 
 			scheduler.PauseProcess(process, (bool) argument1);
@@ -989,7 +990,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_GET_THREAD_ID: {
 			KernelObjectType type = KERNEL_OBJECT_THREAD;
 			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!thread) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
 
 			SYSCALL_RETURN(thread->id, false);
@@ -998,7 +999,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN: {
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Node *node = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!node) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(node, argument0));
 			
 			if (node->data.type != OS_NODE_DIRECTORY) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
@@ -1017,7 +1018,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_GET_IO_REQUEST_PROGRESS: {
 			KernelObjectType type = KERNEL_OBJECT_IO_REQUEST;
 			IORequest *request = (IORequest *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!request) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(request, argument0));
 
 			SYSCALL_BUFFER(argument1, sizeof(OSIORequestProgress), 1);
@@ -1035,7 +1036,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_CANCEL_IO_REQUEST: {
 			KernelObjectType type = KERNEL_OBJECT_IO_REQUEST;
 			IORequest *request = (IORequest *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!request) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(request, argument0));
 
 			request->mutex.Acquire();
@@ -1074,6 +1075,20 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 		case OS_SYSCALL_RESET_CLICK_CHAIN: {
 			windowManager.clickChainCount = 0;
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_COPY: {
+			SYSCALL_BUFFER(argument1, sizeof(OSClipboardHeader), 1);
+			OSClipboardHeader *header = (OSClipboardHeader *) argument1;
+
+			if (header->format != OS_CLIPBOARD_FORMAT_EMPTY) {
+				SYSCALL_BUFFER(argument0, (header->textBytes + header->customBytes), 2);
+				clipboard.Copy((void *) argument0, header);
+			} else {
+				clipboard.Copy(nullptr, header);
+			}
+
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 	}

@@ -6,6 +6,7 @@
 		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_IO_REQUEST))
 
 enum KernelObjectType {
+	COULD_NOT_RESOLVE_HANDLE	= 0x00000000,
 	KERNEL_OBJECT_PROCESS 		= 0x00000001,
 	KERNEL_OBJECT_THREAD		= 0x00000002,
 	KERNEL_OBJECT_SURFACE		= 0x00000004,
@@ -15,6 +16,7 @@ enum KernelObjectType {
 	KERNEL_OBJECT_NODE		= 0x00000040,
 	KERNEL_OBJECT_EVENT		= 0x00000080,
 	KERNEL_OBJECT_IO_REQUEST	= 0x00000100,
+	KERNEL_OBJECT_NONE		= 0x00008000,
 };
 
 struct Handle {
@@ -212,21 +214,14 @@ void HandleTable::CloseHandle(OSHandle handle) {
 }
 
 void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, ResolveHandleReason reason, Handle **handleData) {
-	// Check that the handle is within the correct bounds.
-	if (!handle || handle >= HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES) {
-		return nullptr;
-	}
-
-	if (!linear) {
-		// We haven't opened any handles yet!
-		return nullptr;
-	}
-
 	// Special handles.
 	if (reason == RESOLVE_HANDLE_TO_USE) { // We can't close these handles.
 		if (handle == OS_CURRENT_THREAD && (type & KERNEL_OBJECT_THREAD)) {
 			type = KERNEL_OBJECT_THREAD;
 			return GetCurrentThread();
+		} else if (handle == OS_INVALID_HANDLE && (type & KERNEL_OBJECT_NONE)) {
+			type = KERNEL_OBJECT_NONE;
+			return nullptr;
 		} else if (handle == OS_CURRENT_PROCESS && (type & KERNEL_OBJECT_PROCESS)) {
 			type = KERNEL_OBJECT_PROCESS;
 			return GetCurrentThread()->process;
@@ -237,6 +232,18 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 			type = KERNEL_OBJECT_SURFACE;
 			return &wallpaperSurface;
 		}
+	}
+
+	// Check that the handle is within the correct bounds.
+	if (!handle || handle >= HANDLE_TABLE_L1_ENTRIES * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES) {
+		type = COULD_NOT_RESOLVE_HANDLE;
+		return nullptr;
+	}
+
+	if (!linear) {
+		// We haven't opened any handles yet!
+		type = COULD_NOT_RESOLVE_HANDLE;
+		return nullptr;
 	}
 
 	lock.Acquire();
@@ -264,6 +271,7 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 
 		if (reason == RESOLVE_HANDLE_TO_USE) {
 			if (_handle->closing) {
+				type = COULD_NOT_RESOLVE_HANDLE;
 				return nullptr; // The handle is being closed.
 			} else {
 				_handle->lock++;
@@ -272,6 +280,7 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 			}
 		} else if (reason == RESOLVE_HANDLE_TO_CLOSE) {
 			if (_handle->lock) {
+				type = COULD_NOT_RESOLVE_HANDLE;
 				return nullptr; // The handle was locked and can't be closed.
 			} else {
 				_handle->closing = true;
@@ -283,6 +292,7 @@ void *HandleTable::ResolveHandle(OSHandle handle, KernelObjectType &type, Resolv
 			return nullptr;
 		}
 	} else {
+		type = COULD_NOT_RESOLVE_HANDLE;
 		return nullptr;
 	}
 }
@@ -344,6 +354,7 @@ OSHandle HandleTable::OpenHandle(Handle &handle) {
 	}
 
 	if (l1Index == HANDLE_TABLE_L1_ENTRIES) {
+		// TODO Close the handle to the object with CloseHandleToObject?
 		return OS_INVALID_HANDLE;
 	}
 

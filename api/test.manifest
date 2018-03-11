@@ -7,8 +7,9 @@ callback = Crash;
 isDisabled = false;
 
 [command actionToggleEnabled]
-label = "Toggle Disabled";
+label = "Toggle Enabled";
 shortcut = "Ctrl+T";
 checkable = true;
 callback = ToggleEnabled;
 isDisabled = false;
+defaultCheck = true;

@@ -64,10 +64,37 @@ struct WindowManager {
 	int clickChainX, clickChainY;
 };
 
+struct Clipboard {
+	void Copy(void *buffer, OSClipboardHeader *header);
+
+	Mutex mutex;
+
+	void *buffer;
+	OSClipboardHeader header;
+};
+
 WindowManager windowManager;
+Clipboard clipboard;
 Surface uiSheetSurface, wallpaperSurface;
 
 #else
+
+void Clipboard::Copy(void *newBuffer, OSClipboardHeader *newHeader) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	// TODO UTF-8 validation of the text.
+
+	header = *newHeader;
+	if (buffer) OSHeapFree(buffer);
+
+	if (newBuffer) {
+		buffer = OSHeapAllocate(header.textBytes + header.customBytes, false);
+		CopyMemory(buffer, newBuffer, header.textBytes + header.customBytes);
+	}
+
+	Print("Clipboard text (%d bytes): %s\n", header.textBytes, header.textBytes, (uint8_t *) buffer + header.customBytes);
+}
 
 void WindowManager::UpdateCursor(int xMovement, int yMovement, unsigned buttons) {
 	if (!initialised) {

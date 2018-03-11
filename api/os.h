@@ -228,6 +228,7 @@ typedef enum OSFatalError {
 #define OS_ERROR_INVALID_DIMENSIONS		(-34)
 #define OS_ERROR_DRIVE_CONTROLLER_REPORTED	(-35)
 #define OS_ERROR_COULD_NOT_ISSUE_PACKET		(-36)
+#define OS_ERROR_HANDLE_TABLE_FULL		(-37)
 
 typedef intptr_t OSError;
 
@@ -287,6 +288,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_NEED_WM_TIMER,
 	OS_SYSCALL_RESET_CLICK_CHAIN,
 	OS_SYSCALL_GET_CURSOR_POSITION,
+	OS_SYSCALL_COPY,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -482,7 +484,7 @@ typedef enum OSMessageType {
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
 
-	// Debugger messages:
+	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
 
 	// User messages:
@@ -634,6 +636,18 @@ typedef struct OSWindowSpecification {
 	char *title;
 	size_t titleBytes;
 } OSWindowSpecification;
+
+typedef enum OSClipboardFormat {
+	OS_CLIPBOARD_FORMAT_EMPTY,
+	OS_CLIPBOARD_FORMAT_TEXT,
+} OSClipboardFormat;
+
+typedef struct OSClipboardHeader {
+	size_t customBytes;
+	OSClipboardFormat format;
+	size_t textBytes;
+	uintptr_t unused;
+} OSClipboardData;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
