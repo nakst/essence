@@ -289,6 +289,8 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_RESET_CLICK_CHAIN,
 	OS_SYSCALL_GET_CURSOR_POSITION,
 	OS_SYSCALL_COPY,
+	OS_SYSCALL_GET_CLIPBOARD_HEADER,
+	OS_SYSCALL_PASTE_TEXT,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -442,30 +444,49 @@ typedef struct OSIORequestProgress {
 	OSError error;
 } OSIORequestProgress;
 
+typedef enum OSClipboardFormat {
+	OS_CLIPBOARD_FORMAT_EMPTY,
+	OS_CLIPBOARD_FORMAT_TEXT,
+} OSClipboardFormat;
+
+typedef struct OSClipboardHeader {
+	size_t customBytes;
+	OSClipboardFormat format;
+	size_t textBytes;
+	uintptr_t unused;
+} OSClipboardHeader;
+
 typedef enum OSMessageType {
 	// GUI messages:
+
 	OS_MESSAGE_LAYOUT			= 0x0200,
-	OS_MESSAGE_DESTROY			= 0x0201,
+	OS_MESSAGE_LAYOUT_TEXT			= 0x0201,
 	OS_MESSAGE_MEASURE			= 0x0202,
 	OS_MESSAGE_PAINT			= 0x0203,
-	OS_MESSAGE_PARENT_UPDATED		= 0x0204,
-	OS_MESSAGE_CHILD_UPDATED		= 0x0205,
-	OS_MESSAGE_START_HOVER			= 0x0206,
-	OS_MESSAGE_MOUSE_DRAGGED		= 0x0207,
-	OS_MESSAGE_LAYOUT_TEXT			= 0x0208,
-	OS_MESSAGE_PAINT_BACKGROUND		= 0x0209,
-	OS_MESSAGE_HIT_TEST			= 0x020A,
-	OS_MESSAGE_CLICKED			= 0x020B,
-	OS_MESSAGE_END_HOVER			= 0x020C,
-	OS_MESSAGE_START_DRAG			= 0x020D,
-	OS_MESSAGE_END_DRAG			= 0x020E,
-	OS_MESSAGE_START_FOCUS			= 0x020F,
-	OS_MESSAGE_END_FOCUS			= 0x0210,
-	OS_MESSAGE_CUSTOM_PAINT			= 0x0211,
-	OS_MESSAGE_CARET_BLINK			= 0x0212,
-	OS_MESSAGE_KEY_TYPED			= 0x0213,
-	OS_MESSAGE_END_LAST_FOCUS		= 0x0214,
-	OS_MESSAGE_TEXT_UPDATED			= 0x0215,
+	OS_MESSAGE_PAINT_BACKGROUND		= 0x0204,
+	OS_MESSAGE_CUSTOM_PAINT			= 0x0205,
+
+	OS_MESSAGE_DESTROY			= 0x0210,
+
+	OS_MESSAGE_PARENT_UPDATED		= 0x0220,
+	OS_MESSAGE_CHILD_UPDATED		= 0x0221,
+	OS_MESSAGE_TEXT_UPDATED			= 0x0222,
+
+	OS_MESSAGE_HIT_TEST			= 0x0230,
+
+	OS_MESSAGE_CLICKED			= 0x0240,
+	OS_MESSAGE_START_HOVER			= 0x0241,
+	OS_MESSAGE_END_HOVER			= 0x0242,
+	OS_MESSAGE_START_PRESS			= 0x0243,
+	OS_MESSAGE_END_PRESS			= 0x0244,
+	OS_MESSAGE_START_DRAG			= 0x0245,
+	OS_MESSAGE_START_FOCUS			= 0x0246,
+	OS_MESSAGE_END_FOCUS			= 0x0247,
+	OS_MESSAGE_END_LAST_FOCUS		= 0x0248,
+	OS_MESSAGE_MOUSE_DRAGGED		= 0x0249,
+	OS_MESSAGE_KEY_TYPED			= 0x024A,
+
+	OS_MESSAGE_CARET_BLINK			= 0x0250,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -480,12 +501,17 @@ typedef enum OSMessageType {
 	OS_MESSAGE_WINDOW_DESTROYED 		= 0x1009,
 	OS_MESSAGE_MOUSE_EXIT			= 0x100A, // Sent when the mouse leaves the window's bounds.
 	OS_MESSAGE_MOUSE_ENTER			= 0x100B, 
+	OS_MESSAGE_MOUSE_RIGHT_PRESSED 		= 0x100C,
+	OS_MESSAGE_MOUSE_RIGHT_RELEASED 	= 0x100D,
+	OS_MESSAGE_MOUSE_MIDDLE_PRESSED 	= 0x100E,
+	OS_MESSAGE_MOUSE_MIDDLE_RELEASED 	= 0x100F,
 
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
+	OS_MESSAGE_CLIPBOARD_UPDATED		= 0x5001,
 
 	// User messages:
 	OS_MESSAGE_USER_START			= 0x8000,
@@ -577,6 +603,8 @@ typedef struct OSMessage {
 			struct OSCommand *command;
 			bool checked;
 		} command;
+
+		struct OSClipboardHeader clipboard;
 	};
 } OSMessage;
 
@@ -636,18 +664,6 @@ typedef struct OSWindowSpecification {
 	char *title;
 	size_t titleBytes;
 } OSWindowSpecification;
-
-typedef enum OSClipboardFormat {
-	OS_CLIPBOARD_FORMAT_EMPTY,
-	OS_CLIPBOARD_FORMAT_TEXT,
-} OSClipboardFormat;
-
-typedef struct OSClipboardHeader {
-	size_t customBytes;
-	OSClipboardFormat format;
-	size_t textBytes;
-	uintptr_t unused;
-} OSClipboardData;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)

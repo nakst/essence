@@ -1091,6 +1091,24 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_GET_CLIPBOARD_HEADER: {
+			SYSCALL_BUFFER(argument1, sizeof(OSClipboardHeader), 1);
+			OSClipboardHeader *header = (OSClipboardHeader *) argument1;
+
+			clipboard.mutex.Acquire();
+			*header = clipboard.header;
+			clipboard.mutex.Release();
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_PASTE_TEXT: {
+			SYSCALL_BUFFER(argument1, argument0, 1);
+			void *buffer = (void *) argument1;
+			clipboard.PasteText(buffer, argument1);
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
 	}
 
 	end:;

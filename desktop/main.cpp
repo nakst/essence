@@ -31,9 +31,6 @@ char *errorMessages[] = {
 	(char *) "CORRUPT_HEAP",
 };
 
-OSClipboardData clipboardHeader;
-OSHandle clipboardRegion;
-
 OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
@@ -147,15 +144,6 @@ extern "C" void ProgramEntry() {
 #endif
 
 	OSRedrawAll();
-
-	{
-		// Odin test program...
-		const char *path = "/os/hello";
-		OSProcessInformation process;
-		OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
-		OSCloseHandle(process.mainThread.handle);
-		OSCloseHandle(process.handle);
-	}
 
 	{
 		for (int i = 0; i < 1; i++) {

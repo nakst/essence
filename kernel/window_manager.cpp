@@ -66,6 +66,7 @@ struct WindowManager {
 
 struct Clipboard {
 	void Copy(void *buffer, OSClipboardHeader *header);
+	void PasteText(void *buffer, size_t size);
 
 	Mutex mutex;
 
@@ -93,7 +94,34 @@ void Clipboard::Copy(void *newBuffer, OSClipboardHeader *newHeader) {
 		CopyMemory(buffer, newBuffer, header.textBytes + header.customBytes);
 	}
 
-	Print("Clipboard text (%d bytes): %s\n", header.textBytes, header.textBytes, (uint8_t *) buffer + header.customBytes);
+	// Tell the active window about the new contents of the clipboard.
+	{
+		windowManager.mutex.Acquire();
+
+		Window *window = windowManager.activeWindow;
+
+		while (window) {
+			OSMessage message = {};
+			message.type = OS_MESSAGE_CLIPBOARD_UPDATED;
+			message.context = window->apiWindow;
+			message.clipboard = header;
+			window->owner->messageQueue.SendMessage(message);
+			window = window->parent;
+		}
+
+		windowManager.mutex.Release();
+	}
+}
+
+void Clipboard::PasteText(void *outputBuffer, size_t size) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	if (size > header.textBytes) {
+		size = header.textBytes;
+	}
+
+	CopyMemory(outputBuffer, buffer, size);
 }
 
 void WindowManager::UpdateCursor(int xMovement, int yMovement, unsigned buttons) {
@@ -303,7 +331,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 	bool moveCursorNone = false;
 
-	if (delta & LEFT_BUTTON) {
+	if (delta) {
 		// Send a mouse pressed message to the window the cursor is over.
 		uint16_t index = graphics.frameBuffer.depthBuffer[graphics.frameBuffer.resX * cursorY + cursorX];
 		Window *window;
@@ -318,7 +346,7 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 		bool activationClick = false;
 
-		if (buttons & LEFT_BUTTON) {
+		if (buttons == delta) {
 			if (activeWindow != window) {
 				activationClick = true;
 			}
@@ -341,7 +369,10 @@ void WindowManager::ClickCursor(unsigned buttons) {
 
 		{
 			OSMessage message = {};
-			message.type = (buttons & LEFT_BUTTON) ? OS_MESSAGE_MOUSE_LEFT_PRESSED : OS_MESSAGE_MOUSE_LEFT_RELEASED;
+
+			if (delta & LEFT_BUTTON) message.type = (buttons & LEFT_BUTTON) ? OS_MESSAGE_MOUSE_LEFT_PRESSED : OS_MESSAGE_MOUSE_LEFT_RELEASED;
+			if (delta & RIGHT_BUTTON) message.type = (buttons & RIGHT_BUTTON) ? OS_MESSAGE_MOUSE_RIGHT_PRESSED : OS_MESSAGE_MOUSE_RIGHT_RELEASED;
+			if (delta & MIDDLE_BUTTON) message.type = (buttons & MIDDLE_BUTTON) ? OS_MESSAGE_MOUSE_MIDDLE_PRESSED : OS_MESSAGE_MOUSE_MIDDLE_RELEASED;
 
 			if (message.type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 				pressedWindow = window;
@@ -507,38 +538,44 @@ void WindowManager::Initialise() {
 }
 
 Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *parentWindow) {
-	mutex.Acquire();
-	Defer(mutex.Release());
+	Window *window;
 
-	static int cx = 20, cy = 20;
+	{
+		mutex.Acquire();
+		Defer(mutex.Release());
 
-	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
-	window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
-	window->apiWindow = apiWindow;
-	// window->surface->roundCorners = true;
+		static int cx = 20, cy = 20;
 
-	size_t width = bounds.right - bounds.left;
-	size_t height = bounds.bottom - bounds.top;
+		window = (Window *) OSHeapAllocate(sizeof(Window), true);
+		window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
+		window->apiWindow = apiWindow;
+		// window->surface->roundCorners = true;
 
-	if (!window->surface->Initialise(width, height, false)) {
-		OSHeapFree(window->surface, sizeof(Surface));
-		OSHeapFree(window, sizeof(Window));
-		return nullptr;
+		size_t width = bounds.right - bounds.left;
+		size_t height = bounds.bottom - bounds.top;
+
+		if (!window->surface->Initialise(width, height, false)) {
+			OSHeapFree(window->surface, sizeof(Surface));
+			OSHeapFree(window, sizeof(Window));
+			return nullptr;
+		}
+
+		window->surface->handles++;
+		window->position = bounds.left == 0 && bounds.top == 0 ? OS_MAKE_POINT(cx += 20, cy += 20) : OS_MAKE_POINT(bounds.left, bounds.top);
+		window->width = width;
+		window->height = height;
+		window->owner = process;
+		window->parent = parentWindow;
+		window->handles = 1;
+
+		// KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, parent = %x\n", window, window->handles, window->parent);
+
+		window->z = windowsCount;
+		ArrayAdd(windows, window, false);
+		SetActiveWindow(window);
 	}
 
-	window->surface->handles++;
-	window->position = bounds.left == 0 && bounds.top == 0 ? OS_MAKE_POINT(cx += 20, cy += 20) : OS_MAKE_POINT(bounds.left, bounds.top);
-	window->width = width;
-	window->height = height;
-	window->owner = process;
-	window->parent = parentWindow;
-	window->handles = 1;
-
-	// KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, parent = %x\n", window, window->handles, window->parent);
-
-	window->z = windowsCount;
-	ArrayAdd(windows, window, false);
-	SetActiveWindow(window);
+	MoveCursor(0, 0);
 
 	return window;
 }

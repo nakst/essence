@@ -2,7 +2,8 @@
 
 #define DIMENSION_PUSH (-1)
 
-#define CARET_BLINK_HZ (2)
+#define CARET_BLINK_HZ (1)
+#define CARET_BLINK_PAUSE (2)
 
 #define RESIZE_LEFT 		(1)
 #define RESIZE_RIGHT 		(2)
@@ -181,6 +182,7 @@ struct Control : GUIObject {
 	OSCommand *command;
 	LinkedItem<Control> commandItem;
 	OSCallback notificationCallback;
+	OSMenuItem *rightClickMenu;
 
 	OSString text;
 	OSRectangle textBounds;
@@ -217,8 +219,8 @@ struct Control : GUIObject {
 
 struct Textbox : Control {
 	OSCaret caret, caret2;
-	bool caretBlink;
 	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
+	uint8_t caretBlink : 1;
 };
 
 struct ProgressBar : Control {
@@ -253,7 +255,7 @@ struct Window : GUIObject {
 
 	unsigned flags;
 	OSCursorStyle cursor, cursorOld;
-	struct Control *drag, *hover, *focus, *lastFocus;
+	struct Control *pressed, *hover, *focus, *lastFocus;
 	bool destroyed, created;
 
 	int width, height;
@@ -273,6 +275,12 @@ static void CopyText(OSString buffer) {
 	header.format = OS_CLIPBOARD_FORMAT_TEXT;
 	header.textBytes = buffer.bytes;
 	OSSyscall(OS_SYSCALL_COPY, (uintptr_t) buffer.buffer, (uintptr_t) &header, 0, 0);
+}
+
+static size_t ClipboardTextBytes() {
+	OSClipboardHeader clipboard;
+	OSSyscall(OS_SYSCALL_GET_CLIPBOARD_HEADER, 0, (uintptr_t) &clipboard, 0, 0);
+	return clipboard.textBytes;
 }
 
 static inline void OSRepaintControl(OSObject _control) {
@@ -366,6 +374,12 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Control *control = (Control *) _object;
 
+#if 0
+	if (message->type >= OS_MESSAGE_CLICKED && message->type <= OS_MESSAGE_KEY_TYPED) {
+		OSPrint("%x, %x\n", _object, message->type);
+	}
+#endif
+
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
 			if (control->cellBounds.left == message->layout.left
@@ -427,13 +441,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				bool disabled = control->disabled,
-				     drag = ((control->window->drag == control && control->window->hover == control) || control->window->focus == control) && !disabled,
-				     hover = (control->window->hover == control || control->window->drag == control) && !drag && !disabled,
-				     normal = !hover && !drag && !disabled;
+				     pressed = ((control->window->pressed == control && control->window->hover == control) || control->window->focus == control) && !disabled,
+				     hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled,
+				     normal = !hover && !pressed && !disabled;
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
 				control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
-				control->current3 = ((drag     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
+				control->current3 = ((pressed     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
 				if (control->backgrounds && control->backgrounds[0]) {
@@ -539,7 +553,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 
 			if (control->window->hover == control) control->window->hover = nullptr;
-			if (control->window->drag == control) control->window->drag = nullptr;
+			if (control->window->pressed == control) control->window->pressed = nullptr;
 			if (control->window->focus == control) control->window->focus = nullptr;
 			if (control->window->lastFocus == control) control->window->lastFocus = nullptr;
 
@@ -551,38 +565,20 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			message->hitTest.result = IsPointInRectangle(control->bounds, message->hitTest.positionX, message->hitTest.positionY);
 		} break;
 
+		case OS_MESSAGE_MOUSE_RIGHT_PRESSED: {
+			if (control->rightClickMenu) {
+				OSCreateMenu(control->rightClickMenu, control, OS_CREATE_MENU_AT_CURSOR);
+			}
+		} break;
+
 		case OS_MESSAGE_START_HOVER:
 		case OS_MESSAGE_END_HOVER:
 		case OS_MESSAGE_START_FOCUS:
 		case OS_MESSAGE_END_FOCUS:
 		case OS_MESSAGE_END_LAST_FOCUS:
-		case OS_MESSAGE_START_DRAG:
-		case OS_MESSAGE_END_DRAG: {
-			OSMessage m;
-			OSAnimateControl(control, message->type == OS_MESSAGE_START_DRAG || message->type == OS_MESSAGE_START_FOCUS);
-
-			if (message->type == OS_MESSAGE_START_DRAG) {
-				if (control->window->focus && control->window->focus != control) {
-					m.type = OS_MESSAGE_END_FOCUS;
-					OSSendMessage(control->window->focus, &m);
-					control->window->focus = nullptr;
-				}
-
-				if (control->focusable) {
-					if (control->window->lastFocus) {
-						m.type = OS_MESSAGE_END_LAST_FOCUS;
-						OSSendMessage(control->window->lastFocus, &m);
-					}
-
-					if (control != control->window->focus) {
-						control->window->focus = control;
-						control->window->lastFocus = control;
-						m.type = OS_MESSAGE_START_FOCUS;
-						OSSendMessage(control, &m);
-						OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
-					}
-				}
-			}
+		case OS_MESSAGE_START_PRESS:
+		case OS_MESSAGE_END_PRESS: {
+			OSAnimateControl(control, message->type == OS_MESSAGE_START_PRESS || message->type == OS_MESSAGE_START_FOCUS);
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -594,12 +590,14 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->window->cursor = (OSCursorStyle) control->cursor;
 			}
 
-			control->window->hover = control;
+			if (control->window->hover != control) {
+				control->window->hover = control;
 
-			{
-				OSMessage message;
-				message.type = OS_MESSAGE_START_HOVER;
-				OSSendMessage(control, &message);
+				{
+					OSMessage message;
+					message.type = OS_MESSAGE_START_HOVER;
+					OSSendMessage(control, &message);
+				}
 			}
 		} break;
 
@@ -877,7 +875,7 @@ static void FindCaret(Textbox *control, int positionX, int positionY, bool secon
 		}
 	}
 
-	control->window->caretBlinkPause = 2;
+	control->window->caretBlinkPause = CARET_BLINK_PAUSE;
 }
 
 static void RemoveSelectedText(Textbox *control) {
@@ -905,7 +903,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				&control->text, control->textAlign, control->textColor, 0xFFFFFF, control->window->focus == control ? 0xFFC4D9F9 : 0xFFDDDDDD,
 				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
-				control->window->focus != control || control->caretBlink,
+				control->window->lastFocus != control || control->caretBlink,
 				control->textSize, fontRegular);
 
 		result = OS_CALLBACK_HANDLED;
@@ -920,13 +918,14 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSRepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
-		control->window->caretBlinkPause = 2;
+		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
+
 		control->caret.byte = 0;
 		control->caret.character = 0;
 		control->caret2.byte = control->text.bytes;
 		control->caret2.character = control->text.characters;
 
-		OSEnableCommand(control->window, osCommandPaste, true);
+		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 		OSEnableCommand(control->window, osCommandSelectAll, true);
 
 		OSSetCommandNotificationCallback(control->window, osCommandPaste, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
@@ -934,6 +933,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSSetCommandNotificationCallback(control->window, osCommandCopy, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
 		OSSetCommandNotificationCallback(control->window, osCommandCut, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
 		OSSetCommandNotificationCallback(control->window, osCommandDelete, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+	} else if (message->type == OS_MESSAGE_CLIPBOARD_UPDATED) {
+		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
 		OSDisableCommand(control->window, osCommandPaste, true);
 		OSDisableCommand(control->window, osCommandSelectAll, true);
@@ -949,18 +950,9 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			control->caret2.byte = control->text.bytes;
 			control->caret2.character = control->text.characters;
-		} else if (message->command.command == osCommandDelete) {
-			if (control->caret.byte == control->caret2.byte && control->caret.byte != control->text.bytes) {
-				MoveCaret(&control->text, &control->caret, true, message->keyboard.ctrl);
-				int bytes = control->caret.byte - control->caret2.byte;
-				OSCopyMemory(control->text.buffer + control->caret2.byte, control->text.buffer + control->caret.byte, control->text.bytes - control->caret.byte);
-				control->text.characters -= 1;
-				control->text.bytes -= bytes;
-				control->caret = control->caret2;
-			} else {
-				RemoveSelectedText(control);
-			}
-		} else if (message->command.command == osCommandCopy) {
+		}
+
+		if (message->command.command == osCommandCopy || message->command.command == osCommandCut) {
 			OSString string;
 			int length = control->caret.byte - control->caret2.byte;
 			if (length < 0) length = -length;
@@ -968,15 +960,39 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			if (control->caret.byte > control->caret2.byte) string.buffer = control->text.buffer + control->caret2.byte;
 			else string.buffer = control->text.buffer + control->caret.byte;
 			CopyText(string);
-		} else if (message->command.command == osCommandPaste) {
+		}
+
+		if (message->command.command == osCommandDelete || message->command.command == osCommandCut || message->command.command == osCommandPaste) {
 			RemoveSelectedText(control);
-			// TODO Pasting.
+		}
+
+		if (message->command.command == osCommandPaste) {
+			int bytes = ClipboardTextBytes();
+			char *old = control->text.buffer;
+			control->text.buffer = (char *) OSHeapAllocate(control->text.bytes + bytes, false);
+			OSCopyMemory(control->text.buffer, old, control->caret.byte);
+			OSCopyMemory(control->text.buffer + control->caret.byte + bytes, old + control->caret.byte, control->text.bytes - control->caret.byte);
+			OSHeapFree(old);
+			char *c = control->text.buffer + control->caret.byte;
+			char *d = c;
+			OSSyscall(OS_SYSCALL_PASTE_TEXT, bytes, (uintptr_t) c, 0, 0);
+			size_t characters = 0;
+			while (c < d + bytes) { characters++; c = utf8_advance(c); }  
+			control->text.characters += characters;
+			control->caret.character += characters;
+			control->caret.byte += bytes;
+			control->text.bytes += bytes;
+			control->caret2 = control->caret;
 		}
 
 		OSRepaintControl(control);
-	} else if (message->type == OS_MESSAGE_START_DRAG) {
+	} else if (message->type == OS_MESSAGE_START_PRESS) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
+		OSRepaintControl(control);
+	} else if (message->type == OS_MESSAGE_START_DRAG || message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED) {
+		FindCaret(control, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY, true, lastClickChainCount);
+		control->caret = control->caret2;
 		OSRepaintControl(control);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
@@ -985,7 +1001,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->caret = control->caret2;
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
 		control->caretBlink = false;
-		control->window->caretBlinkPause = 2;
+		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
 
 		int ic = -1, isc = -1;
 
@@ -1169,6 +1185,7 @@ OSObject OSCreateTextbox(unsigned fontSize) {
 	control->textSize = fontSize ? fontSize : FONT_SIZE;
 	control->textColor = 0x000000;
 	control->minimumHeight = control->preferredHeight = 23 - 9 + control->textSize;
+	control->rightClickMenu = osMenuTextboxContext;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
 
@@ -1731,12 +1748,18 @@ void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 	}
 }
 
+static inline int DistanceSquared(int x, int y) {
+	return x * x + y * y;
+}
+
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Window *window = (Window *) _object;
 
 	static int lastClickX = 0, lastClickY = 0;
+	static bool draggingStarted = false;
 	bool updateWindow = false;
+	bool rightClick = false;
 
 	if (window->destroyed && message->type != OS_MESSAGE_WINDOW_DESTROYED) {
 		return OS_CALLBACK_NOT_HANDLED;
@@ -1754,6 +1777,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			for (int i = 0; i < 12; i++) {
 				if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
 				OSDisableControl(window->root->objects[i], false);
+			}
+
+			if (window->lastFocus) {
+				OSMessage message;
+				message.type = OS_MESSAGE_CLIPBOARD_UPDATED;
+				OSSyscall(OS_SYSCALL_GET_CLIPBOARD_HEADER, 0, (uintptr_t) &message.clipboard, 0, 0);
+				OSSendMessage(window->lastFocus, &message);
 			}
 		} break;
 
@@ -1801,41 +1831,83 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			window->destroyed = true;
 		} break;
 
+		case OS_MESSAGE_MOUSE_RIGHT_PRESSED:
+			rightClick = true;
+			// Fallthrough
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
+			bool allowFocus = false;
+
+			// If there is a control we're hovering over that isn't disabled,
+			// and this either isn't an window activation click or the control is fine with activation clicks:
 			if (window->hover && !window->hover->disabled
-				&& (!message->mousePressed.activationClick || !window->hover->ignoreActivationClicks)) {
-				window->drag = window->hover;
+					&& (!message->mousePressed.activationClick || !window->hover->ignoreActivationClicks)) {
+				// Send the raw WM message to the control.
+				OSSendMessage(window->hover, message);
+
+				// This control can get the focus from this message.
+				allowFocus = true;
+
+				// If this was a left click then press the control.
+				if (!rightClick) {
+					window->pressed = window->hover;
+
+					draggingStarted = false;
+					lastClickX = message->mousePressed.positionX;
+					lastClickY = message->mousePressed.positionY;
+
+					OSMessage m = *message;
+					m.type = OS_MESSAGE_START_PRESS;
+					OSSendMessage(window->pressed, &m);
+				}
 			}
 
-			lastClickX = message->mousePressed.positionX;
-			lastClickY = message->mousePressed.positionY;
+			OSMessage message;
 
-			if (window->drag) {
-				OSMessage m = *message;
-				m.type = OS_MESSAGE_START_DRAG;
-				OSSendMessage(window->drag, &m);
-			} else if (window->focus) {
-				OSMessage message;
+			// If a different control had focus, it must lose it.
+			if (window->focus != window->hover) {
 				message.type = OS_MESSAGE_END_FOCUS;
 				OSSendMessage(window->focus, &message);
 				window->focus = nullptr;
 			}
+
+			// If this control should be given focus...
+			if (allowFocus) {
+				Control *control = window->hover;
+
+				// And it is focusable...
+				if (control->focusable) {
+					// Remove previous any last focus.
+					if (window->lastFocus && control != window->lastFocus) {
+						message.type = OS_MESSAGE_END_LAST_FOCUS;
+						OSSendMessage(window->lastFocus, &message);
+					}
+
+					// And give this control focus, if it doesn't already have it.
+					if (control != window->focus) {
+						window->focus = control;
+						window->lastFocus = control;
+						message.type = OS_MESSAGE_START_FOCUS;
+						OSSendMessage(control, &message);
+						OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
+					}
+				}
+			}
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
-			if (window->drag) {
-				OSRepaintControl(window->drag);
+			if (window->pressed) {
+				OSRepaintControl(window->pressed);
 
-				if (window->drag == window->hover) {
+				if (window->pressed == window->hover) {
 					OSMessage clicked;
 					clicked.type = OS_MESSAGE_CLICKED;
-					OSSendMessage(window->drag, &clicked);
+					OSSendMessage(window->pressed, &clicked);
 				}
 
 				OSMessage message;
-				message.type = OS_MESSAGE_END_DRAG;
-				OSSendMessage(window->drag, &message);
-				window->drag = nullptr;
+				message.type = OS_MESSAGE_END_PRESS;
+				OSSendMessage(window->pressed, &message);
+				window->pressed = nullptr;
 			}
 
 			OSMessage m = *message;
@@ -1859,12 +1931,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
-			if (window->drag) {
+			if (window->pressed) {
 				OSMessage hitTest;
 				hitTest.type = OS_MESSAGE_HIT_TEST;
 				hitTest.hitTest.positionX = message->mouseMoved.newPositionX;
 				hitTest.hitTest.positionY = message->mouseMoved.newPositionY;
-				OSCallbackResponse response = OSSendMessage(window->drag, &hitTest);
+				OSCallbackResponse response = OSSendMessage(window->pressed, &hitTest);
 
 				if (response == OS_CALLBACK_HANDLED && !hitTest.hitTest.result && window->hover) {
 					OSMessage message;
@@ -1874,14 +1946,22 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				} else if (response == OS_CALLBACK_HANDLED && hitTest.hitTest.result && !window->hover) {
 					OSMessage message;
 					message.type = OS_MESSAGE_START_HOVER;
-					window->hover = window->drag;
+					window->hover = window->pressed;
 					OSSendMessage(window->hover, &message);
 				}
 
-				message->type = OS_MESSAGE_MOUSE_DRAGGED;
-				message->mouseDragged.originalPositionX = lastClickX;
-				message->mouseDragged.originalPositionY = lastClickY;
-				OSSendMessage(window->drag, message);
+				if (draggingStarted || DistanceSquared(message->mouseMoved.newPositionX, message->mouseMoved.newPositionY) >= 4) {
+					if (!draggingStarted) {
+						draggingStarted = true;
+						message->type = OS_MESSAGE_START_DRAG;
+						OSSendMessage(window->pressed, message);
+					}
+
+					message->type = OS_MESSAGE_MOUSE_DRAGGED;
+					message->mouseDragged.originalPositionX = lastClickX;
+					message->mouseDragged.originalPositionY = lastClickY;
+					OSSendMessage(window->pressed, message);
+				}
 			} else {
 				Control *old = window->hover;
 
@@ -1923,7 +2003,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				item = item->nextItem;
 			}
 
-			if (window->focus) {
+			if (window->lastFocus) {
 				window->caretBlinkStep++;
 
 				if (window->caretBlinkStep >= window->timerHz / CARET_BLINK_HZ) {
@@ -1934,9 +2014,15 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					} else {
 						OSMessage message;
 						message.type = OS_MESSAGE_CARET_BLINK;
-						OSSendMessage(window->focus, &message);
+						OSSendMessage(window->lastFocus, &message);
 					}
 				}
+			}
+		} break;
+
+		case OS_MESSAGE_CLIPBOARD_UPDATED: {
+			if (window->focus) {
+				OSSendMessage(window->focus, message);
 			}
 		} break;
 

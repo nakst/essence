@@ -412,42 +412,6 @@ extern "C" void ProgramEntry() {
 		if (handle2 != OS_INVALID_HANDLE) OSCrashProcess(140);
 	}
 
-	{
-		OSNodeInformation node;
-		OSOpenNode(OSLiteral("/os/source_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &node);
-		void *loadedFont = OSMapObject(node.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
-
-		FT_Error error;
-
-		FT_Library library;
-		error = FT_Init_FreeType(&library);
-		if (error) OSCrashProcess(400);
-		// OSPrint("library = %x, error = %d\n", library, error);
-
-		FT_Face face;
-		error = FT_New_Memory_Face(library, (uint8_t *) loadedFont, node.fileSize, 0, &face);
-		if (error) OSCrashProcess(401);
-		// OSPrint("face = %x, error = %d\n", face, error);
-
-		const int fontSize = 14;
-		error = FT_Set_Char_Size(face, 0, fontSize * 64, 100, 100);
-		if (error) OSCrashProcess(402);
-		// OSPrint("size = %d, error = %d\n", fontSize, error);
-
-		char character = 'a';
-		int glyphIndex = FT_Get_Char_Index(face, character);
-		error = FT_Load_Glyph(face, glyphIndex, FT_LOAD_RENDER);
-		if (error) OSCrashProcess(403);
-		// OSPrint("character = %d, index = %d, error = %d\n", character, glyphIndex, error);
-
-		FT_Bitmap *bitmap = &face->glyph->bitmap;
-		int width = bitmap->width;
-		int height = bitmap->rows;
-		if (error) OSCrashProcess(404);
-		if (width != 9 || height != 9) OSCrashProcess(405);
-	}
-
-
 	OSPrint("All tests completed successfully.\n");
 	// OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	
@@ -470,7 +434,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 1, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
+	//OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
 
 	{
 		OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_DRAW_BOX);
