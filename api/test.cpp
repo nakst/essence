@@ -423,22 +423,22 @@ extern "C" void ProgramEntry() {
 	window = OSCreateWindow(&ws);
 
 	OSObject b;
-	OSObject content = OSCreateGrid(4, 4, 0);
+	OSObject content = OSCreateGrid(4, 5, 0);
 	OSSetRootGrid(window, content);
-	OSAddControl(content, 1, 0, b = OSCreateButton(actionOK), 0);
+	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK), 0);
 
-	OSAddControl(content, 0, 1, b = OSCreateTextbox(0), 0);
+	OSAddControl(content, 0, 2, b = OSCreateTextbox(0), 0);
 
 	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_CALLBACK(ToggleEnabled, b));
-	OSAddControl(content, 0, 0, OSCreateButton(actionToggleEnabled), 0);
+	OSAddControl(content, 0, 1, OSCreateButton(actionToggleEnabled), 0);
 
-	OSAddControl(content, 1, 1, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+	OSAddControl(content, 1, 2, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	//OSAddControl(content, 0, 2, OSCreateIndeterminateProgressBar(), 0);
+	//OSAddControl(content, 0, 3, OSCreateIndeterminateProgressBar(), 0);
 
 	{
 		OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_DRAW_BOX);
-		OSAddGrid(content, 1, 3, grid, OS_CELL_H_RIGHT);
+		OSAddGrid(content, 1, 4, grid, OS_CELL_H_RIGHT);
 		OSAddControl(grid, 0, 0, OSCreateTextbox(0), OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}

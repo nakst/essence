@@ -11,6 +11,7 @@ height = 300;
 minimumWidth = 200;
 minimumHeight = 250;
 title = "Calculator";
+menuBar = menuBar;
 
 [command insert0]
 callback = Insert;
@@ -124,3 +125,10 @@ shortcut = ")";
 callback = Evaluate;
 label = "=";
 shortcut = "ENTER";
+
+[menu menuMode]
+osCommandCut;
+
+[menu menuBar]
+osMenuTextboxContext;
+menuMode;

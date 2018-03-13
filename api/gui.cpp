@@ -86,6 +86,7 @@ static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 
 
 static UIImage gridBox 			= {{20, 26, 85, 91}, {22, 23, 87, 88}};
 static UIImage menuBox 			= {{199, 229, 4, 17}, {225, 227, 7, 9}};
+static UIImage menuBar			= {{34, 40, 124, 145}, {35, 38, 124, 145}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
@@ -239,6 +240,7 @@ struct Grid : GUIObject {
 	uint8_t relayout : 1, repaint : 1;
 	unsigned flags;
 	int borderSize, gapSize;
+	UIImage *background;
 };
 
 struct CommandWindow {
@@ -1621,12 +1623,9 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				m.paint.force = message->paint.force || grid->repaint;
 
 				if (m.paint.force) {
-					if (grid->flags & OS_CREATE_GRID_DRAW_BOX) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, gridBox.region,
-								gridBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
-					} else if (grid->flags & OS_CREATE_GRID_MENU) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, menuBox.region,
-								menuBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					if (grid->background) {
+						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
+								grid->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
 					} else {
 						OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
 					}
@@ -1697,7 +1696,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
-	if (flags & OS_CREATE_GRID_DRAW_BOX) grid->borderSize += 4;
+	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
@@ -2242,6 +2241,7 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 	window = CreateWindow(&specification, source ? source->window : nullptr, x, y);
 
 	OSObject grid = OSCreateGrid(1, itemCount, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP);
+	((Grid *) grid)->background = &menuBox;
 	OSSetRootGrid(window, grid);
 
 	for (uintptr_t i = 0; i < itemCount; i++) {

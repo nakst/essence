@@ -663,6 +663,8 @@ typedef struct OSWindowSpecification {
 
 	char *title;
 	size_t titleBytes;
+
+	OSMenuItem *menuBar;
 } OSWindowSpecification;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)

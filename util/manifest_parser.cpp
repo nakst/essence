@@ -253,6 +253,7 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 	} else if (CompareTokens(attribute, "menu")) {
 		fprintf(output, "extern OSMenuItem %.*s[];\n", section.bytes, section.text);
 		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::SUBMENU\n", section.bytes, section.text);
+		fprintf(output, "#define _%.*s %.*s\n", section.bytes, section.text, section.bytes, section.text);
 	}
 }
 
@@ -383,6 +384,12 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			} else {
 				fprintf(output, "\t.title = \"New Window\",\n");
 				fprintf(output, "\t.titleBytes = 10,\n");
+			}
+
+			if (FindProperty("menuBar", &value)) {
+				fprintf(output, "\t.menuBar = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.menuBar = nullptr,\n");
 			}
 
 			fprintf(output, "};\n\nOSWindowSpecification *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
