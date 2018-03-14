@@ -246,8 +246,9 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 	if (event != EVENT_START_SECTION) return;
 
 	if (CompareTokens(attribute, "command")) {
-		fprintf(output, "extern OSCommand *%.*s;\n", section.bytes, section.text);
+		fprintf(output, "extern OSCommand _%.*s;\n", section.bytes, section.text);
 		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::COMMAND\n", section.bytes, section.text);
+		fprintf(output, "#define %.*s &_%.*s\n", section.bytes, section.text);
 	} else if (CompareTokens(attribute, "window")) {
 		fprintf(output, "extern OSWindowSpecification *%.*s;\n", section.bytes, section.text);
 	} else if (CompareTokens(attribute, "menu")) {
@@ -344,7 +345,7 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "nullptr },\n");
 			}
 
-			fprintf(output, "};\n\nOSCommand *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
+			fprintf(output, "};\n\n", section.bytes, section.text);
 		} else if (CompareTokens(attribute, "window")) {
 			fprintf(output, "OSWindowSpecification _%.*s = {\n", section.bytes, section.text);
 
@@ -386,10 +387,10 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.titleBytes = 10,\n");
 			}
 
-			if (FindProperty("menuBar", &value)) {
-				fprintf(output, "\t.menuBar = %.*s,\n", value.bytes, value.text);
+			if (FindProperty("menubar", &value)) {
+				fprintf(output, "\t.menubar = %.*s,\n", value.bytes, value.text);
 			} else {
-				fprintf(output, "\t.menuBar = nullptr,\n");
+				fprintf(output, "\t.menubar = nullptr,\n");
 			}
 
 			fprintf(output, "};\n\nOSWindowSpecification *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);

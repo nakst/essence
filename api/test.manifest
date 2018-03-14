@@ -1,6 +1,16 @@
 [program]
 name = "Test Program";
 
+[menu myMenuBar]
+subMenu1;
+subMenu2;
+
+[menu subMenu1]
+actionOK;
+
+[menu subMenu2]
+actionToggleEnabled;
+
 [command actionOK]
 label = "Open Menu";
 callback = Crash;

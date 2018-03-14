@@ -157,6 +157,8 @@
 #define OS_SCANCODE_WWW_REFRESH	(0x120)
 #define OS_SCANCODE_WWW_STARRED	(0x118)
 
+#define OS_FLAGS_DEFAULT (0)
+
 OS_EXTERN_C uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argument2, 
 			        uintptr_t unused,    uintptr_t argument3, uintptr_t argument4);
 #define OSSyscall(a, b, c, d, e) _OSSyscall((a), (b), (c), 0, (d), (e))
@@ -192,14 +194,13 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_UNKNOWN,
 	OS_FATAL_ERROR_RECURSIVE_BATCH,
 	OS_FATAL_ERROR_CORRUPT_HEAP,
-	OS_FATAL_ERROR_COUNT,
-
 	OS_FATAL_ERROR_BAD_CALLBACK_OBJECT,
 	OS_FATAL_ERROR_RESIZE_GRID,
 	OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS,
 	OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT,
 	OS_FATAL_ERROR_CORRUPT_LINKED_LIST,
 	OS_FATAL_ERROR_NO_MENU_POSITION,
+	OS_FATAL_ERROR_COUNT,
 } OSFatalError;
 
 // These must be negative.
@@ -664,15 +665,19 @@ typedef struct OSWindowSpecification {
 	char *title;
 	size_t titleBytes;
 
-	OSMenuItem *menuBar;
+	OSMenuItem *menubar;
 } OSWindowSpecification;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
 #define OS_CALLBACK_DEBUGGER_MESSAGES ((OSObject) 0x800)
 
-#define OS_CREATE_WINDOW_ALERT (1)
 #define OS_CREATE_WINDOW_MENU (2)
+#define OS_CREATE_WINDOW_NORMAL (4)
+#define OS_CREATE_WINDOW_WITH_MENUBAR (8)
+
+#define OS_LINE_ORIENTATION_HORIZONTAL (false)
+#define OS_LINE_ORIENTATION_VERTICAL   (true)
 
 #define OS_CELL_H_PUSH    (1)
 #define OS_CELL_H_EXPAND  (2)
@@ -738,6 +743,10 @@ typedef struct OSWindowSpecification {
 #define OS_MAP_OBJECT_READ_WRITE        (0)
 #define OS_MAP_OBJECT_READ_ONLY         (1)
 #define OS_MAP_OBJECT_COPY_ON_WRITE     (2)
+
+#define OS_CREATE_MENUBAR (1)
+#define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
+#define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
 
 OS_EXTERN_C void OSInitialiseAPI();
 
@@ -820,9 +829,7 @@ OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
 
-#define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
-#define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
-OS_EXTERN_C OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject sourceControl, OSPoint position);
+OS_EXTERN_C OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
@@ -831,7 +838,7 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 
-OS_EXTERN_C OSObject OSCreateLine();
+OS_EXTERN_C OSObject OSCreateLine(bool orientation);
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);

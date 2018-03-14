@@ -86,13 +86,15 @@ static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 
 
 static UIImage gridBox 			= {{20, 26, 85, 91}, {22, 23, 87, 88}};
 static UIImage menuBox 			= {{199, 229, 4, 17}, {225, 227, 7, 9}};
-static UIImage menuBar			= {{34, 40, 124, 145}, {35, 38, 124, 145}};
+static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 145}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
 
 static UIImage lineHorizontal		= {{20, 32, 92, 96}, {21, 22, 92, 92}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
+static UIImage lineVertical		= {{34, 38, 110, 122}, {34, 34, 111, 112}};
+static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
 static UIImage *menuItemBackgrounds[] = {
 	nullptr,
@@ -253,11 +255,24 @@ struct CommandWindow {
 
 struct Window : GUIObject {
 	OSHandle window, surface;
+
+	// For OS_CREATE_WINDOW_MENU: 1 x 1.
+	// For OS_CREATE_WINDOW_NORMAL: 3 x 4.
+	// 	- Content pane at 1, 2.
+	// 	- Or if OS_CREATE_WINDOW_WITH_MENUBAR,
+	// 		- This is a subgrid, 1 x 2
+	// 		- Menubar at 0, 0.
+	// 		- Content pane at 0, 1.
 	Grid *root;
 
 	unsigned flags;
 	OSCursorStyle cursor, cursorOld;
-	struct Control *pressed, *hover, *focus, *lastFocus;
+
+	struct Control *pressed,   // Mouse is pressing the control.
+		       *hover,     // Mouse is hovering over the control.
+		       *focus, 	   // Control has strong focus.
+		       *lastFocus; // Control has weak focus.
+
 	bool destroyed, created;
 
 	int width, height;
@@ -569,7 +584,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 		case OS_MESSAGE_MOUSE_RIGHT_PRESSED: {
 			if (control->rightClickMenu) {
-				OSCreateMenu(control->rightClickMenu, control, OS_CREATE_MENU_AT_CURSOR);
+				OSCreateMenu(control->rightClickMenu, control, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
 			}
 		} break;
 
@@ -1197,12 +1212,15 @@ OSObject OSCreateTextbox(unsigned fontSize) {
 OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	Control *control = (Control *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+	bool menubar = (bool) (uintptr_t) message->context;
 
 	if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
-		control->textBounds = control->bounds;
-		control->textBounds.left += 24;
-		control->textBounds.right -= 4;
-		result = OS_CALLBACK_HANDLED;
+		if (!menubar) {
+			control->textBounds = control->bounds;
+			control->textBounds.left += 24;
+			control->textBounds.right -= 4;
+			result = OS_CALLBACK_HANDLED;
+		}
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
@@ -1212,13 +1230,13 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
-static OSObject CreateMenuItem(OSMenuItem item) {
+static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
-	control->preferredWidth = 100;
+	control->preferredWidth = !menubar ? 100 : 21;
 	control->preferredHeight = 21;
-	control->minimumWidth = 100;
+	control->minimumWidth = !menubar ? 100 : 21;
 	control->minimumHeight = 21;
 	control->drawParentBackground = true;
 	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
@@ -1227,7 +1245,7 @@ static OSObject CreateMenuItem(OSMenuItem item) {
 	OSCommand *command = (OSCommand *) item.value;
 	SetControlCommand(control, command);
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, (void *) menubar));
 	OSSetText(control, command->label, command->labelBytes);
 
 	return control;
@@ -1272,12 +1290,12 @@ OSObject OSCreateButton(OSCommand *command) {
 	return control;
 }
 
-OSObject OSCreateLine() {
+OSObject OSCreateLine(bool orientation) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
-	control->backgrounds = lineHorizontalBackgrounds;
+	control->backgrounds = orientation ? lineVerticalBackgrounds : lineHorizontalBackgrounds;
 
-	control->preferredWidth = 80;
+	control->preferredWidth = 4;
 	control->preferredHeight = 4;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
@@ -1448,10 +1466,16 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	if (_object->type == API_OBJECT_WINDOW) {
 		Window *window = (Window *) _grid;
 		_grid = window->root;
+
 		if (window->flags & OS_CREATE_WINDOW_MENU) {
 			column = 0;
 			row = 0;
-		} else {
+		} else if (window->flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
+			_grid = window->root->objects[7];
+			column = 0;
+			row = 1;
+			((Grid *) _control)->borderSize = 8;
+		} else if (window->flags & OS_CREATE_WINDOW_NORMAL) {
 			column = 1;
 			row = 2;
 			((Grid *) _control)->borderSize = 8;
@@ -1648,6 +1672,10 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 		case OS_MESSAGE_PARENT_UPDATED: {
 			grid->window = (Window *) message->parentUpdated.window;
+
+			for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+				OSSendMessage(grid->objects[i], message);
+			}
 		} break;
 
 		case OS_MESSAGE_CHILD_UPDATED: {
@@ -2090,7 +2118,17 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 }
 
 static Window *CreateWindow(OSWindowSpecification *specification, Window *parent, unsigned x = 0, unsigned y = 0) {
-	if (!(specification->flags & OS_CREATE_WINDOW_MENU)) {
+	unsigned flags = specification->flags;
+
+	if (!flags) {
+		flags = OS_CREATE_WINDOW_NORMAL;
+	}
+
+	if (specification->menubar) {
+		flags |= OS_CREATE_WINDOW_WITH_MENUBAR;
+	}
+
+	if (!(flags & OS_CREATE_WINDOW_MENU)) {
 		specification->width += totalBorderWidth;
 		specification->minimumWidth += totalBorderWidth;
 		specification->height += totalBorderHeight;
@@ -2111,7 +2149,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 
 	window->width = bounds.right - bounds.left;
 	window->height = bounds.bottom - bounds.top;
-	window->flags = specification->flags;
+	window->flags = flags;
 	window->cursor = OS_CURSOR_NORMAL;
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
@@ -2143,7 +2181,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 		OSSendMessage(window->root, &message);
 	}
 
-	if (!(window->flags & OS_CREATE_WINDOW_MENU)) {
+	if (flags & OS_CREATE_WINDOW_NORMAL) {
 		OSObject titlebar = CreateWindowResizeHandle(windowBorder22, RESIZE_MOVE);
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
@@ -2158,6 +2196,12 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(windowBorder41, RESIZE_BOTTOM_LEFT), 0);
 		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(windowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(windowBorder43, RESIZE_BOTTOM_RIGHT), 0);
+
+		if (flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
+			OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER);
+			OSAddGrid(window->root, 1, 2, grid, OS_CELL_FILL);
+			OSAddGrid(grid, 0, 0, OSCreateMenu(specification->menubar, nullptr, OS_MAKE_POINT(0, 0), OS_CREATE_MENUBAR), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		}
 	}
 
 	return window;
@@ -2167,7 +2211,7 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	return CreateWindow(specification, nullptr);
 }
 
-OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint position) {
+OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {
 	size_t itemCount = 0;
 
 	{
@@ -2183,72 +2227,91 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 		}
 	}
 
+	bool menubar = flags & OS_CREATE_MENUBAR;
+
 	Control *items[itemCount];
 	int width = 0, height = 8;
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
 		switch (menuSpecification[i].type) {
 			case OSMenuItem::SEPARATOR: {
-				items[i] = (Control *) OSCreateLine();
+				items[i] = (Control *) OSCreateLine(menubar ? OS_LINE_ORIENTATION_VERTICAL : OS_LINE_ORIENTATION_HORIZONTAL);
 			} break;
 
 			case OSMenuItem::COMMAND: {
-				items[i] = (Control *) CreateMenuItem(menuSpecification[i]);
+				items[i] = (Control *) CreateMenuItem(menuSpecification[i], menubar);
 			} break;
 
 			default: {} continue;
 		}
 
-		if (items[i]->preferredWidth > width) {
-			width = items[i]->preferredWidth;
+		if (menubar) {
+			if (items[i]->preferredHeight > height) {
+				height = items[i]->preferredHeight;
+			}
+
+			width += items[i]->preferredWidth;
+		} else {
+			if (items[i]->preferredWidth > width) {
+				width = items[i]->preferredWidth;
+			}
+
+			height += items[i]->preferredHeight;
+		}
+	}
+
+	if (!menubar) {
+		if (width < 100) width = 100;
+		width += 8;
+	}
+
+	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP);
+	((Grid *) grid)->background = menubar ? &menubarBackground : &menuBox;
+
+	OSObject returnValue = grid;
+
+	if (!menubar) {
+		OSWindowSpecification specification = {};
+		specification.width = width;
+		specification.height = height;
+		specification.flags = OS_CREATE_WINDOW_MENU;
+
+		Window *window;
+		int x = position.x;
+		int y = position.y;
+
+		Control *source = (Control *) _source;
+
+		if (x == -1 && y == -1 && source && x != -2) {
+			x = source->bounds.left;
+			y = source->bounds.bottom;
+
+			OSRectangle bounds;
+			OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, source->window->window, (uintptr_t) &bounds, 0, 0);
+
+			x += bounds.left;
+			y += bounds.top;
 		}
 
-		height += items[i]->preferredHeight;
+		if ((x == -1 && y == -1) || x == -2) {
+			OSPoint position;
+			OSGetMousePosition(nullptr, &position);
+
+			x = position.x;
+			y = position.y;
+		}
+
+		window = CreateWindow(&specification, source ? source->window : nullptr, x, y);
+
+		OSSetRootGrid(window, grid);
+		returnValue = window;
 	}
-
-	width += 8;
-
-	OSWindowSpecification specification = {};
-	specification.width = width;
-	specification.height = height;
-	specification.flags = OS_CREATE_WINDOW_MENU;
-
-	Window *window;
-	int x = position.x;
-	int y = position.y;
-	
-	Control *source = (Control *) _source;
-
-	if (x == -1 && y == -1 && source && x != -2) {
-		x = source->bounds.left;
-		y = source->bounds.bottom;
-
-		OSRectangle bounds;
-		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, source->window->window, (uintptr_t) &bounds, 0, 0);
-
-		x += bounds.left;
-		y += bounds.top;
-	}
-
-	if ((x == -1 && y == -1) || x == -2) {
-		OSPoint position;
-		OSGetMousePosition(nullptr, &position);
-
-		x = position.x;
-		y = position.y;
-	}
-
-	window = CreateWindow(&specification, source ? source->window : nullptr, x, y);
-
-	OSObject grid = OSCreateGrid(1, itemCount, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP);
-	((Grid *) grid)->background = &menuBox;
-	OSSetRootGrid(window, grid);
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
-		OSAddControl(grid, 0, i, items[i], OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
+		OSAddControl(grid, menubar ? i : 0, !menubar ? i : 0, items[i], OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	}
 
-	return window;
+	return returnValue;
 }
 
 void OSGetMousePosition(OSObject relativeWindow, OSPoint *position) {

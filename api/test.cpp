@@ -21,7 +21,7 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) message;
 
 	// OSPrint("object = %x\n", object);
-	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE);
+	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
 
 	return OS_CALLBACK_HANDLED;
 }
@@ -420,6 +420,7 @@ extern "C" void ProgramEntry() {
 	ws.height = 200;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
+	ws.menubar = osMenuTextboxContext;
 	window = OSCreateWindow(&ws);
 
 	OSObject b;

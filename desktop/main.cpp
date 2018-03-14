@@ -29,6 +29,12 @@ char *errorMessages[] = {
 	(char *) "UNKNOWN",
 	(char *) "RECURSIVE_BATCH",
 	(char *) "CORRUPT_HEAP",
+	(char *) "BAD_CALLBACK_OBJECT",
+	(char *) "RESIZE_GRID",
+	(char *) "OUT_OF_GRID_BOUNDS",
+	(char *) "OVERWRITE_GRID_OBJECT",
+	(char *) "CORRUPT_LINKED_LIST",
+	(char *) "NO_MENU_POSITION",
 };
 
 OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) {
@@ -58,7 +64,6 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 			specification.height = 200;
 			specification.minimumWidth = 160;
 			specification.minimumHeight = 100;
-			specification.flags = OS_CREATE_WINDOW_ALERT;
 			specification.title = (char *) "Program Crashed";
 			specification.titleBytes = OSCStringLength(specification.title);
 			OSObject window = OSCreateWindow(&specification);
@@ -147,8 +152,8 @@ extern "C" void ProgramEntry() {
 
 	{
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/os/calculator";
-			// const char *path = "/os/test";
+			// const char *path = "/os/calculator";
+			const char *path = "/os/test";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);
