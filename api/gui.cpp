@@ -18,8 +18,9 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Calculator textbox - selection extends out of top of textbox
-// TODO Increase left border of highlight on menus.
+// TODO Minor menu border adjustments.
 // TODO Keyboard controls.
+// TODO Menubar background, and submenus.
 
 struct UIImage {
 	OSRectangle region;
@@ -1239,7 +1240,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	control->minimumWidth = !menubar ? 100 : 21;
 	control->minimumHeight = 21;
 	control->drawParentBackground = true;
-	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
+	control->textAlign = menubar ? OS_FLAGS_DEFAULT : (OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT);
 	control->backgrounds = menuItemBackgrounds;
 
 	OSCommand *command = (OSCommand *) item.value;
@@ -1554,16 +1555,16 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				}
 
 				if (pushH) {
-					int usedWidth = grid->borderSize * 2; 
-					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i] + (i == grid->columns - 1 ? grid->gapSize : 0);
-					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH - grid->gapSize; // This isn't completely correct... but I think it's good enough for now?
+					int usedWidth = grid->borderSize * 2 + grid->gapSize * (grid->columns - 1); 
+					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i];
+					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH;
 					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] == DIMENSION_PUSH) grid->widths[i] = widthPerPush;
 				}
 
 				if (pushV) {
-					int usedHeight = grid->borderSize * 2; 
-					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j] + (j == grid->rows - 1 ? grid->gapSize : 0);
-					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV - grid->gapSize; // This isn't completely correct... but I think it's good enough for now?
+					int usedHeight = grid->borderSize * 2 + grid->gapSize * (grid->rows - 1); 
+					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j];
+					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV; 
 					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] == DIMENSION_PUSH) grid->heights[j] = heightPerPush;
 				}
 
@@ -2048,8 +2049,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_CLIPBOARD_UPDATED: {
-			if (window->focus) {
-				OSSendMessage(window->focus, message);
+			if (window->lastFocus) {
+				OSSendMessage(window->lastFocus, message);
 			}
 		} break;
 
@@ -2215,7 +2216,7 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 	size_t itemCount = 0;
 
 	{
-		OSMenuItem *item = menuSpecification;;
+		OSMenuItem *item = menuSpecification;
 
 		while (true) {
 			if (item->type != OSMenuItem::END) {
@@ -2265,7 +2266,7 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 		width += 8;
 	}
 
-	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP);
+	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP | (menubar ? OS_CREATE_GRID_NO_BORDER : 0));
 	((Grid *) grid)->background = menubar ? &menubarBackground : &menuBox;
 
 	OSObject returnValue = grid;

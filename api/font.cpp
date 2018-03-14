@@ -92,11 +92,19 @@ static int MeasureStringWidth(char *string, size_t stringLength, int size, Font 
 	while (string < stringEnd) {
 		int character = utf8_value(string);
 
-		int glyphIndex = FT_Get_Char_Index(font, character);
-		FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
-		int advanceWidth = font->glyph->advance.x >> 6;
+		if (character == 0x11 || character == 0x12) {
+			goto invisibleCharacter;
+		}
 
-		totalWidth += advanceWidth;
+		{
+			int glyphIndex = FT_Get_Char_Index(font, character);
+			FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
+			int advanceWidth = font->glyph->advance.x >> 6;
+
+			totalWidth += advanceWidth;
+		}
+
+		invisibleCharacter:;
 		string = utf8_advance(string);
 	}
 

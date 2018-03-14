@@ -428,6 +428,8 @@ extern "C" void ProgramEntry() {
 	OSSetRootGrid(window, content);
 	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK), 0);
 
+	OSAddControl(content, 1, 0, OSCreateLine(OS_LINE_ORIENTATION_VERTICAL), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+
 	OSAddControl(content, 0, 2, b = OSCreateTextbox(0), 0);
 
 	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_CALLBACK(ToggleEnabled, b));
