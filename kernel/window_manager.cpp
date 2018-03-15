@@ -254,6 +254,8 @@ void WindowManager::SetActiveWindow(Window *window) {
 		return;
 	}
 
+	// KernelLog(LOG_VERBOSE, "Set active window to %x\n", window);
+
 	{
 		Window *oldActiveWindow = activeWindow;
 		activeWindow = window;
@@ -269,10 +271,11 @@ void WindowManager::SetActiveWindow(Window *window) {
 		}
 
 		if (check != oldActiveWindow) {
-			while (oldActiveWindow && oldActiveWindow != window) {
+			while (oldActiveWindow && oldActiveWindow != window && oldActiveWindow != window->parent) {
 				OSMessage message = {};
 				message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
 				message.context = oldActiveWindow->apiWindow;
+				// KernelLog(LOG_VERBOSE, "->deactivating %x\n", oldActiveWindow);
 				oldActiveWindow->owner->messageQueue.SendMessage(message);
 				oldActiveWindow = oldActiveWindow->parent;
 			}
@@ -319,8 +322,6 @@ void WindowManager::SetActiveWindow(Window *window) {
 		message.context = window->apiWindow;
 		window->owner->messageQueue.SendMessage(message);
 	}
-
-	// TODO Prevent activations clicks interacting with controls in content pane?
 }
 
 void WindowManager::ClickCursor(unsigned buttons) {

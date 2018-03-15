@@ -6,9 +6,12 @@ subMenu1;
 subMenu2;
 
 [menu subMenu1]
-actionOK;
+name = "SubMenu1";
+osMenuTextboxContext;
+osMenuTextboxContext;
 
 [menu subMenu2]
+name = "SubMenu2";
 actionToggleEnabled;
 
 [command actionOK]

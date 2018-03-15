@@ -591,7 +591,7 @@ typedef struct OSMessage {
 		} paintBackground;
 
 		struct {
-			OSObject window;
+			OSObject window, grid;
 		} parentUpdated;
 
 		struct {
@@ -634,11 +634,19 @@ typedef struct OSCallback {
 
 typedef struct OSMenuItem {
 	enum {
-		COMMAND, SUBMENU, SEPARATOR, END,
+		COMMAND, SUBMENU, SEPARATOR,
 	} type;
 
 	void *value;
 } OSMenuItem;
+
+typedef struct OSMenuSpecification {
+	char *name;
+	size_t nameBytes;
+
+	OSMenuItem *items;
+	size_t itemCount;
+} OSMenuSpecification;
 
 typedef struct OSCommand {
 	uint32_t identifier;
@@ -665,7 +673,7 @@ typedef struct OSWindowSpecification {
 	char *title;
 	size_t titleBytes;
 
-	OSMenuItem *menubar;
+	OSMenuSpecification *menubar;
 } OSWindowSpecification;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
@@ -745,6 +753,7 @@ typedef struct OSWindowSpecification {
 #define OS_MAP_OBJECT_COPY_ON_WRITE     (2)
 
 #define OS_CREATE_MENUBAR (1)
+#define OS_CREATE_SUBMENU (2)
 #define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
 #define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
 
@@ -829,7 +838,7 @@ OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
 
-OS_EXTERN_C OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
+OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);

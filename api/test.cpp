@@ -420,7 +420,7 @@ extern "C" void ProgramEntry() {
 	ws.height = 200;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
-	ws.menubar = osMenuTextboxContext;
+	ws.menubar = myMenuBar;
 	window = OSCreateWindow(&ws);
 
 	OSObject b;

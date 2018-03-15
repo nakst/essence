@@ -227,7 +227,7 @@ struct CommandProperty {
 };
 
 CommandProperty properties[256];
-int propertyCount;
+int propertyCount, menuItemCount;
 
 bool FindProperty(const char *name, Token *value) {
 	int x = strlen(name);
@@ -252,26 +252,27 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 	} else if (CompareTokens(attribute, "window")) {
 		fprintf(output, "extern OSWindowSpecification *%.*s;\n", section.bytes, section.text);
 	} else if (CompareTokens(attribute, "menu")) {
-		fprintf(output, "extern OSMenuItem %.*s[];\n", section.bytes, section.text);
+		fprintf(output, "extern OSMenuSpecification _%.*s;\n", section.bytes, section.text);
 		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::SUBMENU\n", section.bytes, section.text);
-		fprintf(output, "#define _%.*s %.*s\n", section.bytes, section.text, section.bytes, section.text);
+		fprintf(output, "#define %.*s &_%.*s\n", section.bytes, section.text, section.bytes, section.text);
 	}
 }
 
 void GenerateDefinitions(Token attribute, Token section, Token name, Token value, int event) {
 	if (event == EVENT_START_SECTION) { 
 		propertyCount = 0;
+		menuItemCount = 0;
 
 		if (CompareTokens(attribute, "command")) {
 			commandCount++;
 		} else if (CompareTokens(attribute, "window")) {
 		} else if (CompareTokens(attribute, "menu")) {
-			fprintf(output, "OSMenuItem %.*s[] = {\n", section.bytes, section.text);
+			fprintf(output, "OSMenuItem __%.*s[] = {\n", section.bytes, section.text);
 		}
 	}
 
 	if (event == EVENT_ATTRIBUTE) { 
-		if (CompareTokens(attribute, "command") || CompareTokens(attribute, "window")) {
+		if (CompareTokens(attribute, "command") || CompareTokens(attribute, "menu") || CompareTokens(attribute, "window")) {
 			properties[propertyCount++] = { name, value };
 		}
 	}
@@ -283,6 +284,8 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			} else {
 				fprintf(output, "\t{ _OS_MENU_ITEM_TYPE_FOR_%.*s, &_%.*s },\n", name.bytes, name.text, name.bytes, name.text);
 			}
+
+			menuItemCount++;
 		}
 	}
 
@@ -395,8 +398,20 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 
 			fprintf(output, "};\n\nOSWindowSpecification *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
 		} else if (CompareTokens(attribute, "menu")) {
-			fprintf(output, "\t{ OSMenuItem::END, nullptr },\n");
-			fprintf(output, "};\n\n");
+			fprintf(output, "};\n\nOSMenuSpecification _%.*s = {\n", section.bytes, section.text);
+
+			if (FindProperty("name", &value)) {
+				fprintf(output, "\t.name = (char *) %.*s,\n", value.bytes, value.text);
+				fprintf(output, "\t.nameBytes = %d,\n", value.bytes - 2);
+			} else {
+				fprintf(output, "\t.name = (char *) \"\",\n");
+				fprintf(output, "\t.nameBytes = 0,\n");
+			}
+
+			fprintf(output, "\t.items = __%.*s,\n", section.bytes, section.text);
+			fprintf(output, "\t.itemCount = %d,\n", menuItemCount);
+
+			fprintf(output, "};\n");
 		}
 	}
 }

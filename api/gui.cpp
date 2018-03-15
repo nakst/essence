@@ -18,9 +18,8 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Calculator textbox - selection extends out of top of textbox
-// TODO Minor menu border adjustments.
+// TODO Minor menu border adjustments and menubar background painting.
 // TODO Keyboard controls.
-// TODO Menubar background, and submenus.
 
 struct UIImage {
 	OSRectangle region;
@@ -186,7 +185,7 @@ struct Control : GUIObject {
 	OSCommand *command;
 	LinkedItem<Control> commandItem;
 	OSCallback notificationCallback;
-	OSMenuItem *rightClickMenu;
+	OSMenuSpecification *rightClickMenu;
 
 	OSString text;
 	OSRectangle textBounds;
@@ -209,6 +208,7 @@ struct Control : GUIObject {
 		checkable : 1,
 		ignoreActivationClicks : 1,
 		checkboxIcons : 1,
+		fakePressed : 1,
 		cursor : 5;
 
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
@@ -219,6 +219,12 @@ struct Control : GUIObject {
 	uint8_t animationStep, finalAnimationStep;
 	uint8_t from1, from2, from3, from4;
 	uint8_t current1, current2, current3, current4;
+};
+
+struct MenuItem : Control {
+	OSMenuItem item;
+	Window *child;
+	bool menubar;
 };
 
 struct Textbox : Control {
@@ -284,9 +290,16 @@ struct Window : GUIObject {
 
 	CommandWindow *commands;
 	void *instance;
-
-	struct Window *parent;
+	bool hasParent;
 };
+
+struct OpenMenu {
+	Window *window;
+	Control *source;
+};
+
+static OpenMenu openMenus[8];
+static unsigned openMenuCount;
 
 static void CopyText(OSString buffer) {
 	OSClipboardHeader header = {};
@@ -392,12 +405,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Control *control = (Control *) _object;
 
-#if 0
-	if (message->type >= OS_MESSAGE_CLICKED && message->type <= OS_MESSAGE_KEY_TYPED) {
-		OSPrint("%x, %x\n", _object, message->type);
-	}
-#endif
-
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
 			if (control->cellBounds.left == message->layout.left
@@ -458,8 +465,17 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 							OSColor(control->backgroundColor));
 				}
 
+				bool menuSource = false;
+
+				for (uintptr_t i = 0; i < openMenuCount; i++) {
+					if (openMenus[i].source == control) {
+						menuSource = true;
+						break;
+					}
+				}
+
 				bool disabled = control->disabled,
-				     pressed = ((control->window->pressed == control && control->window->hover == control) || control->window->focus == control) && !disabled,
+				     pressed = ((control->window->pressed == control && control->window->hover == control) || control->window->focus == control || menuSource) && !disabled,
 				     hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled,
 				     normal = !hover && !pressed && !disabled;
 
@@ -659,7 +675,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			if (control->window->flags & OS_CREATE_WINDOW_MENU) {
 				message.type = OS_MESSAGE_DESTROY;
-				OSSendMessage(control->window, &message);
+				OSSendMessage(openMenus[0].window, &message);
 			}
 		} break;
 
@@ -1211,15 +1227,21 @@ OSObject OSCreateTextbox(unsigned fontSize) {
 }
 
 OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
-	Control *control = (Control *) object;
+	MenuItem *control = (MenuItem *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
-	bool menubar = (bool) (uintptr_t) message->context;
 
 	if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
-		if (!menubar) {
+		if (!control->menubar) {
 			control->textBounds = control->bounds;
 			control->textBounds.left += 24;
 			control->textBounds.right -= 4;
+			result = OS_CALLBACK_HANDLED;
+		}
+	} else if ((message->type == OS_MESSAGE_CLICKED && !openMenuCount) 
+			|| (message->type == OS_MESSAGE_START_HOVER && openMenuCount)) {
+		if (control->item.type == OSMenuItem::SUBMENU) {
+			OSRepaintControl(control);
+			OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, control->menubar ? OS_FLAGS_DEFAULT : OS_CREATE_SUBMENU);
 			result = OS_CALLBACK_HANDLED;
 		}
 	}
@@ -1232,22 +1254,36 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 }
 
 static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	MenuItem *control = (MenuItem *) OSHeapAllocate(sizeof(MenuItem), true);
 	control->type = API_OBJECT_CONTROL;
 
-	control->preferredWidth = !menubar ? 100 : 21;
+	control->preferredWidth = !menubar ? 70 : 21;
 	control->preferredHeight = 21;
-	control->minimumWidth = !menubar ? 100 : 21;
+	control->minimumWidth = !menubar ? 70 : 21;
 	control->minimumHeight = 21;
 	control->drawParentBackground = true;
 	control->textAlign = menubar ? OS_FLAGS_DEFAULT : (OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT);
 	control->backgrounds = menuItemBackgrounds;
 
-	OSCommand *command = (OSCommand *) item.value;
-	SetControlCommand(control, command);
+	control->item = item;
+	control->menubar = menubar;
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, (void *) menubar));
-	OSSetText(control, command->label, command->labelBytes);
+	if (item.type == OSMenuItem::COMMAND) {
+		OSCommand *command = (OSCommand *) item.value;
+		SetControlCommand(control, command);
+		OSSetText(control, command->label, command->labelBytes);
+	} else if (item.type == OSMenuItem::SUBMENU) {
+		OSMenuSpecification *menu = (OSMenuSpecification *) item.value;
+		OSSetText(control, menu->name, menu->nameBytes);
+	}
+
+	if (menubar) {
+		control->preferredWidth += 4;
+	} else {
+		control->preferredWidth += 32;
+	}
+
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, nullptr));
 
 	return control;
 }
@@ -1745,6 +1781,13 @@ void OSDisableControl(OSObject _control, bool disabled) {
 		OSSendMessage(control, &message);
 		control->window->focus = nullptr;
 	}
+
+	if (control->window->lastFocus == control) {
+		OSMessage message;
+		message.type = OS_MESSAGE_END_LAST_FOCUS;
+		OSSendMessage(control, &message);
+		control->window->lastFocus = nullptr;
+	}
 }
 
 void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback) {
@@ -1837,7 +1880,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
-			if (!window->parent) OSHeapFree(window->commands);
+			if (!window->hasParent) {
+				OSHeapFree(window->commands);
+			}
+
 			OSHeapFree(window);
 			return response;
 		} break;
@@ -1853,6 +1899,19 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_DESTROY: {
+			for (uintptr_t i = 0; i < openMenuCount; i++) {
+				if (openMenus[i].window == window) {
+					if (i + 1 != openMenuCount) OSSendMessage(openMenus[i + 1].window, message);
+					
+					if (openMenus[i].source) {
+						OSRepaintControl(openMenus[i].source);
+					}
+
+					openMenuCount = i;
+					break;
+				}
+			}
+
 			OSSendMessage(window->root, message);
 			OSCloseHandle(window->surface);
 			OSCloseHandle(window->window);
@@ -2155,8 +2214,6 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
 
-	window->parent = parent;
-
 	if (!parent) {
 		window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
 
@@ -2168,6 +2225,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 		}
 	} else {
 		window->commands = parent->commands;
+		window->hasParent = true;
 	}
 
 	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
@@ -2212,35 +2270,24 @@ OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	return CreateWindow(specification, nullptr);
 }
 
-OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {
-	size_t itemCount = 0;
+OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {
+	Control *source = (Control *) _source;
 
-	{
-		OSMenuItem *item = menuSpecification;
-
-		while (true) {
-			if (item->type != OSMenuItem::END) {
-				item++;
-				itemCount++;
-			} else {
-				break;
-			}
-		}
-	}
-
+	size_t itemCount = menuSpecification->itemCount;
 	bool menubar = flags & OS_CREATE_MENUBAR;
 
 	Control *items[itemCount];
 	int width = 0, height = 8;
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
-		switch (menuSpecification[i].type) {
+		switch (menuSpecification->items[i].type) {
 			case OSMenuItem::SEPARATOR: {
 				items[i] = (Control *) OSCreateLine(menubar ? OS_LINE_ORIENTATION_VERTICAL : OS_LINE_ORIENTATION_HORIZONTAL);
 			} break;
 
+			case OSMenuItem::SUBMENU:
 			case OSMenuItem::COMMAND: {
-				items[i] = (Control *) CreateMenuItem(menuSpecification[i], menubar);
+				items[i] = (Control *) CreateMenuItem(menuSpecification->items[i], menubar);
 			} break;
 
 			default: {} continue;
@@ -2266,6 +2313,7 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 		width += 8;
 	}
 
+
 	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP | (menubar ? OS_CREATE_GRID_NO_BORDER : 0));
 	((Grid *) grid)->background = menubar ? &menubarBackground : &menuBox;
 
@@ -2281,11 +2329,14 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 		int x = position.x;
 		int y = position.y;
 
-		Control *source = (Control *) _source;
-
 		if (x == -1 && y == -1 && source && x != -2) {
-			x = source->bounds.left;
-			y = source->bounds.bottom;
+			if (flags & OS_CREATE_SUBMENU) {
+				x = source->bounds.right;
+				y = source->bounds.top;
+			} else {
+				x = source->bounds.left;
+				y = source->bounds.bottom;
+			}
 
 			OSRectangle bounds;
 			OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, source->window->window, (uintptr_t) &bounds, 0, 0);
@@ -2303,6 +2354,19 @@ OSObject OSCreateMenu(OSMenuItem *menuSpecification, OSObject _source, OSPoint p
 		}
 
 		window = CreateWindow(&specification, source ? source->window : nullptr, x, y);
+
+		for (uintptr_t i = 0; i < openMenuCount; i++) {
+			if (openMenus[i].source->window == source->window) {
+				OSMessage message;
+				message.type = OS_MESSAGE_DESTROY;
+				OSSendMessage(openMenus[i].window, &message);
+				break;
+			}
+		}
+
+		openMenus[openMenuCount].source = source;
+		openMenus[openMenuCount].window = window;
+		openMenuCount++;
 
 		OSSetRootGrid(window, grid);
 		returnValue = window;
