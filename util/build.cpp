@@ -119,9 +119,150 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 	}
 }
 
+void BuildCrossCompiler() {
+	{
+		printf("Could not detect GCC cross compiler.\n");
+		printf("Automatically building and installing cross compiler...\n");
+		printf("Make sure you are connected to the internet, and have the latest versions of the following development tools:\n");
+		printf("\t-GCC/G++\n");
+		printf("\t-GNU Make\n");
+		printf("\t-GNU Bison\n");
+		printf("\t-Flex\n");
+		printf("\t-GNU GMP\n");
+		printf("\t-GNU MPFR\n");
+		printf("\t-GNU MPC\n");
+		printf("\t-Texinfo\n");
+
+		printf("Make sure you have at least 3GB of drive space available.\n");
+		printf("The final installation will take up ~1GB.\n");
+		printf("Approximately 100MB of source files will be downloaded.\n");
+
+		printf("Enter cross compiler installation folder: (this will be automatically added to your PATH in ~/.bashrc)\n");
+		char installationFolder[16384];
+		scanf("%s", installationFolder);
+		if (installationFolder[strlen(installationFolder) - 1] == '/') {
+			installationFolder[strlen(installationFolder) - 1] = 0;
+		}
+		printf("Type 'yes' to install the GCC compiler into %s...\n", installationFolder);
+		char yes[1024];
+		scanf("%s", yes);
+		if (strcmp(yes, "yes")) goto fail;
+
+		printf("Downloading Binutils source...\n");
+		if (system("curl ftp://ftp.gnu.org/gnu/binutils/binutils-2.30.tar.xz > binutils.tar.xz")) goto fail;
+		printf("Downloading GCC source...\n");
+		if (system("curl ftp://ftp.gnu.org/gnu/gcc/gcc-7.3.0/gcc-7.3.0.tar.xz > gcc.tar.xz")) goto fail;
+		printf("Extracting Binutils source...\n");
+		if (system("xz -d binutils.tar.xz")) goto fail;
+		if (system("tar -xf binutils.tar")) goto fail;
+		if (system("rm binutils.tar")) goto fail;
+		printf("Extracting GCC source...\n");
+		if (system("xz -d gcc.tar.xz")) goto fail;
+		if (system("tar -xf gcc.tar")) goto fail;
+		if (system("rm gcc.tar")) goto fail;
+
+		printf("Preparing build...\n");
+		char path[65536];
+		char *originalPath = getenv("PATH");
+		if (strlen(originalPath) > 32768) {
+			printf("PATH too long\n");
+			goto fail;
+		}
+		strcpy(path, installationFolder);
+		strcat(path, "/bin:");
+		strcat(path, originalPath);
+		setenv("PATH", path, 1);
+		printf("PATH = %s\n", path);
+		if (system("mkdir build-binutils")) goto fail;
+		if (system("mkdir build-gcc")) goto fail;
+
+		FILE *file;
+
+		printf("Modifying source for libgcc w/o red zone...\n");
+		file = fopen("gcc-7.3.0/gcc/config/i386/t-x86_64-elf", "w");
+		if (!file) {
+			printf("Couldn't modify source\n");
+			goto fail;
+		} else {
+			fprintf(file, "MULTILIB_OPTIONS += mno-red-zone\nMULTILIB_DIRNAMES += no-red-zone\n");
+			fclose(file);
+		}
+		file = fopen("temp.txt", "w");
+		if (!file) {
+			printf("Couldn't modify source\n");
+			goto fail;
+		} else {
+			fprintf(file, "\ttmake_file=\"${tmake_file} i386/t-x86_64-elf\"\n");
+			fclose(file);
+		}
+		if (system("sed -i '1460r temp.txt' gcc-7.3.0/gcc/config.gcc")) goto fail;
+		if (system("rm temp.txt")) goto fail;
+
+		char cmdbuf[65536];
+
+		printf("Building binutils...\n");
+		if (chdir("build-binutils")) goto fail;
+		sprintf(cmdbuf, "../binutils-2.30/configure --target=x86_64-elf --prefix=\"%s\" --with-sysroot --disable-nls --disable-werror", installationFolder);
+		if (system(cmdbuf)) goto fail;
+		if (system("make")) goto fail;
+		if (system("make install")) goto fail;
+		if (chdir("..")) goto fail;
+
+		printf("Building GCC...\n");
+		if (chdir("build-gcc")) goto fail;
+		sprintf(cmdbuf, "../gcc-7.3.0/configure --target=x86_64-elf --prefix=\"%s\" --enable-languages=c,c++ --without-headers --disable-nls", installationFolder);
+		if (system(cmdbuf)) goto fail;
+		if (system("make all-gcc")) goto fail;
+		if (system("make all-target-libgcc")) goto fail;
+		if (system("make install-gcc")) goto fail;
+		if (system("make install-target-libgcc")) goto fail;
+		if (chdir("..")) goto fail;
+
+		printf("Cleaning up...\n");
+		system("rm -r binutils-2.30/");
+		system("rm -r gcc-7.3.0/");
+		system("rm -rf build-binutils");
+		system("rm -rf build-gcc");
+
+		printf("Modifying headers...\n");
+		sprintf(path, "%s/lib/gcc/x86_64-elf/7.3.0/include/mm_malloc.h", installationFolder);
+		file = fopen(path, "w");
+		if (!file) {
+			printf("Couldn't modify header files\n");
+			goto fail;
+		} else {
+			fprintf(file, "/*Removed*/\n");
+			fclose(file);
+		}
+
+		printf("Updating path in ~/.bashrc...\n");
+		sprintf(path, "%s/.bashrc", getenv("HOME"));
+		file = fopen(path, "a");
+		if (!file) {
+			printf("Couldn't update path in ~/.bashrc :(\n");
+		} else {
+			fprintf(file, "\nexport PATH=\"%s/bin:$PATH\"", installationFolder);
+			fclose(file);
+		}
+
+		printf("Build complete!!\n");
+	}
+
+	return;
+	fail:;
+	printf("Build failed, aborting...\n");
+}
+
 int main(int argc, char **argv) {
 	char *prev = nullptr;
-	printf("Essence Build System\nPress Ctrl-C to exit.\nEnter 'help' to get a list of commands.\n");
+	printf("Essence Build System\nPress Ctrl-C to exit.\n");
+
+	if (system("x86_64-elf-gcc --version > /dev/null")) {
+		BuildCrossCompiler();
+		return 0;
+	}
+
+	printf("Enter 'help' to get a list of commands.\n");
 
 	while (true) {
 		char *l = nullptr;
