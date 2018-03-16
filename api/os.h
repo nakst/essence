@@ -361,20 +361,20 @@ typedef struct OSDirectoryChild {
 } OSDirectoryChild;
 
 typedef struct OSPoint {
-	intptr_t x;
-	intptr_t y;
+	int32_t x;
+	int32_t y;
 } OSPoint;
 
 typedef struct OSRectangle {
-	intptr_t left;   // Inclusive.
-	intptr_t right;  // Exclusive.
-	intptr_t top;    // Inclusive.
-	intptr_t bottom; // Exclusive.
+	int32_t left;   // Inclusive.
+	int32_t right;  // Exclusive.
+	int32_t top;    // Inclusive.
+	int32_t bottom; // Exclusive.
 } OSRectangle;
 
-#define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(intptr_t)(l),(intptr_t)(r),(intptr_t)(t),(intptr_t)(b)})
+#define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(int32_t)(l),(int32_t)(r),(int32_t)(t),(int32_t)(b)})
 #define OS_MAKE_CALLBACK(a, b) ((OSCallback){(a),(b)})
-#define OS_MAKE_POINT(x, y) ((OSPoint){(intptr_t)(x),(intptr_t)(y)})
+#define OS_MAKE_POINT(x, y) ((OSPoint){(int32_t)(x),(int32_t)(y)})
 
 typedef struct OSColor {
 	OS_CONSTRUCTOR(OSColor() {})

@@ -18,7 +18,7 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Calculator textbox - selection extends out of top of textbox
-// TODO Minor menu border adjustments and menubar background painting.
+// TODO Minor menu[bar] border adjustments.
 // TODO Keyboard controls.
 
 struct UIImage {
@@ -86,7 +86,7 @@ static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 
 
 static UIImage gridBox 			= {{20, 26, 85, 91}, {22, 23, 87, 88}};
 static UIImage menuBox 			= {{199, 229, 4, 17}, {225, 227, 7, 9}};
-static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 145}};
+static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 124}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
@@ -208,7 +208,6 @@ struct Control : GUIObject {
 		checkable : 1,
 		ignoreActivationClicks : 1,
 		checkboxIcons : 1,
-		fakePressed : 1,
 		cursor : 5;
 
 	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
@@ -481,7 +480,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
 				control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
-				control->current3 = ((pressed     ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
+				control->current3 = ((pressed  ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
 				if (control->backgrounds && control->backgrounds[0]) {
@@ -1233,16 +1232,16 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
 		if (!control->menubar) {
 			control->textBounds = control->bounds;
+			// Leave room for the icons.
 			control->textBounds.left += 24;
 			control->textBounds.right -= 4;
 			result = OS_CALLBACK_HANDLED;
 		}
-	} else if ((message->type == OS_MESSAGE_CLICKED && !openMenuCount) 
-			|| (message->type == OS_MESSAGE_START_HOVER && openMenuCount)) {
+	} else if ((message->type == OS_MESSAGE_CLICKED) || (message->type == OS_MESSAGE_START_HOVER && openMenuCount)) {
 		if (control->item.type == OSMenuItem::SUBMENU) {
-			OSRepaintControl(control);
-			OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, control->menubar ? OS_FLAGS_DEFAULT : OS_CREATE_SUBMENU);
-			result = OS_CALLBACK_HANDLED;
+			if (message->type != OS_MESSAGE_CLICKED || !openMenuCount) OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, control->menubar ? OS_FLAGS_DEFAULT : OS_CREATE_SUBMENU);
+			if (message->type != OS_MESSAGE_START_HOVER) result = OS_CALLBACK_HANDLED;
+			OSAnimateControl(control, true);
 		}
 	}
 
@@ -1264,6 +1263,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	control->drawParentBackground = true;
 	control->textAlign = menubar ? OS_FLAGS_DEFAULT : (OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT);
 	control->backgrounds = menuItemBackgrounds;
+	control->ignoreActivationClicks = menubar;
 
 	control->item = item;
 	control->menubar = menubar;
@@ -1703,8 +1703,30 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		} break;
 
 		case OS_MESSAGE_PAINT_BACKGROUND: {
-			OSFillRectangle(message->paint.surface, OS_MAKE_RECTANGLE(message->paintBackground.left, message->paintBackground.right, 
-						message->paintBackground.top, message->paintBackground.bottom), OSColor(STANDARD_BACKGROUND_COLOR));
+			OSRectangle destination = OS_MAKE_RECTANGLE(message->paintBackground.left, message->paintBackground.right, 
+					message->paintBackground.top, message->paintBackground.bottom);
+			OSRectangle full = OS_MAKE_RECTANGLE(grid->bounds.left, grid->bounds.right, 
+					grid->bounds.top, grid->bounds.bottom);
+
+			if (grid->background) {
+				OSRectangle region = grid->background->region;
+				OSRectangle border = grid->background->border;
+
+				region.left += destination.left - full.left;
+				region.right += destination.right - full.right;
+				region.top += destination.top - full.top;
+				region.bottom += destination.bottom - full.bottom;
+
+				if (region.left > border.left) region.left = border.left;
+				if (region.right < border.right) region.right = border.right;
+				if (region.top > border.top) region.top = border.top;
+				if (region.bottom < border.bottom) region.bottom = border.bottom;
+
+				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, destination, region,
+						border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+			} else {
+				OSFillRectangle(message->paint.surface, destination, OSColor(STANDARD_BACKGROUND_COLOR));
+			}
 		} break;
 
 		case OS_MESSAGE_PARENT_UPDATED: {
@@ -1904,7 +1926,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					if (i + 1 != openMenuCount) OSSendMessage(openMenus[i + 1].window, message);
 					
 					if (openMenus[i].source) {
-						OSRepaintControl(openMenus[i].source);
+						OSAnimateControl(openMenus[i].source, true);
 					}
 
 					openMenuCount = i;

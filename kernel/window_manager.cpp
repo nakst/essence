@@ -260,25 +260,18 @@ void WindowManager::SetActiveWindow(Window *window) {
 		Window *oldActiveWindow = activeWindow;
 		activeWindow = window;
 
-		Window *check = window;
+		// This is a menu. They don't get activation messages.
+		if (window && window->parent) return;
 
-		while (check) {
-			if (check == oldActiveWindow) {
-				break;
-			}
-
-			check = check->parent;
-		}
-
-		if (check != oldActiveWindow) {
-			while (oldActiveWindow && oldActiveWindow != window && oldActiveWindow != window->parent) {
-				OSMessage message = {};
-				message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
-				message.context = oldActiveWindow->apiWindow;
-				// KernelLog(LOG_VERBOSE, "->deactivating %x\n", oldActiveWindow);
-				oldActiveWindow->owner->messageQueue.SendMessage(message);
-				oldActiveWindow = oldActiveWindow->parent;
-			}
+		// This is either a top-level window, or no window is active.
+		// Deactivate the old window and its menus (to close them).
+		// Except don't deactivate the old window if we're just about to activate it again.
+		while (oldActiveWindow && oldActiveWindow != window) {
+			OSMessage message = {};
+			message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
+			message.context = oldActiveWindow->apiWindow;
+			oldActiveWindow->owner->messageQueue.SendMessage(message);
+			oldActiveWindow = oldActiveWindow->parent;
 		}
 	}
 
