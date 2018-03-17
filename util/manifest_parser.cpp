@@ -229,6 +229,13 @@ struct CommandProperty {
 CommandProperty properties[256];
 int propertyCount, menuItemCount;
 
+struct Build {
+	bool found;
+	Token output, source;
+};
+
+Build autoBuild;
+
 bool FindProperty(const char *name, Token *value) {
 	int x = strlen(name);
 
@@ -266,13 +273,14 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 		if (CompareTokens(attribute, "command")) {
 			commandCount++;
 		} else if (CompareTokens(attribute, "window")) {
+		} else if (CompareTokens(section, "build")) {
 		} else if (CompareTokens(attribute, "menu")) {
 			fprintf(output, "OSMenuItem __%.*s[] = {\n", section.bytes, section.text);
 		}
 	}
 
 	if (event == EVENT_ATTRIBUTE) { 
-		if (CompareTokens(attribute, "command") || CompareTokens(attribute, "menu") || CompareTokens(attribute, "window")) {
+		if (CompareTokens(attribute, "command") || CompareTokens(section, "build") || CompareTokens(attribute, "menu") || CompareTokens(attribute, "window")) {
 			properties[propertyCount++] = { name, value };
 		}
 	}
@@ -412,6 +420,10 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			fprintf(output, "\t.itemCount = %d,\n", menuItemCount);
 
 			fprintf(output, "};\n");
+		} else if (CompareTokens(section, "build")) {
+			autoBuild.found = true;
+			FindProperty("source", &autoBuild.source);
+			FindProperty("output", &autoBuild.output);
 		}
 	}
 }
@@ -465,6 +477,19 @@ int main(int argc, char **argv) {
 	fprintf(output, "#endif\n\n#endif\n");
 
 	fclose(output);
+
+	if (autoBuild.found) {
+		char buffer[4096];
+		sprintf(buffer, "x86_64-elf-g++ -c %.*s -o bin/os/%.*s.o %s %s", autoBuild.source.bytes, autoBuild.source.text, autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
+		system(buffer);
+		sprintf(buffer, "x86_64-elf-gcc -o bin/os/%.*s bin/os/%.*s.o %s", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
+		system(buffer);
+		sprintf(buffer, "cp bin/os/%.*s bin/os/%.*s_symbols", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text);
+		system(buffer);
+		sprintf(buffer, "x86_64-elf-strip --strip-all bin/os/%.*s", autoBuild.output.bytes, autoBuild.output.text);
+		system(buffer);
+	}
+
 	free(buffer);
 
 	return 0;

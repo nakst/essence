@@ -26,3 +26,7 @@ checkable = true;
 callback = ToggleEnabled;
 isDisabled = false;
 defaultCheck = true;
+
+[build]
+output = test;
+source = "api/test.cpp";

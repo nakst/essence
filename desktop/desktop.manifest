@@ -1,2 +1,6 @@
 [program]
 name = "Desktop";
+
+[build]
+output = desktop;
+source = "desktop/main.cpp";
