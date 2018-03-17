@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
+#include <dirent.h>
 
 char buffer[4096];
 
@@ -134,6 +135,8 @@ void BuildCrossCompiler() {
 		printf("\t-GNU MPC\n");
 		printf("\t-Texinfo\n");
 		printf("\t-curl\n");
+		printf("\t-nasm\n");
+		printf("\t-ctags\n");
 
 		printf("\nMake sure you have at least 3GB of drive space available.\n");
 		printf("The final installation will take up ~1GB.\n");
