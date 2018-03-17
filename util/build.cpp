@@ -121,8 +121,9 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 
 void BuildCrossCompiler() {
 	{
-		printf("Could not detect GCC cross compiler.\n");
-		printf("Automatically building and installing cross compiler...\n");
+		printf("Could not detect GCC cross compiler in PATH.\n");
+
+		printf("\nAutomatically building and installing cross compiler...\n");
 		printf("Make sure you are connected to the internet, and have the latest versions of the following development tools:\n");
 		printf("\t-GCC/G++\n");
 		printf("\t-GNU Make\n");
@@ -133,7 +134,7 @@ void BuildCrossCompiler() {
 		printf("\t-GNU MPC\n");
 		printf("\t-Texinfo\n");
 
-		printf("Make sure you have at least 3GB of drive space available.\n");
+		printf("\nMake sure you have at least 3GB of drive space available.\n");
 		printf("The final installation will take up ~1GB.\n");
 		printf("Approximately 100MB of source files will be downloaded.\n");
 
@@ -260,6 +261,15 @@ int main(int argc, char **argv) {
 	if (system("x86_64-elf-gcc --version > /dev/null")) {
 		BuildCrossCompiler();
 		return 0;
+	}
+
+	{
+		FILE *drive = fopen("drive", "r");
+		if (!drive) {
+			system("cp partition_table drive");
+		} else {
+			fclose(drive);
+		}
 	}
 
 	printf("Enter 'help' to get a list of commands.\n");
