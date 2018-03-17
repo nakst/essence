@@ -201,6 +201,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_CORRUPT_LINKED_LIST,
 	OS_FATAL_ERROR_NO_MENU_POSITION,
 	OS_FATAL_ERROR_COUNT,
+	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
 } OSFatalError;
 
 // These must be negative.
@@ -509,6 +510,7 @@ typedef enum OSMessageType {
 
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
+	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -605,6 +607,10 @@ typedef struct OSMessage {
 			bool checked;
 		} command;
 
+		struct {
+			int newValue;
+		} valueChanged;
+
 		struct OSClipboardHeader clipboard;
 	};
 } OSMessage;
@@ -649,7 +655,8 @@ typedef struct OSMenuSpecification {
 } OSMenuSpecification;
 
 typedef struct OSCommand {
-	uint32_t identifier;
+#define OS_COMMAND_DYNAMIC (-1)
+	int32_t identifier;
 
 	char *label;
 	size_t labelBytes;
@@ -835,6 +842,7 @@ OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
 OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
+OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback callback);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
@@ -857,6 +865,7 @@ OS_EXTERN_C OSObject OSCreateScrollbar();
 #define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
 
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
+OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
 
 #ifndef KERNEL
 OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);

@@ -16,6 +16,20 @@ struct y {
 
 y y2 = {1, 2};
 
+int vp = 100;
+
+OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
+	(void) object;
+	OSPrint("Scrollbar at %d/400px (viewport is %dpx).\n", message->valueChanged.newValue, vp);
+
+	if (message->valueChanged.newValue == 200) {
+		vp = 800;
+		OSSetScrollbarMeasurements(object, 400, 800);
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) object;
 	(void) message;
@@ -449,10 +463,14 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
 
-	OSAddControl(content, 0, 4, OSCreateScrollbar(), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+	OSObject scrollbar = OSCreateScrollbar();
+	OSAddControl(content, 0, 4, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);
+
+	OSSetScrollbarMeasurements(scrollbar, 400, 100);
+	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
 
 	OSProcessMessages();
 }

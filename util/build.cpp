@@ -258,6 +258,24 @@ int main(int argc, char **argv) {
 	char *prev = nullptr;
 	printf("Essence Build System\nPress Ctrl-C to exit.\n");
 
+	{
+		FILE *file = fopen("AcceptedLicense", "r");
+		if (!file) {
+			printf("=== Essence License ===\n\n");
+			system("cat LICENSE.md");
+
+			printf("\nType 'yes' to agree to the license, or press Ctrl-C to exit.\n");
+			char yes[1024];
+			scanf("%s", yes);
+			if (strcmp(yes, "yes")) exit(0);
+
+			file = fopen("AcceptedLicense", "w");
+			fclose(file);
+		} else {
+			fclose(file);
+		}
+	}
+
 	if (system("x86_64-elf-gcc --version > /dev/null")) {
 		BuildCrossCompiler();
 		return 0;

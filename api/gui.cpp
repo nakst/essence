@@ -98,15 +98,15 @@ static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 121
 static UIImage scrollbarTrackHorizontalDisabled = {{119, 120, 62, 79}, {119, 119, 62, 62}};
 #endif
 static UIImage scrollbarTrackVerticalEnabled    = {{174, 191, 82, 83}, {174, 174, 82, 82}};
-#if 0
 static UIImage scrollbarTrackVerticalDisabled   = {{174, 191, 80, 81}, {174, 174, 80, 80}};
-static UIImage scrollbarButtonHorizontalNormal  = {{159, 166, 62, 79}, {162, 162, 62, 78}};
-static UIImage scrollbarButtonHorizontalHover   = {{167, 174, 62, 79}, {170, 170, 62, 78}};
-static UIImage scrollbarButtonHorizontalPressed = {{175, 182, 62, 79}, {178, 178, 62, 78}};
-static UIImage scrollbarButtonVerticalNormal    = {{141, 158, 62, 69}, {141, 157, 65, 65}};
-static UIImage scrollbarButtonVerticalHover     = {{141, 158, 70, 77}, {141, 157, 73, 73}};
-static UIImage scrollbarButtonVerticalPressed   = {{141, 158, 78, 85}, {141, 157, 81, 81}};
-static UIImage scrollbarButtonDisabled          = {{183, 190, 62, 79}, {186, 186, 62, 78}};
+static UIImage scrollbarButtonHorizontalNormal  = {{159, 166, 62, 79}, {162, 163, 62, 62}};
+static UIImage scrollbarButtonHorizontalHover   = {{167, 174, 62, 79}, {170, 171, 62, 62}};
+static UIImage scrollbarButtonHorizontalPressed = {{175, 182, 62, 79}, {178, 179, 62, 62}};
+static UIImage scrollbarButtonVerticalNormal    = {{141, 158, 62, 69}, {141, 141, 65, 66}};
+static UIImage scrollbarButtonVerticalHover     = {{141, 158, 70, 77}, {141, 141, 73, 74}};
+static UIImage scrollbarButtonVerticalPressed   = {{141, 158, 78, 85}, {141, 141, 81, 82}};
+static UIImage scrollbarButtonDisabled          = {{183, 190, 62, 79}, {186, 187, 62, 62}};
+#if 0
 static UIImage scrollbarResizePad               = {{123, 140, 62, 79}, {123, 123, 62, 62}};
 static UIImage scrollbarNotchesHorizontal       = {{159, 164, 80, 88}, {159, 159, 80, 80}};
 static UIImage scrollbarNotchesVertical         = {{165, 173, 80, 85}, {165, 165, 80, 80}};
@@ -117,7 +117,6 @@ static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal
 static UIImage lineVertical		= {{34, 38, 110, 122}, {34, 34, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
-#if 0
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
 	&scrollbarButtonHorizontalNormal,
 	&scrollbarButtonDisabled,
@@ -132,6 +131,7 @@ static UIImage *scrollbarButtonVerticalBackgrounds[] = {
 	&scrollbarButtonVerticalPressed,
 };
 
+#if 0
 static UIImage *scrollbarResizePadBackgrounds[] = {
 	&scrollbarResizePad,
 	&scrollbarResizePad,
@@ -233,8 +233,11 @@ struct Control : GUIObject {
 #define UI_IMAGE_DRAG (3)
 	UIImage **backgrounds, **icons;
 
+	void *context;
+
 	OSCommand *command;
 	LinkedItem<Control> commandItem;
+
 	OSCallback notificationCallback;
 	OSMenuSpecification *rightClickMenu;
 
@@ -298,9 +301,20 @@ struct Grid : GUIObject {
 	unsigned flags;
 	int borderSize, gapSize;
 	UIImage *background;
+	OSCallback notificationCallback;
 };
 
 struct Scrollbar : Grid {
+	bool enabled;
+
+	int contentSize;
+	int viewportSize;
+	int height;
+
+	int anchor;
+	int position;
+	int maxPosition;
+	int size;
 };
 
 struct CommandWindow {
@@ -384,6 +398,13 @@ static inline void UpdateCheckboxIcons(Control *control) {
 }
 
 static void SetControlCommand(Control *control, OSCommand *_command) {
+	if (_command->identifier == OS_COMMAND_DYNAMIC) {
+		control->isChecked = _command->defaultCheck;
+		control->disabled = _command->defaultDisabled;
+		control->notificationCallback = _command->callback;
+		return;
+	}
+
 	control->command = _command;
 	control->commandItem.thisItem = control;
 	control->checkable = _command->checkable;
@@ -1836,6 +1857,55 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	return grid;
 }
 
+#define SCROLLBAR_BUTTON_UP ((void *) 1)
+#define SCROLLBAR_BUTTON_DOWN ((void *) 2)
+
+static OSCallbackResponse ScrollbarButtonPressed(OSObject object, OSMessage *message) {
+	(void) object;
+	(void) message;
+	// TODO 
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
+static void ScrollbarPositionChanged(Scrollbar *scrollbar) {
+	int position = 0;
+
+	if (scrollbar->enabled) {
+		float fraction = (float) scrollbar->position / (float) scrollbar->maxPosition;
+		float range = (float) (scrollbar->contentSize - scrollbar->viewportSize);
+		position = (int) (fraction * range);
+	}
+
+	OSMessage message;
+	message.type = OS_NOTIFICATION_VALUE_CHANGED;
+	message.valueChanged.newValue = position;
+	OSForwardMessage(scrollbar, scrollbar->notificationCallback, &message);
+}
+
+static OSCallbackResponse ProcessScrollbarGripMessage(OSObject object, OSMessage *message) {
+	Scrollbar *scrollbar = (Scrollbar *) ((Control *) object)->context;
+
+	if (message->type == OS_MESSAGE_START_DRAG) {
+		scrollbar->anchor = message->mouseMoved.newPositionY;
+	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED && scrollbar->enabled) {
+		{
+			OSMessage message;
+			message.type = OS_MESSAGE_CHILD_UPDATED;
+			OSSendMessage(scrollbar, &message);
+		}
+
+		scrollbar->position += message->mouseDragged.newPositionY - scrollbar->anchor;
+
+		if (scrollbar->position < 0) scrollbar->position = 0;
+		else if (scrollbar->position >= scrollbar->maxPosition) scrollbar->position = scrollbar->maxPosition;
+		else scrollbar->anchor = message->mouseDragged.newPositionY;
+
+		ScrollbarPositionChanged(scrollbar);
+	}
+
+	return OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+}
+
 static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *message) {
 	Scrollbar *grid = (Scrollbar *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
@@ -1856,8 +1926,38 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 						message->layout.top, message->layout.bottom);
 				StandardCellLayout(grid);
 
+				if (grid->enabled) {
+					OSSetScrollbarMeasurements(grid, grid->contentSize, grid->viewportSize);
+				}
+
 				grid->repaint = true;
 				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+
+				{
+					OSMessage message;
+					message.type = OS_MESSAGE_LAYOUT;
+					message.layout.force = true;
+					message.layout.left = grid->bounds.left;
+					message.layout.right = grid->bounds.right;
+
+					message.layout.top = grid->bounds.top;
+					message.layout.bottom = message.layout.top + 17;
+					OSSendMessage(grid->objects[0], &message);
+
+					if (!grid->enabled) {
+						message.layout.top = 0;
+						message.layout.bottom = 0;
+					} else {
+						message.layout.top = grid->bounds.top + 17 + grid->position;
+						message.layout.bottom = grid->bounds.top + 17 + grid->position + grid->size;
+					}
+
+					OSSendMessage(grid->objects[1], &message);
+
+					message.layout.bottom = grid->bounds.bottom;
+					message.layout.top = message.layout.bottom - 17;
+					OSSendMessage(grid->objects[2], &message);
+				}
 
 				result = OS_CALLBACK_HANDLED;
 			}
@@ -1873,21 +1973,99 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 	return result;
 }
 
+void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize) {
+	Scrollbar *scrollbar = (Scrollbar *) _scrollbar;
+
+	if (contentSize < viewportSize) {
+		scrollbar->enabled = false;
+		scrollbar->background = &scrollbarTrackVerticalDisabled;
+		scrollbar->height = 0;
+
+		OSDisableControl(scrollbar->objects[0], true);
+		OSDisableControl(scrollbar->objects[2], true);
+	} else {
+		int height = scrollbar->bounds.bottom - scrollbar->bounds.top;
+		height -= 17 * 2;
+
+		float fraction = -1;
+
+		if (height != scrollbar->height && scrollbar->height > 0) {
+			fraction = (float) scrollbar->position / (float) scrollbar->maxPosition;
+		}
+
+		scrollbar->enabled = true;
+		scrollbar->height = height;
+		scrollbar->contentSize = contentSize;
+		scrollbar->viewportSize = viewportSize;
+		scrollbar->background = &scrollbarTrackVerticalEnabled;
+
+		float screens = (float) scrollbar->contentSize / (float) scrollbar->viewportSize;
+		scrollbar->size = height / screens;
+
+		scrollbar->maxPosition = height - scrollbar->size;
+		if (fraction != -1) scrollbar->position = fraction * scrollbar->maxPosition;
+
+		if (scrollbar->position < 0) scrollbar->position = 0;
+		else if (scrollbar->position >= scrollbar->maxPosition) scrollbar->position = scrollbar->maxPosition;
+
+		OSEnableControl(scrollbar->objects[0], true);
+		OSEnableControl(scrollbar->objects[2], true);
+	}
+
+	{
+		OSMessage message;
+		message.type = OS_MESSAGE_CHILD_UPDATED;
+		OSSendMessage(scrollbar, &message);
+	}
+
+	OSRepaintControl(scrollbar->objects[0]);
+	OSRepaintControl(scrollbar->objects[1]);
+	OSRepaintControl(scrollbar->objects[2]);
+
+	ScrollbarPositionChanged(scrollbar);
+}
+
 OSObject OSCreateScrollbar() {
 	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Scrollbar) + sizeof(OSObject) * 3, true);
 
-	Grid *grid = (Grid *) memory;
-	grid->type = API_OBJECT_GRID;
-	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessScrollbarMessage, nullptr));
+	Scrollbar *scrollbar = (Scrollbar *) memory;
+	scrollbar->type = API_OBJECT_GRID;
+	OSSetCallback(scrollbar, OS_MAKE_CALLBACK(ProcessScrollbarMessage, nullptr));
 
-	grid->background = &scrollbarTrackVerticalEnabled;
-	grid->columns = 1;
-	grid->rows = 3;
-	grid->objects = (OSObject *) (memory + sizeof(Scrollbar));
-	grid->preferredWidth = 17;
-	grid->preferredHeight = DIMENSION_PUSH;
+	scrollbar->background = &scrollbarTrackVerticalDisabled;
+	scrollbar->columns = 1;
+	scrollbar->rows = 3;
+	scrollbar->objects = (OSObject *) (memory + sizeof(Scrollbar));
+	scrollbar->preferredWidth = 17;
+	scrollbar->preferredHeight = DIMENSION_PUSH;
 
-	return grid;
+	OSCommand command = {};
+	command.defaultDisabled = true;
+	command.identifier = OS_COMMAND_DYNAMIC;
+
+	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_UP);
+	Control *up = (Control *) OSCreateButton(&command);
+	up->backgrounds = scrollbarButtonHorizontalBackgrounds;
+	up->context = scrollbar;
+
+	Control *grip = (Control *) OSHeapAllocate(sizeof(Control), true);
+	grip->type = API_OBJECT_CONTROL;
+	grip->context = scrollbar;
+	grip->backgrounds = scrollbarButtonVerticalBackgrounds;
+	OSSetCallback(grip, OS_MAKE_CALLBACK(ProcessScrollbarGripMessage, nullptr));
+
+	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_DOWN);
+	Control *down = (Control *) OSCreateButton(&command);
+	down->backgrounds = scrollbarButtonHorizontalBackgrounds;
+	down->context = scrollbar;
+
+	OSAddControl(scrollbar, 0, 0, up, OS_FLAGS_DEFAULT);
+	OSAddControl(scrollbar, 0, 1, grip, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
+	OSAddControl(scrollbar, 0, 2, down, OS_FLAGS_DEFAULT);
+
+	scrollbar->enabled = false;
+
+	return scrollbar;
 }
 
 void OSDisableControl(OSObject _control, bool disabled) {
@@ -1909,6 +2087,20 @@ void OSDisableControl(OSObject _control, bool disabled) {
 		message.type = OS_MESSAGE_END_LAST_FOCUS;
 		OSSendMessage(control, &message);
 		control->window->lastFocus = nullptr;
+	}
+}
+
+void OSSetObjectNotificationCallback(OSObject _object, OSCallback callback) {
+	APIObject *object = (APIObject *) _object;
+
+	if (object->type == API_OBJECT_CONTROL) {
+		Control *control = (Control *) _object;
+		control->notificationCallback = callback;
+	} else if (object->type == API_OBJECT_GRID) {
+		Grid *grid = (Grid *) _object;
+		grid->notificationCallback = callback;
+	} else {
+		OSCrashProcess(OS_FATAL_ERROR_BAD_OBJECT_TYPE);
 	}
 }
 
