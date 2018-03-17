@@ -30,8 +30,8 @@ void Build(bool enableOptimisations) {
 	system("ctags -R .");
 
 	printf("Building utilities...\n");
-	system("g++ util/esfs.cpp -o esfs -g");
-	system("g++ util/manifest_parser.cpp -o manifest_parser -g");
+	system("g++ util/esfs.cpp -o esfs -g -Wall");
+	system("g++ util/manifest_parser.cpp -o manifest_parser -g -Wall");
 	system("chmod +x esfs");
 	system("chmod +x manifest_parser");
 

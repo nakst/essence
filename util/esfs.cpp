@@ -293,7 +293,7 @@ void WriteBlock(uint64_t block, uint64_t count, void *buffer) {
 	fseek(drive, block * blockSize + partitionOffset * 512, SEEK_SET);
 
 	if (fwrite(buffer, 1, blockSize * count, drive) != blockSize * count) {
-		printf("Error: Could not write to blocks %d->%d of drive.\n", block, block + count);
+		printf("Error: Could not write to blocks %d->%d of drive.\n", (int) block, (int) (block + count));
 		exit(1);
 	}
 
@@ -325,12 +325,12 @@ void MountVolume() {
 	}
 
 	if (superblock->requiredReadVersion > ESFS_DRIVER_VERSION) {
-		printf("Error: Volume requires later driver version (%d) to read.\n", superblock->requiredReadVersion);
+		printf("Error: Volume requires later driver version (%d) to read.\n", (int) superblock->requiredReadVersion);
 		exit(1);
 	}
 
 	if (superblock->requiredWriteVersion > ESFS_DRIVER_VERSION) {
-		printf("Error: Volume requires later driver version (%d) to write.\n", superblock->requiredWriteVersion);
+		printf("Error: Volume requires later driver version (%d) to write.\n", (int) superblock->requiredWriteVersion);
 		exit(1);
 	}
 
@@ -439,7 +439,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 
 	// Make sure that the core data is contained in the first group.
 	if (initialBlockUsage >= superblock->blocksPerGroup) {
-		printf("Error: Could not fit core data (%d blocks) in first group.\n", initialBlockUsage);
+		printf("Error: Could not fit core data (%d blocks) in first group.\n", (int) initialBlockUsage);
 		exit(1);
 	}
 
@@ -833,6 +833,7 @@ void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearN
 	}
 
 	uint64_t increaseSize = newSize - oldSize;
+	(void) increaseSize;
 	uint64_t increaseBlocks = newBlocks - oldBlocks;
 
 	EsFSGlobalExtent *newExtentList = nullptr;
@@ -888,7 +889,7 @@ void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearN
 	if (newExtentList) {
 		uint64_t blocksNeeded = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent));
 
-		for (int i = firstModifiedExtentListBlock; i < blocksNeeded; i++) {
+		for (unsigned i = firstModifiedExtentListBlock; i < blocksNeeded; i++) {
 			if (!data->indirect2[i]) {
 				data->indirect2[i] = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, 1).offset;
 			}
@@ -933,6 +934,7 @@ bool SearchDirectory(EsFSFileEntry *fileEntry, EsFSFileEntry *output, char *sear
 	AccessStream(data, blockIndex, blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 
 	size_t fileEntryLength;
+	(void) fileEntryLength;
 	EsFSFileEntry *returnValue = nullptr;
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
@@ -1184,7 +1186,7 @@ void ReadFile(char *path, FILE *output) {
 		uint8_t *buffer = (uint8_t *) malloc(data->size);
 		AccessStream(data, 0, data->size, buffer, false);
 
-		printf("data->size = %d\n", data->size);
+		printf("data->size = %d\n", (int) data->size);
 
 #if 0
 		for (int i = 0; i < (data->size / 16) + 1; i++) {
@@ -1237,7 +1239,7 @@ void WriteFile(char *path, void *bufferData, uint64_t dataLength) {
 
 	if (data) {
 		if (data->size != dataLength) {
-			printf("Error: File was not the correct length (%d vs %d).\n", data->size, dataLength);
+			printf("Error: File was not the correct length (%d vs %d).\n", (int) data->size, (int) dataLength);
 			exit(1);
 		}
 
@@ -1254,7 +1256,7 @@ void WriteFile(char *path, void *bufferData, uint64_t dataLength) {
 
 void AvailableExtents(uint64_t group) {
 	if (group >= superblock->groupCount) {
-		printf("Error: Drive only has %d groups.\n", superblock->groupCount);
+		printf("Error: Drive only has %d groups.\n", (int) superblock->groupCount);
 		exit(1);
 	}
 
@@ -1262,17 +1264,17 @@ void AvailableExtents(uint64_t group) {
 	
 	if (!descriptor->extentTable) {
 		printf("(group not yet initialised)\n");
-		printf("local extent: offset 0 (global %d), count %d\n", group * superblock->blocksPerGroup, GetBlocksInGroup(group));
+		printf("local extent: offset 0 (global %d), count %d\n", (int) (group * superblock->blocksPerGroup), (int) GetBlocksInGroup(group));
 		return;
 	}
 
 	ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
 	EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
 
-	printf("table: %d, count: %d, used: %d\n", descriptor->extentTable, descriptor->extentCount, descriptor->blocksUsed);
+	printf("table: %d, count: %d, used: %d\n", (int) descriptor->extentTable, (int) descriptor->extentCount, (int) descriptor->blocksUsed);
 
 	for (uint16_t i = 0; i < descriptor->extentCount; i++) {
-		printf("local extent: offset %d (global %d), count = %d\n", extentTable[i].offset, extentTable[i].offset + group * superblock->blocksPerGroup, extentTable[i].count);
+		printf("local extent: offset %d (global %d), count = %d\n", (int) extentTable[i].offset, (int) (extentTable[i].offset + group * superblock->blocksPerGroup), (int) extentTable[i].count);
 	}
 }
 
@@ -1327,7 +1329,7 @@ void Tree(char *path, int indent) {
 			switch (attribute->type) {
 				case ESFS_ATTRIBUTE_DIRECTORY_NAME: {
 					EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) attribute;
-					printf("    %.*s ", name->nameLength, name + 1);
+					printf("    %.*s ", (int) name->nameLength, (char *) (name + 1));
 					for (int i = 0; i < 28 - name->nameLength - indent; i++) printf(" ");
 					fullPath = (char *) malloc(name->nameLength + strlen(path) + 2);
 					fullPath[name->nameLength + strlen(path)] = 0;
@@ -1364,7 +1366,7 @@ void Tree(char *path, int indent) {
 
 							switch (attribute->type) {
 								case ESFS_ATTRIBUTE_FILE_DATA: {
-									printf("%d bytes", ((EsFSAttributeFileData *) attribute)->size);
+									printf("%d bytes", (int) ((EsFSAttributeFileData *) attribute)->size);
 								} break;
 							}
 
@@ -1394,7 +1396,7 @@ void Tree(char *path, int indent) {
 
 	for (int i = 0; i < indent; i++) printf(" ");
 	if (directory->itemsInDirectory) {
-		printf("    (%d item%s)\n", directory->itemsInDirectory, directory->itemsInDirectory > 1 ? "s" : "");
+		printf("    (%d item%s)\n", (int) directory->itemsInDirectory, directory->itemsInDirectory > 1 ? "s" : "");
 	} else {
 		printf("    (empty directory)\n");
 	}
@@ -1487,17 +1489,17 @@ int main(int argc, char **argv) {
 		uint64_t driveSize = ParseSizeString(argv[0]);
 
 		if (driveSize < ESFS_DRIVE_MINIMUM_SIZE) {
-			printf("Error: Cannot create a drive of %d bytes (too small).\n", driveSize);
+			printf("Error: Cannot create a drive of %d bytes (too small).\n", (int) driveSize);
 			exit(1);
 		}
 
 		if (truncate(driveFilename, driveSize)) {
-			printf("Error: Could not change the file's size to %d bytes.\n", driveSize);
+			printf("Error: Could not change the file's size to %d bytes.\n", (int) driveSize);
 			exit(1);
 		}
 
 		if (strlen(argv[1]) > ESFS_MAXIMUM_VOLUME_NAME_LENGTH) {
-			printf("Error: Volume name '%s' is too long; must be <= %d bytes.\n", argv[1], ESFS_MAXIMUM_VOLUME_NAME_LENGTH);
+			printf("Error: Volume name '%s' is too long; must be <= %d bytes.\n", argv[1], (int) ESFS_MAXIMUM_VOLUME_NAME_LENGTH);
 			exit(1);
 		}
 

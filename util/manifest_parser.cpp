@@ -17,7 +17,7 @@
 
 struct Token {
 	char *text;
-	size_t bytes;
+	int bytes;
 
 	enum {
 		LEFT_BRACKET, RIGHT_BRACKET, EQUALS, SEMICOLON,
@@ -34,7 +34,7 @@ struct Token {
 typedef void (*ParseCallback)(Token attribute, Token section, Token variable, Token value, int event);
 
 static void RemoveEscapeSequencesFromString(Token *token) {
-	for (uintptr_t i = 0; i < token->bytes; i++) {
+	for (uintptr_t i = 0; i < (uintptr_t) token->bytes; i++) {
 		if (token->text[i] == '\\') {
 			if (token->text[i + 1] == '$') {
 				token->text[i] = 0x11;
@@ -140,13 +140,15 @@ static bool NextToken(char *&buffer, Token *token, bool expect = false) {
 	return true;
 }
 
+#if 0
 static bool CompareTokens(Token a, Token b) {
 	if (a.bytes != b.bytes) return false;
 	return 0 == memcmp(a.text, b.text, a.bytes);
 }
+#endif
 
 static bool CompareTokens(Token a, const char *string) {
-	if (a.bytes != strlen(string)) return false;
+	if (a.bytes != (int) strlen(string)) return false;
 	return 0 == memcmp(a.text, string, a.bytes);
 }
 
@@ -255,7 +257,7 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 	if (CompareTokens(attribute, "command")) {
 		fprintf(output, "extern OSCommand _%.*s;\n", section.bytes, section.text);
 		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::COMMAND\n", section.bytes, section.text);
-		fprintf(output, "#define %.*s &_%.*s\n", section.bytes, section.text);
+		fprintf(output, "#define %.*s &_%.*s\n", section.bytes, section.text, section.bytes, section.text);
 	} else if (CompareTokens(attribute, "window")) {
 		fprintf(output, "extern OSWindowSpecification *%.*s;\n", section.bytes, section.text);
 	} else if (CompareTokens(attribute, "menu")) {
@@ -305,7 +307,7 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "OSCallbackResponse %.*s(OSObject object, OSMessage *message);\n\n", value.bytes, value.text);
 			}
 
-			fprintf(output, "OSCommand _%.*s = {\n\t.identifier = %d,\n", section.bytes, section.text, commandCount - 1);
+			fprintf(output, "OSCommand _%.*s = {\n\t.identifier = %d,\n", section.bytes, section.text, (int) (commandCount - 1));
 
 			if (FindProperty("label", &value)) {
 				fprintf(output, "\t.label = (char *) %.*s,\n", value.bytes, value.text);
@@ -362,7 +364,7 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "nullptr },\n");
 			}
 
-			fprintf(output, "};\n\n", section.bytes, section.text);
+			fprintf(output, "};\n\n");
 		} else if (CompareTokens(attribute, "window")) {
 			fprintf(output, "OSWindowSpecification _%.*s = {\n", section.bytes, section.text);
 
