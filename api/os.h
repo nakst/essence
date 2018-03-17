@@ -659,7 +659,8 @@ typedef struct OSCommand {
 
 	uint8_t checkable : 1, 
 		defaultCheck : 1, 
-		defaultDisabled : 1;
+		defaultDisabled : 1,
+		dangerous : 1;
 
 	OSCallback callback;
 } OSCommand;
@@ -852,6 +853,7 @@ OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
+OS_EXTERN_C OSObject OSCreateScrollbar();
 #define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
 
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);

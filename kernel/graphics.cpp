@@ -620,7 +620,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 		bool inBorderY = true;
 		if (y >= bottomBorderStart) sy = y - bottomBorderStart + borderDimensions.bottom;
 		else if (sy > borderDimensions.top) {
-			sy = borderDimensions.top + 1;
+			sy = borderDimensions.top;
 			inBorderY = false;
 		}
 
@@ -636,7 +636,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 			intptr_t sx = x - destinationRegion.left + sourceRegion.left;
 			if (x >= rightBorderStart) sx = x - rightBorderStart + borderDimensions.right;
 			else if (sx > borderDimensions.left) {
-				sx = borderDimensions.left + 1;
+				sx = borderDimensions.left;
 
 				if (mode == OS_DRAW_MODE_TRANSPARENT && !inBorderY) {
 					x = rightBorderStart;

@@ -417,7 +417,9 @@ extern "C" void ProgramEntry() {
 	
 	OSWindowSpecification ws = {};
 	ws.width = 600;
-	ws.height = 200;
+	ws.height = 400;
+	ws.minimumWidth = 450;
+	ws.minimumHeight = 300;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
@@ -428,7 +430,7 @@ extern "C" void ProgramEntry() {
 	OSSetRootGrid(window, content);
 	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK), 0);
 
-	OSAddControl(content, 1, 0, OSCreateLine(OS_LINE_ORIENTATION_VERTICAL), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+	OSAddControl(content, 1, 0, OSCreateLine(OS_LINE_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND);
 
 	OSAddControl(content, 0, 2, b = OSCreateTextbox(0), 0);
 
@@ -437,7 +439,8 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	//OSAddControl(content, 0, 3, OSCreateIndeterminateProgressBar(), 0);
+	OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
+	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything), 0);
 
 	{
 		OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_DRAW_BOX);
@@ -445,6 +448,8 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 0, OSCreateTextbox(0), OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
+
+	OSAddControl(content, 0, 4, OSCreateScrollbar(), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);

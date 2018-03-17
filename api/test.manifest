@@ -27,6 +27,10 @@ callback = ToggleEnabled;
 isDisabled = false;
 defaultCheck = true;
 
+[command commandDeleteEverything]
+label = "Delete Everything";
+dangerous = true;
+
 [build]
 output = test;
 source = "api/test.cpp";

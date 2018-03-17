@@ -145,15 +145,15 @@ extern "C" void ProgramEntry() {
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(32, 64, 128));
+	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(83, 144, 166));
 #endif
 
 	OSRedrawAll();
 
 	{
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/os/calculator";
-			// const char *path = "/os/test";
+			// const char *path = "/os/calculator";
+			const char *path = "/os/test";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

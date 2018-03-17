@@ -342,6 +342,12 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.defaultDisabled = %s,\n", "false");
 			}
 
+			if (FindProperty("dangerous", &value)) {
+				fprintf(output, "\t.dangerous = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.dangerous = %s,\n", "false");
+			}
+
 			fprintf(output, "\t.callback = { ");
 
 			if (FindProperty("callback", &value)) {

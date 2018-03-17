@@ -1,6 +1,6 @@
 #include "../bin/os/standard.manifest.h"
 
-#define DIMENSION_PUSH (-1)
+#define DIMENSION_PUSH (65535)
 
 #define CARET_BLINK_HZ (1)
 #define CARET_BLINK_PAUSE (2)
@@ -18,7 +18,7 @@
 #define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
 
 // TODO Calculator textbox - selection extends out of top of textbox
-// TODO Minor menu[bar] border adjustments.
+// TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
 
 struct UIImage {
@@ -31,27 +31,27 @@ struct UIImage {
 #endif
 
 static UIImage activeWindowBorder11	= {{1, 1 + 6, 144, 144 + 6}, 	{1, 1, 144, 144}};
-static UIImage activeWindowBorder12	= {{8, 8 + 1, 144, 144 + 6}, 	{7, 8, 144, 144}};
+static UIImage activeWindowBorder12	= {{8, 8 + 1, 144, 144 + 6}, 	{8, 9, 144, 144}};
 static UIImage activeWindowBorder13	= {{10, 10 + 6, 144, 144 + 6}, 	{10, 10, 144, 144}};
 static UIImage activeWindowBorder21	= {{1, 1 + 6, 151, 151 + 24}, 	{1, 1, 151, 151}};
-static UIImage activeWindowBorder22	= {{8, 8 + 1, 151, 151 + 24}, 	{7, 8, 151, 151}};
+static UIImage activeWindowBorder22	= {{8, 8 + 1, 151, 151 + 24}, 	{8, 9, 151, 151}};
 static UIImage activeWindowBorder23	= {{10, 10 + 6, 151, 151 + 24},	{10, 10, 151, 151}};
-static UIImage activeWindowBorder31	= {{1, 1 + 6, 176, 176 + 1}, 	{1, 1, 175, 176}};
-static UIImage activeWindowBorder33	= {{10, 10 + 6, 176, 176 + 1}, 	{10, 10, 175, 176}};
+static UIImage activeWindowBorder31	= {{1, 1 + 6, 176, 176 + 1}, 	{1, 1, 176, 177}};
+static UIImage activeWindowBorder33	= {{10, 10 + 6, 176, 176 + 1}, 	{10, 10, 176, 177}};
 static UIImage activeWindowBorder41	= {{1, 1 + 6, 178, 178 + 6}, 	{1, 1, 178, 178}};
-static UIImage activeWindowBorder42	= {{8, 8 + 1, 178, 178 + 6}, 	{7, 8, 178, 178}};
+static UIImage activeWindowBorder42	= {{8, 8 + 1, 178, 178 + 6}, 	{8, 9, 178, 178}};
 static UIImage activeWindowBorder43	= {{10, 10 + 6, 178, 178 + 6}, 	{10, 10, 178, 178}};
 
 static UIImage inactiveWindowBorder11	= {{16 + 1, 16 + 1 + 6, 144, 144 + 6}, 	{16 + 1, 16 + 1, 144, 144}};
-static UIImage inactiveWindowBorder12	= {{16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 7, 16 + 8, 144, 144}};
+static UIImage inactiveWindowBorder12	= {{16 + 8, 16 + 8 + 1, 144, 144 + 6}, 	{16 + 8, 16 + 9, 144, 144}};
 static UIImage inactiveWindowBorder13	= {{16 + 10, 16 + 10 + 6, 144, 144 + 6},{16 + 10, 16 + 10, 144, 144}};
 static UIImage inactiveWindowBorder21	= {{16 + 1, 16 + 1 + 6, 151, 151 + 24}, {16 + 1, 16 + 1, 151, 151}};
-static UIImage inactiveWindowBorder22	= {{16 + 8, 16 + 8 + 1, 151, 151 + 24}, {16 + 7, 16 + 8, 151, 151}};
+static UIImage inactiveWindowBorder22	= {{16 + 8, 16 + 8 + 1, 151, 151 + 24}, {16 + 8, 16 + 9, 151, 151}};
 static UIImage inactiveWindowBorder23	= {{16 + 10, 16 + 10 + 6, 151, 151 + 24},{16 + 10, 16 + 10, 151, 151}};
-static UIImage inactiveWindowBorder31	= {{16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 175, 176}};
-static UIImage inactiveWindowBorder33	= {{16 + 10, 16 + 10 + 6, 176, 176 + 1}, {16 + 10, 16 + 10, 175, 176}};
+static UIImage inactiveWindowBorder31	= {{16 + 1, 16 + 1 + 6, 176, 176 + 1}, 	{16 + 1, 16 + 1, 176, 177}};
+static UIImage inactiveWindowBorder33	= {{16 + 10, 16 + 10 + 6, 176, 176 + 1}, {16 + 10, 16 + 10, 176, 177}};
 static UIImage inactiveWindowBorder41	= {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{16 + 1, 16 + 1, 178, 178}};
-static UIImage inactiveWindowBorder42	= {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 7, 16 + 8, 178, 178}};
+static UIImage inactiveWindowBorder42	= {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 8, 16 + 9, 178, 178}};
 static UIImage inactiveWindowBorder43	= {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, {16 + 10, 16 + 10, 178, 178}};
 
 static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
@@ -63,6 +63,8 @@ static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 
 static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
 static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
 static UIImage buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
+static UIImage buttonDangerousDragged	= {{24, 32, 105, 126}, {24 + 3, 24 + 5, 105 + 10, 105 + 11}};
+static UIImage buttonDangerousHover	= {{-18 + 51, -18 + 59, 88, 109}, {-18 + 54, -18 + 56, 98, 99}};
 #else
 static UIImage buttonNormal		= {{86 + 76, 86 + 76 + 86, 194, 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 194 + 14, 194 + 15}};
 static UIImage buttonDragged		= {{76, 76 + 86, 29 + 194, 29 + 194 + 29}, {76 + 43, 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
@@ -91,10 +93,52 @@ static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 124}};
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
 
+#if 0
+static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 121, 62, 62}};
+static UIImage scrollbarTrackHorizontalDisabled = {{119, 120, 62, 79}, {119, 119, 62, 62}};
+#endif
+static UIImage scrollbarTrackVerticalEnabled    = {{174, 191, 82, 83}, {174, 174, 82, 82}};
+#if 0
+static UIImage scrollbarTrackVerticalDisabled   = {{174, 191, 80, 81}, {174, 174, 80, 80}};
+static UIImage scrollbarButtonHorizontalNormal  = {{159, 166, 62, 79}, {162, 162, 62, 78}};
+static UIImage scrollbarButtonHorizontalHover   = {{167, 174, 62, 79}, {170, 170, 62, 78}};
+static UIImage scrollbarButtonHorizontalPressed = {{175, 182, 62, 79}, {178, 178, 62, 78}};
+static UIImage scrollbarButtonVerticalNormal    = {{141, 158, 62, 69}, {141, 157, 65, 65}};
+static UIImage scrollbarButtonVerticalHover     = {{141, 158, 70, 77}, {141, 157, 73, 73}};
+static UIImage scrollbarButtonVerticalPressed   = {{141, 158, 78, 85}, {141, 157, 81, 81}};
+static UIImage scrollbarButtonDisabled          = {{183, 190, 62, 79}, {186, 186, 62, 78}};
+static UIImage scrollbarResizePad               = {{123, 140, 62, 79}, {123, 123, 62, 62}};
+static UIImage scrollbarNotchesHorizontal       = {{159, 164, 80, 88}, {159, 159, 80, 80}};
+static UIImage scrollbarNotchesVertical         = {{165, 173, 80, 85}, {165, 165, 80, 80}};
+#endif
+
 static UIImage lineHorizontal		= {{20, 32, 92, 96}, {21, 22, 92, 92}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
 static UIImage lineVertical		= {{34, 38, 110, 122}, {34, 34, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
+
+#if 0
+static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
+	&scrollbarButtonHorizontalNormal,
+	&scrollbarButtonDisabled,
+	&scrollbarButtonHorizontalHover,
+	&scrollbarButtonHorizontalPressed,
+};
+
+static UIImage *scrollbarButtonVerticalBackgrounds[] = {
+	&scrollbarButtonVerticalNormal,
+	&scrollbarButtonDisabled,
+	&scrollbarButtonVerticalHover,
+	&scrollbarButtonVerticalPressed,
+};
+
+static UIImage *scrollbarResizePadBackgrounds[] = {
+	&scrollbarResizePad,
+	&scrollbarResizePad,
+	&scrollbarResizePad,
+	&scrollbarResizePad,
+};
+#endif
 
 static UIImage *menuItemBackgrounds[] = {
 	nullptr,
@@ -129,6 +173,13 @@ static UIImage *buttonBackgrounds[] = {
 	&buttonDisabled,
 	&buttonHover,
 	&buttonDragged,
+};
+
+static UIImage *buttonDangerousBackgrounds[] = {
+	&buttonNormal,
+	&buttonDisabled,
+	&buttonDangerousHover,
+	&buttonDangerousDragged,
 };
 
 static UIImage *progressBarBackgrounds[] = {
@@ -171,7 +222,7 @@ static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint1
 #define DESCENDENT_RELAYOUT (2)
 
 struct Control : GUIObject {
-	// Current size: ~300 bytes.
+	// Current size: ~260 bytes.
 	// Is this too big?
 	
 	struct Window *window;
@@ -191,7 +242,6 @@ struct Control : GUIObject {
 	OSRectangle textBounds;
 	uint32_t textColor;
 	uint8_t textSize, textAlign;
-	uint32_t backgroundColor;
 
 	uint32_t textShadow : 1, 
 		textBold : 1,
@@ -210,11 +260,10 @@ struct Control : GUIObject {
 		checkboxIcons : 1,
 		cursor : 5;
 
-	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
-
 	LinkedItem<Control> timerControlItem;
-	uint16_t timerHz, timerStep;
 
+	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
+	uint8_t timerHz, timerStep;
 	uint8_t animationStep, finalAnimationStep;
 	uint8_t from1, from2, from3, from4;
 	uint8_t current1, current2, current3, current4;
@@ -249,6 +298,9 @@ struct Grid : GUIObject {
 	unsigned flags;
 	int borderSize, gapSize;
 	UIImage *background;
+};
+
+struct Scrollbar : Grid {
 };
 
 struct CommandWindow {
@@ -457,11 +509,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					m.paintBackground.top = control->bounds.top;
 					m.paintBackground.bottom = control->bounds.bottom;
 					OSSendMessage(control->parent, &m);
-				}
-
-				if (control->backgroundColor) {
-					OSFillRectangle(message->paint.surface, control->bounds, 
-							OSColor(control->backgroundColor));
 				}
 
 				bool menuSource = false;
@@ -766,7 +813,6 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 	control->preferredWidth = images[0]->region.right - images[0]->region.left;
 	control->preferredHeight = images[0]->region.bottom - images[0]->region.top;
 	control->direction = direction;
-	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	control->noAnimations = true;
 	control->noDisabledTextColorChange = true;
 	control->keepCustomCursorWhenDisabled = true;
@@ -1264,6 +1310,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	control->textAlign = menubar ? OS_FLAGS_DEFAULT : (OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT);
 	control->backgrounds = menuItemBackgrounds;
 	control->ignoreActivationClicks = menubar;
+	control->noAnimations = true;
 
 	control->item = item;
 	control->menubar = menubar;
@@ -1316,7 +1363,7 @@ OSObject OSCreateButton(OSCommand *command) {
 		control->minimumHeight = control->icons[0]->region.bottom - control->icons[0]->region.top;
 		control->checkboxIcons = true;
 	} else {
-		control->backgrounds = buttonBackgrounds;
+		control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
 		control->minimumWidth = 80;
 		control->minimumHeight = 21;
 	}
@@ -1343,7 +1390,7 @@ OSObject OSCreateLine(bool orientation) {
 OSObject OSCreateLabel(char *text, size_t textBytes) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
-	control->backgroundColor = STANDARD_BACKGROUND_COLOR;
+	control->drawParentBackground = true;
 
 	OSSetText(control, text, textBytes);
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
@@ -1682,6 +1729,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				OSMessage m = *message;
 				m.paint.force = message->paint.force || grid->repaint;
+				grid->repaint = false;
 
 				if (m.paint.force) {
 					if (grid->background) {
@@ -1697,8 +1745,6 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 						OSSendMessage(grid->objects[i], &m);
 					}
 				}
-
-				grid->repaint = false;
 			}
 		} break;
 
@@ -1786,6 +1832,60 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
+
+	return grid;
+}
+
+static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *message) {
+	Scrollbar *grid = (Scrollbar *) object;
+	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+
+	switch (message->type) {
+		case OS_MESSAGE_MEASURE: {
+			message->measure.width = grid->preferredWidth;
+			message->measure.height = grid->preferredHeight;
+			result = OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_MESSAGE_LAYOUT: {
+			if (grid->relayout || message->layout.force) {
+				grid->relayout = false;
+
+				grid->bounds = OS_MAKE_RECTANGLE(
+						message->layout.left, message->layout.right,
+						message->layout.top, message->layout.bottom);
+				StandardCellLayout(grid);
+
+				grid->repaint = true;
+				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+
+				result = OS_CALLBACK_HANDLED;
+			}
+		} break;
+
+		default: {} break;
+	}
+
+	if (result == OS_CALLBACK_NOT_HANDLED) {
+		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr), message);
+	}
+
+	return result;
+}
+
+OSObject OSCreateScrollbar() {
+	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Scrollbar) + sizeof(OSObject) * 3, true);
+
+	Grid *grid = (Grid *) memory;
+	grid->type = API_OBJECT_GRID;
+	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessScrollbarMessage, nullptr));
+
+	grid->background = &scrollbarTrackVerticalEnabled;
+	grid->columns = 1;
+	grid->rows = 3;
+	grid->objects = (OSObject *) (memory + sizeof(Scrollbar));
+	grid->preferredWidth = 17;
+	grid->preferredHeight = DIMENSION_PUSH;
 
 	return grid;
 }
