@@ -124,7 +124,7 @@ void BuildCrossCompiler() {
 		printf("Could not detect GCC cross compiler in PATH.\n");
 
 		printf("\nAutomatically building and installing cross compiler...\n");
-		printf("Make sure you are connected to the internet, and have the latest versions of the following development tools:\n");
+		printf("Make sure you are connected to the internet, and have the latest versions of the following programs:\n");
 		printf("\t-GCC/G++\n");
 		printf("\t-GNU Make\n");
 		printf("\t-GNU Bison\n");
@@ -133,12 +133,13 @@ void BuildCrossCompiler() {
 		printf("\t-GNU MPFR\n");
 		printf("\t-GNU MPC\n");
 		printf("\t-Texinfo\n");
+		printf("\t-curl\n");
 
 		printf("\nMake sure you have at least 3GB of drive space available.\n");
 		printf("The final installation will take up ~1GB.\n");
 		printf("Approximately 100MB of source files will be downloaded.\n");
 
-		printf("Enter cross compiler installation folder: (this will be automatically added to your PATH in ~/.bashrc)\n");
+		printf("Enter cross compiler installation folder [THIS MUST BE AN ABSOLUTE PATH]: (this will be automatically added to your PATH in ~/.bashrc)\n");
 		char installationFolder[16384];
 		scanf("%s", installationFolder);
 		if (installationFolder[strlen(installationFolder) - 1] == '/') {
@@ -149,18 +150,27 @@ void BuildCrossCompiler() {
 		scanf("%s", yes);
 		if (strcmp(yes, "yes")) goto fail;
 
-		printf("Downloading Binutils source...\n");
-		if (system("curl ftp://ftp.gnu.org/gnu/binutils/binutils-2.30.tar.xz > binutils.tar.xz")) goto fail;
-		printf("Downloading GCC source...\n");
-		if (system("curl ftp://ftp.gnu.org/gnu/gcc/gcc-7.3.0/gcc-7.3.0.tar.xz > gcc.tar.xz")) goto fail;
-		printf("Extracting Binutils source...\n");
-		if (system("xz -d binutils.tar.xz")) goto fail;
-		if (system("tar -xf binutils.tar")) goto fail;
-		if (system("rm binutils.tar")) goto fail;
-		printf("Extracting GCC source...\n");
-		if (system("xz -d gcc.tar.xz")) goto fail;
-		if (system("tar -xf gcc.tar")) goto fail;
-		if (system("rm gcc.tar")) goto fail;
+		DIR *test = opendir("binutils-2.30");
+		if (test) closedir(test);
+		else {
+			printf("Downloading Binutils source...\n");
+			if (system("curl ftp://ftp.gnu.org/gnu/binutils/binutils-2.30.tar.xz > binutils.tar.xz")) goto fail;
+			printf("Extracting Binutils source...\n");
+			if (system("xz -d binutils.tar.xz")) goto fail;
+			if (system("tar -xf binutils.tar")) goto fail;
+			if (system("rm binutils.tar")) goto fail;
+		}
+
+		test = opendir("gcc-7.3.0");
+		if (test) closedir(test);
+		else {
+			printf("Downloading GCC source...\n");
+			if (system("curl ftp://ftp.gnu.org/gnu/gcc/gcc-7.3.0/gcc-7.3.0.tar.xz > gcc.tar.xz")) goto fail;
+			printf("Extracting GCC source...\n");
+			if (system("xz -d gcc.tar.xz")) goto fail;
+			if (system("tar -xf gcc.tar")) goto fail;
+			if (system("rm gcc.tar")) goto fail;
+		}
 
 		printf("Preparing build...\n");
 		char path[65536];
@@ -240,9 +250,9 @@ void BuildCrossCompiler() {
 		sprintf(path, "%s/.bashrc", getenv("HOME"));
 		file = fopen(path, "a");
 		if (!file) {
-			printf("Couldn't update path in ~/.bashrc :(\n");
+			printf("Couldn't update path in ~/.bashrc :(\nYou'll have to do this manually.\n");
 		} else {
-			fprintf(file, "\nexport PATH=\"%s/bin:$PATH\"", installationFolder);
+			fprintf(file, "\nexport PATH=\"%s/bin:$PATH\"\n", installationFolder);
 			fclose(file);
 		}
 

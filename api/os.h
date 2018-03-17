@@ -692,8 +692,8 @@ typedef struct OSWindowSpecification {
 #define OS_CREATE_WINDOW_NORMAL (4)
 #define OS_CREATE_WINDOW_WITH_MENUBAR (8)
 
-#define OS_LINE_ORIENTATION_HORIZONTAL (false)
-#define OS_LINE_ORIENTATION_VERTICAL   (true)
+#define OS_ORIENTATION_HORIZONTAL (false)
+#define OS_ORIENTATION_VERTICAL   (true)
 
 #define OS_CELL_H_PUSH    (1)
 #define OS_CELL_H_EXPAND  (2)
@@ -861,11 +861,14 @@ OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
-OS_EXTERN_C OSObject OSCreateScrollbar();
+OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
 #define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
 
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
+
 OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
+OS_EXTERN_C void OSSetScrollbarPosition(OSObject _scrollbar, int position, bool sendValueChangedNotification);
+OS_EXTERN_C int OSGetScrollbarPosition(OSObject _scrollbar);
 
 #ifndef KERNEL
 OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);

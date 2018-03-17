@@ -20,11 +20,11 @@ int vp = 100;
 
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
 	(void) object;
-	OSPrint("Scrollbar at %d/400px (viewport is %dpx).\n", message->valueChanged.newValue, vp);
 
-	if (message->valueChanged.newValue == 200) {
-		vp = 800;
-		OSSetScrollbarMeasurements(object, 400, 800);
+	if (message->valueChanged.newValue == 300) {
+		OSSetScrollbarPosition(object, 200, false);
+		// vp = 800;
+		// OSSetScrollbarMeasurements(object, 400, 800);
 	}
 
 	return OS_CALLBACK_HANDLED;
@@ -444,7 +444,7 @@ extern "C" void ProgramEntry() {
 	OSSetRootGrid(window, content);
 	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK), 0);
 
-	OSAddControl(content, 1, 0, OSCreateLine(OS_LINE_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND);
+	OSAddControl(content, 1, 0, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND);
 
 	OSAddControl(content, 0, 2, b = OSCreateTextbox(0), 0);
 
@@ -463,8 +463,13 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
 
-	OSObject scrollbar = OSCreateScrollbar();
-	OSAddControl(content, 0, 4, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+#if 1
+	OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
+	OSAddControl(content, 0, 4, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_CENTER);
+#else
+	OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
+	OSAddControl(content, 0, 4, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND | OS_CELL_H_CENTER);
+#endif
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);
