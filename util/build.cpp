@@ -98,7 +98,7 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 		} break;
 
 		case EMULATOR_VIRTUALBOX: {
-			if (!access("vbox.vdi", F_OK) == -1) {
+			if (access("vbox.vdi", F_OK) == -1) {
 				printf("Error: vbox.vdi does not exist.\n");
 				return;
 			}
@@ -340,6 +340,9 @@ int main(int argc, char **argv) {
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "test-without-smp-or-build") || 0 == strcmp(l, "t3")) {
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
+		} else if (0 == strcmp(l, "test-opt") || 0 == strcmp(l, "t4")) {
+			Build(true);
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "low-memory")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 32, 4, LOG_NORMAL, false);

@@ -6,7 +6,7 @@
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
 
-OSObject progressBar, window;
+OSObject progressBar, window, scrollbar;
 
 int x = 5;
 
@@ -22,7 +22,7 @@ OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
 	(void) object;
 
 	if (message->valueChanged.newValue == 300) {
-		OSSetScrollbarPosition(object, 200, false);
+		// OSSetScrollbarPosition(object, 200, false);
 		// vp = 800;
 		// OSSetScrollbarMeasurements(object, 400, 800);
 	}
@@ -130,6 +130,7 @@ OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
 	(void) object;
 	OSPrint("context = %x\n", message->context);
 	OSEnableControl(message->context, message->command.checked);
+	OSSetScrollbarMeasurements(scrollbar, 10, 20);
 	return OS_CALLBACK_HANDLED;
 }
 
@@ -463,11 +464,11 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
 
-#if 1
-	OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
+#if 0
+	scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
 	OSAddControl(content, 0, 4, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_CENTER);
 #else
-	OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
+	scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
 	OSAddControl(content, 0, 4, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND | OS_CELL_H_CENTER);
 #endif
 
