@@ -69,6 +69,12 @@ static void OSFontRendererInitialise() {
 		}
 
 		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFontRegular, nodeRegular.fileSize, 0, &fontRegular);
+
+		if (error) {
+			OSPrint("Could not load the fonts into freetype.\n");
+			return;
+		}
+
 		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFontBold, nodeBold.fileSize, 0, &fontBold);
 
 		if (error) {
