@@ -579,7 +579,8 @@ typedef struct OSMessage {
 		} layout;
 
 		struct {
-			int width, height;
+			int preferredWidth, preferredHeight;
+			int minimumWidth, minimumHeight;
 		} measure;
 
 		struct {

@@ -24,6 +24,8 @@
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections, etc.
+// TODO Minimum scrollbar grip size.
+// TODO Clipping.
 
 struct UIImage {
 	OSRectangle region;
@@ -116,20 +118,39 @@ static UIImage scrollbarResizePad               = {{123, 140, 62, 79}, {123, 123
 static UIImage scrollbarNotchesHorizontal       = {{159, 164, 80, 88}, {159, 159, 80, 80}};
 static UIImage scrollbarNotchesVertical         = {{165, 173, 80, 85}, {165, 165, 80, 80}};
 
+#if 0
 static UIImage smallArrowUp		= {{86, 93, 88, 93}, {86, 86, 88, 88}};
 static UIImage smallArrowDown		= {{78, 85, 88, 93}, {78, 78, 88, 88}};
 static UIImage smallArrowLeft		= {{86, 91, 94, 101}, {86, 86, 94, 94}};
 static UIImage smallArrowRight		= {{78, 83, 94, 101}, {78, 78, 94, 94}};
+#endif
+
+static UIImage smallArrowUpNormal      = {{206, 217, 21, 30}, {206, 206, 21, 21}};
+static UIImage smallArrowUpHover       = {{218, 229, 21, 30}, {218, 218, 21, 21}};
+static UIImage smallArrowUpPressed     = {{230, 241, 21, 30}, {230, 230, 21, 21}};
+static UIImage smallArrowUpDisabled    = {{242, 253, 21, 30}, {242, 242, 21, 21}};
+static UIImage smallArrowDownNormal    = {{206, 217, 31, 40}, {206, 206, 31, 31}};
+static UIImage smallArrowDownHover     = {{218, 229, 31, 40}, {218, 218, 31, 31}};
+static UIImage smallArrowDownPressed   = {{230, 241, 31, 40}, {230, 230, 31, 31}};
+static UIImage smallArrowDownDisabled  = {{242, 253, 31, 40}, {242, 242, 31, 31}};
+static UIImage smallArrowLeftNormal    = {{208, 217, 39, 50}, {208, 208, 39, 39}};
+static UIImage smallArrowLeftHover     = {{208, 217, 51, 62}, {208, 208, 51, 51}};
+static UIImage smallArrowLeftPressed   = {{208, 217, 63, 74}, {208, 208, 63, 63}};
+static UIImage smallArrowLeftDisabled  = {{208, 217, 75, 86}, {208, 208, 75, 75}};
+static UIImage smallArrowRightNormal   = {{218, 227, 39, 50}, {218, 218, 39, 39}};
+static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}};
+static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
+static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
 
 static UIImage lineHorizontal		= {{20, 32, 92, 96}, {21, 22, 92, 92}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
 static UIImage lineVertical		= {{34, 38, 110, 122}, {34, 34, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
-struct UIImage *smallArrowUpIcons[] = { &smallArrowUp, &smallArrowUp, &smallArrowUp, &smallArrowUp, };
-struct UIImage *smallArrowDownIcons[] = { &smallArrowDown, &smallArrowDown, &smallArrowDown, &smallArrowDown, };
-struct UIImage *smallArrowLeftIcons[] = { &smallArrowLeft, &smallArrowLeft, &smallArrowLeft, &smallArrowLeft, };
-struct UIImage *smallArrowRightIcons[] = { &smallArrowRight, &smallArrowRight, &smallArrowRight, &smallArrowRight, };
+struct UIImage *smallArrowUpIcons[] = { &smallArrowUpNormal, &smallArrowUpDisabled, &smallArrowUpHover, &smallArrowUpPressed, };
+struct UIImage *smallArrowDownIcons[] = { &smallArrowDownNormal, &smallArrowDownDisabled, &smallArrowDownHover, &smallArrowDownPressed, };
+struct UIImage *smallArrowLeftIcons[] = { &smallArrowLeftNormal, &smallArrowLeftDisabled, &smallArrowLeftHover, &smallArrowLeftPressed, };
+struct UIImage *smallArrowRightIcons[] = { &smallArrowRightNormal, &smallArrowRightDisabled, &smallArrowRightHover, &smallArrowRightPressed, };
 
 struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalDisabled, &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalPressed, };
 struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
@@ -226,6 +247,7 @@ struct GUIObject : APIObject {
 	uint16_t descendentInvalidationFlags;
 	uint16_t layout;
 	uint16_t preferredWidth, preferredHeight;
+	uint16_t minimumWidth, minimumHeight;
 };
 
 static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
@@ -283,7 +305,6 @@ struct Control : GUIObject {
 
 	LinkedItem<Control> timerControlItem;
 
-	uint16_t minimumWidth, minimumHeight; // Used by OSSetText.
 	uint8_t timerHz, timerStep;
 	uint8_t animationStep, finalAnimationStep;
 	uint8_t from1, from2, from3, from4;
@@ -315,6 +336,7 @@ struct Grid : GUIObject {
 	unsigned columns, rows;
 	OSObject *objects;
 	int *widths, *heights;
+	int *minimumWidths, *minimumHeights;
 	uint8_t relayout : 1, repaint : 1;
 	unsigned flags;
 	int borderSize, gapSize;
@@ -534,11 +556,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
-			message->measure.width = control->preferredWidth;
-			message->measure.height = control->preferredHeight;
-
-			if (control->layout & OS_CELL_H_PUSH) message->measure.width = DIMENSION_PUSH;
-			if (control->layout & OS_CELL_V_PUSH) message->measure.height = DIMENSION_PUSH;
+			if (control->layout & OS_CELL_H_PUSH) message->measure.preferredWidth = DIMENSION_PUSH;
+			else message->measure.preferredWidth = control->preferredWidth;
+			if (control->layout & OS_CELL_V_PUSH) message->measure.preferredHeight = DIMENSION_PUSH;
+			else message->measure.preferredHeight = control->preferredHeight;
+			
+			message->measure.minimumWidth = control->minimumWidth;
+			message->measure.minimumHeight = control->minimumHeight;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -863,6 +887,8 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 	control->backgrounds = images;
 	control->preferredWidth = images[0]->region.right - images[0]->region.left;
 	control->preferredHeight = images[0]->region.bottom - images[0]->region.top;
+	control->minimumWidth = images[0]->region.right - images[0]->region.left;
+	control->minimumHeight = images[0]->region.bottom - images[0]->region.top;
 	control->direction = direction;
 	control->noAnimations = true;
 	control->noDisabledTextColorChange = true;
@@ -1665,8 +1691,12 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
 				OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
+				OSZeroMemory(grid->minimumWidths, sizeof(int) * grid->columns);
+				OSZeroMemory(grid->minimumHeights, sizeof(int) * grid->rows);
 
 				int pushH = 0, pushV = 0;
+
+				// OSPrint("->Laying out grid %x (%d by %d)\n", grid, grid->columns, grid->rows);
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
 					for (uintptr_t j = 0; j < grid->rows; j++) {
@@ -1674,28 +1704,62 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 						message->type = OS_MESSAGE_MEASURE;
 						if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
 
-						int width = message->measure.width;
-						int height = message->measure.height;
+						int width = message->measure.preferredWidth;
+						int height = message->measure.preferredHeight;
+
+						// OSPrint("Measuring %d, %d: %d, %d, %d, %d\n", i, j, width, height, message->measure.minimumWidth, message->measure.minimumHeight);
 
 						if (width == DIMENSION_PUSH) { bool a = grid->widths[i] == DIMENSION_PUSH; grid->widths[i] = DIMENSION_PUSH; if (!a) pushH++; }
 						else if (grid->widths[i] < width && grid->widths[i] != DIMENSION_PUSH) grid->widths[i] = width;
 						if (height == DIMENSION_PUSH) { bool a = grid->heights[j] == DIMENSION_PUSH; grid->heights[j] = DIMENSION_PUSH; if (!a) pushV++; }
 						else if (grid->heights[j] < height && grid->heights[j] != DIMENSION_PUSH) grid->heights[j] = height;
+
+						if (grid->minimumWidths[i] < message->measure.minimumWidth) grid->minimumWidths[i] = message->measure.minimumWidth;
+						if (grid->minimumHeights[j] < message->measure.minimumHeight) grid->minimumHeights[j] = message->measure.minimumHeight;
 					}
 				}
+
+#if 0
+				OSPrint("->Results for grid %x (%d by %d)\n", grid, grid->columns, grid->rows);
+
+				for (uintptr_t i = 0; i < grid->columns; i++) {
+					OSPrint("Column %d is pref: %dpx, min: %dpx\n", i, grid->widths[i], grid->minimumWidths[i]);
+				}
+				for (uintptr_t j = 0; j < grid->rows; j++) {
+					OSPrint("Row %d is pref: %dpx, min: %dpx\n", j, grid->heights[j], grid->minimumHeights[j]);
+				}
+#endif
 
 				if (pushH) {
 					int usedWidth = grid->borderSize * 2 + grid->gapSize * (grid->columns - 1); 
 					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i];
 					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH;
-					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] == DIMENSION_PUSH) grid->widths[i] = widthPerPush;
+
+					for (uintptr_t i = 0; i < grid->columns; i++) {
+						if (grid->widths[i] == DIMENSION_PUSH) {
+							if (widthPerPush >= grid->minimumWidths[i]) {
+								grid->widths[i] = widthPerPush;
+							} else {
+								grid->widths[i] = grid->minimumWidths[i];
+							}
+						}
+					}
 				}
 
 				if (pushV) {
 					int usedHeight = grid->borderSize * 2 + grid->gapSize * (grid->rows - 1); 
 					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j];
 					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV; 
-					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] == DIMENSION_PUSH) grid->heights[j] = heightPerPush;
+
+					for (uintptr_t j = 0; j < grid->rows; j++) {
+						if (grid->heights[j] == DIMENSION_PUSH) {
+							if (heightPerPush >= grid->minimumHeights[j]) {
+								grid->heights[j] = heightPerPush;
+							} else {
+								grid->heights[j] = grid->minimumHeights[j];
+							}
+						}
+					}
 				}
 
 				int posX = grid->bounds.left + grid->borderSize;
@@ -1713,6 +1777,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 						message->layout.bottom = posY + grid->heights[j];
 						message->layout.force = true;
 
+						// OSPrint("Sending %d->%d, %d->%d to %d,%d\n", message->layout.left, message->layout.right, message->layout.top, message->layout.bottom, i, j);
 						OSSendMessage(*object, message);
 
 						posY += grid->heights[j] + grid->gapSize;
@@ -1742,6 +1807,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		case OS_MESSAGE_MEASURE: {
 			OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
 			OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
+			OSZeroMemory(grid->minimumWidths, sizeof(int) * grid->columns);
+			OSZeroMemory(grid->minimumHeights, sizeof(int) * grid->rows);
 
 			bool pushH = false, pushV = false;
 
@@ -1750,24 +1817,35 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					OSObject *object = grid->objects + (j * grid->columns + i);
 					if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
 
-					int width = message->measure.width;
-					int height = message->measure.height;
+					int width = message->measure.preferredWidth;
+					int height = message->measure.preferredHeight;
+
+					int minimumWidth = message->measure.minimumWidth;
+					int minimumHeight = message->measure.minimumHeight;
 
 					if (width == DIMENSION_PUSH) pushH = true;
 					if (height == DIMENSION_PUSH) pushV = true;
 
 					if (grid->widths[i] < width) grid->widths[i] = width;
 					if (grid->heights[j] < height) grid->heights[j] = height;
+
+					if (grid->minimumWidths[i] < minimumWidth) grid->minimumWidths[i] = minimumWidth;
+					if (grid->minimumHeights[j] < minimumHeight) grid->minimumHeights[j] = minimumHeight;
 				}
 			}
 
 			int width = pushH ? DIMENSION_PUSH : grid->borderSize, height = pushV ? DIMENSION_PUSH : grid->borderSize;
+			int minimumWidth = grid->borderSize, minimumHeight = grid->borderSize;
 
 			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + (i == grid->columns - 1 ? grid->borderSize : grid->gapSize);
 			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + (j == grid->rows - 1 ? grid->borderSize : grid->gapSize);
+			for (uintptr_t i = 0; i < grid->columns; i++) minimumWidth += grid->minimumWidths[i] + (i == grid->columns - 1 ? grid->borderSize : grid->gapSize);
+			for (uintptr_t j = 0; j < grid->rows; j++) minimumHeight += grid->minimumHeights[j] + (j == grid->rows - 1 ? grid->borderSize : grid->gapSize);
 
-			grid->preferredWidth = message->measure.width = width;
-			grid->preferredHeight = message->measure.height = height;
+			grid->preferredWidth = message->measure.preferredWidth = width;
+			grid->preferredHeight = message->measure.preferredHeight = height;
+			grid->minimumWidth = message->measure.minimumWidth = minimumWidth;
+			grid->minimumHeight = message->measure.minimumHeight = minimumHeight;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -1862,7 +1940,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 }
 
 OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
-	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * (columns + rows), true);
+	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + 2 * sizeof(int) * (columns + rows), true);
 
 	Grid *grid = (Grid *) memory;
 	grid->type = API_OBJECT_GRID;
@@ -1872,6 +1950,8 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	grid->objects = (OSObject *) (memory + sizeof(Grid));
 	grid->widths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows);
 	grid->heights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns);
+	grid->minimumWidths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns + sizeof(int) * rows);
+	grid->minimumHeights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns + sizeof(int) * rows + sizeof(int) * columns);
 	grid->flags = flags;
 
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
@@ -2007,8 +2087,10 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 
 	switch (message->type) {
 		case OS_MESSAGE_MEASURE: {
-			message->measure.width = grid->preferredWidth;
-			message->measure.height = grid->preferredHeight;
+			message->measure.preferredWidth = grid->preferredWidth;
+			message->measure.preferredHeight = grid->preferredHeight;
+			message->measure.minimumWidth = grid->minimumWidth;
+			message->measure.minimumHeight = grid->minimumHeight;
 			result = OS_CALLBACK_HANDLED;
 		} break;
 
@@ -2185,6 +2267,8 @@ OSObject OSCreateScrollbar(bool orientation) {
 	scrollbar->objects = (OSObject *) (memory + sizeof(Scrollbar));
 	scrollbar->preferredWidth = !orientation ? DIMENSION_PUSH : SCROLLBAR_SIZE;
 	scrollbar->preferredHeight = !orientation ? SCROLLBAR_SIZE : DIMENSION_PUSH;
+	scrollbar->minimumWidth = !orientation ? SCROLLBAR_SIZE * 2 + 4 : SCROLLBAR_SIZE;
+	scrollbar->minimumHeight = !orientation ? SCROLLBAR_SIZE : SCROLLBAR_SIZE * 2 + 4;
 
 	OSCommand command = {};
 	command.defaultDisabled = true;
