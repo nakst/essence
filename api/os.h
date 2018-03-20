@@ -203,6 +203,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
 	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
+	OS_FATAL_ERROR_CLIP_STACK_OVERFLOW,
 } OSFatalError;
 
 // These must be negative.
@@ -831,8 +832,9 @@ OS_EXTERN_C OSError OSForceScreenUpdate();
 OS_EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
 OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha);
+OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha, OSRectangle clipRegion);
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
-OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold);
+OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize);
 
 OS_EXTERN_C void OSRedrawAll();

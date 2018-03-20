@@ -88,6 +88,25 @@ OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destina
 	return OSSyscall(OS_SYSCALL_DRAW_SURFACE, destination, source, (uintptr_t) &arg, mode);
 }
 
+OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha, OSRectangle clipRegion) {
+	if (clipRegion.left < destinationRegion.left) clipRegion.left = destinationRegion.left;
+	if (clipRegion.right > destinationRegion.right) clipRegion.right = destinationRegion.right;
+	if (clipRegion.top < destinationRegion.top) clipRegion.top = destinationRegion.top;
+	if (clipRegion.bottom > destinationRegion.bottom) clipRegion.bottom = destinationRegion.bottom;
+
+	sourceRegion.left += clipRegion.left - destinationRegion.left;
+	sourceRegion.right += clipRegion.right - destinationRegion.right;
+	sourceRegion.top += clipRegion.top - destinationRegion.top;
+	sourceRegion.bottom += clipRegion.bottom - destinationRegion.bottom;
+
+	if (sourceRegion.left > borderRegion.left) sourceRegion.left = borderRegion.left;
+	if (sourceRegion.right < borderRegion.right) sourceRegion.right = borderRegion.right;
+	if (sourceRegion.top > borderRegion.top) sourceRegion.top = borderRegion.top;
+	if (sourceRegion.bottom < borderRegion.bottom) sourceRegion.bottom = borderRegion.bottom;
+
+	return OSDrawSurface(destination, source, clipRegion, sourceRegion, borderRegion, mode, alpha);
+}
+
 OSHandle OSCreateMutex() {
 	return OSSyscall(OS_SYSCALL_CREATE_MUTEX, 0, 0, 0, 0);
 }

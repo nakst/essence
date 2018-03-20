@@ -403,6 +403,36 @@ struct OpenMenu {
 static OpenMenu openMenus[8];
 static unsigned openMenuCount;
 
+#define CLIP_STACK_LIMIT (256)
+#define CLIP_RECTANGLE (clipStack[clipStackPosition])
+static OSRectangle clipStack[CLIP_STACK_LIMIT];
+static uintptr_t clipStackPosition;
+
+static bool PushClipRectangle(OSRectangle rectangle) {
+	if (clipStackPosition == CLIP_STACK_LIMIT) {
+		OSCrashProcess(OS_FATAL_ERROR_CLIP_STACK_OVERFLOW);
+	}
+
+	OSRectangle current = CLIP_RECTANGLE;
+	OSRectangle intersection = OS_MAKE_RECTANGLE(0, 0, 0, 0);
+
+	if (!((current.left > rectangle.right && current.right > rectangle.left)
+			|| (current.top > rectangle.bottom && current.bottom > rectangle.top))) {
+		intersection.left = current.left > rectangle.left ? current.left : rectangle.left;
+		intersection.top = current.top > rectangle.top ? current.top : rectangle.top;
+		intersection.right = current.right < rectangle.right ? current.right : rectangle.right;
+		intersection.bottom = current.bottom < rectangle.bottom ? current.bottom : rectangle.bottom;
+	}
+
+	clipStack[++clipStackPosition] = intersection;
+
+	return intersection.left != intersection.right && intersection.top != intersection.bottom;
+}
+
+static void PopClipRectangle() {
+	clipStackPosition--;
+}
+
 static void CopyText(OSString buffer) {
 	OSClipboardHeader header = {};
 	header.format = OS_CLIPBOARD_FORMAT_TEXT;
@@ -594,23 +624,23 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
 				if (control->backgrounds && control->backgrounds[0]) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
-							control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
+							control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 				}
 
 				if (control->backgrounds && control->backgrounds[2] && control->current2) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
-							control->backgrounds[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
+							control->backgrounds[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2, CLIP_RECTANGLE);
 				}
 
 				if (control->backgrounds && control->backgrounds[3] && control->current3) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
-							control->backgrounds[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
+							control->backgrounds[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3, CLIP_RECTANGLE);
 				}
 
 				if (control->backgrounds && control->backgrounds[1] && control->current4) {
-					OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
-							control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
+							control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4, CLIP_RECTANGLE);
 				}
 
 				if (control->icons) {
@@ -628,23 +658,23 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 
 					if (control->current1) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[0]->region, 
-								control->icons[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[0]->region, 
+								control->icons[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 					}
 
 					if (control->current2) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[2]->region, 
-								control->icons[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[2]->region, 
+								control->icons[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2, CLIP_RECTANGLE);
 					}
 
 					if (control->current3) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[3]->region, 
-								control->icons[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[3]->region, 
+								control->icons[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3, CLIP_RECTANGLE);
 					}
 
 					if (control->current4) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[1]->region, 
-								control->icons[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[1]->region, 
+								control->icons[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4, CLIP_RECTANGLE);
 					}
 				}
 
@@ -662,11 +692,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
 
 						OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-								control->textAlign, textShadowColor, -1, control->textBold);
+								control->textAlign, textShadowColor, -1, control->textBold, CLIP_RECTANGLE);
 					}
 
 					OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
-							control->textAlign, textColor, -1, control->textBold);
+							control->textAlign, textColor, -1, control->textBold, CLIP_RECTANGLE);
 				}
 
 				{
@@ -1056,7 +1086,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
 				control->window->lastFocus != control || control->caretBlink,
-				control->textSize, fontRegular);
+				control->textSize, fontRegular, CLIP_RECTANGLE);
 
 		result = OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
@@ -1501,11 +1531,11 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 			}
 
 			if (control->disabled) {
-				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->backgrounds[1]->region, control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+						control->backgrounds[1]->region, control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 			} else {
-				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->backgrounds[0]->region, control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+						control->backgrounds[0]->region, control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 
 				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
 
@@ -1520,8 +1550,8 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 						bounds.bottom = bounds.top + 15;
 						bounds.left += 3 + i * 9;
 						bounds.right = bounds.left + 8;
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
+								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 					}
 				} else {
 					if (control->value >= pelletCount) control->value -= pelletCount;
@@ -1534,8 +1564,8 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 						bounds.bottom = bounds.top + 15;
 						bounds.left += 3 + j * 9;
 						bounds.right = bounds.left + 8;
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
+								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 					}
 				}
 			}
@@ -1865,20 +1895,28 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				m.paint.force = message->paint.force || grid->repaint;
 				grid->repaint = false;
 
-				if (m.paint.force) {
-					if (grid->background) {
-						OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
-								grid->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
-					} else {
-						OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
+				if (PushClipRectangle(grid->bounds)) {
+					if (m.paint.force) {
+						if (grid->background) {
+							OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
+									grid->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+						} else {
+							OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
+						}
+					}
+
+					for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+						if (grid->objects[i]) {
+							if (PushClipRectangle(((GUIObject *) grid->objects[i])->bounds)) {
+								OSSendMessage(grid->objects[i], &m);
+							}
+
+							PopClipRectangle();
+						}
 					}
 				}
 
-				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
-					if (grid->objects[i]) {
-						OSSendMessage(grid->objects[i], &m);
-					}
-				}
+				PopClipRectangle();
 			}
 		} break;
 
@@ -1892,18 +1930,13 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				OSRectangle region = grid->background->region;
 				OSRectangle border = grid->background->border;
 
-				region.left += destination.left - full.left;
-				region.right += destination.right - full.right;
-				region.top += destination.top - full.top;
-				region.bottom += destination.bottom - full.bottom;
 
-				if (region.left > border.left) region.left = border.left;
-				if (region.right < border.right) region.right = border.right;
-				if (region.top > border.top) region.top = border.top;
-				if (region.bottom < border.bottom) region.bottom = border.bottom;
+				if (PushClipRectangle(destination)) {
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, full, region,
+							border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+				}
 
-				OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, destination, region,
-						border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+				PopClipRectangle();
 			} else {
 				OSFillRectangle(message->paint.surface, destination, OSColor(STANDARD_BACKGROUND_COLOR));
 			}
@@ -2192,10 +2225,10 @@ static OSCallbackResponse ProcessScrollbarGripMessage(OSObject object, OSMessage
 				bounds.right = bounds.left + 8;
 			}
 
-			OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
 					scrollbar->orientation ? scrollbarNotchesHorizontal.region : scrollbarNotchesVertical.region,
 					scrollbar->orientation ? scrollbarNotchesHorizontal.border : scrollbarNotchesVertical.border,
-					OS_DRAW_MODE_REPEAT_FIRST, 0xFF);
+					OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 		}
 	}
 
@@ -2853,6 +2886,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 	if (window->descendentInvalidationFlags & DESCENDENT_REPAINT) {
 		window->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
+
+		clipStack[0] = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
 
 		OSMessage message;
 		message.type = OS_MESSAGE_PAINT;

@@ -146,7 +146,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		OSString *string,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
 		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink,
-		int size, Font &font) {
+		int size, Font &font, OSRectangle clipRegion) {
 	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();
@@ -197,6 +197,14 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	} else	outputPosition.y = region.top;
 
 	outputPosition.y += ascent;
+
+	// Now that we've decided where to draw in the region, clip the region.
+	if (clipRegion.left != -1) {
+		if (region.left < clipRegion.left) region.left = clipRegion.left;
+		if (region.right > clipRegion.right) region.right = clipRegion.right;
+		if (region.top < clipRegion.top) region.top = clipRegion.top;
+		if (region.bottom > clipRegion.bottom) region.bottom = clipRegion.bottom;
+	}
 
 	OSRectangle invalidatedRegion = OS_MAKE_RECTANGLE(outputPosition.x, outputPosition.x,
 			outputPosition.y, outputPosition.y);
@@ -435,13 +443,13 @@ OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coor
 	return DrawString(OS_INVALID_HANDLE, region, string,
 			flags, 0, 0, 0,
 			coordinate, position, -1, -1, false,
-			fontSize ? fontSize : FONT_SIZE, fontRegular);
+			fontSize ? fontSize : FONT_SIZE, fontRegular, OS_MAKE_RECTANGLE(-1, -1, -1, -1));
 }
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
 		OSString *string, int fontSize,
-		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold) {
+		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion) {
 	return DrawString(surface, region, string,
 			alignment ? alignment : OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, color, backgroundColor, 0,
-			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular);
+			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular, clipRegion);
 }
