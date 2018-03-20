@@ -26,6 +26,7 @@
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections, etc.
 // TODO Minimum scrollbar grip size.
 // TODO Clipping.
+// TODO Immediately disabled control have a spurious fade out.
 
 struct UIImage {
 	OSRectangle region;
@@ -112,17 +113,11 @@ static UIImage scrollbarButtonVerticalNormal    = {{141, 158, 62, 69}, {141, 141
 static UIImage scrollbarButtonVerticalHover     = {{141, 158, 70, 77}, {141, 141, 73, 74}};
 static UIImage scrollbarButtonVerticalPressed   = {{141, 158, 78, 85}, {141, 141, 81, 82}};
 static UIImage scrollbarButtonDisabled          = {{183, 190, 62, 79}, {186, 187, 62, 62}};
-#if 0
-static UIImage scrollbarResizePad               = {{123, 140, 62, 79}, {123, 123, 62, 62}};
-#endif
 static UIImage scrollbarNotchesHorizontal       = {{159, 164, 80, 88}, {159, 159, 80, 80}};
 static UIImage scrollbarNotchesVertical         = {{165, 173, 80, 85}, {165, 165, 80, 80}};
 
 #if 0
-static UIImage smallArrowUp		= {{86, 93, 88, 93}, {86, 86, 88, 88}};
-static UIImage smallArrowDown		= {{78, 85, 88, 93}, {78, 78, 88, 88}};
-static UIImage smallArrowLeft		= {{86, 91, 94, 101}, {86, 86, 94, 94}};
-static UIImage smallArrowRight		= {{78, 83, 94, 101}, {78, 78, 94, 94}};
+static UIImage resizePad               = {{123, 140, 62, 79}, {123, 123, 62, 62}};
 #endif
 
 static UIImage smallArrowUpNormal      = {{206, 217, 21, 30}, {206, 206, 21, 21}};
@@ -342,6 +337,7 @@ struct Grid : GUIObject {
 	int borderSize, gapSize;
 	UIImage *background;
 	OSCallback notificationCallback;
+	int xOffset, yOffset;
 };
 
 struct Scrollbar : Grid {
@@ -1341,6 +1337,7 @@ OSObject OSCreateTextbox(unsigned fontSize) {
 	control->textSize = fontSize ? fontSize : FONT_SIZE;
 	control->textColor = 0x000000;
 	control->minimumHeight = control->preferredHeight = 23 - 9 + control->textSize;
+	control->minimumWidth = 16;
 	control->rightClickMenu = osMenuTextboxContext;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
@@ -1403,6 +1400,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	} else if (item.type == OSMenuItem::SUBMENU) {
 		OSMenuSpecification *menu = (OSMenuSpecification *) item.value;
 		OSSetText(control, menu->name, menu->nameBytes);
+		if (!menubar) control->icons = smallArrowRightIcons;
 	}
 
 	if (menubar) {
@@ -1443,6 +1441,7 @@ OSObject OSCreateButton(OSCommand *command) {
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
 		control->minimumHeight = control->icons[0]->region.bottom - control->icons[0]->region.top;
 		control->checkboxIcons = true;
+		control->minimumWidth = control->icons[0]->region.right - control->icons[0]->region.left;
 	} else {
 		control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
 		control->minimumWidth = 80;
@@ -1462,6 +1461,8 @@ OSObject OSCreateLine(bool orientation) {
 
 	control->preferredWidth = 4;
 	control->preferredHeight = 4;
+	control->minimumWidth = 4;
+	control->minimumHeight = 4;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
@@ -1475,6 +1476,9 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 
 	OSSetText(control, text, textBytes);
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+
+	control->minimumWidth = control->preferredWidth;
+	control->minimumHeight = control->preferredHeight;
 
 	return control;
 }
@@ -1569,6 +1573,8 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 
 	control->preferredWidth = 168;
 	control->preferredHeight = 21;
+	control->minimumWidth = 168;
+	control->minimumHeight = 21;
 
 	control->drawParentBackground = true;
 
@@ -1639,11 +1645,9 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 			_grid = window->root->objects[7];
 			column = 0;
 			row = 1;
-			((Grid *) _control)->borderSize = 8;
 		} else if (window->flags & OS_CREATE_WINDOW_NORMAL) {
 			column = 1;
 			row = 2;
-			((Grid *) _control)->borderSize = 8;
 		}
 	}
 
@@ -1656,7 +1660,7 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 		OSCrashProcess(OS_FATAL_ERROR_OUT_OF_GRID_BOUNDS);
 	}
 
-	Control *control = (Control *) _control;
+	GUIObject *control = (GUIObject *) _control;
 	if (control->type != API_OBJECT_CONTROL && control->type != API_OBJECT_GRID) OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
 	control->layout = layout;
 	control->parent = grid;
@@ -1696,7 +1700,11 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				int pushH = 0, pushV = 0;
 
-				// OSPrint("->Laying out grid %x (%d by %d)\n", grid, grid->columns, grid->rows);
+#if 0
+				OSPrint("->Laying out grid %x (%d by %d) into %d->%d, %d->%d (given %d->%d, %d->%d), layout = %X%X\n", 
+ 						grid, grid->columns, grid->rows, grid->bounds.left, grid->bounds.right, grid->bounds.top, grid->bounds.bottom,
+ 						message->layout.left, message->layout.right, message->layout.top, message->layout.bottom, grid->layout);
+#endif
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
 					for (uintptr_t j = 0; j < grid->rows; j++) {
@@ -1725,6 +1733,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				for (uintptr_t i = 0; i < grid->columns; i++) {
 					OSPrint("Column %d is pref: %dpx, min: %dpx\n", i, grid->widths[i], grid->minimumWidths[i]);
 				}
+
 				for (uintptr_t j = 0; j < grid->rows; j++) {
 					OSPrint("Row %d is pref: %dpx, min: %dpx\n", j, grid->heights[j], grid->minimumHeights[j]);
 				}
@@ -1762,10 +1771,10 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					}
 				}
 
-				int posX = grid->bounds.left + grid->borderSize;
+				int posX = grid->bounds.left + grid->borderSize - grid->xOffset;
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
-					int posY = grid->bounds.top + grid->borderSize;
+					int posY = grid->bounds.top + grid->borderSize - grid->yOffset;
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						OSObject *object = grid->objects + (j * grid->columns + i);
@@ -1954,8 +1963,8 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	grid->minimumHeights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns + sizeof(int) * rows + sizeof(int) * columns);
 	grid->flags = flags;
 
-	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = 4;
-	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = 4;
+	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 8;
+	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 6;
 	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
@@ -1963,10 +1972,122 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	return grid;
 }
 
-#define SCROLLBAR_BUTTON_UP ((void *) 1)
+
+static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *message) {
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
+	Grid *grid = (Grid *) _object;
+
+	if (message->type == OS_MESSAGE_LAYOUT) {
+		if (grid->relayout || message->layout.force) {
+			grid->relayout = false;
+			grid->bounds = OS_MAKE_RECTANGLE(
+					message->layout.left, message->layout.right,
+					message->layout.top, message->layout.bottom);
+			grid->repaint = true;
+			SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+
+#if 0
+			OSPrint("->Laying out grid %x (%d by %d) into %d->%d, %d->%d (given %d->%d, %d->%d), layout = %X\n", 
+					grid, grid->columns, grid->rows, grid->bounds.left, grid->bounds.right, grid->bounds.top, grid->bounds.bottom,
+					message->layout.left, message->layout.right, message->layout.top, message->layout.bottom, grid->layout);
+#endif
+
+			OSMessage m = {};
+			m.type = OS_MESSAGE_MEASURE;
+			OSCallbackResponse r = OSSendMessage(grid->objects[0], &m);
+			if (r != OS_CALLBACK_HANDLED) OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+
+			int contentWidth = message->layout.right - message->layout.left - (grid->objects[1] ? SCROLLBAR_SIZE : 0);
+			int contentHeight = message->layout.bottom - message->layout.top - (grid->objects[2] ? SCROLLBAR_SIZE : 0);
+			int minimumWidth = m.measure.minimumWidth;
+			int minimumHeight = m.measure.minimumHeight;
+
+			m.type = OS_MESSAGE_LAYOUT;
+			m.layout.force = true;
+
+			if (grid->objects[1]) {
+				m.layout.top = message->layout.top;
+				m.layout.bottom = message->layout.top + contentHeight;
+				m.layout.left = message->layout.right - SCROLLBAR_SIZE;
+				m.layout.right = message->layout.right;
+				OSSendMessage(grid->objects[1], &m);
+				OSSetScrollbarMeasurements(grid->objects[1], minimumHeight, contentHeight);
+			}
+
+			if (grid->objects[2]) {
+				m.layout.top = message->layout.bottom - SCROLLBAR_SIZE;
+				m.layout.bottom = message->layout.bottom;
+				m.layout.left = message->layout.left;
+				m.layout.right = message->layout.left + contentWidth;
+				OSSendMessage(grid->objects[2], &m);
+				OSSetScrollbarMeasurements(grid->objects[2], minimumWidth, contentWidth);
+			}
+
+			m.layout.top = message->layout.top;
+			m.layout.bottom = message->layout.top + contentHeight;
+			m.layout.left = message->layout.left;
+			m.layout.right = message->layout.left + contentWidth;
+			OSSendMessage(grid->objects[0], &m);
+
+			response = OS_CALLBACK_HANDLED;
+		}
+	} else if (message->type == OS_MESSAGE_MEASURE) {
+		message->measure.preferredWidth = DIMENSION_PUSH;
+		message->measure.preferredHeight = DIMENSION_PUSH;
+		message->measure.minimumWidth = SCROLLBAR_SIZE * 3;
+		message->measure.minimumHeight = SCROLLBAR_SIZE * 3;
+		response = OS_CALLBACK_HANDLED;
+	}
+
+	if (response == OS_CALLBACK_NOT_HANDLED) {
+		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr), message);
+	}
+
+	return response;
+}
+
+OSCallbackResponse ScrollPaneBarMoved(OSObject _object, OSMessage *message) {
+	Scrollbar *scrollbar = (Scrollbar *) _object;
+	Grid *grid = (Grid *) message->context;
+
+	if (scrollbar->orientation) {
+		// Vertical scrollbar.
+		grid->yOffset = message->valueChanged.newValue;
+	} else {
+		// Horizontal scrollbar.
+		grid->xOffset = message->valueChanged.newValue;
+	}
+
+	SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
+	grid->relayout = true;
+
+	return OS_CALLBACK_HANDLED;
+}
+
+OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
+	OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER);
+	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessScrollPaneMessage, nullptr));
+	OSAddGrid(grid, 0, 0, content, OS_CELL_FILL);
+
+	if (flags & OS_CREATE_SCROLL_PANE_VERTICAL) {
+		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
+		OSAddGrid(grid, 1, 0, scrollbar, OS_FLAGS_DEFAULT);
+		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
+	}
+
+	if (flags & OS_CREATE_SCROLL_PANE_HORIZONTAL) {
+		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
+		OSAddGrid(grid, 0, 1, scrollbar, OS_FLAGS_DEFAULT);
+		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
+	}
+
+	return grid;
+}
+
+#define SCROLLBAR_BUTTON_UP   ((void *) 1)
 #define SCROLLBAR_BUTTON_DOWN ((void *) 2)
-#define SCROLLBAR_NUDGE_UP ((void *) 3)
-#define SCROLLBAR_NUDGE_DOWN ((void *) 4)
+#define SCROLLBAR_NUDGE_UP    ((void *) 3)
+#define SCROLLBAR_NUDGE_DOWN  ((void *) 4)
 
 int OSGetScrollbarPosition(OSObject object) {
 	Scrollbar *scrollbar = (Scrollbar *) object;
@@ -2162,6 +2283,9 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 							message.layout.right = 0;
 							OSSendMessage(grid->objects[1], &message);
 							OSSendMessage(grid->objects[3], &message);
+
+							message.layout.left = grid->bounds.left + SCROLLBAR_SIZE;
+							message.layout.right = grid->bounds.right - SCROLLBAR_SIZE;
 							OSSendMessage(grid->objects[4], &message);
 						} else {
 							int x = grid->bounds.left + SCROLLBAR_SIZE + grid->position + grid->size;
@@ -2200,7 +2324,9 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize) {
 	Scrollbar *scrollbar = (Scrollbar *) _scrollbar;
 
-	if (contentSize < viewportSize) {
+	// OSPrint("Set scrollbar %x to %dpx in %dpx viewport\n", scrollbar, contentSize, viewportSize);
+
+	if (contentSize <= viewportSize) {
 		scrollbar->enabled = false;
 		scrollbar->height = 0;
 

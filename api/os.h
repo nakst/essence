@@ -202,6 +202,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_NO_MENU_POSITION,
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
+	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
 } OSFatalError;
 
 // These must be negative.
@@ -696,25 +697,30 @@ typedef struct OSWindowSpecification {
 #define OS_ORIENTATION_HORIZONTAL (false)
 #define OS_ORIENTATION_VERTICAL   (true)
 
-#define OS_CELL_H_PUSH    (1)
-#define OS_CELL_H_EXPAND  (2)
-#define OS_CELL_H_LEFT    (4)
-#define OS_CELL_H_CENTER  (8)
-#define OS_CELL_H_RIGHT   (16)
-#define OS_CELL_V_PUSH    (32)
-#define OS_CELL_V_EXPAND  (64)
-#define OS_CELL_V_TOP     (128)
-#define OS_CELL_V_CENTER  (256)
-#define OS_CELL_V_BOTTOM  (512)
+#define OS_CELL_H_PUSH    (0x0001)
+#define OS_CELL_H_EXPAND  (0x0002)
+#define OS_CELL_H_LEFT    (0x0004)
+#define OS_CELL_H_CENTER  (0x0008)
+#define OS_CELL_H_RIGHT   (0x0010)
+#define OS_CELL_H_ACROSS  (0x0020)
+#define OS_CELL_V_PUSH    (0x0100)
+#define OS_CELL_V_EXPAND  (0x0200)
+#define OS_CELL_V_TOP     (0x0400)
+#define OS_CELL_V_CENTER  (0x0800)
+#define OS_CELL_V_BOTTOM  (0x1000)
+#define OS_CELL_V_ACROSS  (0x2000)
 
 // Some common layouts...
-#define OS_CELL_FILL	  (99)
-#define OS_CELL_CENTER	  (264)
+#define OS_CELL_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
+#define OS_CELL_CENTER	  (OS_CELL_H_CENTER | OS_CELL_V_CENTER)
 
-#define OS_CREATE_GRID_NO_BORDER     (1)
-#define OS_CREATE_GRID_NO_GAP        (2)
-#define OS_CREATE_GRID_DRAW_BOX      (4)
-#define OS_CREATE_GRID_MENU	     (8)
+#define OS_CREATE_GRID_NO_BORDER            (1)
+#define OS_CREATE_GRID_NO_GAP               (2)
+#define OS_CREATE_GRID_DRAW_BOX             (4)
+#define OS_CREATE_GRID_MENU	            (8)
+
+#define OS_CREATE_SCROLL_PANE_VERTICAL      (1)
+#define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
@@ -851,6 +857,7 @@ OS_EXTERN_C void *OSGetInstance(OSObject window);
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
+OS_EXTERN_C OSObject OSCreateScrollPane(OSObject content, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
 #define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, 0)

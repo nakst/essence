@@ -433,8 +433,8 @@ extern "C" void ProgramEntry() {
 	OSWindowSpecification ws = {};
 	ws.width = 600;
 	ws.height = 400;
-	ws.minimumWidth = 450;
-	ws.minimumHeight = 300;
+	ws.minimumWidth = 100;
+	ws.minimumHeight = 100;
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
@@ -442,7 +442,8 @@ extern "C" void ProgramEntry() {
 
 	OSObject b;
 	OSObject content = OSCreateGrid(4, 5, 0);
-	OSSetRootGrid(window, content);
+	OSObject scrollPane = OSCreateScrollPane(content, OS_CREATE_SCROLL_PANE_VERTICAL | OS_CREATE_SCROLL_PANE_HORIZONTAL);
+	OSSetRootGrid(window, scrollPane);
 	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK), 0);
 
 	OSAddControl(content, 1, 0, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND);
@@ -464,6 +465,7 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
 
+#if 1
 #if 0
 	scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
 	OSAddControl(content, 0, 4, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_CENTER);
@@ -471,12 +473,13 @@ extern "C" void ProgramEntry() {
 	scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
 	OSAddControl(content, 0, 4, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND | OS_CELL_H_CENTER);
 #endif
+	OSSetScrollbarMeasurements(scrollbar, 400, 100);
+	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
+#endif
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);
 
-	OSSetScrollbarMeasurements(scrollbar, 400, 100);
-	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
 
 	OSProcessMessages();
 }
