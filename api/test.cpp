@@ -475,7 +475,7 @@ extern "C" void ProgramEntry() {
 #endif
 	OSSetScrollbarMeasurements(scrollbar, 400, 100);
 	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
-	OSDebugGUIObject(scrollbar);
+	// OSDebugGUIObject(scrollbar);
 #endif
 
 	OSDisableCommand(window, actionToggleEnabled, false);

@@ -25,8 +25,7 @@
 // TODO Keyboard controls.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections, etc.
 // TODO Minimum scrollbar grip size.
-// TODO Clipping.
-// TODO Immediately disabled control have a spurious fade out.
+// TODO Clipping input.
 
 struct UIImage {
 	OSRectangle region;
@@ -297,6 +296,7 @@ struct Control : GUIObject {
 		ignoreActivationClicks : 1,
 		checkboxIcons : 1,
 		centerIcons : 1,
+		firstPaint : 1,
 		cursor : 5;
 
 	LinkedItem<Control> timerControlItem;
@@ -494,7 +494,9 @@ static void SetControlCommand(Control *control, OSCommand *_command) {
 void OSAnimateControl(OSObject _control, bool fast) {
 	Control *control = (Control *) _control;
 
-	if (!control->noAnimations) {
+	// OSPrint("Animate control %x\n", control);
+	
+	if (control->firstPaint && !control->noAnimations) {
 		control->from1 = control->current1;
 		control->from2 = control->current2;
 		control->from3 = control->current3;
@@ -599,6 +601,9 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 		case OS_MESSAGE_PAINT: {
 			if (control->repaint || message->paint.force) {
+				// if (!control->firstPaint) OSPrint("first paint %x\n", control);
+				control->firstPaint = true;
+				
 				if (control->drawParentBackground) {
 					OSMessage m = *message;
 					m.type = OS_MESSAGE_PAINT_BACKGROUND;
@@ -2122,12 +2127,14 @@ OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
 		OSAddGrid(grid, 1, 0, scrollbar, OS_FLAGS_DEFAULT);
 		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
+		// OSPrint("vertical %x\n", scrollbar);
 	}
 
 	if (flags & OS_CREATE_SCROLL_PANE_HORIZONTAL) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
 		OSAddGrid(grid, 0, 1, scrollbar, OS_FLAGS_DEFAULT);
 		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
+		// OSPrint("horizontal %x\n", scrollbar);
 	}
 
 	return grid;
