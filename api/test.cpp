@@ -455,7 +455,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
+	// OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
 	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything), 0);
 
 	{
@@ -475,6 +475,7 @@ extern "C" void ProgramEntry() {
 #endif
 	OSSetScrollbarMeasurements(scrollbar, 400, 100);
 	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
+	OSDebugGUIObject(scrollbar);
 #endif
 
 	OSDisableCommand(window, actionToggleEnabled, false);

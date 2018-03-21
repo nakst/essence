@@ -100,12 +100,12 @@ static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 124}};
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
 
-static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 121, 62, 62}};
-static UIImage scrollbarTrackHorizontalPressed  = {{117, 118, 62, 79}, {117, 117, 62, 62}};
-static UIImage scrollbarTrackHorizontalDisabled = {{119, 120, 62, 79}, {119, 119, 62, 62}};
-static UIImage scrollbarTrackVerticalEnabled    = {{174, 191, 82, 83}, {174, 174, 82, 82}};
-static UIImage scrollbarTrackVerticalPressed    = {{174, 191, 84, 85}, {174, 174, 84, 84}};
-static UIImage scrollbarTrackVerticalDisabled   = {{174, 191, 80, 81}, {174, 174, 80, 80}};
+static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 122, 62, 62}};
+static UIImage scrollbarTrackHorizontalPressed  = {{117, 118, 62, 79}, {117, 118, 62, 62}};
+static UIImage scrollbarTrackHorizontalDisabled = {{119, 120, 62, 79}, {119, 120, 62, 62}};
+static UIImage scrollbarTrackVerticalEnabled    = {{174, 191, 82, 83}, {174, 174, 82, 83}};
+static UIImage scrollbarTrackVerticalPressed    = {{174, 191, 84, 85}, {174, 174, 84, 85}};
+static UIImage scrollbarTrackVerticalDisabled   = {{174, 191, 80, 81}, {174, 174, 80, 81}};
 static UIImage scrollbarButtonHorizontalNormal  = {{159, 166, 62, 79}, {162, 163, 62, 62}};
 static UIImage scrollbarButtonHorizontalHover   = {{167, 174, 62, 79}, {170, 171, 62, 62}};
 static UIImage scrollbarButtonHorizontalPressed = {{175, 182, 62, 79}, {178, 179, 62, 62}};
@@ -243,6 +243,7 @@ struct GUIObject : APIObject {
 	uint16_t layout;
 	uint16_t preferredWidth, preferredHeight;
 	uint16_t minimumWidth, minimumHeight;
+	bool verbose;
 };
 
 static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
@@ -329,7 +330,7 @@ struct WindowResizeControl : Control {
 struct Grid : GUIObject {
 	struct Window *window;
 	unsigned columns, rows;
-	OSObject *objects;
+	GUIObject **objects;
 	int *widths, *heights;
 	int *minimumWidths, *minimumHeights;
 	uint8_t relayout : 1, repaint : 1;
@@ -431,6 +432,11 @@ static bool PushClipRectangle(OSRectangle rectangle) {
 
 static void PopClipRectangle() {
 	clipStackPosition--;
+}
+
+void OSDebugGUIObject(OSObject _guiObject) {
+	GUIObject *guiObject = (GUIObject *) _guiObject;
+	guiObject->verbose = true;
 }
 
 static void CopyText(OSString buffer) {
@@ -1695,7 +1701,7 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	control->layout = layout;
 	control->parent = grid;
 
-	OSObject *object = grid->objects + (row * grid->columns + column);
+	GUIObject **object = grid->objects + (row * grid->columns + column);
 	if (*object) OSCrashProcess(OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT);
 	*object = control;
 
@@ -1738,7 +1744,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
 					for (uintptr_t j = 0; j < grid->rows; j++) {
-						OSObject *object = grid->objects + (j * grid->columns + i);
+						GUIObject **object = grid->objects + (j * grid->columns + i);
 						message->type = OS_MESSAGE_MEASURE;
 						if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
 
@@ -1807,7 +1813,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					int posY = grid->bounds.top + grid->borderSize - grid->yOffset;
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
-						OSObject *object = grid->objects + (j * grid->columns + i);
+						GUIObject **object = grid->objects + (j * grid->columns + i);
 
 						message->type = OS_MESSAGE_LAYOUT;
 						message->layout.left = posX;
@@ -1853,7 +1859,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 			for (uintptr_t i = 0; i < grid->columns; i++) {
 				for (uintptr_t j = 0; j < grid->rows; j++) {
-					OSObject *object = grid->objects + (j * grid->columns + i);
+					GUIObject **object = grid->objects + (j * grid->columns + i);
 					if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
 
 					int width = message->measure.preferredWidth;
@@ -1901,13 +1907,19 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 							OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
 									grid->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 						} else {
-							OSFillRectangle(message->paint.surface, grid->bounds, OSColor(STANDARD_BACKGROUND_COLOR));
+							if (PushClipRectangle(grid->bounds)) {
+								OSFillRectangle(message->paint.surface, CLIP_RECTANGLE, OSColor(STANDARD_BACKGROUND_COLOR));
+							}
+
+							PopClipRectangle();
 						}
 					}
 
 					for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
 						if (grid->objects[i]) {
-							if (PushClipRectangle(((GUIObject *) grid->objects[i])->bounds)) {
+							if (grid->objects[i]->verbose) OSPrint("Drawing verbose object %x\n");
+
+							if (PushClipRectangle(grid->objects[i]->bounds)) {
 								OSSendMessage(grid->objects[i], &m);
 							}
 
@@ -1938,7 +1950,11 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				PopClipRectangle();
 			} else {
-				OSFillRectangle(message->paint.surface, destination, OSColor(STANDARD_BACKGROUND_COLOR));
+				if (PushClipRectangle(destination)) {
+					OSFillRectangle(message->paint.surface, CLIP_RECTANGLE, OSColor(STANDARD_BACKGROUND_COLOR));
+				}
+
+				PopClipRectangle();
 			}
 		} break;
 
@@ -1989,7 +2005,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 
 	grid->columns = columns;
 	grid->rows = rows;
-	grid->objects = (OSObject *) (memory + sizeof(Grid));
+	grid->objects = (GUIObject **) (memory + sizeof(Grid));
 	grid->widths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows);
 	grid->heights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns);
 	grid->minimumWidths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns + sizeof(int) * rows);
@@ -2423,7 +2439,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 
 	scrollbar->columns = 1;
 	scrollbar->rows = 5;
-	scrollbar->objects = (OSObject *) (memory + sizeof(Scrollbar));
+	scrollbar->objects = (GUIObject **) (memory + sizeof(Scrollbar));
 	scrollbar->preferredWidth = !orientation ? DIMENSION_PUSH : SCROLLBAR_SIZE;
 	scrollbar->preferredHeight = !orientation ? SCROLLBAR_SIZE : DIMENSION_PUSH;
 	scrollbar->minimumWidth = !orientation ? SCROLLBAR_SIZE * 2 + 4 : SCROLLBAR_SIZE;

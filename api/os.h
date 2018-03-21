@@ -856,6 +856,8 @@ OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback cal
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
 
+OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
+
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
