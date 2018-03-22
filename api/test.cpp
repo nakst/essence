@@ -455,13 +455,15 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	// OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
+	OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
 	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything), 0);
 
 	{
+		OSObject textbox = OSCreateTextbox(0);
+		// OSDebugGUIObject(textbox);
 		OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_DRAW_BOX);
 		OSAddGrid(content, 1, 4, grid, OS_CELL_H_RIGHT);
-		OSAddControl(grid, 0, 0, OSCreateTextbox(0), OS_CELL_H_LEFT);
+		OSAddControl(grid, 0, 0, textbox, OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
 

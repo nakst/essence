@@ -15,17 +15,17 @@
 #define RESIZE_BOTTOM_RIGHT 	(10)
 #define RESIZE_MOVE		(0)
 
-#define STANDARD_BACKGROUND_COLOR (0xFFF0F0F5)
-
 #define SCROLLBAR_SIZE (17)
 #define SCROLLBAR_BUTTON_AMOUNT (64)
+
+#define STANDARD_BACKGROUND_COLOR (0xF5F6F9)
 
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections, etc.
 // TODO Minimum scrollbar grip size.
-// TODO Clipping input.
+// TODO Minimum size is smaller than expected?
 
 struct UIImage {
 	OSRectangle region;
@@ -62,7 +62,7 @@ static UIImage inactiveWindowBorder43	= {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, {
 
 static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
 static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
-static UIImage progressBarPellet     	= {{18, 26, 69, 84}, {18, 18, 69, 69}};
+static UIImage progressBarPellet     	= {{18, 26, 128, 143}, {18, 18, 128, 128}};
 
 #ifndef SUPER_COOL_BUTTONS
 static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
@@ -92,8 +92,8 @@ static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58,
 static UIImage textboxHover		= {{-11 + 52, -11 + 61, 166, 189}, {-11 + 55, -11 + 58, 169, 186}};
 static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 58, 169, 186}};
 
-static UIImage gridBox 			= {{20, 26, 85, 91}, {22, 23, 87, 88}};
-static UIImage menuBox 			= {{199, 229, 4, 17}, {225, 227, 7, 9}};
+static UIImage gridBox 			= {{1, 7, 17, 23}, {3, 4, 19, 20}};
+static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
 static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 124}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
@@ -136,7 +136,7 @@ static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}
 static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
 static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
 
-static UIImage lineHorizontal		= {{20, 32, 92, 96}, {21, 22, 92, 92}};
+static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
 static UIImage lineVertical		= {{34, 38, 110, 122}, {34, 34, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
@@ -237,7 +237,7 @@ static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
 struct GUIObject : APIObject {
-	OSRectangle bounds, cellBounds;
+	OSRectangle bounds, cellBounds, inputBounds;
 	uint16_t descendentInvalidationFlags;
 	uint16_t layout;
 	uint16_t preferredWidth, preferredHeight;
@@ -337,6 +337,7 @@ struct Grid : GUIObject {
 	unsigned flags;
 	int borderSize, gapSize;
 	UIImage *background;
+	uint32_t backgroundColor;
 	OSCallback notificationCallback;
 	int xOffset, yOffset;
 };
@@ -570,6 +571,14 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					message->layout.top, message->layout.bottom);
 			StandardCellLayout(control);
 
+			PushClipRectangle(control->bounds);
+			control->inputBounds = CLIP_RECTANGLE;
+			if (control->verbose) {
+				OSPrint("Layout control %x: %d->%d, %d->%d; input %d->%d, %d->%d\n", control, control->bounds.left, control->bounds.right, control->bounds.top, control->bounds.bottom,
+						control->inputBounds.left, control->inputBounds.right, control->inputBounds.top, control->inputBounds.bottom);
+			}
+			PopClipRectangle();
+
 			control->relayout = false;
 			OSRepaintControl(control);
 			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
@@ -754,7 +763,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_HIT_TEST: {
-			message->hitTest.result = IsPointInRectangle(control->bounds, message->hitTest.positionX, message->hitTest.positionY);
+			message->hitTest.result = IsPointInRectangle(control->inputBounds, message->hitTest.positionX, message->hitTest.positionY);
 		} break;
 
 		case OS_MESSAGE_MOUSE_RIGHT_PRESSED: {
@@ -774,7 +783,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
-			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+			if (!IsPointInRectangle(control->inputBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
 				break;
 			}
 
@@ -1499,6 +1508,7 @@ OSObject OSCreateLine(bool orientation) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->backgrounds = orientation ? lineVerticalBackgrounds : lineHorizontalBackgrounds;
+	control->drawParentBackground = true;
 
 	control->preferredWidth = 4;
 	control->preferredHeight = 4;
@@ -1812,6 +1822,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					}
 				}
 
+				PushClipRectangle(grid->bounds);
+
 				int posX = grid->bounds.left + grid->borderSize - grid->xOffset;
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
@@ -1835,6 +1847,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 					posX += grid->widths[i] + grid->gapSize;
 				}
+
+				PopClipRectangle();
 
 				grid->repaint = true;
 				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
@@ -1911,9 +1925,9 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 						if (grid->background) {
 							OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
 									grid->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
-						} else {
+						} else if (grid->backgroundColor) {
 							if (PushClipRectangle(grid->bounds)) {
-								OSFillRectangle(message->paint.surface, CLIP_RECTANGLE, OSColor(STANDARD_BACKGROUND_COLOR));
+								OSFillRectangle(message->paint.surface, CLIP_RECTANGLE, OSColor(grid->backgroundColor));
 							}
 
 							PopClipRectangle();
@@ -1922,8 +1936,6 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 					for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
 						if (grid->objects[i]) {
-							if (grid->objects[i]->verbose) OSPrint("Drawing verbose object %x\n");
-
 							if (PushClipRectangle(grid->objects[i]->bounds)) {
 								OSSendMessage(grid->objects[i], &m);
 							}
@@ -1947,16 +1959,15 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				OSRectangle region = grid->background->region;
 				OSRectangle border = grid->background->border;
 
-
 				if (PushClipRectangle(destination)) {
 					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, full, region,
 							border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 				}
 
 				PopClipRectangle();
-			} else {
+			} else if (grid->backgroundColor) {
 				if (PushClipRectangle(destination)) {
-					OSFillRectangle(message->paint.surface, CLIP_RECTANGLE, OSColor(STANDARD_BACKGROUND_COLOR));
+					OSFillRectangle(message->paint.surface, CLIP_RECTANGLE, OSColor(grid->backgroundColor));
 				}
 
 				PopClipRectangle();
@@ -2008,6 +2019,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	Grid *grid = (Grid *) memory;
 	grid->type = API_OBJECT_GRID;
 
+	grid->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	grid->columns = columns;
 	grid->rows = rows;
 	grid->objects = (GUIObject **) (memory + sizeof(Grid));
@@ -2020,6 +2032,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 8;
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 6;
 	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
+	if (flags & OS_CREATE_GRID_NO_BACKGROUND) { grid->backgroundColor = 0; }
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
@@ -2890,6 +2903,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 	if (window->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
 		window->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
+		clipStack[0] = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
 
 		OSMessage message;
 		message.type = OS_MESSAGE_LAYOUT;
@@ -2909,7 +2923,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 	if (window->descendentInvalidationFlags & DESCENDENT_REPAINT) {
 		window->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
-
 		clipStack[0] = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
 
 		OSMessage message;
@@ -3007,7 +3020,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(windowBorder43, RESIZE_BOTTOM_RIGHT), 0);
 
 		if (flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
-			OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER);
+			OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_BACKGROUND);
 			OSAddGrid(window->root, 1, 2, grid, OS_CELL_FILL);
 			OSAddGrid(grid, 0, 0, OSCreateMenu(specification->menubar, nullptr, OS_MAKE_POINT(0, 0), OS_CREATE_MENUBAR), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		}
