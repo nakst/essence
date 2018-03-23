@@ -18,11 +18,12 @@
 #define SCROLLBAR_SIZE (17)
 #define SCROLLBAR_BUTTON_AMOUNT (64)
 
-#define LIST_VIEW_MARGIN (12)
-#define LIST_VIEW_WITH_BORDER_MARGIN (16)
-#define LIST_VIEW_ROW_HEIGHT (20)
-
 #define STANDARD_BACKGROUND_COLOR (0xF5F6F9)
+#define STANDARD_BORDER_SIZE (2)
+
+#define LIST_VIEW_MARGIN (14)
+#define LIST_VIEW_WITH_BORDER_MARGIN (LIST_VIEW_MARGIN + STANDARD_BORDER_SIZE)
+#define LIST_VIEW_ROW_HEIGHT (20)
 
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
@@ -31,6 +32,7 @@
 // TODO Minimum scrollbar grip size.
 // TODO Minimum size is smaller than expected?
 // TODO Timer messages seem to be buggy?
+// TODO Memory "arenas".
 
 struct UIImage {
 	OSRectangle region;
@@ -315,6 +317,8 @@ struct Control : GUIObject {
 struct ListView : Control {
 	unsigned flags;
 	size_t itemCount;
+	OSObject scrollbar;
+	int scrollY;
 };
 
 struct MenuItem : Control {
@@ -1438,72 +1442,175 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
+static OSCallbackResponse ListViewScrollbarMoved(OSObject object, OSMessage *message) {
+	(void) object;
+	ListView *control = (ListView *) message->context;
+
+	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
+		OSRepaintControl(control);
+		control->scrollY = message->valueChanged.newValue;
+		return OS_CALLBACK_HANDLED;
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
 static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *message) {
 	ListView *control = (ListView *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 
-	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
-		OSHandle surface = message->paint.surface;
+	bool redrawScrollbar = false;
 
-		if (PushClipRectangle(control->bounds)) {
-			int margin = LIST_VIEW_WITH_BORDER_MARGIN;
+	switch (message->type) {
+		case OS_MESSAGE_PAINT: {
+			// If the list gets redraw, the scrollbar will need to be as well.
+			if (control->repaint) redrawScrollbar = true;
+		} break;
 
-			if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
-				// Draw the background.
-				OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
-				margin = LIST_VIEW_MARGIN;
-			}
+		case OS_MESSAGE_CUSTOM_PAINT: {
+			OSHandle surface = message->paint.surface;
+		
+			if (PushClipRectangle(control->bounds)) {
+				int margin = LIST_VIEW_WITH_BORDER_MARGIN;
+		
+				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
+					// Draw the background.
+					OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
+					margin = LIST_VIEW_MARGIN;
+				}
+		
+				OSRectangle bounds = control->bounds;
+				bounds.left += margin;
+				bounds.right -= margin - SCROLLBAR_SIZE;
+				bounds.top += margin / 2;
+				bounds.bottom -= margin / 2;
+		
+				PushClipRectangle(bounds);
+		
+				uintptr_t i = 0;
+				int y = -control->scrollY;
 
-			OSRectangle bounds = control->bounds;
-			bounds.left += margin;
-			bounds.right -= margin;
-			bounds.top += margin / 2;
-			bounds.bottom -= margin / 2;
-
-			PushClipRectangle(bounds);
-
-			int y = 0;
-
-			for (uintptr_t i = 0; i < control->itemCount; i++) {
-				OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
-
-				if (PushClipRectangle(row)) {
-					OSMessage message;
-					message.type = OS_NOTIFICATION_GET_ITEM;
-					message.listViewItem.index = i;
-					message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
-
-					if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
-						OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+				{
+					i += control->scrollY / LIST_VIEW_ROW_HEIGHT;
+					y += (control->scrollY / LIST_VIEW_ROW_HEIGHT) * LIST_VIEW_ROW_HEIGHT;
+				}
+		
+				for (; i < control->itemCount; i++) {
+					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
+		
+					if (PushClipRectangle(row)) {
+						OSMessage message;
+						message.type = OS_NOTIFICATION_GET_ITEM;
+						message.listViewItem.index = i;
+						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
+		
+						if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
+							OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+						}
+		
+						char *text = message.listViewItem.text;
+						size_t textBytes = message.listViewItem.textBytes;
+		
+						OSString string;
+						string.buffer = text;
+						string.bytes = textBytes;
+		
+						DrawString(surface, row, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+								0, 0xFFFFFF, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
 					}
-
-					char *text = message.listViewItem.text;
-					size_t textBytes = message.listViewItem.textBytes;
-
-					OSString string;
-					string.buffer = text;
-					string.bytes = textBytes;
-
-					DrawString(surface, row, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-							0, 0xFFFFFF, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+		
+					PopClipRectangle();
+					y += LIST_VIEW_ROW_HEIGHT;
+		
+					if (y > bounds.bottom - bounds.top) {
+						break;
+					}
 				}
-
+		
 				PopClipRectangle();
-				y += LIST_VIEW_ROW_HEIGHT;
+			}
+		
+			PopClipRectangle();
+			result = OS_CALLBACK_HANDLED;
+		} break;
 
-				if (y > bounds.bottom - bounds.top) {
-					break;
-				}
+		case OS_MESSAGE_MOUSE_MOVED: {
+			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				break;
 			}
 
-			PopClipRectangle();
-		}
+			OSSendMessage(control->scrollbar, message);
+		} break;
 
-		PopClipRectangle();
+		case OS_MESSAGE_CHILD_UPDATED: {
+			SetParentDescendentInvalidationFlags(control, DESCENDENT_RELAYOUT);
+		} break;
+
+		case OS_MESSAGE_PARENT_UPDATED:
+		case OS_MESSAGE_DESTROY: {
+			// Propagate the message to our scrollbar.
+			OSSendMessage(control->scrollbar, message);
+		} break;
+
+		default: {
+			// The message is not handled.
+		} break;
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
 		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	switch (message->type) {
+		case OS_MESSAGE_LAYOUT: {
+			// Adjust the layout we're given, and tell the scrollbar where it lives.
+
+			if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
+				control->inputBounds.left += STANDARD_BORDER_SIZE;
+				control->inputBounds.top += STANDARD_BORDER_SIZE;
+				control->inputBounds.right -= STANDARD_BORDER_SIZE;
+				control->inputBounds.bottom -= STANDARD_BORDER_SIZE;
+			}
+
+			control->inputBounds.right -= SCROLLBAR_SIZE;
+
+			OSMessage m;
+			m.type = OS_MESSAGE_LAYOUT;
+			m.layout.force = true;
+
+			if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
+				m.layout.left = control->bounds.right - SCROLLBAR_SIZE - STANDARD_BORDER_SIZE;
+				m.layout.right = control->bounds.right - STANDARD_BORDER_SIZE;
+				m.layout.top = control->bounds.top + STANDARD_BORDER_SIZE;
+				m.layout.bottom = control->bounds.bottom - STANDARD_BORDER_SIZE;
+			} else {
+				m.layout.left = control->bounds.right - SCROLLBAR_SIZE;
+				m.layout.right = control->bounds.right;
+				m.layout.top = control->bounds.top;
+				m.layout.bottom = control->bounds.bottom;
+			}
+
+			OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
+					control->bounds.bottom - control->bounds.top - ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN));
+
+			OSSendMessage(control->scrollbar, &m);
+			control->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
+		} break;
+
+		case OS_MESSAGE_PAINT: {
+			// Draw the scrollbar after the list.
+			if (control->descendentInvalidationFlags & DESCENDENT_REPAINT || message->paint.force || redrawScrollbar) {
+				control->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
+				OSMessage m = *message;
+				m.paint.force = message->paint.force || redrawScrollbar;
+				OSSendMessage(control->scrollbar, &m);
+			}
+		} break;
+
+
+		default: {
+			// We don't do any further processing with the message.
+		} break;
 	}
 
 	return result;
@@ -1527,7 +1634,17 @@ OSObject OSCreateListView(unsigned flags) {
 		control->backgrounds = textboxBackgrounds;
 	}
 
+	control->scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
+	((Control *) control->scrollbar)->parent = control;
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessListViewMessage, nullptr));
+	OSSetObjectNotificationCallback(control->scrollbar, OS_MAKE_CALLBACK(ListViewScrollbarMoved, control));
+
+	{
+		OSMessage message;
+		message.parentUpdated.window = nullptr;
+		message.type = OS_MESSAGE_PARENT_UPDATED;
+		OSSendMessage(control->scrollbar, &message);
+	}
 
 	return control;
 }

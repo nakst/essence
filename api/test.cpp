@@ -26,6 +26,7 @@ struct Word {
 
 size_t wordCount;
 Word words[10000];
+char buffer[1024];
 
 OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 	(void) object;
@@ -34,14 +35,40 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		uintptr_t index = message->listViewItem.index;
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-			message->listViewItem.text = words[index].text;
-			message->listViewItem.textBytes = words[index].length;
+			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d)", words[index].length, words[index].text, words[index].count);
+			message->listViewItem.text = buffer;
 		}
 
 		return OS_CALLBACK_HANDLED;
 	}
 
 	return OS_CALLBACK_NOT_HANDLED;
+}
+
+int SortList(const void *_a, const void *_b) {
+	Word *a = (Word *) _a;
+	Word *b = (Word *) _b;
+
+	char *s1 = a->text;
+	char *s2 = b->text;
+	size_t length1 = a->length;
+	size_t length2 = b->length;
+
+	while (length1 || length2) {
+		if (!length1) return -1;
+		if (!length2) return 1;
+
+		if (*s1 != *s2) {
+			return *s1 - *s2;
+		}
+
+		s1++;
+		s2++;
+		length1--;
+		length2--;
+	}
+
+	return 0;
 }
 
 void CreateList(OSObject content) {
@@ -92,12 +119,20 @@ void CreateList(OSObject content) {
 			}
 		}
 	}
+	
+	qsort(words, wordCount, sizeof(Word), SortList);
+
+#if 0
+	for (uintptr_t i = 0; i < wordCount; i++) {
+		OSPrint("%s, ", words[i].length, words[i].text);
+	}
+#endif
 
 	// OSObject listView = OSCreateListView(OS_FLAGS_DEFAULT);
 	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER);
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, wordCount);
+	OSListViewInsert(listView, 0, wordCount / 50);
 	// OSListViewInsert(listView, 0, 10);
 }
 
@@ -538,7 +573,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
+	// OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
 	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything), 0);
 
 	{
