@@ -30,6 +30,7 @@
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections, etc.
 // TODO Minimum scrollbar grip size.
 // TODO Minimum size is smaller than expected?
+// TODO Timer messages seem to be buggy?
 
 struct UIImage {
 	OSRectangle region;
@@ -515,7 +516,7 @@ void OSAnimateControl(OSObject _control, bool fast) {
 		control->finalAnimationStep = fast ? 4 : 16;
 
 		if (!control->timerControlItem.list) {
-			control->timerHz = 30;
+			control->timerHz = 30; // TODO Make this 60?
 			control->window->timerControls.InsertStart(&control->timerControlItem);
 			control->timerControlItem.thisItem = control;
 		}
