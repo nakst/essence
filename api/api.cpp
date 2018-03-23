@@ -37,6 +37,8 @@ struct APIObject {
 #include "common.cpp"
 #include "syscall.cpp"
 
+OSHandle osMessageMutex;
+
 extern "C" void ProgramEntry();
 
 extern "C" void OSInitialiseAPI() {
@@ -47,6 +49,7 @@ extern "C" void OSInitialiseAPI() {
 
 	heapMutex = OSCreateMutex();
 	printMutex = OSCreateMutex();
+	osMessageMutex = OSCreateMutex();
 
 	OSInitialiseGUI();
 }
@@ -96,9 +99,11 @@ void OSProcessMessages() {
 		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
+			OSAcquireMutex(osMessageMutex);
+
 			if (message.context) {
 				OSSendMessage(message.context, &message);
-				continue;
+				goto done;
 			}
 
 			switch (message.type) {
@@ -111,6 +116,9 @@ void OSProcessMessages() {
 					// We don't handle this message.
 				} break;
 			}
+
+			done:;
+			OSReleaseMutex(osMessageMutex);
 		}
 	}
 }

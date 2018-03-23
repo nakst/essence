@@ -513,6 +513,7 @@ typedef enum OSMessageType {
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
 	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
+	OS_NOTIFICATION_GET_ITEM		= 0x2002,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -613,6 +614,14 @@ typedef struct OSMessage {
 		struct {
 			int newValue;
 		} valueChanged;
+
+#define OS_LIST_VIEW_ITEM_TEXT             (1)
+		struct {
+			char *text; 
+			size_t textBytes;
+			uint16_t mask, state;
+			uint32_t index;
+		} listViewItem;
 
 		struct OSClipboardHeader clipboard;
 	};
@@ -723,6 +732,8 @@ typedef struct OSWindowSpecification {
 
 #define OS_CREATE_SCROLL_PANE_VERTICAL      (1)
 #define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)
+
+#define OS_CREATE_LIST_VIEW_BORDER          (1)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
@@ -875,9 +886,12 @@ OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
+OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
 #define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
 
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
+
+OS_EXTERN_C void OSListViewInsert(OSObject listView, uintptr_t index, size_t count);
 
 OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
 OS_EXTERN_C void OSSetScrollbarPosition(OSObject _scrollbar, int position, bool sendValueChangedNotification);
@@ -954,6 +968,7 @@ OS_EXTERN_C void _longjmp(jmp_buf *env, int val);
 #include "stb_image.h"
 
 OS_EXTERN_C uint64_t osRandomByteSeed;
+OS_EXTERN_C OSHandle osMessageMutex;
 #endif
 
 OS_EXTERN_C void ProgramEntry();

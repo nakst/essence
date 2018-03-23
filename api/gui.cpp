@@ -18,6 +18,10 @@
 #define SCROLLBAR_SIZE (17)
 #define SCROLLBAR_BUTTON_AMOUNT (64)
 
+#define LIST_VIEW_MARGIN (12)
+#define LIST_VIEW_WITH_BORDER_MARGIN (16)
+#define LIST_VIEW_ROW_HEIGHT (20)
+
 #define STANDARD_BACKGROUND_COLOR (0xF5F6F9)
 
 // TODO Calculator textbox - selection extends out of top of textbox
@@ -305,6 +309,11 @@ struct Control : GUIObject {
 	uint8_t animationStep, finalAnimationStep;
 	uint8_t from1, from2, from3, from4;
 	uint8_t current1, current2, current3, current4;
+};
+
+struct ListView : Control {
+	unsigned flags;
+	size_t itemCount;
 };
 
 struct MenuItem : Control {
@@ -643,24 +652,26 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->current3 = ((pressed  ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
-				if (control->backgrounds && control->backgrounds[0]) {
-					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
-							control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
-				}
+				if (control->backgrounds) {
+					if (control->backgrounds[0]) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
+								control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+					}
 
-				if (control->backgrounds && control->backgrounds[2] && control->current2) {
-					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
-							control->backgrounds[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2, CLIP_RECTANGLE);
-				}
+					if (control->backgrounds[2] && control->current2) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
+								control->backgrounds[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2, CLIP_RECTANGLE);
+					}
 
-				if (control->backgrounds && control->backgrounds[3] && control->current3) {
-					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
-							control->backgrounds[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3, CLIP_RECTANGLE);
-				}
+					if (control->backgrounds[3] && control->current3) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
+								control->backgrounds[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3, CLIP_RECTANGLE);
+					}
 
-				if (control->backgrounds && control->backgrounds[1] && control->current4) {
-					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
-							control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4, CLIP_RECTANGLE);
+					if (control->backgrounds[1] && control->current4) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
+								control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4, CLIP_RECTANGLE);
+					}
 				}
 
 				if (control->icons) {
@@ -1424,6 +1435,107 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	}
 
 	return result;
+}
+
+static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *message) {
+	ListView *control = (ListView *) object;
+	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
+		OSHandle surface = message->paint.surface;
+
+		if (PushClipRectangle(control->bounds)) {
+			int margin = LIST_VIEW_WITH_BORDER_MARGIN;
+
+			if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
+				// Draw the background.
+				OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
+				margin = LIST_VIEW_MARGIN;
+			}
+
+			OSRectangle bounds = control->bounds;
+			bounds.left += margin;
+			bounds.right -= margin;
+			bounds.top += margin / 2;
+			bounds.bottom -= margin / 2;
+
+			PushClipRectangle(bounds);
+
+			int y = 0;
+
+			for (uintptr_t i = 0; i < control->itemCount; i++) {
+				OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
+
+				if (PushClipRectangle(row)) {
+					OSMessage message;
+					message.type = OS_NOTIFICATION_GET_ITEM;
+					message.listViewItem.index = i;
+					message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
+
+					if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
+						OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+					}
+
+					char *text = message.listViewItem.text;
+					size_t textBytes = message.listViewItem.textBytes;
+
+					OSString string;
+					string.buffer = text;
+					string.bytes = textBytes;
+
+					DrawString(surface, row, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+							0, 0xFFFFFF, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+				}
+
+				PopClipRectangle();
+				y += LIST_VIEW_ROW_HEIGHT;
+
+				if (y > bounds.bottom - bounds.top) {
+					break;
+				}
+			}
+
+			PopClipRectangle();
+		}
+
+		PopClipRectangle();
+	}
+
+	if (result == OS_CALLBACK_NOT_HANDLED) {
+		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	return result;
+}
+
+OSObject OSCreateListView(unsigned flags) {
+	ListView *control = (ListView *) OSHeapAllocate(sizeof(ListView), true);
+	control->type = API_OBJECT_CONTROL;
+	control->flags = flags;
+
+	control->preferredWidth = 40;
+	control->preferredHeight = 40;
+	control->minimumWidth = 20;
+	control->minimumHeight = 20;
+	control->ignoreActivationClicks = true;
+	control->noAnimations = true;
+	control->focusable = true;
+
+	if (flags & OS_CREATE_LIST_VIEW_BORDER) {
+		control->drawParentBackground = true;
+		control->backgrounds = textboxBackgrounds;
+	}
+
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessListViewMessage, nullptr));
+
+	return control;
+}
+
+void OSListViewInsert(OSObject _listView, uintptr_t index, size_t count) {
+	(void) index;
+	ListView *listView = (ListView *) _listView;
+	listView->itemCount += count;
+	OSRepaintControl(listView);
 }
 
 static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {

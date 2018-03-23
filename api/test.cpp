@@ -18,6 +18,89 @@ y y2 = {1, 2};
 
 int vp = 100;
 
+struct Word {
+	char *text;
+	size_t length;
+	unsigned count;
+};
+
+size_t wordCount;
+Word words[10000];
+
+OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type == OS_NOTIFICATION_GET_ITEM) {
+		uintptr_t index = message->listViewItem.index;
+
+		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
+			message->listViewItem.text = words[index].text;
+			message->listViewItem.textBytes = words[index].length;
+		}
+
+		return OS_CALLBACK_HANDLED;
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
+void CreateList(OSObject content) {
+	size_t length;
+	char *file = (char *) OSReadEntireFile(OSLiteral("/os/scarlet.txt"), &length);
+
+	if (!file || !length) {
+		OSCrashProcess(2000);
+	}
+
+	for (uintptr_t i = 0; i < length; i++) {
+		file[i] = tolower(file[i]);
+	}
+
+	while (length) {
+		char *start = file;
+		char c = *start;
+
+		while ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '\'') {
+			file++;
+			length--;
+			c = *file;
+		}
+
+		if (file == start) {
+			file++;
+			length--;
+			continue;
+		}
+
+		{
+			bool found = false;
+			size_t length = file - start;
+
+			for (uintptr_t i = 0; i < wordCount; i++) {
+				if (length == words[i].length && 0 == OSCompareBytes(start, words[i].text, words[i].length)) {
+					found = true;
+					words[i].count++;
+					break;
+				}
+			}
+
+			if (!found) {
+				words[wordCount].text = start;
+				words[wordCount].length = length;
+				words[wordCount].count = 1;
+				wordCount++;
+			}
+		}
+	}
+
+	// OSObject listView = OSCreateListView(OS_FLAGS_DEFAULT);
+	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER);
+	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
+	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
+	OSListViewInsert(listView, 0, wordCount);
+	// OSListViewInsert(listView, 0, 10);
+}
+
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
 	(void) object;
 
@@ -130,7 +213,7 @@ OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
 	(void) object;
 	OSPrint("context = %x\n", message->context);
 	OSEnableControl(message->context, message->command.checked);
-	OSSetScrollbarMeasurements(scrollbar, 10, 20);
+	// OSSetScrollbarMeasurements(scrollbar, 10, 20);
 	return OS_CALLBACK_HANDLED;
 }
 
@@ -467,7 +550,7 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
 	}
 
-#if 1
+#if 0
 #if 0
 	scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
 	OSAddControl(content, 0, 4, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_CENTER);
@@ -479,6 +562,8 @@ extern "C" void ProgramEntry() {
 	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
 	// OSDebugGUIObject(scrollbar);
 #endif
+
+	CreateList(content);
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);
