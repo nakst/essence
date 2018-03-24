@@ -37,7 +37,8 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		Word *word = words + index;
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d, %d)", word->length, word->text, word->count, index + 1);
+			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
+			// message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d, %d)", word->length, word->text, word->count, index + 1);
 			message->listViewItem.text = buffer;
 		}
 
@@ -152,7 +153,7 @@ void CreateList(OSObject content) {
 	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER);
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, 200);
+	OSListViewInsert(listView, 0, 10);
 	// OSListViewInsert(listView, 0, 10);
 }
 

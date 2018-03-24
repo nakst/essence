@@ -144,9 +144,11 @@ static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}
 static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
 static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
 
-static UIImage listViewHighlight   = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
-static UIImage listViewSelected    = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
-static UIImage listViewLastClicked = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
+static UIImage listViewHighlight    = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewSelected     = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewSelected2    = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 6, 14 + 228 + 7, 28 + 59 + 6, 28 + 59 + 7}};
+static UIImage listViewLastClicked  = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
+static UIImage listViewLastClicked2 = {{14 + 228 - 14, 14 + 241 - 14, 42 + 59 - 14, 42 + 72 - 14}, {14 + 228 + 6 - 14, 14 + 228 + 7 - 14, 42 + 59 + 6 - 14, 42 + 59 + 7 - 14}};
 
 static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -1217,7 +1219,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
 		OSRepaintControl(control);
-	} else if (message->type == OS_MESSAGE_START_DRAG || message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED) {
+	} else if (message->type == OS_MESSAGE_START_DRAG 
+			|| (message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED && control->caret.byte == control->caret2.byte)) {
 		FindCaret(control, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY, true, lastClickChainCount);
 		control->caret = control->caret2;
 		OSRepaintControl(control);
@@ -1508,6 +1511,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					y += i * LIST_VIEW_ROW_HEIGHT;
 				}
 
+				bool previousHadBox = false;
+
 				for (; i < control->itemCount; i++) {
 					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
 		
@@ -1529,17 +1534,32 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						string.buffer = text;
 						string.bytes = textBytes;
 
-						if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
-							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-									listViewSelected.region, listViewSelected.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
-						} else if (control->highlightRow == i) {
-							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-									listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
-						}
+						{
+							// If the previous row had a box drawn around it, then adjust the row's bounds slightly
+							// to prevent a double-border at the boundary.
+							bool adjustedRow = previousHadBox;
+							if (adjustedRow) row.top--;
 
-						if (control->lastClickedRow == i) {
-							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-									listViewLastClicked.region, listViewLastClicked.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+							previousHadBox = false;
+
+							if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
+								UIImage image = control->window->focus == control ? listViewSelected : listViewSelected2;
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+								previousHadBox = true;
+							} else if (control->highlightRow == i) {
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+										listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+							}
+
+							if (control->lastClickedRow == i && control->window->focus == control) {
+								UIImage image = listViewLastClicked;
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+								previousHadBox = true;
+							}
+
+							if (adjustedRow) row.top++;
 						}
 		
 						{
@@ -1603,13 +1623,19 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			int y = message->mousePressed.positionY - bounds.top + control->scrollY;
 			uintptr_t row = y / LIST_VIEW_ROW_HEIGHT;
 
-			if (!message->mousePressed.ctrl) {
-				// If CTRL wasn't pressed, remove the old selection.
+			if (row >= control->itemCount || y < 0) {
+				m.type = OS_NOTIFICATION_DESELECT_ALL;
+				OSForwardMessage(control, control->notificationCallback, &m);
+				break;
+			}
+
+			if (!message->mousePressed.ctrl && !message->mousePressed.shift) {
+				// If neither CTRL nor SHIFT were pressed, remove the old selection.
 				m.type = OS_NOTIFICATION_DESELECT_ALL;
 				OSForwardMessage(control, control->notificationCallback, &m);
 			}
 
-			if (message->mousePressed.shift) {
+			if (message->mousePressed.shift && control->lastClickedRow != (uintptr_t) -1) {
 				// If SHIFT was pressed, select every from the last clicked row to this row.
 				uintptr_t low = row < control->lastClickedRow ? row : control->lastClickedRow;
 				uintptr_t high = row > control->lastClickedRow ? row : control->lastClickedRow;
@@ -1622,6 +1648,16 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					m.listViewItem.index = i;
 					OSForwardMessage(control, control->notificationCallback, &m);
 				}
+			} else if (message->mousePressed.ctrl) {
+				// If CTRL was pressed, toggle whether this row is selected.
+				m.type = OS_NOTIFICATION_GET_ITEM;
+				m.listViewItem.index = row;
+				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				m.listViewItem.state = 0;
+				OSForwardMessage(control, control->notificationCallback, &m);
+				m.type = OS_NOTIFICATION_SET_ITEM;
+				m.listViewItem.state ^= OS_LIST_VIEW_ITEM_SELECTED;
+				OSForwardMessage(control, control->notificationCallback, &m);
 			} else {
 				// If SHIFT wasn't pressed, only add this row to the selection.
 				m.type = OS_NOTIFICATION_SET_ITEM;
