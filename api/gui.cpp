@@ -21,7 +21,8 @@
 #define STANDARD_BACKGROUND_COLOR (0xF5F6F9)
 #define STANDARD_BORDER_SIZE (2)
 
-#define LIST_VIEW_MARGIN (14)
+#define LIST_VIEW_MARGIN (10)
+#define LIST_VIEW_TEXT_MARGIN (6)
 #define LIST_VIEW_WITH_BORDER_MARGIN (LIST_VIEW_MARGIN + STANDARD_BORDER_SIZE)
 #define LIST_VIEW_ROW_HEIGHT (20)
 
@@ -142,6 +143,8 @@ static UIImage smallArrowRightNormal   = {{218, 227, 39, 50}, {218, 218, 39, 39}
 static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}};
 static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
 static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
+
+static UIImage listViewHighlight = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
 
 static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -319,6 +322,7 @@ struct ListView : Control {
 	size_t itemCount;
 	OSObject scrollbar;
 	int scrollY;
+	uintptr_t highlightRow;
 };
 
 struct MenuItem : Control {
@@ -1461,6 +1465,18 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 	bool redrawScrollbar = false;
 
+	int margin = LIST_VIEW_WITH_BORDER_MARGIN;
+	OSRectangle bounds = control->bounds;
+	bounds.left += margin;
+	bounds.right -= margin + SCROLLBAR_SIZE;
+
+	if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
+		bounds.top += STANDARD_BORDER_SIZE;
+		bounds.bottom -= STANDARD_BORDER_SIZE;
+	}
+
+	uintptr_t previousHighlightRow = control->highlightRow;
+
 	switch (message->type) {
 		case OS_MESSAGE_PAINT: {
 			// If the list gets redraw, the scrollbar will need to be as well.
@@ -1469,32 +1485,24 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 		case OS_MESSAGE_CUSTOM_PAINT: {
 			OSHandle surface = message->paint.surface;
-		
+
 			if (PushClipRectangle(control->bounds)) {
-				int margin = LIST_VIEW_WITH_BORDER_MARGIN;
-		
 				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
 					// Draw the background.
 					OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
 					margin = LIST_VIEW_MARGIN;
 				}
 		
-				OSRectangle bounds = control->bounds;
-				bounds.left += margin;
-				bounds.right -= margin - SCROLLBAR_SIZE;
-				bounds.top += margin / 2;
-				bounds.bottom -= margin / 2;
-		
 				PushClipRectangle(bounds);
-		
+
 				uintptr_t i = 0;
-				int y = -control->scrollY;
+				int y = -control->scrollY + LIST_VIEW_MARGIN / 2;
 
 				{
 					i += control->scrollY / LIST_VIEW_ROW_HEIGHT;
-					y += (control->scrollY / LIST_VIEW_ROW_HEIGHT) * LIST_VIEW_ROW_HEIGHT;
+					y += i * LIST_VIEW_ROW_HEIGHT;
 				}
-		
+
 				for (; i < control->itemCount; i++) {
 					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
 		
@@ -1514,9 +1522,19 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						OSString string;
 						string.buffer = text;
 						string.bytes = textBytes;
+
+						if (control->highlightRow == i) {
+							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+									listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+						}
 		
-						DrawString(surface, row, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-								0, 0xFFFFFF, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+						{
+							OSRectangle region = row;
+							region.left += LIST_VIEW_TEXT_MARGIN;
+							region.right -= LIST_VIEW_TEXT_MARGIN;
+							DrawString(surface, region, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+									0, 0xFFFFFF, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+						}
 					}
 		
 					PopClipRectangle();
@@ -1536,10 +1554,23 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 		case OS_MESSAGE_MOUSE_MOVED: {
 			if (!IsPointInRectangle(control->bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				control->highlightRow = -1;
 				break;
 			}
 
 			OSSendMessage(control->scrollbar, message);
+
+			if (!IsPointInRectangle(bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				control->highlightRow = -1;
+				break;
+			}
+
+			int y = message->mouseMoved.newPositionY - bounds.top + control->scrollY;
+			control->highlightRow = y / LIST_VIEW_ROW_HEIGHT;
+		} break;
+
+		case OS_MESSAGE_END_HOVER: {
+			control->highlightRow = -1;
 		} break;
 
 		case OS_MESSAGE_CHILD_UPDATED: {
@@ -1555,6 +1586,10 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		default: {
 			// The message is not handled.
 		} break;
+	}
+
+	if (previousHighlightRow != control->highlightRow) {
+		OSRepaintControl(control);
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
@@ -3052,6 +3087,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				if (!hitTest.hitTest.result || response == OS_CALLBACK_NOT_HANDLED) {
 					window->hover = nullptr;
 					OSSendMessage(window->root, message);
+				} else {
+					OSSendMessage(old, message);
 				}
 
 				if (!window->hover) {
