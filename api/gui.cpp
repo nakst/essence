@@ -148,7 +148,7 @@ static UIImage listViewHighlight    = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59
 static UIImage listViewSelected     = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
 static UIImage listViewSelected2    = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 6, 14 + 228 + 7, 28 + 59 + 6, 28 + 59 + 7}};
 static UIImage listViewLastClicked  = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
-static UIImage listViewLastClicked2 = {{14 + 228 - 14, 14 + 241 - 14, 42 + 59 - 14, 42 + 72 - 14}, {14 + 228 + 6 - 14, 14 + 228 + 7 - 14, 42 + 59 + 6 - 14, 42 + 59 + 7 - 14}};
+// static UIImage listViewLastClicked2 = {{14 + 228 - 14, 14 + 241 - 14, 42 + 59 - 14, 42 + 72 - 14}, {14 + 228 + 6 - 14, 14 + 228 + 7 - 14, 42 + 59 + 6 - 14, 42 + 59 + 7 - 14}};
 
 static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
