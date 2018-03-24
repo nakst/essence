@@ -387,6 +387,9 @@ void WindowManager::ClickCursor(unsigned buttons) {
 				message.mousePressed.positionYScreen = cursorY;
 				message.mousePressed.clickChainCount = clickChainCount;
 				message.mousePressed.activationClick = activationClick;
+				message.mousePressed.alt = alt | alt2;
+				message.mousePressed.ctrl = ctrl | ctrl2;
+				message.mousePressed.shift = shift | shift2;
 				message.context = window->apiWindow;
 
 				RefreshCursor(window);

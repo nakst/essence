@@ -22,6 +22,7 @@ struct Word {
 	char *text;
 	size_t length;
 	unsigned count;
+	bool selected;
 };
 
 size_t wordCount;
@@ -33,16 +34,34 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 
 	if (message->type == OS_NOTIFICATION_GET_ITEM) {
 		uintptr_t index = message->listViewItem.index;
+		Word *word = words + index;
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d, %d)", words[index].length, words[index].text, words[index].count, index + 1);
+			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d, %d)", word->length, word->text, word->count, index + 1);
 			message->listViewItem.text = buffer;
 		}
 
-		return OS_CALLBACK_HANDLED;
+		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+			if (word->selected) {
+				message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
+			}
+		}
+	} else if (message->type == OS_NOTIFICATION_SET_ITEM) {
+		uintptr_t index = message->listViewItem.index;
+		Word *word = words + index;
+
+		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+			word->selected = message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+		}
+	} else if (message->type == OS_NOTIFICATION_DESELECT_ALL) {
+		for (uintptr_t i = 0; i < wordCount; i++) {
+			words[i].selected = false;
+		}
+	} else {
+		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	return OS_CALLBACK_NOT_HANDLED;
+	return OS_CALLBACK_HANDLED;
 }
 
 int SortList(const void *_a, const void *_b) {
@@ -107,6 +126,7 @@ void CreateList(OSObject content) {
 				if (length == words[i].length && 0 == OSCompareBytes(start, words[i].text, words[i].length)) {
 					found = true;
 					words[i].count++;
+					if (words[i].count >= 50) words[i].selected = true;
 					break;
 				}
 			}
@@ -549,8 +569,8 @@ extern "C" void ProgramEntry() {
 	// OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	
 	OSWindowSpecification ws = {};
-	ws.width = 600;
-	ws.height = 400;
+	ws.width = 900;
+	ws.height = 650;
 	ws.minimumWidth = 100;
 	ws.minimumHeight = 100;
 	ws.title = (char *) "Hello, world!";

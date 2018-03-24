@@ -144,7 +144,9 @@ static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}
 static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
 static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
 
-static UIImage listViewHighlight = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewHighlight   = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewSelected    = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewLastClicked = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
 
 static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -322,7 +324,7 @@ struct ListView : Control {
 	size_t itemCount;
 	OSObject scrollbar;
 	int scrollY;
-	uintptr_t highlightRow;
+	uintptr_t highlightRow, lastClickedRow;
 };
 
 struct MenuItem : Control {
@@ -473,8 +475,11 @@ static size_t ClipboardTextBytes() {
 
 static inline void OSRepaintControl(OSObject _control) {
 	Control *control = (Control *) _control;
-	control->repaint = true;
-	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+
+	if (!control->repaint) {
+		control->repaint = true;
+		SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+	}
 }
 
 static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
@@ -1510,7 +1515,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						OSMessage message;
 						message.type = OS_NOTIFICATION_GET_ITEM;
 						message.listViewItem.index = i;
-						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
+						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | OS_LIST_VIEW_ITEM_SELECTED;
+						message.listViewItem.state = 0;
 		
 						if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
 							OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
@@ -1523,9 +1529,17 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						string.buffer = text;
 						string.bytes = textBytes;
 
-						if (control->highlightRow == i) {
+						if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
+							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+									listViewSelected.region, listViewSelected.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+						} else if (control->highlightRow == i) {
 							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
 									listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+						}
+
+						if (control->lastClickedRow == i) {
+							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+									listViewLastClicked.region, listViewLastClicked.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
 						}
 		
 						{
@@ -1533,7 +1547,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							region.left += LIST_VIEW_TEXT_MARGIN;
 							region.right -= LIST_VIEW_TEXT_MARGIN;
 							DrawString(surface, region, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-									0, 0xFFFFFF, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+									0, -1, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
 						}
 					}
 		
@@ -1569,6 +1583,57 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			control->highlightRow = y / LIST_VIEW_ROW_HEIGHT;
 		} break;
 
+		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
+			if (!IsPointInRectangle(control->bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
+				break;
+			}
+
+			// We're going to want to repaint.
+			OSRepaintControl(control);
+
+			OSMessage m;
+
+			if (!IsPointInRectangle(bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
+				m.type = OS_NOTIFICATION_DESELECT_ALL;
+				OSForwardMessage(control, control->notificationCallback, &m);
+				break;
+			}
+
+			// This is the row we clicked on.
+			int y = message->mousePressed.positionY - bounds.top + control->scrollY;
+			uintptr_t row = y / LIST_VIEW_ROW_HEIGHT;
+
+			if (!message->mousePressed.ctrl) {
+				// If CTRL wasn't pressed, remove the old selection.
+				m.type = OS_NOTIFICATION_DESELECT_ALL;
+				OSForwardMessage(control, control->notificationCallback, &m);
+			}
+
+			if (message->mousePressed.shift) {
+				// If SHIFT was pressed, select every from the last clicked row to this row.
+				uintptr_t low = row < control->lastClickedRow ? row : control->lastClickedRow;
+				uintptr_t high = row > control->lastClickedRow ? row : control->lastClickedRow;
+
+				m.type = OS_NOTIFICATION_SET_ITEM;
+				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+
+				for (uintptr_t i = low; i <= high; i++) {
+					m.listViewItem.index = i;
+					OSForwardMessage(control, control->notificationCallback, &m);
+				}
+			} else {
+				// If SHIFT wasn't pressed, only add this row to the selection.
+				m.type = OS_NOTIFICATION_SET_ITEM;
+				m.listViewItem.index = row;
+				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+				OSForwardMessage(control, control->notificationCallback, &m);
+			}
+
+			control->lastClickedRow = row;
+		} break;
+
 		case OS_MESSAGE_END_HOVER: {
 			control->highlightRow = -1;
 		} break;
@@ -1599,6 +1664,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 	switch (message->type) {
 		case OS_MESSAGE_LAYOUT: {
 			// Adjust the layout we're given, and tell the scrollbar where it lives.
+
+			control->inputBounds = control->bounds;
 
 			if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
 				control->inputBounds.left += STANDARD_BORDER_SIZE;
@@ -1673,6 +1740,9 @@ OSObject OSCreateListView(unsigned flags) {
 	((Control *) control->scrollbar)->parent = control;
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessListViewMessage, nullptr));
 	OSSetObjectNotificationCallback(control->scrollbar, OS_MAKE_CALLBACK(ListViewScrollbarMoved, control));
+
+	control->lastClickedRow = -1;
+	control->highlightRow = -1;
 
 	{
 		OSMessage message;

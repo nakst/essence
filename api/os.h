@@ -514,6 +514,8 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_COMMAND			= 0x2000,
 	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
 	OS_NOTIFICATION_GET_ITEM		= 0x2002,
+	OS_NOTIFICATION_DESELECT_ALL		= 0x2003,
+	OS_NOTIFICATION_SET_ITEM		= 0x2004,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -556,7 +558,8 @@ typedef struct OSMessage {
 			int positionXScreen;
 			int positionYScreen;
 			uint8_t clickChainCount;
-			bool activationClick;
+			uint8_t activationClick : 1;
+			uint8_t alt : 1, ctrl : 1, shift : 1;
 		} mousePressed;
 
 		struct {
@@ -616,6 +619,7 @@ typedef struct OSMessage {
 		} valueChanged;
 
 #define OS_LIST_VIEW_ITEM_TEXT             (1)
+#define OS_LIST_VIEW_ITEM_SELECTED	   (2)
 		struct {
 			char *text; 
 			size_t textBytes;
