@@ -26,6 +26,10 @@
 #define LIST_VIEW_TEXT_MARGIN (6)
 #define LIST_VIEW_WITH_BORDER_MARGIN (LIST_VIEW_MARGIN + STANDARD_BORDER_SIZE)
 #define LIST_VIEW_ROW_HEIGHT (20)
+#define LIST_VIEW_HEADER_HEIGHT (25)
+#define LIST_VIEW_COLUMN_TEXT_COLOR (0x4D6278)
+#define LIST_VIEW_PRIMARY_TEXT_COLOR (0x000000)
+#define LIST_VIEW_SECONDARY_TEXT_COLOR (0x686868)
 
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
@@ -34,6 +38,8 @@
 // TODO Minimum size is smaller than expected?
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
+// TODO Is the automatic scrollbar positioning correct?
+// TODO Bottom-right resize area seems to break?
 
 struct UIImage {
 	OSRectangle region;
@@ -144,11 +150,12 @@ static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}
 static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
 static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
 
-static UIImage listViewHighlight    = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
-static UIImage listViewSelected     = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
-static UIImage listViewSelected2    = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 6, 14 + 228 + 7, 28 + 59 + 6, 28 + 59 + 7}};
-static UIImage listViewLastClicked  = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
-static UIImage listViewSelectionBox = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
+static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
+static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 6, 14 + 228 + 7, 28 + 59 + 6, 28 + 59 + 7}};
+static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
+static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
+static UIImage listViewColumnHeaderDivider = {{239, 240, 87, 112}, {239, 239, 87, 88}};
 
 static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -333,6 +340,10 @@ struct ListView : Control {
 	OSPoint selectionBoxPosition;
 	OSRectangle selectionBox;
 	int selectionBoxFirstRow, selectionBoxLastRow;
+
+	OSListViewColumn *columns;
+	int32_t columnsCount;
+	int32_t rowWidth;
 
 	int repaintFirstRow, repaintLastRow;
 	
@@ -1522,6 +1533,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 	int margin = LIST_VIEW_WITH_BORDER_MARGIN;
 	OSRectangle bounds = control->bounds;
+	bounds.top += control->columns ? LIST_VIEW_HEADER_HEIGHT : 0;
+	bounds.top += LIST_VIEW_MARGIN / 2;
 	bounds.left += margin;
 	bounds.right -= margin + SCROLLBAR_SIZE;
 
@@ -1553,13 +1566,48 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER) && !control->repaintCustomOnly) {
 					// Draw the background.
 					OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
-					margin = LIST_VIEW_MARGIN;
+				}
+
+				if (control->columns && !control->repaintCustomOnly) {
+					OSRectangle headerBounds = OS_MAKE_RECTANGLE(bounds.left, bounds.right, 
+							bounds.top - LIST_VIEW_HEADER_HEIGHT - LIST_VIEW_MARGIN / 2, 
+							bounds.top - LIST_VIEW_MARGIN / 2);
+
+					if (PushClipRectangle(headerBounds)) {
+						int x = 0;
+
+						for (int i = 0; i < control->columnsCount; i++) {
+							OSListViewColumn *column = control->columns + i;
+
+							OSString string; 
+							string.buffer = column->title;
+							string.bytes = column->titleBytes;
+
+							OSRectangle region = OS_MAKE_RECTANGLE(headerBounds.left + x + 2, headerBounds.left + x + column->width - 2, 
+									headerBounds.top + 2, headerBounds.bottom);
+
+							DrawString(surface, region, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+									LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+
+							if (i) {
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
+										OS_MAKE_RECTANGLE(region.left - 8, region.left - 7, 
+											headerBounds.top, headerBounds.bottom),
+										listViewColumnHeaderDivider.region, listViewColumnHeaderDivider.border, 
+										OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+							}
+
+							x += column->width;
+						}
+					}
+
+					PopClipRectangle();
 				}
 		
 				PushClipRectangle(bounds);
 
 				int i = 0;
-				int y = -control->scrollY + LIST_VIEW_MARGIN / 2;
+				int y = -control->scrollY;
 
 				{
 					i += control->scrollY / LIST_VIEW_ROW_HEIGHT;
@@ -1587,13 +1635,18 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					previousHadBox = (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) || (control->lastClickedRow == i - 1 && control->window->focus == control);
 				}
 
+				int boundsWidth = bounds.right - bounds.left;
+				int rowWidth = control->rowWidth ? (control->rowWidth > boundsWidth ? boundsWidth : control->rowWidth) : boundsWidth; 
+
 				for (; i < (int) control->itemCount && i <= control->repaintLastRow; i++) {
-					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
+					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.left + rowWidth, 
+							bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
 		
 					if (PushClipRectangle(row)) {
 						OSMessage message;
 						message.type = OS_NOTIFICATION_GET_ITEM;
 						message.listViewItem.index = i;
+						message.listViewItem.column = 0;
 						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | OS_LIST_VIEW_ITEM_SELECTED;
 						message.listViewItem.state = 0;
 		
@@ -1604,10 +1657,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						char *text = message.listViewItem.text;
 						size_t textBytes = message.listViewItem.textBytes;
 		
-						OSString string;
-						string.buffer = text;
-						string.bytes = textBytes;
-
 						{
 							// If the previous row had a box drawn around it, then adjust the row's bounds slightly
 							// to prevent a double-border at the boundary.
@@ -1640,13 +1689,44 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 							if (adjustedRow) row.top++;
 						}
+
+						OSString string;
+						string.buffer = text;
+						string.bytes = textBytes;
 		
-						{
+						message.type = OS_NOTIFICATION_GET_ITEM;
+						message.listViewItem.index = i;
+						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
+						message.listViewItem.state = 0;
+
+						bool primary = true;
+						int x = row.left;
+
+						for (int i = 0; i < (control->columnsCount ? control->columnsCount : 1); i++) {
+							if (i) {
+								message.listViewItem.column = i;
+
+								if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
+									continue;
+								}
+
+								string.buffer = message.listViewItem.text;
+								string.bytes = message.listViewItem.textBytes;
+							}
+
+							int width = control->columns ? control->columns[i].width : row.right - row.left;
+
 							OSRectangle region = row;
-							region.left += LIST_VIEW_TEXT_MARGIN;
-							region.right -= LIST_VIEW_TEXT_MARGIN;
+							region.left = row.left + x + LIST_VIEW_TEXT_MARGIN;
+							region.right = row.left + x + width - LIST_VIEW_TEXT_MARGIN;
+
+							if (control->columns) {
+								primary = control->columns[i].primary;
+							}
+
 							DrawString(surface, region, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-									0, -1, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
+									primary ? LIST_VIEW_PRIMARY_TEXT_COLOR : LIST_VIEW_SECONDARY_TEXT_COLOR, -1, 0, 
+									OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, CLIP_RECTANGLE);
 						}
 					}
 		
@@ -1986,6 +2066,20 @@ OSObject OSCreateListView(unsigned flags) {
 	}
 
 	return control;
+}
+
+void OSListViewSetColumns(OSObject _listView, OSListViewColumn *columns, int32_t count) {
+	ListView *control = (ListView *) _listView;
+	control->columns = columns;
+	control->columnsCount = count;
+
+	control->rowWidth = 0;
+
+	for (int i = 0; i < count; i++) {
+		control->rowWidth += columns[i].width;
+	}
+
+	OSRepaintControl(control);
 }
 
 void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {

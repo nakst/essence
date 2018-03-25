@@ -92,6 +92,12 @@ int SortList(const void *_a, const void *_b) {
 	return 0;
 }
 
+OSListViewColumn columns[] = {
+	{ OSLiteral("Word"), 150, true },
+	{ OSLiteral("Count"), 150, false },
+	{ OSLiteral("Index"), 50, false },
+};
+
 void CreateList(OSObject content) {
 	size_t length;
 	char *file = (char *) OSReadEntireFile(OSLiteral("/os/scarlet.txt"), &length);
@@ -124,7 +130,7 @@ void CreateList(OSObject content) {
 			bool found = false;
 			size_t length = file - start;
 
-#if 0
+#if 1
 			for (uintptr_t i = 0; i < wordCount; i++) {
 				if (length == words[i].length && 0 == OSCompareBytes(start, words[i].text, words[i].length)) {
 					found = true;
@@ -158,7 +164,9 @@ void CreateList(OSObject content) {
 #endif
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, wordCount / 16);
+	OSListViewInsert(listView, 0, wordCount/* / 16*/);
+
+	OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
 }
 
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
@@ -178,8 +186,8 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) message;
 
 	// OSPrint("object = %x\n", object);
-	OSListViewInsert(listView, 5, wordCount / 16);
-	// OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
+	// OSListViewInsert(listView, 5, wordCount / 16);
+	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
 
 	return OS_CALLBACK_HANDLED;
 }

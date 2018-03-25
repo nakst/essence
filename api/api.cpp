@@ -55,6 +55,10 @@ extern "C" void OSInitialiseAPI() {
 }
 
 extern "C" void _start() {
+	// Call global constructors.
+	void _init();
+	_init();
+
 	OSInitialiseAPI();
 	ProgramEntry();
 	OSTerminateThread(OS_CURRENT_THREAD);

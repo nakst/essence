@@ -1,3 +1,5 @@
+[section .text]
+
 [global _OSSyscall]
 _OSSyscall:
 	push	r12

@@ -490,7 +490,9 @@ int main(int argc, char **argv) {
 		char buffer[4096];
 		sprintf(buffer, "x86_64-elf-g++ -c %.*s -o bin/os/%.*s.o %s %s", autoBuild.source.bytes, autoBuild.source.text, autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
 		system(buffer);
-		sprintf(buffer, "x86_64-elf-gcc -o bin/os/%.*s bin/os/%.*s.o %s", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
+		system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` bin/os/crtbegin.o");
+		system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` bin/os/crtend.o");
+		sprintf(buffer, "x86_64-elf-gcc -o bin/os/%.*s bin/os/crti.o bin/os/crtbegin.o bin/os/%.*s.o bin/os/crtend.o bin/os/crtn.o %s", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
 		system(buffer);
 		sprintf(buffer, "cp bin/os/%.*s bin/os/%.*s_symbols", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text);
 		system(buffer);

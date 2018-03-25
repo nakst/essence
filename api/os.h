@@ -625,7 +625,7 @@ typedef struct OSMessage {
 			char *text; 
 			size_t textBytes;
 			uint16_t mask, state;
-			int32_t index;
+			int32_t index, column;
 		} listViewItem;
 
 		struct OSClipboardHeader clipboard;
@@ -700,6 +700,15 @@ typedef struct OSWindowSpecification {
 
 	OSMenuSpecification *menubar;
 } OSWindowSpecification;
+
+typedef struct OSListViewColumn {
+	char *title;
+	size_t titleBytes;
+#define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_PRIMARY (300)
+#define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_SECONDARY (150)
+	int width;
+	bool primary;
+} OSListViewColumn;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
@@ -901,6 +910,7 @@ OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
 
 OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);
 OS_EXTERN_C void OSListViewInvalidate(OSObject listView, int32_t index, int32_t count);
+OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, int32_t count);
 
 OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
 OS_EXTERN_C void OSSetScrollbarPosition(OSObject _scrollbar, int position, bool sendValueChangedNotification);

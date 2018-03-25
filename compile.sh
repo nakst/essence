@@ -11,6 +11,8 @@ KernelLinkFlags="-ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000"
 echo -e "-> Building ${ColorBlue}API${ColorNormal}..."
 ./manifest_parser api/empty.manifest bin/os/standard.manifest.h
 nasm -felf64 api/api.s -o bin/os/api1.o -Fdwarf
+nasm -felf64 api/crti.s -o bin/os/crti.o -Fdwarf
+nasm -felf64 api/crtn.s -o bin/os/crtn.o -Fdwarf
 x86_64-elf-g++ -c api/api.cpp -o bin/os/api2.o $BuildFlags -Wno-unused-function $Optimise
 x86_64-elf-ar -rcs bin/os/libapi.a bin/os/api1.o bin/os/api2.o 
 x86_64-elf-g++ -c api/glue.cpp -o bin/os/glue.o $BuildFlags -Wno-unused-function $Optimise
