@@ -29,7 +29,7 @@
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
-// TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections, etc.
+// TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Minimum scrollbar grip size.
 // TODO Minimum size is smaller than expected?
 // TODO Timer messages seem to be buggy?
@@ -297,6 +297,7 @@ struct Control : GUIObject {
 	uint32_t textShadow : 1, 
 		textBold : 1,
 		repaint : 1, 
+		repaintCustomOnly : 1,
 		relayout : 1,
 		noAnimations : 1,
 		focusable : 1,
@@ -326,12 +327,14 @@ struct ListView : Control {
 	size_t itemCount;
 	OSObject scrollbar;
 	int scrollY;
-	uintptr_t highlightRow, lastClickedRow;
+	int32_t highlightRow, lastClickedRow;
 
 	OSPoint selectionBoxAnchor;
 	OSPoint selectionBoxPosition;
 	OSRectangle selectionBox;
 	int selectionBoxFirstRow, selectionBoxLastRow;
+
+	int repaintFirstRow, repaintLastRow;
 	
 	enum {
 		DRAGGING_NONE,
@@ -486,12 +489,16 @@ static size_t ClipboardTextBytes() {
 	return clipboard.textBytes;
 }
 
-static inline void OSRepaintControl(OSObject _control) {
+static inline void OSRepaintControl(OSObject _control, bool customOnly = false) {
 	Control *control = (Control *) _control;
 
 	if (!control->repaint) {
 		control->repaint = true;
 		SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
+	}
+
+	if (!customOnly) {
+		control->repaintCustomOnly = false;
 	}
 }
 
@@ -648,6 +655,16 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (control->repaint || message->paint.force) {
 				// if (!control->firstPaint) OSPrint("first paint %x\n", control);
 				control->firstPaint = true;
+
+				bool menuSource;
+				bool normal, hover, pressed, disabled;
+				uint32_t textShadowColor, textColor;
+
+				if (control->repaintCustomOnly && !message->paint.force) {
+					goto repaintCustom;
+				} else {
+					control->repaintCustomOnly = false;
+				}
 				
 				if (control->drawParentBackground) {
 					OSMessage m = *message;
@@ -660,7 +677,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					OSSendMessage(control->parent, &m);
 				}
 
-				bool menuSource = false;
+				menuSource = false;
 
 				for (uintptr_t i = 0; i < openMenuCount; i++) {
 					if (openMenus[i].source == control) {
@@ -669,10 +686,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
-				bool disabled = control->disabled,
-				     pressed = ((control->window->pressed == control && control->window->hover == control) || control->window->focus == control || menuSource) && !disabled,
-				     hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled,
-				     normal = !hover && !pressed && !disabled;
+				disabled = control->disabled,
+				pressed = ((control->window->pressed == control && control->window->hover == control) || control->window->focus == control || menuSource) && !disabled,
+				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled,
+				normal = !hover && !pressed && !disabled;
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
 				control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
@@ -736,8 +753,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
-				uint32_t textColor = control->textColor;
-				uint32_t textShadowColor = 0xFFFFFF - textColor;
+				textColor = control->textColor;
+				textShadowColor = 0xFFFFFF - textColor;
 
 				if (control->disabled && !control->noDisabledTextColorChange) {
 					textColor = 0x777777;
@@ -757,6 +774,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 							control->textAlign, textColor, -1, control->textBold, CLIP_RECTANGLE);
 				}
 
+				repaintCustom:;
+
 				{
 					OSMessage m = *message;
 					m.type = OS_MESSAGE_CUSTOM_PAINT;
@@ -764,6 +783,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				control->repaint = false;
+				control->repaintCustomOnly = true;
 			}
 		} break;
 
@@ -1465,11 +1485,28 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
+static void RepaintListViewRows(ListView *control, int from, int to) {
+	OSRepaintControl(control, true);
+
+	if (from > to) {
+		int temp = from;
+		from = to;
+		to = temp;
+	}
+
+	if (from != 0) from--;
+	if (to != (int) control->itemCount) to++;
+
+	if (control->repaintFirstRow == -1 || control->repaintFirstRow > from) control->repaintFirstRow = from;
+	if (control->repaintLastRow == -1 || control->repaintLastRow > to) control->repaintLastRow = to;
+}
+
 static OSCallbackResponse ListViewScrollbarMoved(OSObject object, OSMessage *message) {
 	(void) object;
 	ListView *control = (ListView *) message->context;
 
 	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
+		// RepaintListView(control, true, 0, 0);
 		OSRepaintControl(control);
 		control->scrollY = message->valueChanged.newValue;
 		return OS_CALLBACK_HANDLED;
@@ -1494,7 +1531,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		bounds.bottom -= STANDARD_BORDER_SIZE;
 	}
 
-	uintptr_t previousHighlightRow = control->highlightRow;
+	int previousHighlightRow = control->highlightRow;
 
 	switch (message->type) {
 		case OS_MESSAGE_PAINT: {
@@ -1505,6 +1542,14 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		case OS_MESSAGE_CUSTOM_PAINT: {
 			OSHandle surface = message->paint.surface;
 
+			if (control->repaintFirstRow == -1 || !control->repaintCustomOnly) {
+				control->repaintFirstRow = 0;
+			}
+
+			if (control->repaintLastRow == (int) control->itemCount || !control->repaintCustomOnly) {
+				control->repaintLastRow = control->itemCount - 1;
+			}
+
 			if (PushClipRectangle(control->bounds)) {
 				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
 					// Draw the background.
@@ -1514,7 +1559,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 				PushClipRectangle(bounds);
 
-				uintptr_t i = 0;
+				int i = 0;
 				int y = -control->scrollY + LIST_VIEW_MARGIN / 2;
 
 				{
@@ -1522,9 +1567,28 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					y += i * LIST_VIEW_ROW_HEIGHT;
 				}
 
+				if (i < control->repaintFirstRow) {
+					y += (control->repaintFirstRow - i) * LIST_VIEW_ROW_HEIGHT;
+					i = control->repaintFirstRow;
+				}
+
 				bool previousHadBox = false;
 
-				for (; i < control->itemCount; i++) {
+				if (i != 0) {
+					OSMessage message;
+					message.type = OS_NOTIFICATION_GET_ITEM;
+					message.listViewItem.index = i - 1;
+					message.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+					message.listViewItem.state = 0;
+
+					if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
+						OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+					}
+
+					previousHadBox = (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) || (control->lastClickedRow == i - 1 && control->window->focus == control);
+				}
+
+				for (; i < (int) control->itemCount && i <= control->repaintLastRow; i++) {
 					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.right, bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
 		
 					if (PushClipRectangle(row)) {
@@ -1552,6 +1616,11 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							if (adjustedRow) row.top--;
 
 							previousHadBox = false;
+
+							// Only redraw the white background if we didn't redraw the whole control.
+							if (control->repaintCustomOnly) {
+								OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
+							}
 
 							if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
 								UIImage image = control->window->focus == control ? listViewSelected : listViewSelected2;
@@ -1598,6 +1667,9 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				}
 			}
 		
+			control->repaintFirstRow = -1;
+			control->repaintLastRow = -1;
+
 			PopClipRectangle();
 			result = OS_CALLBACK_HANDLED;
 		} break;
@@ -1624,15 +1696,13 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				break;
 			}
 
-			// We're going to want to repaint.
-			OSRepaintControl(control);
-
 			OSMessage m;
 
 			if (!message->mousePressed.ctrl && !message->mousePressed.shift) {
 				// If neither CTRL nor SHIFT were pressed, remove the old selection.
 				m.type = OS_NOTIFICATION_DESELECT_ALL;
 				OSForwardMessage(control, control->notificationCallback, &m);
+				OSRepaintControl(control);
 			}
 
 			if (!IsPointInRectangle(bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
@@ -1641,13 +1711,13 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			// This is the row we clicked on.
 			int y = message->mousePressed.positionY - bounds.top + control->scrollY;
-			uintptr_t row = y / LIST_VIEW_ROW_HEIGHT;
+			int row = y / LIST_VIEW_ROW_HEIGHT;
 
-			if (row >= control->itemCount || y < 0) {
+			if (row >= (int) control->itemCount || y < 0) {
 				break;
 			}
 
-			if (message->mousePressed.shift && control->lastClickedRow != (uintptr_t) -1) {
+			if (message->mousePressed.shift && control->lastClickedRow != -1) {
 				// If SHIFT was pressed, select every from the last clicked row to this row.
 				uintptr_t low = row < control->lastClickedRow ? row : control->lastClickedRow;
 				uintptr_t high = row > control->lastClickedRow ? row : control->lastClickedRow;
@@ -1660,6 +1730,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					m.listViewItem.index = i;
 					OSForwardMessage(control, control->notificationCallback, &m);
 				}
+
+				RepaintListViewRows(control, low, high);
 			} else if (message->mousePressed.ctrl) {
 				// If CTRL was pressed, toggle whether this row is selected.
 				m.type = OS_NOTIFICATION_GET_ITEM;
@@ -1670,6 +1742,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				m.type = OS_NOTIFICATION_SET_ITEM;
 				m.listViewItem.state ^= OS_LIST_VIEW_ITEM_SELECTED;
 				OSForwardMessage(control, control->notificationCallback, &m);
+				RepaintListViewRows(control, row, row);
 			} else {
 				// If SHIFT wasn't pressed, only add this row to the selection.
 				m.type = OS_NOTIFICATION_SET_ITEM;
@@ -1677,6 +1750,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
 				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
 				OSForwardMessage(control, control->notificationCallback, &m);
+				RepaintListViewRows(control, row, row);
 			}
 
 			control->lastClickedRow = row;
@@ -1694,7 +1768,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			control->selectionBoxFirstRow = row;
 			control->selectionBoxLastRow = row;
-			OSRepaintControl(control);
+			RepaintListViewRows(control, row, row);
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
@@ -1781,6 +1855,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					OSForwardMessage(control, control->notificationCallback, &m);
 				}
 			}
+
+			OSRepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_END_HOVER: {
@@ -1803,7 +1879,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 	}
 
 	if (previousHighlightRow != control->highlightRow) {
-		OSRepaintControl(control);
+		RepaintListViewRows(control, previousHighlightRow, control->highlightRow);
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
@@ -1907,7 +1983,7 @@ void OSListViewInsert(OSObject _listView, uintptr_t index, size_t count) {
 	(void) index;
 	ListView *listView = (ListView *) _listView;
 	listView->itemCount += count;
-	OSRepaintControl(listView);
+	RepaintListViewRows(listView, index, index + count);
 }
 
 static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
@@ -2076,6 +2152,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 			}
 
 			control->repaint = false;
+			control->repaintCustomOnly = true;
 		}
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
 		OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
@@ -3229,7 +3306,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
 			if (window->pressed) {
 				// Send the raw message.
-				OSSendMessage(window->hover, message);
+				OSSendMessage(window->pressed, message);
 
 				OSRepaintControl(window->pressed);
 
