@@ -387,7 +387,7 @@ struct Scrollbar : Grid {
 	int height;
 
 	int anchor;
-	int position;
+	float position;
 	int maxPosition;
 	int size;
 };
@@ -1551,7 +1551,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			}
 
 			if (PushClipRectangle(control->bounds)) {
-				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
+				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER) && !control->repaintCustomOnly) {
 					// Draw the background.
 					OSFillRectangle(surface, CLIP_RECTANGLE, OSColor(0xFFFFFFFF));
 					margin = LIST_VIEW_MARGIN;
@@ -1692,13 +1692,15 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
-			if (!IsPointInRectangle(control->bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
+			if (!IsPointInRectangle(control->bounds, message->mousePressed.positionX, message->mousePressed.positionY)
+					|| !(control->flags & OS_CREATE_LIST_VIEW_ANY_SELECTIONS)) {
 				break;
 			}
 
 			OSMessage m;
 
-			if (!message->mousePressed.ctrl && !message->mousePressed.shift) {
+			if ((!message->mousePressed.ctrl && !message->mousePressed.shift)
+					|| !(control->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
 				// If neither CTRL nor SHIFT were pressed, remove the old selection.
 				m.type = OS_NOTIFICATION_DESELECT_ALL;
 				OSForwardMessage(control, control->notificationCallback, &m);
@@ -1717,7 +1719,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				break;
 			}
 
-			if (message->mousePressed.shift && control->lastClickedRow != -1) {
+			if (message->mousePressed.shift && control->lastClickedRow != -1 && (control->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
 				// If SHIFT was pressed, select every from the last clicked row to this row.
 				uintptr_t low = row < control->lastClickedRow ? row : control->lastClickedRow;
 				uintptr_t high = row > control->lastClickedRow ? row : control->lastClickedRow;
@@ -1757,6 +1759,10 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_START_DRAG: {
+			if (!(control->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
+				break;
+			}
+
 			control->dragging = ListView::DRAGGING_SELECTION;
 			control->selectionBoxAnchor = OS_MAKE_POINT(message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY);
 			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
@@ -1777,6 +1783,10 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_MOUSE_DRAGGED: {
+			if (control->dragging != ListView::DRAGGING_SELECTION) {
+				break;
+			}
+
 			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
 			OSRepaintControl(control);
 
@@ -2768,7 +2778,7 @@ void OSSetScrollbarPosition(OSObject object, int newPosition, bool sendValueChan
 	if (scrollbar->enabled) {
 		float range = (float) (scrollbar->contentSize - scrollbar->viewportSize);
 		float fraction = (float) newPosition / range;
-		scrollbar->position = (int) (fraction * (float) scrollbar->maxPosition);
+		scrollbar->position = (fraction * (float) scrollbar->maxPosition);
 
 		if (scrollbar->position < 0) scrollbar->position = 0;
 		else if (scrollbar->position >= scrollbar->maxPosition) scrollbar->position = scrollbar->maxPosition;

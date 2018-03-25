@@ -150,8 +150,11 @@ void CreateList(OSObject content) {
 	}
 #endif
 
-	// OSObject listView = OSCreateListView(OS_FLAGS_DEFAULT);
-	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER);
+#if 0
+	OSObject listView = OSCreateListView(OS_FLAGS_DEFAULT | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+#else
+	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT);
+#endif
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
 	OSListViewInsert(listView, 0, wordCount);
