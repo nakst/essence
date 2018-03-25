@@ -1506,7 +1506,6 @@ static OSCallbackResponse ListViewScrollbarMoved(OSObject object, OSMessage *mes
 	ListView *control = (ListView *) message->context;
 
 	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
-		// RepaintListView(control, true, 0, 0);
 		OSRepaintControl(control);
 		control->scrollY = message->valueChanged.newValue;
 		return OS_CALLBACK_HANDLED;
@@ -1989,11 +1988,28 @@ OSObject OSCreateListView(unsigned flags) {
 	return control;
 }
 
-void OSListViewInsert(OSObject _listView, uintptr_t index, size_t count) {
-	(void) index;
-	ListView *listView = (ListView *) _listView;
-	listView->itemCount += count;
-	RepaintListViewRows(listView, index, index + count);
+void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
+	ListView *control = (ListView *) _listView;
+
+	if (index > (int) control->itemCount) {
+		OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
+	}
+
+	control->itemCount += count;
+	RepaintListViewRows(control, index, index + count - 1);
+
+	int scrollY = control->scrollY;
+
+	OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
+			control->bounds.bottom - control->bounds.top - ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN));
+
+	if (scrollY / LIST_VIEW_ROW_HEIGHT >= index) {
+		OSSetScrollbarPosition(control->scrollbar, scrollY + count * LIST_VIEW_ROW_HEIGHT, true);
+	}
+}
+
+void OSListViewInvalidate(OSObject _listView, uintptr_t index, size_t count) {
+	RepaintListViewRows((ListView *) _listView, index, index + count - 1);
 }
 
 static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {

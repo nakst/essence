@@ -204,6 +204,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
 	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
 	OS_FATAL_ERROR_CLIP_STACK_OVERFLOW,
+	OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS,
 } OSFatalError;
 
 // These must be negative.
@@ -898,7 +899,8 @@ OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
 
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
 
-OS_EXTERN_C void OSListViewInsert(OSObject listView, uintptr_t index, size_t count);
+OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);
+OS_EXTERN_C void OSListViewInvalidate(OSObject listView, int32_t index, int32_t count);
 
 OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
 OS_EXTERN_C void OSSetScrollbarPosition(OSObject _scrollbar, int position, bool sendValueChangedNotification);

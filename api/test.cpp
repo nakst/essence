@@ -25,6 +25,7 @@ struct Word {
 	bool selected;
 };
 
+OSObject listView;
 size_t wordCount;
 Word words[50000];
 char buffer[1024];
@@ -151,13 +152,13 @@ void CreateList(OSObject content) {
 #endif
 
 #if 0
-	OSObject listView = OSCreateListView(OS_FLAGS_DEFAULT | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+	listView = OSCreateListView(OS_FLAGS_DEFAULT | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
 #else
-	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT);
+	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT);
 #endif
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, wordCount);
+	OSListViewInsert(listView, 0, wordCount / 16);
 }
 
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
@@ -177,7 +178,8 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 	(void) message;
 
 	// OSPrint("object = %x\n", object);
-	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
+	OSListViewInsert(listView, 5, wordCount / 16);
+	// OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
 
 	return OS_CALLBACK_HANDLED;
 }
