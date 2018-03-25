@@ -624,7 +624,7 @@ typedef struct OSMessage {
 			char *text; 
 			size_t textBytes;
 			uint16_t mask, state;
-			uint32_t index;
+			int32_t index;
 		} listViewItem;
 
 		struct OSClipboardHeader clipboard;

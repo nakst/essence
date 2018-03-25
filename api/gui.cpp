@@ -148,7 +148,7 @@ static UIImage listViewHighlight    = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59
 static UIImage listViewSelected     = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
 static UIImage listViewSelected2    = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 6, 14 + 228 + 7, 28 + 59 + 6, 28 + 59 + 7}};
 static UIImage listViewLastClicked  = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
-// static UIImage listViewLastClicked2 = {{14 + 228 - 14, 14 + 241 - 14, 42 + 59 - 14, 42 + 72 - 14}, {14 + 228 + 6 - 14, 14 + 228 + 7 - 14, 42 + 59 + 6 - 14, 42 + 59 + 7 - 14}};
+static UIImage listViewSelectionBox = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
 
 static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -327,6 +327,17 @@ struct ListView : Control {
 	OSObject scrollbar;
 	int scrollY;
 	uintptr_t highlightRow, lastClickedRow;
+
+	OSPoint selectionBoxAnchor;
+	OSPoint selectionBoxPosition;
+	OSRectangle selectionBox;
+	int selectionBoxFirstRow, selectionBoxLastRow;
+	
+	enum {
+		DRAGGING_NONE,
+		DRAGGING_ITEMS,
+		DRAGGING_SELECTION,
+	} dragging;
 };
 
 struct MenuItem : Control {
@@ -1580,6 +1591,11 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				}
 		
 				PopClipRectangle();
+
+				if (control->dragging == ListView::DRAGGING_SELECTION) {
+					OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, control->selectionBox,
+							listViewSelectionBox.region, listViewSelectionBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, CLIP_RECTANGLE);
+				}
 			}
 		
 			PopClipRectangle();
@@ -1613,9 +1629,13 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			OSMessage m;
 
-			if (!IsPointInRectangle(bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
+			if (!message->mousePressed.ctrl && !message->mousePressed.shift) {
+				// If neither CTRL nor SHIFT were pressed, remove the old selection.
 				m.type = OS_NOTIFICATION_DESELECT_ALL;
 				OSForwardMessage(control, control->notificationCallback, &m);
+			}
+
+			if (!IsPointInRectangle(bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
 				break;
 			}
 
@@ -1624,15 +1644,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			uintptr_t row = y / LIST_VIEW_ROW_HEIGHT;
 
 			if (row >= control->itemCount || y < 0) {
-				m.type = OS_NOTIFICATION_DESELECT_ALL;
-				OSForwardMessage(control, control->notificationCallback, &m);
 				break;
-			}
-
-			if (!message->mousePressed.ctrl && !message->mousePressed.shift) {
-				// If neither CTRL nor SHIFT were pressed, remove the old selection.
-				m.type = OS_NOTIFICATION_DESELECT_ALL;
-				OSForwardMessage(control, control->notificationCallback, &m);
 			}
 
 			if (message->mousePressed.shift && control->lastClickedRow != (uintptr_t) -1) {
@@ -1668,6 +1680,107 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			}
 
 			control->lastClickedRow = row;
+		} break;
+
+		case OS_MESSAGE_START_DRAG: {
+			control->dragging = ListView::DRAGGING_SELECTION;
+			control->selectionBoxAnchor = OS_MAKE_POINT(message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY);
+			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
+
+			int y = message->mouseDragged.originalPositionY - bounds.top + control->scrollY;
+			int row = y / LIST_VIEW_ROW_HEIGHT;
+			if (row < 0) row = -1;
+			if (row >= (int) control->itemCount) row = control->itemCount;
+
+			control->selectionBoxFirstRow = row;
+			control->selectionBoxLastRow = row;
+			OSRepaintControl(control);
+		} break;
+
+		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
+			control->dragging = ListView::DRAGGING_NONE;
+			OSRepaintControl(control);
+		} break;
+
+		case OS_MESSAGE_MOUSE_DRAGGED: {
+			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
+			OSRepaintControl(control);
+
+			OSRectangle selectionBox;
+			OSPoint anchor = control->selectionBoxAnchor;
+			OSPoint position = control->selectionBoxPosition;
+
+			if (anchor.x < position.x) {
+				selectionBox.left = anchor.x;
+				selectionBox.right = position.x;
+			} else {
+				selectionBox.right = anchor.x;
+				selectionBox.left = position.x;
+			}
+
+			if (anchor.y < position.y) {
+				selectionBox.top = anchor.y;
+				selectionBox.bottom = position.y;
+			} else {
+				selectionBox.bottom = anchor.y;
+				selectionBox.top = position.y;
+			}
+
+			control->selectionBox = selectionBox;
+
+			int y1 = control->selectionBox.top - bounds.top + control->scrollY;
+			int y2 = control->selectionBox.bottom - bounds.top + control->scrollY;
+
+			int oldFirst = control->selectionBoxFirstRow;
+			int oldLast = control->selectionBoxLastRow;
+
+			int newFirst = y1 / LIST_VIEW_ROW_HEIGHT;
+			int newLast = y2 / LIST_VIEW_ROW_HEIGHT;
+
+			control->selectionBoxFirstRow = newFirst;
+			control->selectionBoxLastRow = newLast;
+
+			if (newFirst < 0) newFirst = -1; else if (newFirst > (int) control->itemCount) newFirst = control->itemCount;
+			if (newLast < 0) newLast = -1; else if (newLast > (int) control->itemCount) newLast = control->itemCount;
+
+			OSMessage m;
+			m.type = OS_NOTIFICATION_SET_ITEM;
+			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+			m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+
+			while (newFirst < oldFirst) {
+				m.listViewItem.index = --oldFirst;
+
+				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
+					OSForwardMessage(control, control->notificationCallback, &m);
+				}
+			}
+
+			while (newLast > oldLast) {
+				m.listViewItem.index = ++oldLast;
+
+				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
+					OSForwardMessage(control, control->notificationCallback, &m);
+				}
+			}
+
+			m.listViewItem.state = 0;
+
+			while (oldFirst < newFirst) {
+				m.listViewItem.index = oldFirst++;
+
+				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
+					OSForwardMessage(control, control->notificationCallback, &m);
+				}
+			}
+
+			while (oldLast > newLast) {
+				m.listViewItem.index = oldLast--;
+
+				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
+					OSForwardMessage(control, control->notificationCallback, &m);
+				}
+			}
 		} break;
 
 		case OS_MESSAGE_END_HOVER: {
@@ -3115,6 +3228,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
 			if (window->pressed) {
+				// Send the raw message.
+				OSSendMessage(window->hover, message);
+
 				OSRepaintControl(window->pressed);
 
 				if (window->pressed == window->hover) {
@@ -3170,6 +3286,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 
 				if (draggingStarted || DistanceSquared(message->mouseMoved.newPositionX, message->mouseMoved.newPositionY) >= 4) {
+					message->mouseDragged.originalPositionX = lastClickX;
+					message->mouseDragged.originalPositionY = lastClickY;
+
 					if (!draggingStarted) {
 						draggingStarted = true;
 						message->type = OS_MESSAGE_START_DRAG;
@@ -3177,8 +3296,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					}
 
 					message->type = OS_MESSAGE_MOUSE_DRAGGED;
-					message->mouseDragged.originalPositionX = lastClickX;
-					message->mouseDragged.originalPositionY = lastClickY;
 					OSSendMessage(window->pressed, message);
 				}
 			} else {

@@ -127,7 +127,6 @@ void CreateList(OSObject content) {
 				if (length == words[i].length && 0 == OSCompareBytes(start, words[i].text, words[i].length)) {
 					found = true;
 					words[i].count++;
-					if (words[i].count >= 50) words[i].selected = true;
 					break;
 				}
 			}
