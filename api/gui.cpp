@@ -16,6 +16,7 @@
 #define RESIZE_MOVE		(0)
 
 #define SCROLLBAR_SIZE (17)
+#define SCROLLBAR_MINIMUM (16)
 #define SCROLLBAR_BUTTON_AMOUNT (64)
 
 #define STANDARD_BACKGROUND_COLOR (0xF5F6F9)
@@ -30,7 +31,6 @@
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
-// TODO Minimum scrollbar grip size.
 // TODO Minimum size is smaller than expected?
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
@@ -2981,6 +2981,8 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 
 		float screens = (float) scrollbar->contentSize / (float) scrollbar->viewportSize;
 		scrollbar->size = height / screens;
+
+		if (scrollbar->size < SCROLLBAR_MINIMUM) scrollbar->size = SCROLLBAR_MINIMUM;
 
 		scrollbar->maxPosition = height - scrollbar->size;
 		if (fraction != -1) scrollbar->position = fraction * scrollbar->maxPosition;

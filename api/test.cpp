@@ -26,7 +26,7 @@ struct Word {
 };
 
 size_t wordCount;
-Word words[10000];
+Word words[50000];
 char buffer[1024];
 
 OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
@@ -37,8 +37,8 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		Word *word = words + index;
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
-			// message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d, %d)", word->length, word->text, word->count, index + 1);
+			// message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
+			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d/%d)", word->length, word->text, index + 1, wordCount);
 			message->listViewItem.text = buffer;
 		}
 
@@ -123,6 +123,7 @@ void CreateList(OSObject content) {
 			bool found = false;
 			size_t length = file - start;
 
+#if 0
 			for (uintptr_t i = 0; i < wordCount; i++) {
 				if (length == words[i].length && 0 == OSCompareBytes(start, words[i].text, words[i].length)) {
 					found = true;
@@ -130,6 +131,7 @@ void CreateList(OSObject content) {
 					break;
 				}
 			}
+#endif
 
 			if (!found) {
 				words[wordCount].text = start;
@@ -152,8 +154,7 @@ void CreateList(OSObject content) {
 	OSObject listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER);
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, 10);
-	// OSListViewInsert(listView, 0, 10);
+	OSListViewInsert(listView, 0, wordCount);
 }
 
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
