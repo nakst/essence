@@ -17,10 +17,6 @@ template <typename F> privDefer<F> defer_func(F f) { return privDefer<F>(f); }
 #define CF(x) OS ## x
 #endif
 
-static void EnterDebugger() {
-	asm volatile ("xchg %bx,%bx");
-}
-
 enum APIObjectType {
 	API_OBJECT_WINDOW,
 	API_OBJECT_GRID,

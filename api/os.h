@@ -203,7 +203,6 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
 	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
-	OS_FATAL_ERROR_CLIP_STACK_OVERFLOW,
 	OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS,
 } OSFatalError;
 
@@ -582,6 +581,7 @@ typedef struct OSMessage {
 
 		struct {
 			int left, right, top, bottom;
+			OSRectangle clip;
 			bool force;
 		} layout;
 
@@ -592,11 +592,13 @@ typedef struct OSMessage {
 
 		struct {
 			OSHandle surface;
+			OSRectangle clip;
 			bool force;
 		} paint;
 
 		struct {
 			OSHandle surface;
+			OSRectangle clip;
 			int left, right, top, bottom;
 		} paintBackground;
 
