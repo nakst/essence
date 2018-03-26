@@ -40,7 +40,6 @@
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
 // TODO Bottom-right resize area seems to break?
-// TODO Bottom item missing with column headers in list view.
 
 struct UIImage {
 	OSRectangle region;
@@ -1764,7 +1763,9 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			OSSendMessage(control->scrollbar, message);
 
-			if (!IsPointInRectangle(bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+			OSRectangle inputArea = OS_MAKE_RECTANGLE(bounds.left, control->columns ? control->rowWidth + bounds.left : bounds.right, bounds.top, bounds.bottom);
+
+			if (!IsPointInRectangle(inputArea, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
 				control->highlightRow = -1;
 				break;
 			}
@@ -1789,7 +1790,9 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				OSRepaintControl(control);
 			}
 
-			if (!IsPointInRectangle(bounds, message->mousePressed.positionX, message->mousePressed.positionY)) {
+			OSRectangle inputArea = OS_MAKE_RECTANGLE(bounds.left, control->columns ? control->rowWidth + bounds.left : bounds.right, bounds.top, bounds.bottom);
+
+			if (!IsPointInRectangle(inputArea, message->mousePressed.positionX, message->mousePressed.positionY)) {
 				break;
 			}
 
@@ -2010,7 +2013,9 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			}
 
 			OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
-					control->bounds.bottom - control->bounds.top - ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN));
+					control->bounds.bottom - control->bounds.top 
+					- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
+					- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
 
 			OSSendMessage(control->scrollbar, &m);
 			control->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
@@ -3346,6 +3351,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
 				message->type = OS_MESSAGE_DESTROY;
 				OSSendMessage(window, message);
+			} else if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
+				EnterDebugger();
 			} else if (window->focus) {
 				message->type = OS_MESSAGE_KEY_TYPED;
 				OSSendMessage(window->focus, message);
