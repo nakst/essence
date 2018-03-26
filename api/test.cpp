@@ -39,7 +39,20 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
 			// message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
-			message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d/%d)", word->length, word->text, index + 1, wordCount);
+			switch (message->listViewItem.column) {
+				case 0: {
+					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
+				} break;
+
+				case 1: {
+					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%d", word->count);
+				} break;
+
+				case 2: {
+					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%d", index + 1);
+				} break;
+			}
+
 			message->listViewItem.text = buffer;
 		}
 
@@ -164,9 +177,11 @@ void CreateList(OSObject content) {
 #endif
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, wordCount/* / 16*/);
+	OSListViewInsert(listView, 0, 100/* / 16*/);
 
 	OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
+
+	OSPrint("Loaded test list with %d words\n", wordCount);
 }
 
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {

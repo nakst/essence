@@ -40,6 +40,7 @@
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
 // TODO Bottom-right resize area seems to break?
+// TODO Bottom item missing with column headers in list view.
 
 struct UIImage {
 	OSRectangle region;
@@ -1700,7 +1701,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						message.listViewItem.state = 0;
 
 						bool primary = true;
-						int x = row.left;
+						int x = 0;
 
 						for (int i = 0; i < (control->columnsCount ? control->columnsCount : 1); i++) {
 							if (i) {
@@ -1719,6 +1720,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							OSRectangle region = row;
 							region.left = row.left + x + LIST_VIEW_TEXT_MARGIN;
 							region.right = row.left + x + width - LIST_VIEW_TEXT_MARGIN;
+
+							x += width;
 
 							if (control->columns) {
 								primary = control->columns[i].primary;
@@ -2079,6 +2082,11 @@ void OSListViewSetColumns(OSObject _listView, OSListViewColumn *columns, int32_t
 		control->rowWidth += columns[i].width;
 	}
 
+	OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
+			control->bounds.bottom - control->bounds.top 
+			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
+			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
+
 	OSRepaintControl(control);
 }
 
@@ -2095,7 +2103,9 @@ void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
 	int scrollY = control->scrollY;
 
 	OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
-			control->bounds.bottom - control->bounds.top - ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN));
+			control->bounds.bottom - control->bounds.top 
+			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
+			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
 
 	if (scrollY / LIST_VIEW_ROW_HEIGHT >= index) {
 		OSSetScrollbarPosition(control->scrollbar, scrollY + count * LIST_VIEW_ROW_HEIGHT, true);
