@@ -43,6 +43,7 @@ static void EnterDebugger() {
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
+// TODO Proper selection box semantics.
 
 struct UIImage {
 	OSRectangle region;
@@ -349,11 +350,13 @@ struct ListView : Control {
 	int32_t rowWidth;
 
 	int repaintFirstRow, repaintLastRow;
+	int draggingColumnIndex, draggingColumnX;
 	
 	enum {
 		DRAGGING_NONE,
 		DRAGGING_ITEMS,
 		DRAGGING_SELECTION,
+		DRAGGING_COLUMN,
 	} dragging;
 };
 
@@ -847,11 +850,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				break;
 			}
 
-			if (!control->disabled || control->keepCustomCursorWhenDisabled) {
-				control->window->cursor = (OSCursorStyle) control->cursor;
-			}
-
 			if (control->window->hover != control) {
+				if (!control->disabled || control->keepCustomCursorWhenDisabled) {
+					control->window->cursor = (OSCursorStyle) control->cursor;
+				}
+
 				control->window->hover = control;
 
 				{
@@ -1582,16 +1585,14 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							OSRectangle region = OS_MAKE_RECTANGLE(headerBounds.left + x + 2, headerBounds.left + x + column->width - 2, 
 									headerBounds.top + 2, headerBounds.bottom);
 
-							DrawString(surface, region, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+							DrawString(surface, OS_MAKE_RECTANGLE(region.left, region.right - 10, region.top, region.bottom), &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
 									LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip2);
 
-							if (i) {
-								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
-										OS_MAKE_RECTANGLE(region.left - 8, region.left - 7, 
-											headerBounds.top, headerBounds.bottom),
-										listViewColumnHeaderDivider.region, listViewColumnHeaderDivider.border, 
-										OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip2);
-							}
+							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
+									OS_MAKE_RECTANGLE(region.right - 8, region.right - 7, 
+										headerBounds.top, headerBounds.bottom),
+									listViewColumnHeaderDivider.region, listViewColumnHeaderDivider.border, 
+									OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip2);
 
 							x += column->width;
 						}
@@ -1714,7 +1715,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 							OSRectangle region = row;
 							region.left = row.left + x + LIST_VIEW_TEXT_MARGIN;
-							region.right = row.left + x + width - LIST_VIEW_TEXT_MARGIN;
+							region.right = row.left + x + width - LIST_VIEW_TEXT_MARGIN - 8;
 
 							x += width;
 
@@ -1754,6 +1755,32 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			}
 
 			OSSendMessage(control->scrollbar, message);
+
+			OSRectangle headerBounds = OS_MAKE_RECTANGLE(bounds.left, bounds.right, 
+					bounds.top - LIST_VIEW_HEADER_HEIGHT - LIST_VIEW_MARGIN / 2, 
+					bounds.top - LIST_VIEW_MARGIN / 2);
+
+			control->window->cursor = OS_CURSOR_NORMAL;
+
+			if (control->columns && IsPointInRectangle(headerBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				int x = 0;
+
+				for (int i = 0; i < control->columnsCount; i++) {
+					OSListViewColumn *column = control->columns + i;
+
+					OSRectangle region = OS_MAKE_RECTANGLE(headerBounds.left + x + column->width - 14, headerBounds.left + x + column->width - 6, 
+							headerBounds.top + 2, headerBounds.bottom);
+
+					if (IsPointInRectangle(region, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+						control->window->cursor = OS_CURSOR_SPLIT_HORIZONTAL;
+						break;
+					}
+
+					x += column->width;
+				}
+
+				break;
+			}
 
 			OSRectangle inputArea = OS_MAKE_RECTANGLE(bounds.left, control->columns ? control->rowWidth + bounds.left : bounds.right, bounds.top, bounds.bottom);
 
@@ -1836,22 +1863,44 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_START_DRAG: {
+			control->selectionBoxAnchor = OS_MAKE_POINT(message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY);
+			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
+
+			OSRectangle headerBounds = OS_MAKE_RECTANGLE(bounds.left, bounds.right, 
+					bounds.top - LIST_VIEW_HEADER_HEIGHT - LIST_VIEW_MARGIN / 2, 
+					bounds.top - LIST_VIEW_MARGIN / 2);
+
+			if (control->columns && IsPointInRectangle(headerBounds, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY)) {
+				int x = 0;
+
+				for (int i = 0; i < control->columnsCount; i++) {
+					OSListViewColumn *column = control->columns + i;
+
+					OSRectangle region = OS_MAKE_RECTANGLE(headerBounds.left + x + column->width - 14, headerBounds.left + x + column->width - 6, 
+							headerBounds.top + 2, headerBounds.bottom);
+
+					if (IsPointInRectangle(region, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY)) {
+						control->dragging = ListView::DRAGGING_COLUMN;
+						control->draggingColumnX = x;
+						control->draggingColumnIndex = i;
+						break;
+					}
+
+					x += column->width;
+				}
+
+				break;
+			}
+
 			if (!(control->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
 				break;
 			}
 
 			control->dragging = ListView::DRAGGING_SELECTION;
-			control->selectionBoxAnchor = OS_MAKE_POINT(message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY);
-			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
 
-			int y = message->mouseDragged.originalPositionY - bounds.top + control->scrollY;
-			int row = y / LIST_VIEW_ROW_HEIGHT;
-			if (row < 0) row = -1;
-			if (row >= (int) control->itemCount) row = control->itemCount;
-
-			control->selectionBoxFirstRow = row;
-			control->selectionBoxLastRow = row;
-			RepaintListViewRows(control, row, row);
+			control->selectionBoxFirstRow = -1;
+			control->selectionBoxLastRow = control->itemCount;
+			OSRepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
@@ -1860,6 +1909,15 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_MOUSE_DRAGGED: {
+			if (control->dragging == ListView::DRAGGING_COLUMN) {
+				OSRepaintControl(control);
+
+				int newWidth = message->mouseDragged.newPositionX - control->draggingColumnX - 16;
+				if (newWidth < 64) newWidth = 64;
+				control->rowWidth += newWidth - control->columns[control->draggingColumnIndex].width;
+				control->columns[control->draggingColumnIndex].width = newWidth;
+			}
+
 			if (control->dragging != ListView::DRAGGING_SELECTION) {
 				break;
 			}
@@ -1942,8 +2000,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					OSForwardMessage(control, control->notificationCallback, &m);
 				}
 			}
-
-			OSRepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_END_HOVER: {

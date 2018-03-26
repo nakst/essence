@@ -177,6 +177,24 @@ void WindowManager::RefreshCursor(Window *window) {
 			windowManager.cursorImageHeight = 19;
 		} break;
 
+		case OS_CURSOR_SPLIT_HORIZONTAL: {
+			windowManager.cursorImageX = 143;
+			windowManager.cursorImageY = 122;
+			windowManager.cursorImageOffsetX = -8;
+			windowManager.cursorImageOffsetY = -5;
+			windowManager.cursorImageWidth = 20;
+			windowManager.cursorImageHeight = 15;
+		} break;
+
+		case OS_CURSOR_SPLIT_VERTICAL: {
+			windowManager.cursorImageX = 169;
+			windowManager.cursorImageY = 120;
+			windowManager.cursorImageOffsetX = -5;
+			windowManager.cursorImageOffsetY = -8;
+			windowManager.cursorImageWidth = 15;
+			windowManager.cursorImageHeight = 20;
+		} break;
+
 		case OS_CURSOR_RESIZE_DIAGONAL_1: {
 			windowManager.cursorImageX = 193;
 			windowManager.cursorImageY = 97;

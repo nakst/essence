@@ -106,9 +106,9 @@ int SortList(const void *_a, const void *_b) {
 }
 
 OSListViewColumn columns[] = {
-	{ OSLiteral("Word"), 150, true },
-	{ OSLiteral("Count"), 150, false },
-	{ OSLiteral("Index"), 50, false },
+	{ OSLiteral("Word"), 100, true },
+	{ OSLiteral("Count"), 100, false },
+	{ OSLiteral("Index"), 100, false },
 };
 
 void CreateList(OSObject content) {
