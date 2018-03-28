@@ -935,6 +935,7 @@ OS_EXTERN_C void OSPrintDirect(char *string, size_t stringLength);
 OS_EXTERN_C size_t OSFormatString(char *buffer, size_t bufferLength, const char *format, ...);
 OS_EXTERN_C void OSHelloWorld();
 OS_EXTERN_C uint8_t OSGetRandomByte();
+OS_EXTERN_C void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument);
 
 // TODO Possibly remove all of these?
 // 	Or move into a libc library?

@@ -5,44 +5,131 @@
 
 struct FolderChild {
 	OSDirectoryChild data;
+	bool selected;
 };
 
 struct Instance {
 	OSObject folderListing;
 
-	FolderChild *folder;
+	FolderChild *folderChildren;
+	size_t folderChildCount;
 
 	void LoadFolder(char *path, size_t pathBytes);
 };
 
 OSListViewColumn folderListingColumns[] = {
+#define COLUMN_NAME (0)
 	{ OSLiteral("Name"), 270, true, },
+#define COLUMN_DATE_MODIFIED (1)
 	{ OSLiteral("Date modified"), 120, false, },
+#define COLUMN_TYPE (2)
 	{ OSLiteral("Type"), 120, false, },
+#define COLUMN_SIZE (3)
 	{ OSLiteral("Size"), 100, false, },
 };
 
+int SortFolder(const void *_a, const void *_b, void *argument) {
+	(void) argument;
+
+	FolderChild *a = (FolderChild *) _a;
+	FolderChild *b = (FolderChild *) _b;
+
+	char *s1 = a->data.name;
+	char *s2 = b->data.name;
+	size_t length1 = a->data.nameLengthBytes;
+	size_t length2 = b->data.nameLengthBytes;
+
+	while (length1 || length2) {
+		if (!length1) return -1;
+		if (!length2) return 1;
+
+		char c1 = *s1;
+		char c2 = *s2;
+
+		if (c1 >= 'a' && c1 <= 'z') c1 = c1 - 'a' + 'A';
+		if (c2 >= 'a' && c2 <= 'z') c2 = c2 - 'a' + 'A';
+
+		if (c1 != c2) {
+			return c1 - c2;
+		}
+
+		s1++;
+		s2++;
+		length1--;
+		length2--;
+	}
+
+	return 0;
+}
+
 OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *message) {
 	Instance *instance = (Instance *) message->context;
-
 	(void) object;
 	
 	switch (message->type) {
 		case OS_NOTIFICATION_GET_ITEM: {
-			message->listViewItem.state = 0;
-			message->listViewItem.text = (char *) instance->folder[message->listViewItem.index].data.name;
-			message->listViewItem.textBytes = instance->folder[message->listViewItem.index].data.nameLengthBytes;
+			uintptr_t index = message->listViewItem.index;
+			FolderChild *child = instance->folderChildren + index;
+			OSDirectoryChild *data = &child->data;
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
+#define BUFFER_SIZE (1024)
+				static char buffer[BUFFER_SIZE];
+
+				switch (message->listViewItem.column) {
+					case COLUMN_NAME: {
+						message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								"%s", data->nameLengthBytes, data->name);
+					} break;
+
+					case COLUMN_DATE_MODIFIED: {
+						message->listViewItem.textBytes = 0;
+					} break;
+
+					case COLUMN_TYPE: {
+						message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								"%z", data->information.type == OS_NODE_FILE ? "File" : "Directory");
+					} break;
+
+					case COLUMN_SIZE: {
+						message->listViewItem.textBytes = 0;
+
+						if (data->information.type == OS_NODE_FILE) {
+							message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+									"%d KB", (999 + data->information.fileSize) / 1000);
+						}
+					} break;
+				}
+#undef BUFFER_SIZE
+
+				message->listViewItem.text = buffer;
+			}
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+				if (child->selected) {
+					message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
+				}
+			}
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_DESELECT_ALL: {
-			// TODO 
+			for (uintptr_t i = 0; i < instance->folderChildCount; i++) {
+				instance->folderChildren[i].selected = false;
+			}
+
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_SET_ITEM: {
-			// TODO 
+			uintptr_t index = message->listViewItem.index;
+			FolderChild *child = instance->folderChildren + index;
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+				child->selected = message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+			}
+
 			return OS_CALLBACK_HANDLED;
 		} break;
 
@@ -79,11 +166,14 @@ void Instance::LoadFolder(char *path, size_t pathBytes) {
 		}
 	}
 
-	folder = (FolderChild *) OSHeapAllocate(childCount * sizeof(FolderChild), true);
+	folderChildren = (FolderChild *) OSHeapAllocate(childCount * sizeof(FolderChild), true);
+	folderChildCount = childCount;
 
 	for (uintptr_t i = 0; i < childCount; i++) {
-		OSCopyMemory(&folder[i].data, children + i, sizeof(OSDirectoryChild));
+		OSCopyMemory(&folderChildren[i].data, children + i, sizeof(OSDirectoryChild));
 	}
+
+	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, nullptr);
 
 	OSListViewInsert(folderListing, 0, childCount);
 
@@ -107,7 +197,7 @@ void ProgramEntry() {
 	OSListViewSetColumns(instance->folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
 	OSSetObjectNotificationCallback(instance->folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, instance));
 
-	instance->LoadFolder(OSLiteral("/"));
+	instance->LoadFolder(OSLiteral("/os/"));
 
 	OSProcessMessages();
 }

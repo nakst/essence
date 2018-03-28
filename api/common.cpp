@@ -380,6 +380,29 @@ uint8_t CF(GetRandomByte)() {
 	return (uint8_t) (osRandomByteSeed >> 16);
 }
 
+void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument) {
+	if (nmemb <= 1) return;
+
+	uint8_t *base = (uint8_t *) _base;
+	uint8_t swap[size];
+
+	intptr_t i = -1, j = nmemb;
+
+	while (true) {
+		while (compar(base + ++i * size, base, argument) < 0);
+		while (compar(base + --j * size, base, argument) > 0);
+
+		if (i >= j) break;
+
+		CF(CopyMemory)(swap, base + i * size, size);
+		CF(CopyMemory)(base + i * size, base + j * size, size);
+		CF(CopyMemory)(base + j * size, swap, size);
+	}
+
+	OSSort(base, ++j, size, compar, argument);
+	OSSort(base + j * size, nmemb - j, size, compar, argument);
+}
+
 #ifndef KERNEL
 static int64_t ConvertCharacterToDigit(int character, int base) {
 	int64_t result = -1;

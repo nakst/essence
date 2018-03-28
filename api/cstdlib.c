@@ -386,7 +386,7 @@ void qsort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, c
 	uint8_t *base = (uint8_t *) _base;
 	uint8_t swap[size];
 
-	uintptr_t i = -1, j = nmemb;
+	intptr_t i = -1, j = nmemb;
 
 	while (true) {
 		while (compar(base + ++i * size, base) < 0);
