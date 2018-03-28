@@ -5,19 +5,6 @@
 I've adjusted all of the images to be in the 1920x1080 resolution (sorry 4K folks!)
 I also removed all metadata from the images, and renamed them.
 
-Desert.jpg
-https://commons.wikimedia.org/wiki/File:Dune_de_sable_au_parc_Culturel_De_l%27Ahaggar_crop.jpg
-Author	Original: Hamza-sia
-Derivative work including rotation, conversion to sRGB, crop, minor adjustments, removal of hotpixel: Julian Herzog
-This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
-https://creativecommons.org/licenses/by-sa/3.0/deed.en
-
-Water.jpg
-https://commons.wikimedia.org/wiki/File:Kamienny-falochron_Sarbinowo.jpg
-Author	Łukasz Śmigasiewicz
-This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Poland license.	
-https://creativecommons.org/licenses/by-sa/3.0/pl/deed.en
-
 Winter.jpg
 https://commons.wikimedia.org/wiki/File:Panorama_Bled_01.jpg
 Author	Mihael Grmek
@@ -29,12 +16,6 @@ https://commons.wikimedia.org/wiki/File:Marmolada_Sunset.jpg
 Author	Dmitry A. Mottl
 This file is licensed under the Creative Commons Attribution-Share Alike 3.0 Unported license.	
 https://creativecommons.org/licenses/by-sa/3.0/deed.en
-
-Mist.jpg
-https://commons.wikimedia.org/wiki/File:Laudtee_Meenikunnos.jpg
-Author	Külli Kolina
-This file is licensed under the Creative Commons Attribution-Share Alike 4.0 International license.	
-https://creativecommons.org/licenses/by-sa/4.0/deed.en
 
 Sunset.jpg
 https://commons.wikimedia.org/wiki/File:Laanemaa_j%C3%A4rv_Orkj%C3%A4rve_looduskaitsealal.jpg

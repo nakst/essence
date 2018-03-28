@@ -43,7 +43,6 @@ static void EnterDebugger() {
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
-// TODO Proper selection box semantics.
 
 struct UIImage {
 	OSRectangle region;
@@ -1965,11 +1964,11 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 				if (ClipRectangle(control->selectionBox, row, nullptr)) {
 					m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+					OSForwardMessage(control, control->notificationCallback, &m);
 				} else {
 					m.listViewItem.state = 0;
+					OSForwardMessage(control, control->notificationCallback, &m);
 				}
-
-				OSForwardMessage(control, control->notificationCallback, &m);
 
 				y += LIST_VIEW_ROW_HEIGHT;
 			}
