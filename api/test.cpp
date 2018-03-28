@@ -177,7 +177,7 @@ void CreateList(OSObject content) {
 #endif
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
-	OSListViewInsert(listView, 0, 100/* / 16*/);
+	OSListViewInsert(listView, 0, wordCount/* / 16*/);
 
 	OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
 

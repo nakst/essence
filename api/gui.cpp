@@ -343,7 +343,6 @@ struct ListView : Control {
 	OSPoint selectionBoxAnchor;
 	OSPoint selectionBoxPosition;
 	OSRectangle selectionBox;
-	int selectionBoxFirstRow, selectionBoxLastRow;
 
 	OSListViewColumn *columns;
 	int32_t columnsCount;
@@ -472,9 +471,11 @@ static bool ClipRectangle(OSRectangle parent, OSRectangle rectangle, OSRectangle
 		intersection = OS_MAKE_RECTANGLE(0, 0, 0, 0);
 	}
 
-	*output = intersection;
+	if (output) {
+		*output = intersection;
+	}
 
-	return intersection.left != intersection.right && intersection.top != intersection.bottom;
+	return intersection.left < intersection.right && intersection.top < intersection.bottom;
 }
 
 void OSDebugGUIObject(OSObject _guiObject) {
@@ -1898,8 +1899,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			control->dragging = ListView::DRAGGING_SELECTION;
 
-			control->selectionBoxFirstRow = -1;
-			control->selectionBoxLastRow = control->itemCount;
 			OSRepaintControl(control);
 		} break;
 
@@ -1947,58 +1946,32 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			control->selectionBox = selectionBox;
 
-			int y1 = control->selectionBox.top - bounds.top + control->scrollY;
-			int y2 = control->selectionBox.bottom - bounds.top + control->scrollY;
+			int boundsWidth = bounds.right - bounds.left;
+			int rowWidth = control->rowWidth ? (control->rowWidth > boundsWidth ? boundsWidth : control->rowWidth) : boundsWidth; 
 
-			int oldFirst = control->selectionBoxFirstRow;
-			int oldLast = control->selectionBoxLastRow;
-
-			int newFirst = y1 / LIST_VIEW_ROW_HEIGHT;
-			int newLast = y2 / LIST_VIEW_ROW_HEIGHT;
-
-			control->selectionBoxFirstRow = newFirst;
-			control->selectionBoxLastRow = newLast;
-
-			if (newFirst < 0) newFirst = -1; else if (newFirst > (int) control->itemCount) newFirst = control->itemCount;
-			if (newLast < 0) newLast = -1; else if (newLast > (int) control->itemCount) newLast = control->itemCount;
+			int y = -control->scrollY;
 
 			OSMessage m;
 			m.type = OS_NOTIFICATION_SET_ITEM;
 			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-			m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
 
-			while (newFirst < oldFirst) {
-				m.listViewItem.index = --oldFirst;
+			// TODO Only check to update items that could have changed.
 
-				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
-					OSForwardMessage(control, control->notificationCallback, &m);
+			for (int i = 0; i < (int) control->itemCount; i++) {
+				OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.left + rowWidth, 
+						bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
+
+				m.listViewItem.index = i;
+
+				if (ClipRectangle(control->selectionBox, row, nullptr)) {
+					m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+				} else {
+					m.listViewItem.state = 0;
 				}
-			}
 
-			while (newLast > oldLast) {
-				m.listViewItem.index = ++oldLast;
+				OSForwardMessage(control, control->notificationCallback, &m);
 
-				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
-					OSForwardMessage(control, control->notificationCallback, &m);
-				}
-			}
-
-			m.listViewItem.state = 0;
-
-			while (oldFirst < newFirst) {
-				m.listViewItem.index = oldFirst++;
-
-				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
-					OSForwardMessage(control, control->notificationCallback, &m);
-				}
-			}
-
-			while (oldLast > newLast) {
-				m.listViewItem.index = oldLast--;
-
-				if (m.listViewItem.index >= 0 && m.listViewItem.index < (int) control->itemCount) {
-					OSForwardMessage(control, control->notificationCallback, &m);
-				}
+				y += LIST_VIEW_ROW_HEIGHT;
 			}
 		} break;
 

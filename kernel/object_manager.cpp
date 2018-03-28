@@ -1,3 +1,5 @@
+// TODO Single global handle table?
+
 #ifndef IMPLEMENTATION
 
 #define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
