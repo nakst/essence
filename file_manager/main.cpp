@@ -9,7 +9,8 @@ struct FolderChild {
 };
 
 struct Instance {
-	OSObject folderListing;
+	OSObject folderListing,
+		 folderPath;
 
 	FolderChild *folderChildren;
 	size_t folderChildCount;
@@ -95,8 +96,21 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 						message->listViewItem.textBytes = 0;
 
 						if (data->information.type == OS_NODE_FILE) {
-							message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
-									"%d KB", (999 + data->information.fileSize) / 1000);
+							int fileSize = data->information.fileSize;
+
+							if (fileSize < 1000) {
+								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+										"%d bytes", fileSize);
+							} else if (fileSize < 1000000) {
+								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+										"%d.%d KB", fileSize / 1000, (fileSize / 100) % 10);
+							} else if (fileSize < 1000000000) {
+								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+										"%d.%d MB", fileSize / 1000000, (fileSize / 1000000) % 10);
+							} else {
+								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+										"%d.%d GB", fileSize / 1000000000, (fileSize / 1000000000) % 10);
+							}
 						}
 					} break;
 				}
@@ -176,6 +190,7 @@ void Instance::LoadFolder(char *path, size_t pathBytes) {
 	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, nullptr);
 
 	OSListViewInsert(folderListing, 0, childCount);
+	OSSetText(folderPath, path, pathBytes);
 
 	OSHeapFree(children);
 	OSCloseHandle(node.handle);
@@ -187,15 +202,22 @@ void ProgramEntry() {
 	OSObject window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, instance);
 
-	OSObject layout1 = OSCreateGrid(1, 2, OS_FLAGS_DEFAULT);
-	OSObject layout2 = OSCreateGrid(2, 1, OS_CREATE_GRID_NO_BORDER);
+	OSObject layout1 = OSCreateGrid(1, 3, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
+	OSObject layout2 = OSCreateGrid(2, 1, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
+	OSObject layout3 = OSCreateGrid(1, 1, OS_FLAGS_DEFAULT);
 	OSSetRootGrid(window, layout1);
-	OSAddGrid(layout1, 0, 1, layout2, OS_CELL_FILL);
+	OSAddGrid(layout1, 0, 2, layout2, OS_CELL_FILL);
+	OSAddGrid(layout1, 0, 0, layout3, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
-	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT);
+	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
 	OSAddControl(layout2, 1, 0, instance->folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(instance->folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
 	OSSetObjectNotificationCallback(instance->folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, instance));
+
+	OSAddControl(layout1, 0, 1, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+
+	instance->folderPath = OSCreateTextbox(0);
+	OSAddControl(layout3, 0, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	instance->LoadFolder(OSLiteral("/os/"));
 

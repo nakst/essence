@@ -162,9 +162,9 @@ static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 -
 static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
 static UIImage listViewColumnHeaderDivider = {{239, 240, 87, 112}, {239, 239, 87, 88}};
 
-static UIImage lineHorizontal		= {{40, 52, 114, 118}, {41, 42, 114, 114}};
+static UIImage lineHorizontal		= {{40, 52, 115, 117}, {41, 42, 115, 115}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
-static UIImage lineVertical		= {{34, 38, 110, 122}, {34, 34, 111, 112}};
+static UIImage lineVertical		= {{35, 37, 110, 122}, {35, 35, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
 struct UIImage *smallArrowUpIcons[] = { &smallArrowUpNormal, &smallArrowUpDisabled, &smallArrowUpHover, &smallArrowUpPressed, };
@@ -2228,10 +2228,10 @@ OSObject OSCreateLine(bool orientation) {
 	control->backgrounds = orientation ? lineVerticalBackgrounds : lineHorizontalBackgrounds;
 	control->drawParentBackground = true;
 
-	control->preferredWidth = 4;
-	control->preferredHeight = 4;
-	control->minimumWidth = 4;
-	control->minimumHeight = 4;
+	control->preferredWidth = 2;
+	control->preferredHeight = 2;
+	control->minimumWidth = 2;
+	control->minimumHeight = 2;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
