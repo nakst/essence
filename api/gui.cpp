@@ -43,6 +43,8 @@ static void EnterDebugger() {
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
+// TODO Redo minimum/preferred/fill sizes.
+// TODO Multiple-cell positions.
 
 struct UIImage {
 	OSRectangle region;
@@ -2210,7 +2212,7 @@ OSObject OSCreateButton(OSCommand *command) {
 		control->minimumWidth = control->icons[0]->region.right - control->icons[0]->region.left;
 	} else {
 		control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
-		control->minimumWidth = 80;
+		control->minimumWidth = 40;
 		control->minimumHeight = 21;
 	}
 
@@ -2363,6 +2365,10 @@ void OSSetInstance(OSObject _window, void *instance) {
 
 void *OSGetInstance(OSObject _window) {
 	return ((Window *) _window)->instance;
+}
+
+void *OSGetInstanceFromControl(OSObject object) {
+	return ((Control *) object)->window->instance;
 }
 
 void OSGetText(OSObject _control, OSString *string) {

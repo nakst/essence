@@ -8,7 +8,7 @@ source = "calculator/main.cpp";
 [window mainWindow]
 width = 330;
 height = 300;
-minimumWidth = 200;
+minimumWidth = 250;
 minimumHeight = 250;
 title = "Calculator";
 

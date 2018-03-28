@@ -1,0 +1,13 @@
+[program]
+name = "File Manager";
+
+[build]
+output = file_manager;
+source = "file_manager/main.cpp";
+
+[window mainWindow]
+width = 800;
+height = 600;
+minimumWidth = 200;
+minimumHeight = 200;
+title = "File Manager";

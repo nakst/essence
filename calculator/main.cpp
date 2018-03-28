@@ -248,8 +248,8 @@ void ProgramEntry() {
 	OSObject window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, instance);
 
-	OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_BORDER);
-	OSObject keypad = OSCreateGrid(5, 4, 0);
+	OSObject grid = OSCreateGrid(1, 2, OS_FLAGS_DEFAULT);
+	OSObject keypad = OSCreateGrid(5, 4, OS_CREATE_GRID_NO_BORDER);
 	instance->textbox = OSCreateTextbox(18);
 
 	OSSetRootGrid(window, grid);

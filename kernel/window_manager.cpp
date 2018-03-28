@@ -740,6 +740,10 @@ void Window::Destroy() {
 		windowManager.mutex.Release();
 	}
 
+	{
+		windowManager.MoveCursor(0, 0);
+	}
+
 	graphics.UpdateScreen();
 }
 

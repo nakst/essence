@@ -15,7 +15,7 @@ name = "SubMenu2";
 actionToggleEnabled;
 
 [command actionOK]
-label = "Open Menu";
+label = "Open Program...";
 callback = Crash;
 isDisabled = false;
 
@@ -30,6 +30,20 @@ defaultCheck = true;
 [command commandDeleteEverything]
 label = "Delete Everything";
 dangerous = true;
+
+[command commandLaunchCalculator]
+label = "Calculator";
+callback = Launch;
+callbackArgument = "/os/calculator";
+
+[command commandLaunchFileManager]
+label = "File Manager";
+callback = Launch;
+callbackArgument = "/os/file_manager";
+
+[menu menuPrograms]
+commandLaunchCalculator;
+commandLaunchFileManager;
 
 [build]
 output = test;

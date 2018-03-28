@@ -888,6 +888,7 @@ OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback cal
 
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
+OS_EXTERN_C void *OSGetInstanceFromControl(OSObject object);
 
 OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 

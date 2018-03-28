@@ -223,7 +223,9 @@ void KernelPanic(const char *format, ...) {
 	ProcessorHalt();
 }
 
+#if 1
 #define ENABLE_OUTPUT
+#endif
 
 void Print(const char *format, ...) {
 #ifdef ENABLE_OUTPUT

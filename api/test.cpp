@@ -202,8 +202,17 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 
 	// OSPrint("object = %x\n", object);
 	// OSListViewInsert(listView, 5, wordCount / 16);
-	OSCreateMenu(osMenuTextboxContext, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
+	OSCreateMenu(menuPrograms, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
 
+	return OS_CALLBACK_HANDLED;
+}
+
+OSCallbackResponse Launch(OSObject object, OSMessage *message) {
+	(void) object;
+	OSProcessInformation information;
+	OSCreateProcess((char *) message->context, OSCStringLength((char *) message->context), &information, nullptr);
+	OSCloseHandle(information.handle);
+	OSCloseHandle(information.mainThread.handle);
 	return OS_CALLBACK_HANDLED;
 }
 
