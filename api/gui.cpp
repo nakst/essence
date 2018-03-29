@@ -1699,6 +1699,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						message.listViewItem.state = 0;
 
 						bool primary = true;
+						bool rightAligned = false;
 						int x = 0;
 
 						for (int i = 0; i < (control->columnsCount ? control->columnsCount : 1); i++) {
@@ -1722,10 +1723,13 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							x += width;
 
 							if (control->columns) {
-								primary = control->columns[i].primary;
+								primary = control->columns[i].flags & OS_LIST_VIEW_COLUMN_PRIMARY;
+								rightAligned = control->columns[i].flags & OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED;
 							}
 
-							DrawString(surface, region, &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+							DrawString(surface, region, &string, 
+									(rightAligned ? OS_DRAW_STRING_HALIGN_RIGHT : OS_DRAW_STRING_HALIGN_LEFT) 
+									| OS_DRAW_STRING_VALIGN_CENTER,
 									primary ? LIST_VIEW_PRIMARY_TEXT_COLOR : LIST_VIEW_SECONDARY_TEXT_COLOR, -1, 0, 
 									OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip3);
 						}
@@ -2457,6 +2461,19 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 	Grid *grid = (Grid *) _object;
 
 	switch (message->type) {
+		case OS_MESSAGE_SET_PROPERTY: {
+			void *value = message->setProperty.value;
+			int valueInt = (int) (uintptr_t) value;
+
+			switch (message->setProperty.index) {
+				case OS_GRID_PROPERTY_BORDER_SIZE: {
+					grid->borderSize = valueInt;
+					grid->repaint = true;
+					SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+				} break;
+			}
+		} break;
+
 		case OS_MESSAGE_LAYOUT: {
 			if (grid->relayout || message->layout.force) {
 				grid->relayout = false;
@@ -3881,6 +3898,14 @@ void OSGetMousePosition(OSObject relativeWindow, OSPoint *position) {
 		position->x -= bounds.left;
 		position->y -= bounds.top;
 	}
+}
+
+void OSSetProperty(OSObject object, uintptr_t index, void *value) {
+	OSMessage message;
+	message.type = OS_MESSAGE_SET_PROPERTY;
+	message.setProperty.index = index;
+	message.setProperty.value = value;
+	OSSendMessage(object, &message);
 }
 
 void OSInitialiseGUI() {

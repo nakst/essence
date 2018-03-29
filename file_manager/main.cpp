@@ -20,13 +20,13 @@ struct Instance {
 
 OSListViewColumn folderListingColumns[] = {
 #define COLUMN_NAME (0)
-	{ OSLiteral("Name"), 270, true, },
+	{ OSLiteral("Name"), 270, OS_LIST_VIEW_COLUMN_PRIMARY, },
 #define COLUMN_DATE_MODIFIED (1)
-	{ OSLiteral("Date modified"), 120, false, },
+	{ OSLiteral("Date modified"), 120, OS_FLAGS_DEFAULT, },
 #define COLUMN_TYPE (2)
-	{ OSLiteral("Type"), 120, false, },
+	{ OSLiteral("Type"), 120, OS_FLAGS_DEFAULT, },
 #define COLUMN_SIZE (3)
-	{ OSLiteral("Size"), 100, false, },
+	{ OSLiteral("Size"), 100, OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED, },
 };
 
 int SortFolder(const void *_a, const void *_b, void *argument) {
@@ -208,6 +208,7 @@ void ProgramEntry() {
 	OSSetRootGrid(window, layout1);
 	OSAddGrid(layout1, 0, 2, layout2, OS_CELL_FILL);
 	OSAddGrid(layout1, 0, 0, layout3, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSSetProperty(layout3, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 2);
 
 	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
 	OSAddControl(layout2, 1, 0, instance->folderListing, OS_CELL_FILL);

@@ -522,6 +522,7 @@ typedef enum OSMessageType {
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
 	OS_MESSAGE_CLIPBOARD_UPDATED		= 0x5001,
+	OS_MESSAGE_SET_PROPERTY			= 0x5002,
 
 	// User messages:
 	OS_MESSAGE_USER_START			= 0x8000,
@@ -632,6 +633,11 @@ typedef struct OSMessage {
 			int32_t index, column;
 		} listViewItem;
 
+		struct {
+			uintptr_t index;
+			void *value;
+		} setProperty;
+
 		struct OSClipboardHeader clipboard;
 	};
 } OSMessage;
@@ -711,7 +717,9 @@ typedef struct OSListViewColumn {
 #define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_PRIMARY (300)
 #define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_SECONDARY (150)
 	int width;
-	bool primary;
+#define OS_LIST_VIEW_COLUMN_PRIMARY (1)
+#define OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED (2)
+	uint32_t flags;
 } OSListViewColumn;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
@@ -871,6 +879,9 @@ OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString 
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize);
 
 OS_EXTERN_C void OSRedrawAll();
+
+#define OS_GRID_PROPERTY_BORDER_SIZE (1)
+OS_EXTERN_C void OSSetProperty(OSObject object, uintptr_t index, void *value);
 
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message);
