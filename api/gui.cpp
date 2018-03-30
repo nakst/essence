@@ -167,13 +167,20 @@ static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal
 static UIImage lineVertical		= {{35, 37, 110, 122}, {35, 35, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
-struct UIImage *smallArrowUpIcons[] = { &smallArrowUpNormal, &smallArrowUpDisabled, &smallArrowUpHover, &smallArrowUpPressed, };
-struct UIImage *smallArrowDownIcons[] = { &smallArrowDownNormal, &smallArrowDownDisabled, &smallArrowDownHover, &smallArrowDownPressed, };
-struct UIImage *smallArrowLeftIcons[] = { &smallArrowLeftNormal, &smallArrowLeftDisabled, &smallArrowLeftHover, &smallArrowLeftPressed, };
-struct UIImage *smallArrowRightIcons[] = { &smallArrowRightNormal, &smallArrowRightDisabled, &smallArrowRightHover, &smallArrowRightPressed, };
+static struct UIImage *smallArrowUpIcons[] = { &smallArrowUpNormal, &smallArrowUpDisabled, &smallArrowUpHover, &smallArrowUpPressed, };
+static struct UIImage *smallArrowDownIcons[] = { &smallArrowDownNormal, &smallArrowDownDisabled, &smallArrowDownHover, &smallArrowDownPressed, };
+static struct UIImage *smallArrowLeftIcons[] = { &smallArrowLeftNormal, &smallArrowLeftDisabled, &smallArrowLeftHover, &smallArrowLeftPressed, };
+static struct UIImage *smallArrowRightIcons[] = { &smallArrowRightNormal, &smallArrowRightDisabled, &smallArrowRightHover, &smallArrowRightPressed, };
 
-struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalDisabled, &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalPressed, };
-struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
+static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalDisabled, &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalPressed, };
+static struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
+
+static UIImage icons[] = {
+#define ICON(x, y) {{x, x + 16, y, y + 16}, {x, x, y, y}}
+	{{}, {}},
+	ICON(237, 117),
+	ICON(220, 117),
+};
 
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
 	&scrollbarButtonHorizontalNormal,
@@ -1421,8 +1428,11 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				OSForwardMessage(control, control->notificationCallback, &message);
 				control->sentEditResultNotification = true;
 				message.type = OS_MESSAGE_END_FOCUS;
-				OSSendMessage(control->window->focus, &message);
+				OSSendMessage(control, &message);
 				control->window->focus = nullptr;
+				message.type = OS_MESSAGE_END_LAST_FOCUS;
+				OSSendMessage(control, &message);
+				control->window->lastFocus = nullptr;
 			} break;
 		}
 
@@ -1689,12 +1699,15 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						message.type = OS_NOTIFICATION_GET_ITEM;
 						message.listViewItem.index = i;
 						message.listViewItem.column = 0;
-						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | OS_LIST_VIEW_ITEM_SELECTED;
+						message.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_ICON;
 						message.listViewItem.state = 0;
+						message.listViewItem.iconID = 0;
 		
 						if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
 							OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 						}
+
+						uint16_t iconID = message.listViewItem.iconID;
 		
 						char *text = message.listViewItem.text;
 						size_t textBytes = message.listViewItem.textBytes;
@@ -1743,6 +1756,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 						bool primary = true;
 						bool rightAligned = false;
+						bool icon = iconID;
 						int x = 0;
 
 						for (int i = 0; i < (control->columnsCount ? control->columnsCount : 1); i++) {
@@ -1768,6 +1782,17 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							if (control->columns) {
 								primary = control->columns[i].flags & OS_LIST_VIEW_COLUMN_PRIMARY;
 								rightAligned = control->columns[i].flags & OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED;
+								icon = iconID && control->columns[i].flags & OS_LIST_VIEW_COLUMN_ICON;
+							}
+
+							if (icon) {
+								int h = (region.bottom - region.top) / 2 + region.top - 8;
+								UIImage image = icons[iconID];
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
+										OS_MAKE_RECTANGLE(region.left, region.left + 16, h, h + 16),
+										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip3);
+
+								region.left += 20;
 							}
 
 							DrawString(surface, region, &string, 
@@ -1907,6 +1932,12 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
 				OSForwardMessage(control, control->notificationCallback, &m);
 				RepaintListViewRows(control, row, row);
+
+				// If this was a double-click, "choose" this row.
+				if (message->mousePressed.clickChainCount == 2) {
+					m.type = OS_NOTIFICATION_CHOOSE_ITEM;
+					OSForwardMessage(control, control->notificationCallback, &m);
+				}
 			}
 
 			control->lastClickedRow = row;
@@ -2522,13 +2553,23 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		case OS_MESSAGE_SET_PROPERTY: {
 			void *value = message->setProperty.value;
 			int valueInt = (int) (uintptr_t) value;
+			bool repaint = false;
 
 			switch (message->setProperty.index) {
 				case OS_GRID_PROPERTY_BORDER_SIZE: {
 					grid->borderSize = valueInt;
-					grid->repaint = true;
-					SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+					repaint = true;
 				} break;
+
+				case OS_GRID_PROPERTY_GAP_SIZE: {
+					grid->gapSize = valueInt;
+					repaint = true;
+				} break;
+			}
+
+			if (repaint) {
+				grid->repaint = true;
+				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
 			}
 		} break;
 

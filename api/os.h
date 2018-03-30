@@ -12,6 +12,16 @@
 #ifdef __cplusplus
 #define OS_EXTERN_C extern "C"
 #define OS_CONSTRUCTOR(x) x
+
+// Scoped defer: http://www.gingerbill.org/article/defer-in-cpp.html
+template <typename F> struct OSprivDefer { F f; OSprivDefer(F f) : f(f) {} ~OSprivDefer() { f(); } };
+template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f); }
+#define OSDEFER_1(x, y) x##y
+#define OSDEFER_2(x, y) OSDEFER_1(x, y)
+#define OSDEFER_3(x)    OSDEFER_2(x, __COUNTER__)
+#define OS_Defer(code)   auto OSDEFER_3(_defer_) = OSdefer_func([&](){code;})
+#define OSDefer(code)   OS_Defer(code)
+
 #else
 #define OS_EXTERN_C 
 #define OS_CONSTRUCTOR(x)
@@ -156,6 +166,10 @@
 #define OS_SCANCODE_WWW_STOP	(0x128)
 #define OS_SCANCODE_WWW_REFRESH	(0x120)
 #define OS_SCANCODE_WWW_STARRED	(0x118)
+
+#define OS_ICON_NONE (0)
+#define OS_ICON_FILE (1)
+#define OS_ICON_FOLDER (2)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -473,12 +487,11 @@ typedef enum OSMessageType {
 	OS_MESSAGE_CUSTOM_PAINT			= 0x0205,
 
 	OS_MESSAGE_DESTROY			= 0x0210,
-
-	OS_MESSAGE_PARENT_UPDATED		= 0x0220,
-	OS_MESSAGE_CHILD_UPDATED		= 0x0221,
-	OS_MESSAGE_TEXT_UPDATED			= 0x0222,
-
-	OS_MESSAGE_HIT_TEST			= 0x0230,
+	OS_MESSAGE_PARENT_UPDATED		= 0x0211,
+	OS_MESSAGE_CHILD_UPDATED		= 0x0212,
+	OS_MESSAGE_TEXT_UPDATED			= 0x0213,
+	OS_MESSAGE_HIT_TEST			= 0x0214,
+	OS_MESSAGE_CARET_BLINK			= 0x0215,
 
 	OS_MESSAGE_CLICKED			= 0x0240,
 	OS_MESSAGE_START_HOVER			= 0x0241,
@@ -491,8 +504,6 @@ typedef enum OSMessageType {
 	OS_MESSAGE_END_LAST_FOCUS		= 0x0248,
 	OS_MESSAGE_MOUSE_DRAGGED		= 0x0249,
 	OS_MESSAGE_KEY_TYPED			= 0x024A,
-
-	OS_MESSAGE_CARET_BLINK			= 0x0250,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -522,6 +533,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_END_EDIT		= 0x2006,
 	OS_NOTIFICATION_CANCEL_EDIT		= 0x2007,
 	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
+	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -628,13 +640,16 @@ typedef struct OSMessage {
 			int newValue;
 		} valueChanged;
 
-#define OS_LIST_VIEW_ITEM_TEXT             (1)
-#define OS_LIST_VIEW_ITEM_SELECTED	   (2)
+#define OS_LIST_VIEW_ITEM_SELECTED	   (0x0001)
+#define OS_LIST_VIEW_ITEM_TEXT             (0x10000)
+#define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
 		struct {
 			char *text; 
 			size_t textBytes;
-			uint16_t mask, state;
+			uint32_t mask;
 			int32_t index, column;
+			uint16_t iconID;
+			uint16_t state;
 		} listViewItem;
 
 		struct {
@@ -723,6 +738,7 @@ typedef struct OSListViewColumn {
 	int width;
 #define OS_LIST_VIEW_COLUMN_PRIMARY (1)
 #define OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED (2)
+#define OS_LIST_VIEW_COLUMN_ICON (4)
 	uint32_t flags;
 } OSListViewColumn;
 
@@ -885,6 +901,7 @@ OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coor
 OS_EXTERN_C void OSRedrawAll();
 
 #define OS_GRID_PROPERTY_BORDER_SIZE (1)
+#define OS_GRID_PROPERTY_GAP_SIZE (2)
 OS_EXTERN_C void OSSetProperty(OSObject object, uintptr_t index, void *value);
 
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
@@ -943,6 +960,7 @@ OS_EXTERN_C void OSHeapFree(void *address);
 
 OS_EXTERN_C size_t OSCStringLength(char *string);
 OS_EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
+OS_EXTERN_C void OSCopyMemoryReverse(void *_destination, void *_source, size_t bytes);
 OS_EXTERN_C void OSZeroMemory(void *destination, size_t bytes);
 OS_EXTERN_C int OSCompareBytes(void *a, void *b, size_t bytes);
 OS_EXTERN_C uint8_t OSSumBytes(uint8_t *data, size_t bytes);

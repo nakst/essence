@@ -1059,7 +1059,7 @@ void Scheduler::Yield(InterruptContext *context) {
 #endif
 	DoContextSwitch(newContext, VIRTUAL_ADDRESS_SPACE_IDENTIFIER(addressSpace), newThread->kernelStack, newThread);
 
-#define Defer(code) _Defer(code)
+#define Defer(code) OSDefer(code)
 }
 
 void Scheduler::WaitMutex(Mutex *mutex) {

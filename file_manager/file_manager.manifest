@@ -11,3 +11,21 @@ height = 600;
 minimumWidth = 200;
 minimumHeight = 200;
 title = "File Manager";
+
+[command commandNavigateBackwards]
+label = "Back";
+defaultDisabled = true;
+callback = CommandNavigate;
+callbackArgument = COMMAND_NAVIGATE_BACKWARDS;
+
+[command commandNavigateForwards]
+label = "Forward";
+defaultDisabled = true;
+callback = CommandNavigate;
+callbackArgument = COMMAND_NAVIGATE_FORWARDS;
+
+[command commandNavigateParent]
+label = "Parent";
+defaultDisabled = false;
+callback = CommandNavigate;
+callbackArgument = COMMAND_NAVIGATE_PARENT;
