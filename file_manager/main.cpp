@@ -15,6 +15,9 @@ struct Instance {
 	FolderChild *folderChildren;
 	size_t folderChildCount;
 
+	char *path;
+	size_t pathBytes;
+
 	void LoadFolder(char *path, size_t pathBytes);
 };
 
@@ -61,6 +64,29 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 	}
 
 	return 0;
+}
+
+OSCallbackResponse ProcessFolderPathNotification(OSObject object, OSMessage *message) {
+	Instance *instance = (Instance *) message->context;
+	(void) object;
+	
+	switch (message->type) {
+		case OS_NOTIFICATION_CANCEL_EDIT: {
+			OSSetText(object, instance->path, instance->pathBytes);
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_NOTIFICATION_CONFIRM_EDIT: {
+			OSString string;
+			OSGetText(object, &string);
+			instance->LoadFolder(string.buffer, string.bytes);
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		default: {
+			return OS_CALLBACK_NOT_HANDLED;
+		} break;
+	}
 }
 
 OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *message) {
@@ -153,7 +179,15 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 	}
 }
 
-void Instance::LoadFolder(char *path, size_t pathBytes) {
+void Instance::LoadFolder(char *_path, size_t _pathBytes) {
+	OSHeapFree(path);
+	OSHeapFree(folderChildren);
+	OSListViewReset(folderListing);
+
+	path = (char *) OSHeapAllocate(_pathBytes, false);
+	OSCopyMemory(path, _path, _pathBytes);
+	pathBytes = _pathBytes;
+
 	OSNodeInformation node;
 	OSError error;
 
@@ -219,6 +253,7 @@ void ProgramEntry() {
 
 	instance->folderPath = OSCreateTextbox(0);
 	OSAddControl(layout3, 0, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
 
 	instance->LoadFolder(OSLiteral("/os/"));
 

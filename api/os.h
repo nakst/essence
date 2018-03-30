@@ -518,6 +518,10 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_GET_ITEM		= 0x2002,
 	OS_NOTIFICATION_DESELECT_ALL		= 0x2003,
 	OS_NOTIFICATION_SET_ITEM		= 0x2004,
+	OS_NOTIFICATION_START_EDIT		= 0x2005,
+	OS_NOTIFICATION_END_EDIT		= 0x2006,
+	OS_NOTIFICATION_CANCEL_EDIT		= 0x2007,
+	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -925,6 +929,7 @@ OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
 
 OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);
+OS_EXTERN_C void OSListViewReset(OSObject listView);
 OS_EXTERN_C void OSListViewInvalidate(OSObject listView, int32_t index, int32_t count);
 OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, int32_t count);
 

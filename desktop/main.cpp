@@ -51,7 +51,7 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 			size_t crashMessageLength;
 			OSError code = message->crash.reason.errorCode;
 
-			if (code < OS_FATAL_ERROR_COUNT) {
+			if (code < OS_FATAL_ERROR_COUNT && code >= 0) {
 				crashMessageLength = OSFormatString(crashMessage, 256, 
 						"Error code: %d (%s)", code, OSCStringLength(errorMessages[code]), errorMessages[code]);
 			} else {

@@ -351,6 +351,8 @@ struct ListView : Control {
 
 	int repaintFirstRow, repaintLastRow;
 	int draggingColumnIndex, draggingColumnX;
+	bool repaintSelectionBox;
+	OSRectangle oldSelectionBox;
 	
 	enum {
 		DRAGGING_NONE,
@@ -370,6 +372,7 @@ struct Textbox : Control {
 	OSCaret caret, caret2;
 	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
 	uint8_t caretBlink : 1;
+	bool sentEditResultNotification;
 };
 
 struct ProgressBar : Control {
@@ -1184,9 +1187,21 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->caretBlink = !control->caretBlink;
 		result = OS_CALLBACK_HANDLED;
 		OSRepaintControl(control);
+	} else if (message->type == OS_MESSAGE_END_FOCUS) {
+		OSMessage message;
+
+		if (!control->sentEditResultNotification) {
+			message.type = OS_NOTIFICATION_CANCEL_EDIT;
+			OSForwardMessage(control, control->notificationCallback, &message);
+		}
+
+		message.type = OS_NOTIFICATION_END_EDIT;
+		OSForwardMessage(control, control->notificationCallback, &message);
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
+
+		control->sentEditResultNotification = false;
 
 		control->caret.byte = 0;
 		control->caret.character = 0;
@@ -1201,6 +1216,12 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSSetCommandNotificationCallback(control->window, osCommandCopy, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
 		OSSetCommandNotificationCallback(control->window, osCommandCut, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
 		OSSetCommandNotificationCallback(control->window, osCommandDelete, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+
+		{
+			OSMessage message;
+			message.type = OS_NOTIFICATION_START_EDIT;
+			OSForwardMessage(control, control->notificationCallback, &message);
+		}
 	} else if (message->type == OS_MESSAGE_CLIPBOARD_UPDATED) {
 		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
@@ -1393,6 +1414,16 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				control->caret2.character = control->text.characters;
 				if (!message->keyboard.shift) control->caret = control->caret2;
 			} break;
+
+			case OS_SCANCODE_ENTER: {
+				OSMessage message;
+				message.type = OS_NOTIFICATION_CONFIRM_EDIT;
+				OSForwardMessage(control, control->notificationCallback, &message);
+				control->sentEditResultNotification = true;
+				message.type = OS_MESSAGE_END_FOCUS;
+				OSSendMessage(control->window->focus, &message);
+				control->window->focus = nullptr;
+			} break;
 		}
 
 		if (message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift) {
@@ -1544,18 +1575,18 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 	switch (message->type) {
 		case OS_MESSAGE_PAINT: {
-			// If the list gets redraw, the scrollbar will need to be as well.
+			// If the list gets redrawn, the scrollbar will need to be as well.
 			if (control->repaint) redrawScrollbar = true;
 		} break;
 
 		case OS_MESSAGE_CUSTOM_PAINT: {
 			OSHandle surface = message->paint.surface;
 
-			if (control->repaintFirstRow == -1 || !control->repaintCustomOnly) {
+			if (control->repaintFirstRow == -1 || !control->repaintCustomOnly || control->repaintSelectionBox) {
 				control->repaintFirstRow = 0;
 			}
 
-			if (control->repaintLastRow == (int) control->itemCount || !control->repaintCustomOnly) {
+			if (control->repaintLastRow == (int) control->itemCount || !control->repaintCustomOnly || control->repaintSelectionBox) {
 				control->repaintLastRow = control->itemCount - 1;
 			}
 
@@ -1565,6 +1596,12 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER) && !control->repaintCustomOnly) {
 					// Draw the background.
 					OSFillRectangle(surface, clip, OSColor(0xFFFFFFFF));
+				}
+
+				if (control->dragging == ListView::DRAGGING_SELECTION && control->repaintCustomOnly && control->repaintSelectionBox) {
+					OSRectangle r;
+					ClipRectangle(control->oldSelectionBox, clip, &r);
+					OSFillRectangle(surface, r, OSColor(0xFFFFFFFF));
 				}
 
 				OSRectangle clip2;
@@ -1640,6 +1677,12 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
 
 					OSRectangle clip3;
+
+					if (control->repaintCustomOnly && control->repaintSelectionBox) {
+						if (!ClipRectangle(row, control->oldSelectionBox, nullptr)) {
+							goto next;
+						}
+					}
 		
 					if (ClipRectangle(clip2, row, &clip3)) {
 						OSMessage message;
@@ -1735,6 +1778,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						}
 					}
 		
+					next:;
 					y += LIST_VIEW_ROW_HEIGHT;
 		
 					if (y > bounds.bottom - bounds.top) {
@@ -1927,7 +1971,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			}
 
 			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
-			OSRepaintControl(control);
+			OSRepaintControl(control, true);
+			control->repaintSelectionBox = true;
 
 			OSRectangle selectionBox;
 			OSPoint anchor = control->selectionBoxAnchor;
@@ -1949,6 +1994,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				selectionBox.top = position.y;
 			}
 
+			control->oldSelectionBox = control->selectionBox;
 			control->selectionBox = selectionBox;
 
 			int boundsWidth = bounds.right - bounds.left;
@@ -2115,6 +2161,18 @@ void OSListViewSetColumns(OSObject _listView, OSListViewColumn *columns, int32_t
 	}
 
 	OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
+			control->bounds.bottom - control->bounds.top 
+			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
+			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
+
+	OSRepaintControl(control);
+}
+
+void OSListViewReset(OSObject _listView) {
+	ListView *control = (ListView *) _listView;
+	control->itemCount = 0;
+
+	OSSetScrollbarMeasurements(control->scrollbar, 0, 
 			control->bounds.bottom - control->bounds.top 
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
 			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
