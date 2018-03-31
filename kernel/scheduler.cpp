@@ -154,7 +154,7 @@ struct Process {
 
 	Event killedEvent;
 	bool allThreadsTerminated;
-	bool terminating;
+	bool terminating, crashed;
 };
 
 Process *kernelProcess;
@@ -714,7 +714,12 @@ void Scheduler::RemoveThread(Thread *thread) {
 }
 
 void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
+	if (process->crashed) {
+		return;
+	}
+
 	process->crashMutex.Acquire();
+	process->crashed = true;
 
 	if (process == kernelProcess) {
 		KernelPanic("Scheduler::CrashProcess - Kernel process has crashed (%d).\n", crashReason.errorCode);

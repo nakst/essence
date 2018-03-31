@@ -167,9 +167,10 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_SCANCODE_WWW_REFRESH	(0x120)
 #define OS_SCANCODE_WWW_STARRED	(0x118)
 
-#define OS_ICON_NONE (0)
-#define OS_ICON_FILE (1)
-#define OS_ICON_FOLDER (2)
+#define OS_ICON_NONE 		(0)
+#define OS_ICON_FILE 		(1)
+#define OS_ICON_FOLDER 		(2)
+#define OS_ICON_ERROR 		(3)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -188,7 +189,6 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_MEMORY_REGION_LOCKED_BY_KERNEL,
 	OS_FATAL_ERROR_PATH_LENGTH_EXCEEDS_LIMIT,
 	OS_FATAL_ERROR_INVALID_HANDLE, // Note: this has to be fatal!! See the linear handle list.
-					// TODO Some system calls allow invalid handles, e.g. CREATE_WINDOW
 	OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD,
 	OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED,
 	OS_FATAL_ERROR_BUFFER_NOT_ACCESSIBLE,
@@ -522,6 +522,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MOUSE_RIGHT_RELEASED 	= 0x100D,
 	OS_MESSAGE_MOUSE_MIDDLE_PRESSED 	= 0x100E,
 	OS_MESSAGE_MOUSE_MIDDLE_RELEASED 	= 0x100F,
+	OS_MESSAGE_MODAL_PARENT_CLICKED		= 0x1010,
 
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
@@ -749,6 +750,7 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_WINDOW_MENU (2)
 #define OS_CREATE_WINDOW_NORMAL (4)
 #define OS_CREATE_WINDOW_WITH_MENUBAR (8)
+#define OS_CREATE_WINDOW_DIALOG (16)
 
 #define OS_ORIENTATION_HORIZONTAL (false)
 #define OS_ORIENTATION_VERTICAL   (true)
@@ -932,12 +934,18 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 #define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, 0)
 
+OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
+				   char *message, size_t messageBytes,
+				   char *description, size_t descriptionBytes,
+				   uint16_t iconID, OSObject modalParent);
+
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
 OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
+OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
@@ -973,6 +981,7 @@ OS_EXTERN_C void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(co
 
 // TODO Possibly remove all of these?
 // 	Or move into a libc library?
+#ifndef OS_NO_CSTDLIB
 OS_EXTERN_C void *memset(void *s, int c, size_t n);
 OS_EXTERN_C void *memcpy(void *dest, const void *src, size_t n);
 OS_EXTERN_C size_t strlen(const char *s);
@@ -1019,6 +1028,7 @@ OS_EXTERN_C int _setjmp(jmp_buf *env);
 OS_EXTERN_C void _longjmp(jmp_buf *env, int val);
 #define setjmp(x) _setjmp(&(x))
 #define longjmp(x, y) _longjmp(&(x), (y))
+#endif
 
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG

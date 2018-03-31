@@ -52,23 +52,7 @@ OSListViewColumn folderListingColumns[] = {
 	{ OSLiteral("Size"), 100, OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED, },
 };
 
-int SortFolder(const void *_a, const void *_b, void *argument) {
-	(void) argument;
-
-	FolderChild *a = (FolderChild *) _a;
-	FolderChild *b = (FolderChild *) _b;
-
-	if (a->data.information.type == OS_NODE_FILE && b->data.information.type == OS_NODE_DIRECTORY) {
-		return 1;
-	} else if (b->data.information.type == OS_NODE_FILE && a->data.information.type == OS_NODE_DIRECTORY) {
-		return -1;
-	}
-
-	char *s1 = a->data.name;
-	char *s2 = b->data.name;
-	size_t length1 = a->data.nameLengthBytes;
-	size_t length2 = b->data.nameLengthBytes;
-
+int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
 	while (length1 || length2) {
 		if (!length1) return -1;
 		if (!length2) return 1;
@@ -90,6 +74,26 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 	}
 
 	return 0;
+}
+
+int SortFolder(const void *_a, const void *_b, void *argument) {
+	(void) argument;
+
+	FolderChild *a = (FolderChild *) _a;
+	FolderChild *b = (FolderChild *) _b;
+
+	if (a->data.information.type == OS_NODE_FILE && b->data.information.type == OS_NODE_DIRECTORY) {
+		return 1;
+	} else if (b->data.information.type == OS_NODE_FILE && a->data.information.type == OS_NODE_DIRECTORY) {
+		return -1;
+	}
+
+	char *s1 = a->data.name;
+	char *s2 = b->data.name;
+	size_t length1 = a->data.nameLengthBytes;
+	size_t length2 = b->data.nameLengthBytes;
+
+	return CompareStrings(s1, s2, length1, length2);
 }
 
 OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
@@ -279,25 +283,51 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 }
 
 void Instance::ReportError(unsigned where, OSError error) {
-#if 0
-#define OS_ERROR_PATH_NOT_TRAVERSABLE		(-15)
-#define OS_ERROR_FILE_DOES_NOT_EXIST		(-20)
-#define OS_ERROR_FILE_PERMISSION_NOT_GRANTED	(-23)
-#define OS_ERROR_INCORRECT_NODE_TYPE		(-26)
-#define OS_ERROR_DRIVE_CONTROLLER_REPORTED	(-35)
-#endif
+	const char *message = "An unknown error occurred.";
+	const char *description = "Please try again.";
 
-	OSPrint("%d, %d\n", where, error);
-	// TODO Error dialog boxes.
+	switch (where) {
+		case ERROR_CANNOT_LOAD_FOLDER: {
+			message = "Could not open the folder.";
+			description = "The specified path was invalid.";
+		} break;
+	}
+
+	switch (error) {
+		case OS_ERROR_PATH_NOT_TRAVERSABLE: {
+			description = "One or more of the leading folders did not exist.";
+		} break;
+
+		case OS_ERROR_FILE_DOES_NOT_EXIST: {
+			description = "The folder does not exist.";
+		} break;
+
+		case OS_ERROR_FILE_PERMISSION_NOT_GRANTED: {
+			description = "You do not have permission to view the contents of this folder.";
+		} break;
+
+		case OS_ERROR_INCORRECT_NODE_TYPE: {
+			description = "This is not a valid folder.";
+		} break;
+
+		case OS_ERROR_DRIVE_CONTROLLER_REPORTED: {
+			description = "An error occurred while reading from your drive.";
+		} break;
+	}
+
+	OSShowDialogAlert(OSLiteral("Error"), OSLiteral(message), OSLiteral(description), 
+			OS_ICON_ERROR, window);
 }
 
 void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pathBytes2, unsigned historyMode) {
 	char *oldPath = path;
 	size_t oldPathBytes = pathBytes;
+	char *newPath;
 
 	{
 		goto normal;
 		fail:;
+		OSHeapFree(newPath);
 		OSSetText(folderPath, oldPath, oldPathBytes);
 		return;
 		normal:;
@@ -310,7 +340,7 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	}
 
 	// Create the path.
-	char *newPath = (char *) OSHeapAllocate(pathBytes1 + (path2 ? (pathBytes2 + 1) : 0), false);
+	newPath = (char *) OSHeapAllocate(pathBytes1 + (path2 ? (pathBytes2 + 1) : 0), false);
 	OSCopyMemory(newPath, path1, pathBytes1);
 	size_t newPathBytes = pathBytes1;
 
@@ -320,8 +350,9 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		newPathBytes += pathBytes2 + 1;
 	}
 
-	// Is there a parent?
-	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
+	if (oldPath && !CompareStrings(oldPath, newPath, oldPathBytes, newPathBytes)) {
+		goto fail;
+	}
 
 	OSNodeInformation node;
 	OSError error;
@@ -376,6 +407,7 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSListViewReset(folderListing);
 	OSListViewInsert(folderListing, 0, childCount);
 	OSSetText(folderPath, path, pathBytes);
+	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
 
 	// Add the previous folder to the history.
 	if (oldPath) {

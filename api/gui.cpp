@@ -18,6 +18,7 @@ static void EnterDebugger() {
 #define RESIZE_BOTTOM_LEFT 	(9)
 #define RESIZE_BOTTOM_RIGHT 	(10)
 #define RESIZE_MOVE		(0)
+#define RESIZE_NONE		(11)
 
 #define SCROLLBAR_SIZE (17)
 #define SCROLLBAR_MINIMUM (16)
@@ -79,6 +80,28 @@ static UIImage inactiveWindowBorder41	= {{16 + 1, 16 + 1 + 6, 178, 178 + 6}, 	{1
 static UIImage inactiveWindowBorder42	= {{16 + 8, 16 + 8 + 1, 178, 178 + 6}, 	{16 + 8, 16 + 9, 178, 178}};
 static UIImage inactiveWindowBorder43	= {{16 + 10, 16 + 10 + 6, 178, 178 + 6}, {16 + 10, 16 + 10, 178, 178}};
 
+static UIImage activeDialogBorder11	= {{1, 1 + 3, 144, 144 + 3}, 	{1, 1, 144, 144}};
+static UIImage activeDialogBorder12	= {{8, 8 + 1, 144, 144 + 3}, 	{8, 9, 144, 144}};
+static UIImage activeDialogBorder13	= {{13, 13 + 3, 144, 144 + 3}, 	{13, 13, 144, 144}};
+static UIImage activeDialogBorder21	= {{1, 1 + 3, 151, 151 + 24}, 	{1, 1, 151, 151}};
+static UIImage activeDialogBorder23	= {{13, 13 + 3, 151, 151 + 24},	{13, 13, 151, 151}};
+static UIImage activeDialogBorder31	= {{1, 1 + 3, 185, 185 + 1}, 	{1, 1, 185, 186}};
+static UIImage activeDialogBorder33	= {{1, 1 + 3, 187, 187 + 1}, 	{1, 1, 187, 188}};
+static UIImage activeDialogBorder41	= {{1, 1 + 3, 181, 181 + 3}, 	{1, 1, 181, 181}};
+static UIImage activeDialogBorder42	= {{5, 5 + 1, 185, 185 + 3}, 	{5, 6, 185, 185}};
+static UIImage activeDialogBorder43	= {{13, 13 + 3, 181, 181 + 3}, 	{13, 13, 181, 181}};
+
+static UIImage inactiveDialogBorder11	= {{16 + 1, 16 + 1 + 3, 144, 144 + 3}, 	{16 + 1, 16 + 1, 144, 144}};
+static UIImage inactiveDialogBorder12	= {{16 + 8, 16 + 8 + 1, 144, 144 + 3}, 	{16 + 8, 16 + 9, 144, 144}};
+static UIImage inactiveDialogBorder13	= {{16 + 10 + 3, 16 + 10 + 3 + 3, 144, 144 + 3},{16 + 10 + 3, 16 + 10 + 3, 144, 144}};
+static UIImage inactiveDialogBorder21	= {{16 + 1, 16 + 1 + 3, 151, 151 + 24}, {16 + 1, 16 + 1, 151, 151}};
+static UIImage inactiveDialogBorder23	= {{16 + 10 + 3, 16 + 10 + 3 + 3, 151, 151 + 24},{16 + 10 + 3, 16 + 10 + 3, 151, 151}};
+static UIImage inactiveDialogBorder31	= {{1, 1 + 3, 189, 189 + 1}, 	{1, 1, 189, 190}};
+static UIImage inactiveDialogBorder33	= {{1, 1 + 3, 191, 191 + 1}, {1, 1, 191, 192}};
+static UIImage inactiveDialogBorder41	= {{16 + 1, 16 + 1 + 3, 181, 181 + 3}, 	{16 + 1, 16 + 1, 181, 181}};
+static UIImage inactiveDialogBorder42	= {{5, 5 + 1, 189, 189 + 3}, 	{5, 5 + 1, 189, 189}};
+static UIImage inactiveDialogBorder43	= {{16 + 10 + 3, 16 + 10 + 3 + 3, 181, 181 + 3}, {16 + 10 + 3, 16 + 10 + 3, 181, 181}};
+
 static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
 static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
 static UIImage progressBarPellet     	= {{18, 26, 128, 143}, {18, 18, 128, 128}};
@@ -114,6 +137,7 @@ static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 
 static UIImage gridBox 			= {{1, 7, 17, 23}, {3, 4, 19, 20}};
 static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
 static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 124}};
+static UIImage dialogAltAreaBox		= {{18, 19, 17, 22}, {18, 19, 21, 22}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
@@ -175,11 +199,21 @@ static struct UIImage *smallArrowRightIcons[] = { &smallArrowRightNormal, &small
 static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalDisabled, &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalPressed, };
 static struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
 
-static UIImage icons[] = {
-#define ICON(x, y) {{x, x + 16, y, y + 16}, {x, x, y, y}}
+#define ICON16(x, y) {{x, x + 16, y, y + 16}, {x, x, y, y}}
+#define ICON32(x, y) {{x, x + 32, y, y + 32}, {x, x, y, y}}
+
+static UIImage icons16[] = {
 	{{}, {}},
-	ICON(237, 117),
-	ICON(220, 117),
+	ICON16(237, 117),
+	ICON16(220, 117),
+	{{}, {}},
+};
+
+static UIImage icons32[] = {
+	{{}, {}},
+	{{}, {}},
+	{{}, {}},
+	ICON32(220, 135),
 };
 
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
@@ -265,6 +299,17 @@ static UIImage *windowBorder33[] = {&activeWindowBorder33, &inactiveWindowBorder
 static UIImage *windowBorder41[] = {&activeWindowBorder41, &inactiveWindowBorder41, &activeWindowBorder41, &activeWindowBorder41};
 static UIImage *windowBorder42[] = {&activeWindowBorder42, &inactiveWindowBorder42, &activeWindowBorder42, &activeWindowBorder42};
 static UIImage *windowBorder43[] = {&activeWindowBorder43, &inactiveWindowBorder43, &activeWindowBorder43, &activeWindowBorder43};
+
+static UIImage *dialogBorder11[] = {&activeDialogBorder11, &inactiveDialogBorder11, &activeDialogBorder11, &activeDialogBorder11};
+static UIImage *dialogBorder12[] = {&activeDialogBorder12, &inactiveDialogBorder12, &activeDialogBorder12, &activeDialogBorder12};
+static UIImage *dialogBorder13[] = {&activeDialogBorder13, &inactiveDialogBorder13, &activeDialogBorder13, &activeDialogBorder13};
+static UIImage *dialogBorder21[] = {&activeDialogBorder21, &inactiveDialogBorder21, &activeDialogBorder21, &activeDialogBorder21};
+static UIImage *dialogBorder23[] = {&activeDialogBorder23, &inactiveDialogBorder23, &activeDialogBorder23, &activeDialogBorder23};
+static UIImage *dialogBorder31[] = {&activeDialogBorder31, &inactiveDialogBorder31, &activeDialogBorder31, &activeDialogBorder31};
+static UIImage *dialogBorder33[] = {&activeDialogBorder33, &inactiveDialogBorder33, &activeDialogBorder33, &activeDialogBorder33};
+static UIImage *dialogBorder41[] = {&activeDialogBorder41, &inactiveDialogBorder41, &activeDialogBorder41, &activeDialogBorder41};
+static UIImage *dialogBorder42[] = {&activeDialogBorder42, &inactiveDialogBorder42, &activeDialogBorder42, &activeDialogBorder42};
+static UIImage *dialogBorder43[] = {&activeDialogBorder43, &inactiveDialogBorder43, &activeDialogBorder43, &activeDialogBorder43};
 
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
@@ -457,7 +502,7 @@ struct Window : GUIObject {
 
 	CommandWindow *commands;
 	void *instance;
-	bool hasParent;
+	bool hasMenuParent;
 };
 
 struct OpenMenu {
@@ -948,7 +993,7 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	WindowResizeControl *control = (WindowResizeControl *) _object;
 
-	if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+	if (message->type == OS_MESSAGE_MOUSE_DRAGGED && control->direction != RESIZE_NONE) {
 		Window *window = control->window;
 		OSRectangle bounds, bounds2;
 		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
@@ -1787,7 +1832,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 							if (icon) {
 								int h = (region.bottom - region.top) / 2 + region.top - 8;
-								UIImage image = icons[iconID];
+								UIImage image = icons16[iconID];
 								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
 										OS_MAKE_RECTANGLE(region.left, region.left + 16, h, h + 16),
 										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip3);
@@ -2331,10 +2376,36 @@ OSObject OSCreateLine(bool orientation) {
 	return control;
 }
 
+static OSCallbackResponse ProcessIconDisplayMessage(OSObject _object, OSMessage *message) {
+	uint16_t iconID = (uintptr_t) message->context;
+	Control *control = (Control *) _object;
+
+	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
+		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
+				icons32[iconID].region, icons32[iconID].border,
+				OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+		return OS_CALLBACK_HANDLED;
+	} else {
+		return OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+}
+
+OSObject OSCreateIconDisplay(uint16_t iconID) {
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+	control->drawParentBackground = true;
+	control->minimumWidth = control->preferredWidth = 32;
+	control->minimumHeight = control->preferredHeight = 32;
+
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessIconDisplayMessage, (void *) (uintptr_t) iconID));
+	return control;
+}
+
 OSObject OSCreateLabel(char *text, size_t textBytes) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->drawParentBackground = true;
+	control->textAlign = OS_DRAW_STRING_HALIGN_LEFT;
 
 	OSSetText(control, text, textBytes);
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
@@ -2752,6 +2823,9 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			grid->preferredHeight = message->measure.preferredHeight = height;
 			grid->minimumWidth = message->measure.minimumWidth = minimumWidth;
 			grid->minimumHeight = message->measure.minimumHeight = minimumHeight;
+
+			if (grid->layout & OS_CELL_H_PUSH) message->measure.preferredWidth = DIMENSION_PUSH;
+			if (grid->layout & OS_CELL_V_PUSH) message->measure.preferredHeight = DIMENSION_PUSH;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -3478,7 +3552,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
-			if (!window->hasParent) {
+			if (!window->hasMenuParent) {
 				OSHeapFree(window->commands);
 			}
 
@@ -3785,7 +3859,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
-static Window *CreateWindow(OSWindowSpecification *specification, Window *parent, unsigned x = 0, unsigned y = 0) {
+static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, Window *modalParent = nullptr) {
 	unsigned flags = specification->flags;
 
 	if (!flags) {
@@ -3812,7 +3886,8 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 	bounds.top = y;
 	bounds.bottom = y + specification->height;
 
-	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, parent ? (uintptr_t) parent->window : 0);
+	window->window = modalParent ? modalParent->window : OS_INVALID_HANDLE;
+	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, menuParent ? (uintptr_t) menuParent->window : 0);
 	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
 	window->width = bounds.right - bounds.left;
@@ -3822,7 +3897,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
 
-	if (!parent) {
+	if (!menuParent) {
 		window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
 
 		for (uintptr_t i = 0; i < _commandCount; i++) {
@@ -3832,8 +3907,8 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 			command->notificationCallback = _commands[i]->callback;
 		}
 	} else {
-		window->commands = parent->commands;
-		window->hasParent = true;
+		window->commands = menuParent->commands;
+		window->hasMenuParent = true;
 	}
 
 	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
@@ -3853,16 +3928,29 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 		OSSetText(titlebar, specification->title, specification->titleBytes);
 
-		OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(windowBorder11, RESIZE_TOP_LEFT), 0);
-		OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(windowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(windowBorder13, RESIZE_TOP_RIGHT), 0);
-		OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(windowBorder21, RESIZE_LEFT), 0);
-		OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(windowBorder23, RESIZE_RIGHT), 0);
-		OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(windowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(windowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(windowBorder41, RESIZE_BOTTOM_LEFT), 0);
-		OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(windowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(windowBorder43, RESIZE_BOTTOM_RIGHT), 0);
+		if (flags & OS_CREATE_WINDOW_DIALOG) {
+			OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(dialogBorder11, RESIZE_NONE), 0);
+			OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(dialogBorder12, RESIZE_NONE), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+			OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(dialogBorder13, RESIZE_NONE), 0);
+			OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(dialogBorder21, RESIZE_NONE), 0);
+			OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(dialogBorder23, RESIZE_NONE), 0);
+			OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(dialogBorder31, RESIZE_NONE), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+			OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(dialogBorder33, RESIZE_NONE), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+			OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(dialogBorder41, RESIZE_NONE), 0);
+			OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(dialogBorder42, RESIZE_NONE), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+			OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(dialogBorder43, RESIZE_NONE), 0);
+		} else {
+			OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(windowBorder11, RESIZE_TOP_LEFT), 0);
+			OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(windowBorder12, RESIZE_TOP), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+			OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(windowBorder13, RESIZE_TOP_RIGHT), 0);
+			OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(windowBorder21, RESIZE_LEFT), 0);
+			OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(windowBorder23, RESIZE_RIGHT), 0);
+			OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(windowBorder31, RESIZE_LEFT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+			OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(windowBorder33, RESIZE_RIGHT), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
+			OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(windowBorder41, RESIZE_BOTTOM_LEFT), 0);
+			OSAddControl(window->root, 1, 3, CreateWindowResizeHandle(windowBorder42, RESIZE_BOTTOM), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+			OSAddControl(window->root, 2, 3, CreateWindowResizeHandle(windowBorder43, RESIZE_BOTTOM_RIGHT), 0);
+		}
 
 		if (flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
 			OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_BACKGROUND);
@@ -3876,6 +3964,55 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *parent
 
 OSObject OSCreateWindow(OSWindowSpecification *specification) {
 	return CreateWindow(specification, nullptr);
+}
+
+static OSCallbackResponse CommandDialogAlertOK(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type == OS_NOTIFICATION_COMMAND) {
+		OSMessage m;
+		m.type = OS_MESSAGE_DESTROY;
+		OSSendMessage(message->context, &m);
+		return OS_CALLBACK_HANDLED;
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
+void OSShowDialogAlert(char *title, size_t titleBytes,
+				   char *message, size_t messageBytes,
+				   char *description, size_t descriptionBytes,
+				   uint16_t iconID, OSObject modalParent) {
+	OSWindowSpecification specification = *osDialogStandard;
+	specification.title = title;
+	specification.titleBytes = titleBytes;
+
+	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent);
+
+	OSObject layout1 = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
+	OSObject layout2 = OSCreateGrid(2, 1, OS_FLAGS_DEFAULT);
+	OSObject layout3 = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_BORDER);
+	OSObject layout4 = OSCreateGrid(1, 1, OS_FLAGS_DEFAULT);
+
+	((Grid *) layout4)->background = &dialogAltAreaBox;
+	((Grid *) layout2)->gapSize *= 2;
+
+	OSSetRootGrid(dialog, layout1);
+	OSAddGrid(layout1, 0, 0, layout2, OS_CELL_FILL);
+	OSAddGrid(layout2, 1, 0, layout3, OS_CELL_FILL);
+	OSAddGrid(layout1, 0, 1, layout4, OS_CELL_H_EXPAND);
+
+	OSObject okButton = OSCreateButton(osDialogStandardOK);
+	OSAddControl(layout4, 0, 0, okButton, OS_CELL_H_PUSH | OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+
+	Control *label = (Control *) OSCreateLabel(message, messageBytes);
+	label->textSize = 10;
+	label->textColor = 0x003399;
+	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+
+	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
 }
 
 OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {

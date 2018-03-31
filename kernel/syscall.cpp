@@ -363,12 +363,19 @@ uintptr_t DoSyscall(OSSyscallType index,
 			OSRectangle *bounds = (OSRectangle *) argument1;
 			SYSCALL_BUFFER(argument1, sizeof(OSRectangle), 2);
 
-			KernelObjectType type = (KernelObjectType) (KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_NONE);
-			Window *parentWindow = (Window *) currentProcess->handleTable.ResolveHandle(argument3, type);
-			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(if (parentWindow) currentProcess->handleTable.CompleteHandle(parentWindow, argument3));
+			KernelObjectType type;
 
-			Window *window = windowManager.CreateWindow(currentProcess, *bounds, (OSObject) argument2, parentWindow);
+			type = (KernelObjectType) (KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_NONE);
+			Window *modalParentWindow = (Window *) currentProcess->handleTable.ResolveHandle(returnData[0], type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(if (modalParentWindow) currentProcess->handleTable.CompleteHandle(modalParentWindow, argument3));
+
+			type = (KernelObjectType) (KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_NONE);
+			Window *menuParentWindow = (Window *) currentProcess->handleTable.ResolveHandle(argument3, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(if (menuParentWindow) currentProcess->handleTable.CompleteHandle(menuParentWindow, argument3));
+
+			Window *window = windowManager.CreateWindow(currentProcess, *bounds, (OSObject) argument2, menuParentWindow, modalParentWindow);
 
 			if (!window) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);

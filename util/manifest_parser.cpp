@@ -5,6 +5,8 @@
 #include <ctype.h>
 
 #include "../api/utf8.h"
+#define OS_NO_CSTDLIB
+#include "../api/os.h"
 
 /*
  * Manifest syntax:
@@ -392,11 +394,10 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.minimumHeight = 160,\n");
 			}
 
-			if (FindProperty("flags", &value)) {
-				fprintf(output, "\t.flags = %.*s,\n", value.bytes, value.text);
-			} else {
-				fprintf(output, "\t.flags = 0,\n");
-			}
+			unsigned flags = OS_CREATE_WINDOW_NORMAL;
+			if (FindProperty("menubar", &value)) flags |= OS_CREATE_WINDOW_WITH_MENUBAR;
+			if (FindProperty("resizable", &value)) if (!CompareTokens(value, "true")) flags |= OS_CREATE_WINDOW_DIALOG;
+			fprintf(output, "\t.flags = %d,\n", flags);
 
 			if (FindProperty("title", &value)) {
 				fprintf(output, "\t.title = (char *) %.*s,\n", value.bytes, value.text);

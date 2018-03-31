@@ -25,14 +25,14 @@ struct Window {
 	OSCursorStyle cursorStyle;
 	int needsTimerMessagesHz, timerMessageTick;
 	bool resizing; // Don't draw the window until the program calls UPDATE_WINDOW.
-	Window *parent;
+	Window *menuParent, *modalChild;
 
 	volatile unsigned handles;
 };
 
 struct WindowManager {
 	void Initialise();
-	Window *CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *parentWindow);
+	Window *CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *menuParentWindow, Window *modalParentWindow);
 	void MoveCursor(int xMovement, int yMovement);
 	void ClickCursor(unsigned buttons);
 	void UpdateCursor(int xMovement, int yMovement, unsigned buttons);
@@ -106,7 +106,7 @@ void Clipboard::Copy(void *newBuffer, OSClipboardHeader *newHeader) {
 			message.context = window->apiWindow;
 			message.clipboard = header;
 			window->owner->messageQueue.SendMessage(message);
-			window = window->parent;
+			window = window->menuParent;
 		}
 
 		windowManager.mutex.Release();
@@ -279,7 +279,7 @@ void WindowManager::SetActiveWindow(Window *window) {
 		activeWindow = window;
 
 		// This is a menu. They don't get activation messages.
-		if (window && window->parent) return;
+		if (window && window->menuParent) return;
 
 		// This is either a top-level window, or no window is active.
 		// Deactivate the old window and its menus (to close them).
@@ -289,13 +289,15 @@ void WindowManager::SetActiveWindow(Window *window) {
 			message.type = OS_MESSAGE_WINDOW_DEACTIVATED;
 			message.context = oldActiveWindow->apiWindow;
 			oldActiveWindow->owner->messageQueue.SendMessage(message);
-			oldActiveWindow = oldActiveWindow->parent;
+			oldActiveWindow = oldActiveWindow->menuParent;
 		}
 	}
 
 	if (!window) {
 		return;
 	}
+
+	while (window->modalChild) window = window->modalChild;
 
 	{
 		graphics.frameBuffer.mutex.Acquire();
@@ -399,19 +401,25 @@ void WindowManager::ClickCursor(unsigned buttons) {
 			}
 			
 			if (window) {
-				message.mousePressed.positionX = cursorX - window->position.x;
-				message.mousePressed.positionY = cursorY - window->position.y;
-				message.mousePressed.positionXScreen = cursorX;
-				message.mousePressed.positionYScreen = cursorY;
-				message.mousePressed.clickChainCount = clickChainCount;
-				message.mousePressed.activationClick = activationClick;
-				message.mousePressed.alt = alt | alt2;
-				message.mousePressed.ctrl = ctrl | ctrl2;
-				message.mousePressed.shift = shift | shift2;
-				message.context = window->apiWindow;
+				if (window->modalChild) {
+					message.type = OS_MESSAGE_MODAL_PARENT_CLICKED;
+					window->modalChild->owner->messageQueue.SendMessage(message);
+				} else {
+					message.mousePressed.positionX = cursorX - window->position.x;
+					message.mousePressed.positionY = cursorY - window->position.y;
+					message.mousePressed.positionXScreen = cursorX;
+					message.mousePressed.positionYScreen = cursorY;
+					message.mousePressed.clickChainCount = clickChainCount;
+					message.mousePressed.activationClick = activationClick;
+					message.mousePressed.alt = alt | alt2;
+					message.mousePressed.ctrl = ctrl | ctrl2;
+					message.mousePressed.shift = shift | shift2;
+					message.context = window->apiWindow;
 
-				RefreshCursor(window);
-				window->owner->messageQueue.SendMessage(message);
+					RefreshCursor(window);
+
+					window->owner->messageQueue.SendMessage(message);
+				}
 			} else {
 				RefreshCursor(nullptr);
 			}
@@ -479,7 +487,7 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		hoverWindow->owner->messageQueue.SendMessage(message);
 	}
 
-	if (window) {
+	if (window && !window->modalChild) {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_MOUSE_MOVED;
 		message.context = window->apiWindow;
@@ -492,7 +500,12 @@ void WindowManager::MoveCursor(int xMovement, int yMovement) {
 		window->owner->messageQueue.SendMessage(message);
 	}
 
-	RefreshCursor(window);
+	if (window && window->modalChild) {
+		RefreshCursor(nullptr);
+	} else {
+		RefreshCursor(window);
+	}
+
 	mutex.Release();
 	graphics.UpdateScreen();
 }
@@ -552,7 +565,7 @@ void WindowManager::Initialise() {
 	initialised = true;
 }
 
-Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *parentWindow) {
+Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObject apiWindow, Window *menuParentWindow, Window *modalParentWindow) {
 	Window *window;
 
 	{
@@ -580,10 +593,11 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 		window->width = width;
 		window->height = height;
 		window->owner = process;
-		window->parent = parentWindow;
+		window->menuParent = menuParentWindow;
+		if (modalParentWindow) modalParentWindow->modalChild = window;
 		window->handles = 1;
 
-		// KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, parent = %x\n", window, window->handles, window->parent);
+		// KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, menuParent = %x\n", window, window->handles, window->menuParent);
 
 		window->z = windowsCount;
 		ArrayAdd(windows, window, false);
@@ -689,8 +703,14 @@ void Window::Destroy() {
 		}
 
 		for (uintptr_t i = 0; i < windowManager.windowsCount; i++) {
-			if (windowManager.windows[i]->parent == this) {
-				windowManager.windows[i]->parent = nullptr;
+			if (windowManager.windows[i]->menuParent == this) {
+				windowManager.windows[i]->menuParent = nullptr;
+			}
+
+			if (windowManager.windows[i]->modalChild == this) {
+				windowManager.windows[i]->modalChild = nullptr;
+				updateActiveWindow = windowManager.windows[i];
+				findActiveWindow = false;
 			}
 		}
 
@@ -727,7 +747,7 @@ void Window::Destroy() {
 		OSMessage message = {};
 		message.type = OS_MESSAGE_WINDOW_DESTROYED;
 		message.context = apiWindow;
-		owner->messageQueue.SendMessage(message); // THe last message sent to the window.
+		owner->messageQueue.SendMessage(message); // The last message sent to the window.
 
 		windowManager.Redraw(position, width, height);
 		CloseHandleToObject(surface, KERNEL_OBJECT_SURFACE);
