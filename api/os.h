@@ -247,6 +247,7 @@ typedef enum OSFatalError {
 #define OS_ERROR_DRIVE_CONTROLLER_REPORTED	(-35)
 #define OS_ERROR_COULD_NOT_ISSUE_PACKET		(-36)
 #define OS_ERROR_HANDLE_TABLE_FULL		(-37)
+#define OS_ERROR_COULD_NOT_RESIZE_FILE		(-38)
 
 typedef intptr_t OSError;
 
@@ -271,8 +272,8 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_UPDATE_WINDOW,
 	OS_SYSCALL_DRAW_SURFACE,
 	OS_SYSCALL_CREATE_MUTEX,
-	OS_SYSCALL_ACQUIRE_MUTEX,
-	OS_SYSCALL_RELEASE_MUTEX,
+	OS_SYSCALL_ACQUIRE_MUTEX, // This (and RELEASE_MUTEX) is the most common system call.
+	OS_SYSCALL_RELEASE_MUTEX, // TODO Implement API-side locks?
 	OS_SYSCALL_CLOSE_HANDLE,
 	OS_SYSCALL_TERMINATE_THREAD,
 	OS_SYSCALL_CREATE_THREAD,
@@ -361,7 +362,7 @@ typedef struct OSNodeInformation {
 		bool present; // From OSEnumerateDirectoryChildren.
 	};
 
-	OSUniqueIdentifier identifier;
+	// OSUniqueIdentifier identifier; // This can change when all handles to the node are closed.
 	OSNodeType type;
 
 	union {
@@ -854,7 +855,7 @@ OS_EXTERN_C size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, v
 OS_EXTERN_C size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 OS_EXTERN_C OSHandle OSReadFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); 
 OS_EXTERN_C OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Message on completion.
-OS_EXTERN_C OSError OSResizeFile(OSHandle file, uint64_t newSize);
+OS_EXTERN_C OSError OSResizeFile(OSHandle file, uint64_t newSize); // TODO What happens if we resize a flie after issuing an asynchronous access?
 OS_EXTERN_C void OSRefreshNodeInformation(OSNodeInformation *information);
 OS_EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
 OS_EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);

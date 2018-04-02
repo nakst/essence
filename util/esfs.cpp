@@ -9,6 +9,8 @@
 //	-> check program
 //	-> indirect 3
 //	-> block error handling
+//	-> moving files
+//	-> directory hashtrees
 
 #ifndef KERNEL
 #include <stdio.h>
@@ -45,7 +47,7 @@ struct UniqueIdentifier {
 // The boot block and superblock are EACH 8KiB.
 #define ESFS_BOOT_SUPER_BLOCK_SIZE (8192)
 
-#define ESFS_DRIVER_VERSION (2)
+#define ESFS_DRIVER_VERSION (3)
 #define ESFS_DRIVE_MINIMUM_SIZE (1048576)
 
 #define ESFS_MAXIMUM_VOLUME_NAME_LENGTH (32)
@@ -110,7 +112,7 @@ struct EsFSAttributeHeader {
 #define ESFS_ATTRIBUTE_LIST_END (0xFFFF)		// Used to mark the end of an attribute list.
 
 #define ESFS_ATTRIBUTE_FILE_SECURITY (1)		// Contains the security information relating to the item.
-#define ESFS_ATTRIBUTE_FILE_DATA (2)			// Contains a data stream of the file.
+#define ESFS_ATTRIBUTE_FILE_DATA (0xDA2A)		// Contains a data stream of the file.
 #define ESFS_ATTRIBUTE_FILE_DIRECTORY (3)		// Contains information about a directory file.
 
 #define ESFS_ATTRIBUTE_DIRECTORY_NAME (1)		// Contains the name of the file in the directory.
@@ -372,15 +374,15 @@ uint64_t BlocksNeededToStore(uint64_t size) {
 
 void PrepareCoreData(size_t driveSize, char *volumeName) {
 	// Select the block size based on the size of the drive.
-	if (driveSize < 512 * 1024 * 1024) {
+	if (driveSize < 512 * 1024 * 1024) { // 512MB
 		blockSize = 512;
-	} else if (driveSize < 1024 * 1024 * 1024) {
+	} else if (driveSize < 1024 * 1024 * 1024) { // 1GB
 		blockSize = 1024;
-	} else if (driveSize < 2048l * 1024 * 1024) {
+	} else if (driveSize < 2048l * 1024 * 1024) { // 2GB
 		blockSize = 2048;
-	} else if (driveSize < 256l * 1024 * 1024 * 1024) {
+	} else if (driveSize < 256l * 1024 * 1024 * 1024) { // 256GB
 		blockSize = 4096;
-	} else if (driveSize < 256l * 1024 * 1024 * 1024 * 1024) {
+	} else if (driveSize < 256l * 1024 * 1024 * 1024 * 1024) { // 256TB
 		blockSize = 8192;
 	} else {
 		blockSize = ESFS_MAX_BLOCK_SIZE;
@@ -392,7 +394,6 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	memcpy(superblock->signature, ESFS_SIGNATURE_STRING, ESFS_SIGNATURE_STRING_LENGTH);
 	memcpy(superblock->volumeName, volumeName, strlen(volumeName));
 
-	// This is the first version!
 	superblock->requiredWriteVersion = ESFS_DRIVER_VERSION;
 	superblock->requiredReadVersion = ESFS_DRIVER_VERSION;
 
@@ -413,7 +414,11 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	printf("Blocks per group: %d\n", superblock->blocksPerGroup);
 #endif
 
-	superblock->blocksPerGroupExtentTable = BlocksNeededToStore(superblock->blocksPerGroup);
+	// In the worse case scenario, every other block in a group is in used.
+	// This will require blocksPerGroup / 2 extents.
+	// Each EsFSLocalExtent is 4 bytes.
+	// So for every block we need at least 2 bytes of space.
+	superblock->blocksPerGroupExtentTable = BlocksNeededToStore(superblock->blocksPerGroup * 2);
 
 	uint64_t blocksInGDT = BlocksNeededToStore(superblock->groupCount * sizeof(EsFSGroupDescriptorP));
 	superblock->gdt.count = blocksInGDT;

@@ -81,7 +81,10 @@ struct IOPacket {
 	void Complete(OSError error);
 	void QueuedChildren();
 
-	bool cancelled;
+	uint8_t cancelled : 1,
+		makesProgress : 1,
+		queuedChildren : 1;
+
 	IOPacketType type;
 	struct IORequest *request;
 
@@ -89,8 +92,6 @@ struct IOPacket {
 	LinkedItem<IOPacket> treeItem;
 	LinkedList<IOPacket> children;
 	size_t remaining;
-
-	bool makesProgress;
 
 	void *object;
 	void *buffer;
@@ -179,8 +180,10 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 				continuePacket->type = IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE;
 				continuePacket->parameter1 = buffer;
 				continuePacket->parameter2 = temp1 + (offset - currentSector * sectorSize);
-				Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp1, true, false, true);
-				continuePacket->QueuedChildren();
+
+				if (Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp1, true, false, true)) {
+					continuePacket->QueuedChildren();
+				}
 			} else {
 				if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp1, true)) return false;
 				CopyMemory(temp1 + (offset - currentSector * sectorSize), buffer, size);
@@ -214,8 +217,10 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 				continuePacket->type = IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE;
 				continuePacket->parameter1 = buffer;
 				continuePacket->parameter2 = temp2;
-				Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp2, true, false, true);
-				continuePacket->QueuedChildren();
+
+				if (Access(continuePacket, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp2, true, false, true)) {
+					continuePacket->QueuedChildren();
+				}
 			} else {
 				if (!Access(packet, currentSector * sectorSize, sectorSize, DRIVE_ACCESS_READ, temp2, true)) return false;
 				CopyMemory(temp2, buffer, size);
@@ -508,16 +513,19 @@ void IOPacket::Complete(OSError error) {
 		}
 	}
 
-	if (request->CloseHandle()) {
-		ioRequestPool.Remove(request);
-	}
+	if (queuedChildren) {
+		if (request->CloseHandle()) {
+			ioRequestPool.Remove(request);
+		}
 
-	ioPacketPool.Remove(this);
+		ioPacketPool.Remove(this);
+	}
 }
 
 void IOPacket::QueuedChildren() {
 	request->mutex.AssertLocked();
 	remaining--;
+	queuedChildren = true;
 
 	if (!remaining) {
 		Complete(OS_SUCCESS);

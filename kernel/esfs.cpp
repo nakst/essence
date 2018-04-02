@@ -23,12 +23,14 @@ struct EsFSVolume {
 
 	bool AccessBlock(IOPacket *packet, uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
+	uint64_t GetBlockFromStream(EsFSAttributeFileData *data, uint64_t offset);
 	bool CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory);
 	void Enumerate(Node *_directory, OSDirectoryChild *childBuffer);
 
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
 	bool ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock);
 	EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks);
+	void FreeExtent(EsFSGlobalExtent extent);
 	uint16_t GetBlocksInGroup(uint64_t group);
 
 	Device *drive;
@@ -113,7 +115,8 @@ Node *EsFSVolume::LoadRootDirectory() {
 	size_t fileEntryLength = rootEnd - (uint8_t *) root;
 
 	uint64_t temp = 0;
-	Node *node = vfs.RegisterNodeHandle(OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true), temp, ((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY, true);
+	Node *node = vfs.RegisterNodeHandle(OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true), temp, 
+			((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY, true);
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
@@ -178,6 +181,64 @@ Node *EsFSVolume::Initialise(Device *_drive) {
 	return LoadRootDirectory();
 }
 
+uint64_t EsFSVolume::GetBlockFromStream(EsFSAttributeFileData *data, uint64_t offset) {
+	if (data->indirection == ESFS_DATA_DIRECT) return 0;
+
+	uint64_t offsetBlockAligned = offset & ~(superblock.blockSize - 1);
+
+	EsFSGlobalExtent *i2ExtentList = nullptr;
+	Defer(OSHeapFree(i2ExtentList));
+
+	if (data->indirection == ESFS_DATA_INDIRECT_2) {
+		i2ExtentList = (EsFSGlobalExtent *) OSHeapAllocate(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * superblock.blockSize, false);
+
+		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
+			if (data->indirect2[i]) {
+				if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
+					return false;
+				}
+			}
+		}
+	}
+
+	uint64_t blockInStream = offsetBlockAligned / superblock.blockSize;
+	uint64_t nextGlobalBlock = 0;
+
+	switch (data->indirection) {
+		case ESFS_DATA_INDIRECT: {
+			uint64_t p = 0;
+
+			for (int i = 0; i < data->extentCount; i++) {
+				if (blockInStream < p + data->indirect[i].count) {
+					nextGlobalBlock = data->indirect[i].offset + blockInStream - p;
+					break;
+				} else {
+					p += data->indirect[i].count;
+				}
+			}
+		} break;	
+
+		case ESFS_DATA_INDIRECT_2: {
+			uint64_t p = 0;
+
+			for (int i = 0; i < data->extentCount; i++) {
+				if (blockInStream < p + i2ExtentList[i].count) {
+					nextGlobalBlock = i2ExtentList[i].offset + blockInStream - p;
+					break;
+				} else {
+					p += i2ExtentList[i].count;
+				}
+			}
+		} break;
+
+		default: {
+			KernelPanic("EsFSVolume::GetBlockFromStream - Unsupported indirection format %d.\n", data->indirection);
+		} break;
+	}
+
+	return nextGlobalBlock;
+}
+
 bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
 	if (!size) return true;
 
@@ -212,11 +273,7 @@ bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uin
 	}
 
 	uint64_t blockInStream = offsetBlockAligned / superblock.blockSize;
-#if 1
 	uint64_t maxBlocksToFind = drive->block.maxAccessSectorCount * drive->block.sectorSize / superblock.blockSize;
-#else
-	uint64_t maxBlocksToFind = 1;
-#endif
 	uint64_t i = 0;
 
 	while (sizeBlocks) {
@@ -303,24 +360,80 @@ bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uin
 	return true;
 }
 
+void EsFSVolume::FreeExtent(EsFSGlobalExtent extent) {
+	uint64_t blockGroup = extent.offset / superblock.blocksPerGroup;
+	EsFSGroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
+
+	// Remove the resource usage.
+	descriptor->blocksUsed -= extent.count;
+	superblock.blocksUsed -= extent.count;
+
+	// Load the extent table.
+	uint8_t *extentTableBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupExtentTable * superblock.blockSize, false);
+	Defer(OSHeapFree(extentTableBuffer));
+	EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
+	AccessBlock(nullptr, descriptor->extentTable, 
+			descriptor->extentCount * sizeof(EsFSLocalExtent), 
+			DRIVE_ACCESS_READ, extentTableBuffer, 0);
+
+	EsFSLocalExtent freeExtent = { (uint16_t) (extent.offset % superblock.blocksPerGroup), (uint16_t) extent.count };
+
+	// Merge the extent.
+	for (uintptr_t i = 0; i < descriptor->extentCount; i++) {
+		EsFSLocalExtent extent = extentTable[i];
+
+		if ((extent.offset + extent.count > freeExtent.offset && extent.offset + extent.count < freeExtent.offset + freeExtent.count)
+				|| (freeExtent.offset + freeExtent.count > extent.offset && freeExtent.offset + freeExtent.count < extent.offset + extent.count)) {
+			KernelPanic("EsFSVolume::FreeExtent - Extent overlap.\n");
+		}
+
+		if (extent.offset + extent.count == freeExtent.offset) {
+			freeExtent.offset = extent.offset;
+			freeExtent.count += extent.count;
+			descriptor->extentCount--;
+			extentTable[i] = extentTable[descriptor->extentCount]; 
+			i--;
+		} else if (freeExtent.offset + freeExtent.count == extent.offset) {
+			freeExtent.count += extent.count;
+			descriptor->extentCount--;
+			extentTable[i] = extentTable[descriptor->extentCount]; 
+			i--;
+		}
+	}
+
+	// Add the extent back into the table.
+	extentTable[descriptor->extentCount] = freeExtent; 
+	descriptor->extentCount++;
+
+	if (descriptor->extentCount * sizeof(EsFSLocalExtent) > superblock.blocksPerGroupExtentTable * superblock.blockSize) {
+		KernelPanic("EsFSVolume::FreeExtent - Extent table larger than expected.\n");
+	}
+
+	// Save the extent table.
+	AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
+}
+
 EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	// TODO Optimise this function.
 	// 	- Cache extent tables.
 
-	uint8_t *extentTableBuffer = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
+	uint8_t *extentTableBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupExtentTable * superblock.blockSize, false);
 	Defer(OSHeapFree(extentTableBuffer));
 
 	uint64_t groupsSearched = 0;
 
-	for (uint64_t blockGroup = localGroup; groupsSearched < superblock.groupCount; blockGroup = (blockGroup + 1) % superblock.groupCount, groupsSearched++) {
+	for (uint64_t blockGroup = localGroup; 
+			groupsSearched < superblock.groupCount; 
+			blockGroup = (blockGroup + 1) % superblock.groupCount, 
+			groupsSearched++) {
 		EsFSGroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
 
 		if (descriptor->blocksUsed == GetBlocksInGroup(blockGroup)) {
+			// All the blocks in this group have been used.
 			continue;
 		} 
 
-		if (descriptor->extentCount * sizeof(EsFSLocalExtent) > ESFS_MAX_BLOCK_SIZE) {
-			// This shouldn't happen as long as the number of blocks in a group does not exceed ESFS_MAX_BLOCK_SIZE.
+		if (descriptor->extentCount * sizeof(EsFSLocalExtent) > superblock.blocksPerGroupExtentTable * superblock.blockSize) {
 			KernelPanic("EsFSVolume::AllocateExtent - Extent table larger than expected.\n");
 		}
 
@@ -336,7 +449,10 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 
 			// The table is saved at the end of the function.
 		} else {
-			AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_READ, extentTableBuffer, 0);
+			// Load the extent table.
+			AccessBlock(nullptr, descriptor->extentTable, 
+					BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, 
+					DRIVE_ACCESS_READ, extentTableBuffer, 0);
 		}
 
 		uint16_t largestSeenIndex = 0;
@@ -355,7 +471,7 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 				extent.offset = extentTable[i].offset;
 				extent.count = desiredBlocks;
 				descriptor->extentCount--;
-				extentTable[i] = extentTable[descriptor->extentCount];
+				extentTable[i] = extentTable[descriptor->extentCount]; // Replace this extent with the last one.
 				goto finish;
 			} else {
 				if (extent.count > extentTable[largestSeenIndex].count) {
@@ -381,6 +497,7 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 		descriptor->blocksUsed += extent.count;
 		superblock.blocksUsed += extent.count;
 
+		// Save the extent table.
 		AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
 
 		return extent;
@@ -392,12 +509,13 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 
 bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock) {
 	if (!data) {
+		// The attribute is invalid.
 		return false;
 	}
 
 	uint64_t oldSize = data->size;
-	data->size = newSize;
 
+	// Get the number of blocks needed to store the old and new sizes.
 	uint64_t oldBlocks = BlocksNeededToStore(oldSize);
 	uint64_t newBlocks = BlocksNeededToStore(newSize);
 
@@ -408,48 +526,63 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	uint8_t wasDirect = false;
 	uint8_t directTemporary[ESFS_DIRECT_BYTES];
 
-	if (newSize > ESFS_DIRECT_BYTES && data->indirection == ESFS_DATA_DIRECT) {
-		// Change from direct to indirect.
+	if (data->indirection == ESFS_DATA_DIRECT) {
+		if (newSize <= ESFS_DIRECT_BYTES) {
+			// The stream still fits into the attribute.
+			return true;
+		}
+
+		// If the data was stored directly in the data stream attribute,
+		// then we'll need to copy the data over to the first allocated extent.
 		data->indirection = ESFS_DATA_INDIRECT;
 		CopyMemory(directTemporary, data->direct, oldSize);
 		wasDirect = true;
 		oldBlocks = 0;
-	} else if (data->indirection == ESFS_DATA_DIRECT) {
-		return true; // We don't need to resize the file.
 	}
 
+	// Calculate the number of blocks we need to allocate.
 	uint64_t increaseBlocks = newBlocks - oldBlocks;
 
 	EsFSGlobalExtent *newExtentList = nullptr;
 	Defer(OSHeapFree(newExtentList));
 
+	// What is the maximum number of extents a stream can possibly have?
 	uint64_t extentListMaxSize = ESFS_INDIRECT_2_EXTENTS * (superblock.blockSize / sizeof(EsFSGlobalExtent));
 	uint64_t firstModifiedExtentListBlock = 0;
 
+	// While we still have blocks to find...
 	while (increaseBlocks) {
+		// Try to allocate an extent encompassing all of the blocks.
 		EsFSGlobalExtent newExtent = AllocateExtent(containerBlock / superblock.blocksPerGroup, increaseBlocks);
+
+		// If the extent couldn't be allocated, the volume is full.
 		if (!newExtent.count) return false;
 
 		if (clearNewBlocks) {
+			// We need to zero the extent.
+			// Create a buffer full of zeros and write it to the extent.
+
 			void *zeroData = OSHeapAllocate(superblock.blockSize * newExtent.count, true);
 			Defer(OSHeapFree(zeroData));
 
 			if (!AccessBlock(nullptr, newExtent.offset, superblock.blockSize * newExtent.count, DRIVE_ACCESS_WRITE, zeroData, 0)) {
+				// TODO Free the extents we allocated.
 				return false;
 			}
 		}
 
+		// This is how many blocks we found...
 		increaseBlocks -= newExtent.count;
 
 		switch (data->indirection) {
 			case ESFS_DATA_INDIRECT: {
 				if (data->extentCount != ESFS_INDIRECT_EXTENTS) {
+					// Add this extent to the list of extents.
 				        data->indirect[data->extentCount] = newExtent;
 				        data->extentCount++;
 				} else {
 					// We need to convert this to ESFS_DATA_INDIRECT_2.
 					data->indirection = ESFS_DATA_INDIRECT_2;
-					data->extentCount = 4;
 					newExtentList = (EsFSGlobalExtent *) OSHeapAllocate(extentListMaxSize * sizeof(EsFSGlobalExtent), false);
 					CopyMemory(newExtentList, data->indirect, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
 					newExtentList[data->extentCount++] = newExtent;
@@ -465,14 +598,17 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 
 					if (!AccessBlock(nullptr, data->indirect2[firstModifiedExtentListBlock], superblock.blockSize, DRIVE_ACCESS_READ, 
 							newExtentList + firstModifiedExtentListBlock * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
+						// TODO Free the extents we allocated.
 						return false;
 					}
 				}
 
+				// Add this extent to the list.
 				newExtentList[data->extentCount++] = newExtent;
 
 				if (extentListMaxSize < data->extentCount) {
 					// The extent list is too large.
+					// TODO Free the extents we allocated.
 					return false;
 				}
 			} break;
@@ -482,14 +618,21 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	if (newExtentList) {
 		uint64_t blocksNeeded = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent));
 
-		for (uintptr_t i = firstModifiedExtentListBlock; i < blocksNeeded; i++) {
+		for (uintptr_t i = firstModifiedExtentListBlock /*We haven't actually loaded the extents prior into the list.*/; i < blocksNeeded; i++) {
 			if (!data->indirect2[i]) {
+				// Allocate a new indirect 2 block to store the extents into.
 				EsFSGlobalExtent extent = AllocateExtent(containerBlock / superblock.blocksPerGroup, 1);
 				data->indirect2[i] = extent.offset;
-				if (!extent.count) return false;
+
+				if (!extent.count) {
+					// TODO Free the extents we allocated.
+					return false;
+				}
 			}
 
+			// Write this portion of the extent list.
 			if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_WRITE, newExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
+				// TODO Free the extents we allocated.
 				return false;
 			}
 		}
@@ -498,10 +641,13 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	if (wasDirect && oldSize) {
 		// Copy the direct data into the new blocks.
 		if (!AccessStream(nullptr, data, 0, oldSize, directTemporary, true)) {
+			// TODO Free the extents we allocated.
 			return false;
 		}
 	}
 
+	// Save the new size.
+	data->size = newSize;
 	return true;
 }
 
@@ -550,8 +696,6 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (file + 1);
 
 		if (file) {
-			CopyMemory(&child->information.identifier, &fileEntry->identifier, sizeof(UniqueIdentifier));
-
 			EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 			EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
 
@@ -738,6 +882,8 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 	Defer(OSHeapFree(entryBuffer));
 	size_t entryBufferPosition = 0;
 
+	UniqueIdentifier *identifier;
+
 	{
 		// Step 1: Make the new directory entry.
 		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (entryBuffer + entryBufferPosition);
@@ -765,6 +911,7 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 			entry->fileType = type;
 			CopyMemory(&entry->signature, (char *) ESFS_FILE_ENTRY_SIGNATURE, CStringLength((char *) ESFS_FILE_ENTRY_SIGNATURE));
 			entryBufferPosition += sizeof(EsFSFileEntry);
+			identifier = &entry->identifier;
 
 			EsFSAttributeFileData *data = (EsFSAttributeFileData *) (entryBuffer + entryBufferPosition);
 			data->header.type = ESFS_ATTRIBUTE_FILE_DATA;
@@ -808,6 +955,14 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 			// We need to add a new block to the file.
 			ResizeDataStream(data, data->size + superblock.blockSize, true, eFile->containerBlock);
 			directory->spaceAvailableInLastBlock = superblock.blockSize;
+		}
+
+		{
+			// To avoid the Birthday problem,
+			// we'll use the global block number that the directory entry is stored in 
+			// for the high 64-bits of the unique identifier.
+			uint64_t high = GetBlockFromStream(data, data->size - directory->spaceAvailableInLastBlock);
+			for (uintptr_t i = 0; i < 8; i++) identifier->d[i + 8] = (uint8_t) (high >> (i << 3));
 		}
 
 		AccessStream(nullptr, data, data->size - directory->spaceAvailableInLastBlock, entryBufferPosition, entryBuffer, true);

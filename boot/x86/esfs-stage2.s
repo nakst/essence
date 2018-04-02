@@ -40,7 +40,7 @@ load_kernel:
 FindDataStreamLoop:
 	mov	bx,[KernelDataStreamPosition]
 	mov	eax,[fs:bx]
-	cmp	ax,2
+	cmp	ax,0xDA2A
 	je	SaveKernelSize
 	shr	eax,16
 	add	[KernelDataStreamPosition],ax

@@ -321,6 +321,47 @@ extern "C" void ProgramEntry() {
 	if (++z != 2) OSCrashProcess(603); // Is the data segment writable?
 
 	{
+		OSNodeInformation node;
+		OSOpenNode(OSLiteral("/ResizeFileTest.txt"), 
+				OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_READ_ACCESS, 
+				&node);
+
+		OSPrint("Opened node %d\n", node.handle);
+
+#if 0
+		OSResizeFile(node.handle, (uint64_t) 0xFFFFFFFFFFFF);
+
+		OSPrint("Attempted massive file resize\n");
+#endif
+
+		uint8_t buffer[512];
+
+		for (uintptr_t i = 1; i < 64; i++) {
+			for (uintptr_t j = 0; j < 512; j++) {
+				buffer[j] = i;
+			}
+
+			OSPrint("Resizing file to %d\n", i * 512);
+			OSResizeFile(node.handle, i * 512);
+			OSPrint("Write to %d\n", (i - 1) * 512);
+			OSWriteFileSync(node.handle, (i - 1) * 512, 512, buffer);
+		}
+
+		for (uintptr_t i = 1; i < 64; i++) {
+			OSPrint("Read from %d\n", (i - 1) * 512);
+			OSReadFileSync(node.handle, (i - 1) * 512, 512, buffer);
+
+			for (uintptr_t j = 0; j < 512; j++) {
+				if (buffer[j] != i) {
+					OSCrashProcess(700);
+				}
+			}
+		}
+
+		OSCloseHandle(node.handle);
+	}
+
+	{
 		void *a = malloc(0x100000);
 		void *b = realloc(a, 0x1000);
 		void *c = realloc(b, 0x100000);

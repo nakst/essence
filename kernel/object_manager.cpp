@@ -441,7 +441,9 @@ void HandleTable::Destroy() {
 
 						if (handle->object) {
 							if (handle->lock) {
-								KernelPanic("HandleTable::Destroy - Handle in table was locked.\n");
+								KernelPanic("HandleTable::Destroy - Handle (%x) in table was locked.\n", 
+										i * HANDLE_TABLE_L2_ENTRIES * HANDLE_TABLE_L3_ENTRIES
+										+ j * HANDLE_TABLE_L3_ENTRIES + k);
 							}
 
 							if (handle->type & CLOSABLE_OBJECT_TYPES) {

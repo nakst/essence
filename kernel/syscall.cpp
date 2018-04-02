@@ -366,9 +366,10 @@ uintptr_t DoSyscall(OSSyscallType index,
 			KernelObjectType type;
 
 			type = (KernelObjectType) (KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_NONE);
-			Window *modalParentWindow = (Window *) currentProcess->handleTable.ResolveHandle(returnData[0], type);
+			OSHandle modalParentHandle = returnData[0];
+			Window *modalParentWindow = (Window *) currentProcess->handleTable.ResolveHandle(modalParentHandle, type);
 			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(if (modalParentWindow) currentProcess->handleTable.CompleteHandle(modalParentWindow, argument3));
+			Defer(if (modalParentWindow) currentProcess->handleTable.CompleteHandle(modalParentWindow, modalParentHandle));
 
 			type = (KernelObjectType) (KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_NONE);
 			Window *menuParentWindow = (Window *) currentProcess->handleTable.ResolveHandle(argument3, type);

@@ -195,7 +195,6 @@ bool Node::EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount) {
 }
 
 void Node::CopyInformation(OSNodeInformation *information) {
-	CopyMemory(&information->identifier, &identifier, sizeof(UniqueIdentifier));
 	information->type = data.type;
 
 	switch (data.type) {
@@ -224,7 +223,10 @@ void Node::Write(IOPacket *packet, bool canResize) {
 	IORequest *request = packet->request;
 
 	if (request->offset + request->count > data.file.fileSize && canResize) {
-		Resize(request->offset + request->count, true);
+		if (!Resize(request->offset + request->count, true)) {
+			request->Cancel(OS_ERROR_COULD_NOT_RESIZE_FILE);
+			return;
+		}
 	}
 
 	if (request->offset > data.file.fileSize) {

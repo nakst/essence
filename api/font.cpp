@@ -1,6 +1,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#define DEBUG_ADDITIONAL_KERNING (0)
+
 typedef FT_Face Font;
 
 static FT_Library freetypeLibrary;
@@ -107,7 +109,7 @@ static int MeasureStringWidth(char *string, size_t stringLength, int size, Font 
 			FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
 			int advanceWidth = font->glyph->advance.x >> 6;
 
-			totalWidth += advanceWidth;
+			totalWidth += advanceWidth + DEBUG_ADDITIONAL_KERNING;
 		}
 
 		invisibleCharacter:;
@@ -246,6 +248,8 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
 			advanceWidth = font->glyph->advance.x >> 6;
 		}
+
+		advanceWidth += DEBUG_ADDITIONAL_KERNING;
 
 		if (outputPosition.x + advanceWidth < region.left) {
 			goto skipCharacter;
