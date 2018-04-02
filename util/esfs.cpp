@@ -1,11 +1,9 @@
 // TODO list:
 // 	-> delete files/directories
-// 	-> data stream shrinking
 // 	-> sparse files
 // 	-> hard/symbolic links
 // 	-> journal
 //	-> checksums
-//	-> directory indexing
 //	-> check program
 //	-> indirect 3
 //	-> block error handling
@@ -141,7 +139,7 @@ struct EsFSAttributeFileData {
 
 #define ESFS_DATA_INDIRECT   (1)
 #define ESFS_DATA_INDIRECT_2 (2) 
-#define ESFS_DATA_INDIRECT_3 (3)
+#define ESFS_DATA_INDIRECT_3 (3) // TODO Not supported.
 #define ESFS_DATA_DIRECT     (4)
 /*5*/	uint8_t indirection;				// The level of indirection needed to read the data.
 
@@ -155,8 +153,8 @@ struct EsFSAttributeFileData {
 #define ESFS_INDIRECT_EXTENTS (4)
 		EsFSGlobalExtent indirect[ESFS_INDIRECT_EXTENTS]; // Extents that contain the stream's data.
 	
-#define ESFS_INDIRECT_2_EXTENTS (8)
-		uint64_t indirect2[ESFS_INDIRECT_2_EXTENTS];	// Blocks that contain lists of extents that contain the stream's data.
+#define ESFS_INDIRECT_2_BLOCKS (8)
+		uint64_t indirect2[ESFS_INDIRECT_2_BLOCKS];	// Blocks that contain lists of extents that contain the stream's data.
 
 #define ESFS_DIRECT_BYTES (64)
 		uint8_t direct[ESFS_DIRECT_BYTES];		// The actual file data, inline.
@@ -718,7 +716,7 @@ void AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, v
 	if (data->indirection == ESFS_DATA_INDIRECT_2) {
 		i2ExtentList = (EsFSGlobalExtent *) malloc(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * blockSize);
 
-		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
+		for (int i = 0; i < ESFS_INDIRECT_2_BLOCKS; i++) {
 			if (data->indirect2[i]) {
 				ReadBlock(data->indirect2[i], 1, i2ExtentList + i * (blockSize / sizeof(EsFSGlobalExtent)));
 			}
@@ -842,7 +840,7 @@ void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearN
 	uint64_t increaseBlocks = newBlocks - oldBlocks;
 
 	EsFSGlobalExtent *newExtentList = nullptr;
-	uint64_t extentListMaxSize = ESFS_INDIRECT_2_EXTENTS * (blockSize / sizeof(EsFSGlobalExtent));
+	uint64_t extentListMaxSize = ESFS_INDIRECT_2_BLOCKS * (blockSize / sizeof(EsFSGlobalExtent));
 	uint64_t firstModifiedExtentListBlock = 0;
 
 	while (increaseBlocks) {

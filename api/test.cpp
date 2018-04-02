@@ -329,6 +329,9 @@ extern "C" void ProgramEntry() {
 		OSPrint("Opened node %d\n", node.handle);
 
 #if 0
+		// Commented out because we don't yet the free extents allocated
+		// during a failed resize.
+
 		OSResizeFile(node.handle, (uint64_t) 0xFFFFFFFFFFFF);
 
 		OSPrint("Attempted massive file resize\n");
@@ -336,7 +339,7 @@ extern "C" void ProgramEntry() {
 
 		uint8_t buffer[512];
 
-		for (uintptr_t i = 1; i < 64; i++) {
+		for (uintptr_t i = 1; i < 128; i++) {
 			for (uintptr_t j = 0; j < 512; j++) {
 				buffer[j] = i;
 			}
@@ -347,7 +350,25 @@ extern "C" void ProgramEntry() {
 			OSWriteFileSync(node.handle, (i - 1) * 512, 512, buffer);
 		}
 
-		for (uintptr_t i = 1; i < 64; i++) {
+		for (uintptr_t i = 1; i < 128; i++) {
+			OSPrint("Read from %d\n", (i - 1) * 512);
+			OSReadFileSync(node.handle, (i - 1) * 512, 512, buffer);
+
+			for (uintptr_t j = 0; j < 512; j++) {
+				if (buffer[j] != i) {
+					OSCrashProcess(700);
+				}
+			}
+		}
+
+#if 1
+		for (uintptr_t i = 126; i > 0; i--) {
+			OSPrint("Resizing file to %d\n", i * 512);
+			OSResizeFile(node.handle, i * 512);
+		}
+#endif
+
+		for (uintptr_t i = 1; i < 2; i++) {
 			OSPrint("Read from %d\n", (i - 1) * 512);
 			OSReadFileSync(node.handle, (i - 1) * 512, 512, buffer);
 

@@ -19,19 +19,25 @@ struct EsFSVolume {
 	uint64_t BlocksNeededToStore(uint64_t size);
 
 	Node *LoadRootDirectory();
+
 	Node *SearchDirectory(char *name, size_t nameLength, Node *directory, uint64_t &flags);
+	void Enumerate(Node *_directory, OSDirectoryChild *childBuffer);
 
 	bool AccessBlock(IOPacket *packet, uint64_t block, uint64_t count, int operation, void *buffer, uint64_t offsetIntoBlock);
 	bool AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock = nullptr);
 	uint64_t GetBlockFromStream(EsFSAttributeFileData *data, uint64_t offset);
+
 	bool CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory);
-	void Enumerate(Node *_directory, OSDirectoryChild *childBuffer);
 
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
+	uint16_t GetBlocksInGroup(uint64_t group);
+
 	bool ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock);
+	bool GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock);
+	bool ShrinkDataStream(EsFSAttributeFileData *data, uint64_t newSize);
+	
 	EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks);
 	void FreeExtent(EsFSGlobalExtent extent);
-	uint16_t GetBlocksInGroup(uint64_t group);
 
 	Device *drive;
 	Filesystem *filesystem;
@@ -192,7 +198,7 @@ uint64_t EsFSVolume::GetBlockFromStream(EsFSAttributeFileData *data, uint64_t of
 	if (data->indirection == ESFS_DATA_INDIRECT_2) {
 		i2ExtentList = (EsFSGlobalExtent *) OSHeapAllocate(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * superblock.blockSize, false);
 
-		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
+		for (int i = 0; i < ESFS_INDIRECT_2_BLOCKS; i++) {
 			if (data->indirect2[i]) {
 				if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 					return false;
@@ -263,7 +269,7 @@ bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uin
 	if (data->indirection == ESFS_DATA_INDIRECT_2) {
 		i2ExtentList = (EsFSGlobalExtent *) OSHeapAllocate(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * superblock.blockSize, false);
 
-		for (int i = 0; i < ESFS_INDIRECT_2_EXTENTS; i++) {
+		for (int i = 0; i < ESFS_INDIRECT_2_BLOCKS; i++) {
 			if (data->indirect2[i]) {
 				if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, i2ExtentList + i * (superblock.blockSize / sizeof(EsFSGlobalExtent)), 0)) {
 					return false;
@@ -508,6 +514,116 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 }
 
 bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock) {
+	if (newSize > data->size) {
+		return GrowDataStream(data, newSize, clearNewBlocks, containerBlock);
+	} else if (newSize < data->size) {
+		return ShrinkDataStream(data, newSize);
+	} else {
+		return true;
+	}
+}
+
+bool EsFSVolume::ShrinkDataStream(EsFSAttributeFileData *data, uint64_t newSize) {
+	if (data->indirection == ESFS_DATA_DIRECT) {
+		// If the data is stored in the attribute, we don't need to do anything.
+		return true;
+	}
+
+	EsFSGlobalExtent *extentList = (EsFSGlobalExtent *) OSHeapAllocate(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * superblock.blockSize, false);
+	Defer(OSHeapFree(extentList));
+
+	uint64_t oldSize = data->size;
+
+	uint8_t directBuffer[ESFS_DIRECT_BYTES];
+
+	if (newSize <= ESFS_DIRECT_BYTES) {
+		// The data will fit into the stream attribute, so load it before we change the extent list.
+		if (!AccessStream(nullptr, data, 0, newSize, directBuffer, DRIVE_ACCESS_READ)) {
+			return false;
+		}
+	}
+
+	// Get the number of blocks needed to store the old and new sizes.
+	uint64_t oldBlocks = BlocksNeededToStore(oldSize);
+	uint64_t newBlocks = BlocksNeededToStore(newSize);
+
+	if (oldBlocks == newBlocks) {
+		data->size = newSize;
+		return true;
+	}
+
+	uintptr_t extentsPerBlock = superblock.blockSize / sizeof(EsFSGlobalExtent);
+
+	// Load the extent list.
+	if (data->indirection == ESFS_DATA_INDIRECT_2) {
+		for (int i = 0; i < ESFS_INDIRECT_2_BLOCKS; i++) {
+			if (data->indirect2[i]) {
+				if (!AccessBlock(nullptr, data->indirect2[i], superblock.blockSize, DRIVE_ACCESS_READ, extentList + i * extentsPerBlock, 0)) {
+					return false;
+				}
+			}
+		}
+	} else if (data->indirection == ESFS_DATA_INDIRECT) {
+		CopyMemory(extentList, data->indirect, sizeof(EsFSGlobalExtent) * data->extentCount);
+	}
+
+	// Find the first extent that isn't completely needed.
+	uintptr_t block = 0, i = 0;
+	
+	for (; i < data->extentCount; i++) {
+		if (block + extentList[i].count > newBlocks) {
+			break;
+		}
+
+		block += extentList[i].count;
+	}
+
+	// Free the portion of the extent that isn't needed.
+	if (newBlocks != block) {
+		FreeExtent({extentList[i].offset + (newBlocks - block), extentList[i].count - (newBlocks - block)});
+		extentList[i].count = newBlocks - block;
+		i++;
+	}
+
+	// Free the rest of the extents.
+	uintptr_t newExtentCount = i;
+	for (; i < data->extentCount; i++) FreeExtent(extentList[i]);
+	data->extentCount = newExtentCount;
+
+	// Save the updated extent list.
+	if (data->extentCount <= ESFS_INDIRECT_EXTENTS) {
+		data->indirection = ESFS_DATA_INDIRECT;
+		CopyMemory(data->indirect, extentList, data->extentCount * sizeof(EsFSGlobalExtent));
+	} else {
+		uintptr_t neededExtentListBlocks = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent));
+
+		for (uintptr_t i = neededExtentListBlocks; i < ESFS_INDIRECT_2_BLOCKS; i++) {
+			if (data->indirect2[i]) {
+				FreeExtent({data->indirect2[i], 1});
+				data->indirect2[i] = 0;
+			}
+		}
+
+		// Write this portion of the extent list.
+		if (!AccessBlock(nullptr, data->indirect2[neededExtentListBlocks - 1], superblock.blockSize, DRIVE_ACCESS_WRITE, extentList + (neededExtentListBlocks - 1) * extentsPerBlock, 0)) {
+			return false;
+		}
+	}
+
+	if (newSize <= ESFS_DIRECT_BYTES) {
+		// Store the data in the stream attribute.
+		data->indirection = ESFS_DATA_INDIRECT_2;
+		CopyMemory(data->direct, directBuffer, newSize);
+	}
+
+	data->size = newSize;
+	return true;
+}
+
+bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock) {
+	// TODO Defragmentation, extent merging, and error recovery.
+	// 	-> Maybe store indirect 2 lists in larger blocks? (but still of a fixed size)
+
 	if (!data) {
 		// The attribute is invalid.
 		return false;
@@ -519,16 +635,13 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	uint64_t oldBlocks = BlocksNeededToStore(oldSize);
 	uint64_t newBlocks = BlocksNeededToStore(newSize);
 
-	if (oldSize > newSize) {
-		KernelPanic("EsFSVolume::ResizeDataStream - File shrinking not implemented yet.\n");
-	}
-
 	uint8_t wasDirect = false;
 	uint8_t directTemporary[ESFS_DIRECT_BYTES];
 
 	if (data->indirection == ESFS_DATA_DIRECT) {
 		if (newSize <= ESFS_DIRECT_BYTES) {
 			// The stream still fits into the attribute.
+			if (clearNewBlocks) ZeroMemory(data->direct + oldSize, newSize - oldSize);
 			return true;
 		}
 
@@ -547,7 +660,7 @@ bool EsFSVolume::ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize,
 	Defer(OSHeapFree(newExtentList));
 
 	// What is the maximum number of extents a stream can possibly have?
-	uint64_t extentListMaxSize = ESFS_INDIRECT_2_EXTENTS * (superblock.blockSize / sizeof(EsFSGlobalExtent));
+	uint64_t extentListMaxSize = ESFS_INDIRECT_2_BLOCKS * (superblock.blockSize / sizeof(EsFSGlobalExtent));
 	uint64_t firstModifiedExtentListBlock = 0;
 
 	// While we still have blocks to find...
