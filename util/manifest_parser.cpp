@@ -142,19 +142,17 @@ static bool NextToken(char *&buffer, Token *token, bool expect = false) {
 	return true;
 }
 
-#if 0
-static bool CompareTokens(Token a, Token b) {
+bool CompareTokens(Token a, Token b) {
 	if (a.bytes != b.bytes) return false;
 	return 0 == memcmp(a.text, b.text, a.bytes);
 }
-#endif
 
-static bool CompareTokens(Token a, const char *string) {
+bool CompareTokens(Token a, const char *string) {
 	if (a.bytes != (int) strlen(string)) return false;
 	return 0 == memcmp(a.text, string, a.bytes);
 }
 
-static bool ParseManifest(char *text, ParseCallback callback) {
+bool ParseManifest(char *text, ParseCallback callback) {
 	Token token, section, attribute;
 	attribute = {nullptr, 0, Token::IDENTIFIER};
 	section = {nullptr, 0, Token::IDENTIFIER};
@@ -221,6 +219,8 @@ static bool ParseManifest(char *text, ParseCallback callback) {
 
 	return true;
 }
+
+#ifndef MANIFEST_PARSER_LIBRARY
 
 FILE *output;
 int commandCount;
@@ -505,3 +505,5 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
+
+#endif

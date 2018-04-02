@@ -7,6 +7,12 @@
 #include <time.h>
 #include <dirent.h>
 
+#define MANIFEST_PARSER_LIBRARY
+#include "manifest_parser.cpp"
+
+bool acceptedLicense;
+char compilerPath[4096];
+
 char buffer[4096];
 
 void Build(bool enableOptimisations) {
@@ -121,34 +127,51 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 }
 
 void BuildCrossCompiler() {
-	{
-		printf("Could not detect GCC cross compiler in PATH.\n");
+	char yes[1024];
 
-		printf("\nAutomatically building and installing cross compiler...\n");
+	{
+		printf("\nThe build system could not detect a GCC cross compiler in your PATH.\n");
+		printf("Have you already built a GCC cross compiler compatible with the build system?\n\n");
+
+		printf("Type 'yes' or 'no'.\n");
+		scanf("%s", yes);
+
+		if (!strcmp(yes, "yes")) {
+			printf("\nPlease enter the ABSOLUTE path of the bin/ folder, containing the binutils and GCC executables.\n");
+			scanf("%s", compilerPath);
+
+			printf("\nUpdating config...\n");
+			return;
+		}
+
+		printf("\nThe build system will now automatically build a cross compiler for you.\n");
 		printf("Make sure you are connected to the internet, and have the latest versions of the following programs:\n");
-		printf("\t-GCC/G++\n");
-		printf("\t-GNU Make\n");
-		printf("\t-GNU Bison\n");
-		printf("\t-Flex\n");
-		printf("\t-GNU GMP\n");
-		printf("\t-GNU MPFR\n");
-		printf("\t-GNU MPC\n");
-		printf("\t-Texinfo\n");
-		printf("\t-curl\n");
-		printf("\t-nasm\n");
-		printf("\t-ctags\n");
+		printf("\t- GCC/G++\n");
+		printf("\t- GNU Make\n");
+		printf("\t- GNU Bison\n");
+		printf("\t- Flex\n");
+		printf("\t- GNU GMP\n");
+		printf("\t- GNU MPFR\n");
+		printf("\t- GNU MPC\n");
+		printf("\t- Texinfo\n");
+		printf("\t- curl\n");
+		printf("\t- nasm\n");
+		printf("\t- ctags\n");
 
 		printf("\nMake sure you have at least 3GB of drive space available.\n");
 		printf("The final installation will take up ~1GB.\n");
 		printf("Approximately 100MB of source files will be downloaded.\n");
+		printf("The full build may take over an hour on slower systems; on most modern systems, it should only take ~15 minutes.\n");
 
-		printf("Enter cross compiler installation folder [THIS MUST BE AN ABSOLUTE PATH]: (this will be automatically added to your PATH in ~/.bashrc)\n");
-		char installationFolder[16384];
+		printf("\nEnter the ABSOLUTE path of the folder which the cross compiler will be installed into:\n");
+		char installationFolder[4096];
 		scanf("%s", installationFolder);
 		if (installationFolder[strlen(installationFolder) - 1] == '/') {
 			installationFolder[strlen(installationFolder) - 1] = 0;
 		}
-		printf("Type 'yes' to install the GCC compiler into %s...\n", installationFolder);
+		strcpy(compilerPath, installationFolder);
+		strcat(compilerPath, "/bin");
+		printf("\nType 'yes' to install the GCC compiler into '%s'.\n", installationFolder);
 		char yes[1024];
 		scanf("%s", yes);
 		if (strcmp(yes, "yes")) goto fail;
@@ -249,48 +272,87 @@ void BuildCrossCompiler() {
 			fclose(file);
 		}
 
-		printf("Updating path in ~/.bashrc...\n");
-		sprintf(path, "%s/.bashrc", getenv("HOME"));
-		file = fopen(path, "a");
-		if (!file) {
-			printf("Couldn't update path in ~/.bashrc :(\nYou'll have to do this manually.\n");
-		} else {
-			fprintf(file, "\nexport PATH=\"%s/bin:$PATH\"\n", installationFolder);
-			fclose(file);
-		}
-
-		printf("Build complete!!\n");
+		printf("\nThe build has successfully completed.\n");
 	}
 
 	return;
 	fail:;
-	printf("Build failed, aborting...\n");
+	printf("\nThe build has failed. Please consult the documentation.\n");
+	exit(0);
+}
+
+void LoadConfig(Token attribute, Token section, Token name, Token value, int event) {
+	(void) attribute;
+	(void) section;
+	(void) name;
+	(void) value;
+	(void) event;
+
+	if (CompareTokens(name, "accepted_license") && CompareTokens(value, "true")) {
+		acceptedLicense = true;
+	} else if (CompareTokens(name, "compiler_path")) {
+		char path[65536];
+		char *originalPath = getenv("PATH");
+		if (strlen(originalPath) > 32768) {
+			printf("Warning: PATH too long\n");
+			return;
+		}
+		memcpy(compilerPath, value.text + 1, value.bytes - 2);
+		strcpy(path, compilerPath);
+		strcat(path, ":");
+		strcat(path, originalPath);
+		setenv("PATH", path, 1);
+	}
 }
 
 int main(int argc, char **argv) {
+	(void) argc;
+	(void) argv;
+
 	char *prev = nullptr;
 	printf("Essence Build System\nPress Ctrl-C to exit.\n");
 
 	{
-		FILE *file = fopen("AcceptedLicense", "r");
-		if (!file) {
-			printf("=== Essence License ===\n\n");
-			system("cat LICENSE.md");
+		FILE *file = fopen("build_system_config.dat", "r");
 
-			printf("\nType 'yes' to agree to the license, or press Ctrl-C to exit.\n");
-			char yes[1024];
-			scanf("%s", yes);
-			if (strcmp(yes, "yes")) exit(0);
-
-			file = fopen("AcceptedLicense", "w");
+		if (file) {
+			fseek(file, 0, SEEK_END);
+			size_t fileSize = ftell(file);
+			fseek(file, 0, SEEK_SET);
+			char *buffer = (char *) malloc(fileSize + 1);
+			buffer[fileSize] = 0;
+			fread(buffer, 1, fileSize, file);
 			fclose(file);
-		} else {
-			fclose(file);
+			ParseManifest(buffer, LoadConfig);
+			free(buffer);
 		}
 	}
 
+	if (!acceptedLicense) {
+		printf("\n=== Essence License ===\n\n");
+		system("cat LICENSE.md");
+		printf("\nType 'yes' to agree to the license, or press Ctrl-C to exit.\n");
+		char yes[1024];
+		scanf("%s", yes);
+		if (strcmp(yes, "yes")) exit(0);
+	}
+
+	bool restart = false;
+
 	if (system("x86_64-elf-gcc --version > /dev/null")) {
 		BuildCrossCompiler();
+		restart = true;
+		printf("Please restart the build system.\n");
+	}
+
+	{
+		FILE *file = fopen("build_system_config.dat", "w");
+		fprintf(file, "[build_system]\naccepted_license = true;\n");
+		if (strlen(compilerPath)) fprintf(file, "compiler_path = \"%s\";\n", compilerPath);
+		fclose(file);
+	}
+
+	if (restart) {
 		return 0;
 	}
 
@@ -338,8 +400,6 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "test-without-smp-or-build") || 0 == strcmp(l, "t3")) {
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "test-opt") || 0 == strcmp(l, "t4")) {
 			Build(true);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, false);
@@ -358,7 +418,11 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "vbox-without-opt") || 0 == strcmp(l, "v2")) {
 			Build(false);
 			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
-		} else if (0 == strcmp(l, "exit") || 0 == strcmp(l, "x")) {
+		} else if (0 == strcmp(l, "exit") || 0 == strcmp(l, "x") || 0 == strcmp(l, "quit") || 0 == strcmp(l, "q")) {
+			break;
+		} else if (0 == strcmp(l, "reset-config")) {
+			system("rm build_system_config.dat");
+			printf("Please restart the build system.\n");
 			break;
 		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
 			system("./compile.sh");
@@ -369,22 +433,24 @@ int main(int argc, char **argv) {
 			sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
 			system(buffer);
 		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h")) {
-			printf("(b) build - Unoptimised build\n");
-			printf("(o) optimise - Optimised build\n");
-			printf("(t) test - Qemu (SMP/AHCI/64MB)\n");
-			printf("( ) ata - Qemu (SMP/ATA/64MB)\n");
-			printf("( ) test-without-smp - Qemu (AHCI/64MB)\n");
-			printf("( ) bochs - Bochs\n");
-			printf("( ) low-memory - Qemu (SMP/AHCI/32MB)\n");
-			printf("(d) debug - Qemu (AHCI/64MB/GDB)\n");
-			printf("( ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
-			printf("(v) vbox - VirtualBox (optimised)\n");
-			printf("( ) vbox-without-opt - VirtualBox (unoptimised)\n");
-			printf("(x) exit - Exit the build system.\n");
-			printf("(h) help - Show the help prompt.\n");
-			printf("(l) lua - Execute a Lua expression.\n");
-			printf("(p) python - Execute a Lua expression.\n");
-			printf("(c) compile - Compile the kernel and programs.\n");
+			printf("(b ) build - Unoptimised build\n");
+			printf("(o ) optimise - Optimised build\n");
+			printf("(t ) test - Qemu (SMP/AHCI/64MB)\n");
+			printf("(  ) ata - Qemu (SMP/ATA/64MB)\n");
+			printf("(t2) test-without-smp - Qemu (AHCI/64MB)\n");
+			printf("(t4) test-opt - Qemu (AHCI/64MB/optimised)\n");
+			printf("(  ) bochs - Bochs\n");
+			printf("(  ) low-memory - Qemu (SMP/AHCI/32MB)\n");
+			printf("(d ) debug - Qemu (AHCI/64MB/GDB)\n");
+			printf("(  ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
+			printf("(v ) vbox - VirtualBox (optimised)\n");
+			printf("(  ) vbox-without-opt - VirtualBox (unoptimised)\n");
+			printf("(x ) exit - Exit the build system.\n");
+			printf("(h ) help - Show the help prompt.\n");
+			printf("(l ) lua - Execute a Lua expression.\n");
+			printf("(p ) python - Execute a Lua expression.\n");
+			printf("(c ) compile - Compile the kernel and programs.\n");
+			printf("(  ) reset-config - Reset the build system's config file.\n");
 		} else {
 			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);
 		}
