@@ -622,6 +622,26 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
+		case OS_SYSCALL_REMOVE_NODE_FROM_PARENT: {
+			KernelObjectType type = KERNEL_OBJECT_NODE;
+			Handle *handleData;
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE, &handleData);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			if (file->data.type != OS_NODE_FILE) SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_NODE_TYPE, true);
+
+			if (handleData->flags & OS_OPEN_NODE_RESIZE_ACCESS) {
+				if (!file->RemoveFromParent()) {
+					SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
+				}
+
+				SYSCALL_RETURN(OS_SUCCESS, false);
+			} else {
+				SYSCALL_RETURN(OS_FATAL_ERROR_INCORRECT_FILE_ACCESS, true);
+			}
+		} break;
+
 		case OS_SYSCALL_READ_FILE_SYNC: {
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;

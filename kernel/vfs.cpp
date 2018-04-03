@@ -32,13 +32,14 @@ struct Node {
 	// Files:
 	void Read(struct IOPacket *packet);
 	void Write(struct IOPacket *packet, bool canResize);
-	bool Resize(uint64_t newSize, bool alreadyTakenSemaphore = false);
+	bool Resize(uint64_t newSize);
 	void Complete(struct IOPacket *packet);
 
 	// Directories:
-	Node *OpenChild();
 	bool EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount);
 
+	// General:
+	bool RemoveFromParent();
 	void CopyInformation(OSNodeInformation *information);
 	void Sync();
 
@@ -118,12 +119,12 @@ VFS vfs;
 
 #ifdef IMPLEMENTATION
 
-bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
-	if (!alreadyTakenSemaphore) semaphore.Take();
-	Defer(if (!alreadyTakenSemaphore) semaphore.Return());
-
+bool Node::Resize(uint64_t newSize) {
 	parent->semaphore.Take();
 	Defer(parent->semaphore.Return());
+
+	semaphore.Take();
+	Defer(semaphore.Return());
 
 	modifiedSinceLastSync = true;
 
@@ -148,16 +149,35 @@ bool Node::Resize(uint64_t newSize, bool alreadyTakenSemaphore) {
 	return success;
 }
 
+bool Node::RemoveFromParent() {
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
+
+	semaphore.Take();
+	Defer(semaphore.Return());
+
+	switch (filesystem->type) {
+		case FILESYSTEM_ESFS: {
+			return EsFSRemove(this);
+		} break;
+
+		default: {
+			// The filesystem does not support node removal.
+			return false;
+		} break;
+	}
+}
+
 void Node::Sync() {
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
+
 	semaphore.Take();
 	Defer(semaphore.Return());
 
 	if (!modifiedSinceLastSync) {
 		return;
 	}
-
-	parent->semaphore.Take();
-	Defer(parent->semaphore.Return());
 
 	modifiedSinceLastSync = false;
 
@@ -218,16 +238,16 @@ void Node::Complete(IOPacket *packet) {
 void Node::Write(IOPacket *packet, bool canResize) {
 	// TODO Access cache.
 
-	semaphore.Take();
-
 	IORequest *request = packet->request;
 
 	if (request->offset + request->count > data.file.fileSize && canResize) {
-		if (!Resize(request->offset + request->count, true)) {
+		if (!Resize(request->offset + request->count)) {
 			request->Cancel(OS_ERROR_COULD_NOT_RESIZE_FILE);
 			return;
 		}
 	}
+
+	semaphore.Take();
 
 	if (request->offset > data.file.fileSize) {
 		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);

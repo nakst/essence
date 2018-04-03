@@ -96,6 +96,25 @@ void CF(ZeroMemory)(void *destination, size_t bytes) {
 	}
 }
 
+void CF(MoveMemory)(void *_start, void *_end, intptr_t amount, bool zeroEmptySpace) {
+	uint8_t *start = (uint8_t *) _start;
+	uint8_t *end = (uint8_t *) _end;
+
+	if (amount > 0) {
+		CF(CopyMemoryReverse)(start + amount, start, end - start);
+
+		if (zeroEmptySpace) {
+			CF(ZeroMemory)(start, amount);
+		}
+	} else if (amount < 0) {
+		CF(CopyMemory)(start + amount, start, end - start);
+
+		if (zeroEmptySpace) {
+			CF(ZeroMemory)(end + amount, -amount);
+		}
+	}
+}
+
 int CF(CompareBytes)(void *a, void *b, size_t bytes) {
 	if (!bytes) {
 		return 0;

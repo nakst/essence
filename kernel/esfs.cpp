@@ -5,6 +5,7 @@ Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags);
 bool EsFSResize(Node *file, uint64_t newSize);
 bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *parent);
 void EsFSEnumerate(Node *directory, OSDirectoryChild *buffer);
+bool EsFSRemove(Node *file);
 
 void EsFSRegister(Device *device);
 
@@ -28,6 +29,7 @@ struct EsFSVolume {
 	uint64_t GetBlockFromStream(EsFSAttributeFileData *data, uint64_t offset);
 
 	bool CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory);
+	bool RemoveNodeFromParent(Node *_file);
 
 	EsFSAttributeHeader *FindAttribute(uint16_t attribute, void *_attributeList);
 	uint16_t GetBlocksInGroup(uint64_t group);
@@ -51,7 +53,9 @@ struct EsFSVolume {
 
 struct EsFSFile {
 	uint64_t containerBlock;
-	uint64_t offsetIntoBlock;
+
+	uint32_t offsetIntoBlock;  // File entry.
+	uint32_t offsetIntoBlock2; // Directory entry.
 
 	size_t fileEntryLength;
 
@@ -422,6 +426,9 @@ void EsFSVolume::FreeExtent(EsFSGlobalExtent extent) {
 EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 	// TODO Optimise this function.
 	// 	- Cache extent tables.
+	//
+	// 	Binary ordering
+	// 	Allocate "next to"
 
 	uint8_t *extentTableBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupExtentTable * superblock.blockSize, false);
 	Defer(OSHeapFree(extentTableBuffer));
@@ -765,6 +772,8 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 }
 
 void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
+	// TODO Store directories in less granular blocks.
+
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
 	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
@@ -954,6 +963,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 		eFile->containerBlock = lastAccessedActualBlock;
 		eFile->offsetIntoBlock = (uintptr_t) returnValue - (uintptr_t) directoryBuffer;
+		eFile->offsetIntoBlock2 = blockPosition;
 
 		if (!vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, true)) {
 			OSHeapFree(node);
@@ -965,12 +975,89 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 }
 
 void GenerateUniqueIdentifier(UniqueIdentifier &identifier) {
-	// TODO Think about this.
-	// 	Maybe we could use the byte offset into the partition that the file entry is stored at instead?
-
 	for (int i = 0; i < 16; i++) {
 		identifier.d[i] = GetRandomByte();
 	}
+}
+
+bool EsFSVolume::RemoveNodeFromParent(Node *node) {
+	Node *parent = node->parent;
+	EsFSFile *nodeFile = (EsFSFile *) (node + 1);
+	EsFSFile *parentFile = (EsFSFile *) (parent + 1);
+	EsFSFileEntry *parentFileEntry = (EsFSFileEntry *) (parentFile + 1);
+	EsFSAttributeFileDirectory *parentDirectoryAttribute = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, parentFileEntry + 1);
+	EsFSAttributeFileData *parentDataAttribute = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, parentFileEntry + 1);
+
+	// Load the block that contains the directory entry of the node.
+	uint8_t *containerBlock = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
+	Defer(OSHeapFree(containerBlock));
+	if (!AccessBlock(nullptr, nodeFile->containerBlock, superblock.blockSize, DRIVE_ACCESS_READ, containerBlock, 0)) return false;
+
+	// Get the length of the directory entry.
+	EsFSDirectoryEntry *directoryEntry = (EsFSDirectoryEntry *) (containerBlock + nodeFile->offsetIntoBlock2);
+	EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, directoryEntry + 1);
+	size_t directoryEntrySize = end->size + (uintptr_t) end - (uintptr_t) directoryEntry;
+
+	// Remove the directory entry from the block.
+	MoveMemory(containerBlock + nodeFile->offsetIntoBlock2 + directoryEntrySize, 
+			containerBlock + superblock.blockSize,
+			-directoryEntrySize, true);
+
+	// Save the container block.
+	if (!AccessBlock(nullptr, nodeFile->containerBlock, superblock.blockSize, DRIVE_ACCESS_WRITE, containerBlock, 0)) {
+		return false;
+	}
+
+	// Decrease the entry count.
+	parentDirectoryAttribute->itemsInDirectory--;
+
+	// Update the files that we moved.
+	{
+		EsFSDirectoryEntry *entry = directoryEntry;
+
+		while (true) {
+			if (!entry->signature[0] || (uint8_t *) entry == containerBlock + superblock.blockSize) {
+				break;
+			}
+
+			if (CompareBytes(entry->signature, (void *) ESFS_DIRECTORY_ENTRY_SIGNATURE, CStringLength((char *) ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
+				KernelPanic("EsFSVolume::RemoveNodeFromParent - Directory entry had invalid signature.\n");
+			}
+
+			EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
+			EsFSAttributeDirectoryFile *fileAttribute = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, entry + 1);
+
+			size_t entrySize = end->size + (uintptr_t) end - (uintptr_t) entry;
+
+			EsFSFileEntry *fileEntry = (EsFSFileEntry *) (fileAttribute + 1);
+			Node *node = vfs.FindOpenNode(fileEntry->identifier, filesystem);
+			EsFSFile *nodeFile = (EsFSFile *) (node + 1);
+
+			if (node) {
+				node->semaphore.Take();
+				nodeFile->offsetIntoBlock -= directoryEntrySize;
+				nodeFile->offsetIntoBlock2 -= directoryEntrySize;
+				node->semaphore.Return();
+			} else {
+				// The file was not open.
+			}
+
+			entry = (EsFSDirectoryEntry *) ((uint8_t *) entry + entrySize);
+		}
+	}
+	
+	// Was the node was in the last block of the directory?
+	if (GetBlockFromStream(parentDataAttribute, parentDataAttribute->size - superblock.blockSize) == nodeFile->containerBlock) {
+		parentDirectoryAttribute->spaceAvailableInLastBlock += directoryEntrySize;
+	}
+
+	// TODO 
+	// 	- Move entries from end of directory to fill the space.
+	// 		- If these are open nodes, then their containerBlock and offsetIntoBlock/offsetIntoBlock2 will need to be updated.
+	// 	- Remove unused blocks at the end of the directory.
+	// 		- Then calculate the correct spaceAvailableInLastBlock.
+
+	return true;
 }
 
 bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *_directory) {
@@ -1134,6 +1221,13 @@ inline bool EsFSResize(Node *file, uint64_t newSize) {
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) fs->FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 	return fs->ResizeDataStream(data, newSize, false, eFile->containerBlock);
+}
+
+inline bool EsFSRemove(Node *file) {
+	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
+	EsFSResize(file, 0);
+	EsFSSync(file);
+	return fs->RemoveNodeFromParent(file);
 }
 
 inline void EsFSEnumerate(Node *node, OSDirectoryChild *buffer) {

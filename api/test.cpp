@@ -123,6 +123,8 @@ void CreateList(OSObject content) {
 		file[i] = tolower(file[i]);
 	}
 
+	int totalWords = 0;
+
 	while (length) {
 		char *start = file;
 		char c = *start;
@@ -138,6 +140,8 @@ void CreateList(OSObject content) {
 			length--;
 			continue;
 		}
+
+		totalWords++;
 
 		{
 			bool found = false;
@@ -181,7 +185,7 @@ void CreateList(OSObject content) {
 
 	OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
 
-	OSPrint("Loaded test list with %d words\n", wordCount);
+	OSPrint("Loaded test list with %d words (%d total)\n", wordCount, totalWords);
 }
 
 OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
@@ -322,11 +326,27 @@ extern "C" void ProgramEntry() {
 
 	{
 		OSNodeInformation node;
-		OSOpenNode(OSLiteral("/ResizeFileTest.txt"), 
+		OSOpenNode(OSLiteral("/RemoveFileTest.txt"), OS_OPEN_NODE_RESIZE_ACCESS, &node);
+		OSRemoveNodeFromParent(node.handle);
+		OSCloseHandle(node.handle);
+	}
+
+#if 1
+	{
+		OSNodeInformation node;
+		OSOpenNode(OSLiteral("/stage2"), OS_OPEN_NODE_RESIZE_ACCESS, &node);
+		OSRemoveNodeFromParent(node.handle);
+		OSCloseHandle(node.handle);
+	}
+#endif
+
+	{
+		OSNodeInformation node;
+		OSError error = OSOpenNode(OSLiteral("/ResizeFileTest.txt"), 
 				OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_READ_ACCESS, 
 				&node);
 
-		OSPrint("Opened node %d\n", node.handle);
+		OSPrint("Opened node, handle = %d, error = %d\n", node.handle, error);
 
 #if 0
 		// Commented out because we don't yet the free extents allocated

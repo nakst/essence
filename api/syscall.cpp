@@ -267,3 +267,7 @@ void OSBatch(OSBatchCall *calls, size_t count) {
 
 	OSSyscall(OS_SYSCALL_BATCH, (uintptr_t) calls, count, 0, 0);
 }
+
+void OSRemoveNodeFromParent(OSHandle node) {
+	OSSyscall(OS_SYSCALL_REMOVE_NODE_FROM_PARENT, node, 0, 0, 0);
+}

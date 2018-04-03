@@ -310,6 +310,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_COPY,
 	OS_SYSCALL_GET_CLIPBOARD_HEADER,
 	OS_SYSCALL_PASTE_TEXT,
+	OS_SYSCALL_REMOVE_NODE_FROM_PARENT,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -860,6 +861,7 @@ OS_EXTERN_C void OSRefreshNodeInformation(OSNodeInformation *information);
 OS_EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
 OS_EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);
 OS_EXTERN_C void OSCancelIORequest(OSHandle ioRequest);
+OS_EXTERN_C void OSRemoveNodeFromParent(OSHandle node);
 
 OS_EXTERN_C OSError OSTerminateThread(OSHandle thread);
 OS_EXTERN_C OSError OSTerminateProcess(OSHandle thread);
@@ -969,6 +971,7 @@ OS_EXTERN_C void OSHeapFree(void *address);
 
 OS_EXTERN_C size_t OSCStringLength(char *string);
 OS_EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
+OS_EXTERN_C void OSMoveMemory(void *_start, void *_end, intptr_t amount, bool zeroEmptySpace);
 OS_EXTERN_C void OSCopyMemoryReverse(void *_destination, void *_source, size_t bytes);
 OS_EXTERN_C void OSZeroMemory(void *destination, size_t bytes);
 OS_EXTERN_C int OSCompareBytes(void *a, void *b, size_t bytes);
