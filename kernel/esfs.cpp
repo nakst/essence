@@ -619,7 +619,8 @@ bool EsFSVolume::ShrinkDataStream(EsFSAttributeFileData *data, uint64_t newSize)
 
 	if (newSize <= ESFS_DIRECT_BYTES) {
 		// Store the data in the stream attribute.
-		data->indirection = ESFS_DATA_INDIRECT_2;
+		data->indirection = ESFS_DATA_DIRECT;
+		data->extentCount = 0;
 		CopyMemory(data->direct, directBuffer, newSize);
 	}
 
@@ -696,17 +697,37 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 
 		switch (data->indirection) {
 			case ESFS_DATA_INDIRECT: {
-				if (data->extentCount != ESFS_INDIRECT_EXTENTS) {
-					// Add this extent to the list of extents.
-				        data->indirect[data->extentCount] = newExtent;
-				        data->extentCount++;
+				if (data->extentCount) {
+					// TODO Temporary.
+					#define ESFS_NO_MERGING
+
+#ifdef ESFS_NO_MERGING
+					goto cannotMerge;
+#else
+					EsFSGlobalExtent previous = data->indirect[data->extentCount - 1];
+
+					if (previous.offset + previous.count == newExtent.offset) {
+						// We can merge the extents.
+						data->indirect[data->extentCount - 1].count += newExtent.count;
+					} else {
+						goto cannotMerge;
+					}
+#endif
 				} else {
-					// We need to convert this to ESFS_DATA_INDIRECT_2.
-					data->indirection = ESFS_DATA_INDIRECT_2;
-					newExtentList = (EsFSGlobalExtent *) OSHeapAllocate(extentListMaxSize * sizeof(EsFSGlobalExtent), false);
-					CopyMemory(newExtentList, data->indirect, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
-					newExtentList[data->extentCount++] = newExtent;
-					ZeroMemory(data->indirect, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
+					cannotMerge:;
+
+					if (data->extentCount != ESFS_INDIRECT_EXTENTS) {
+						// Add this extent to the list of extents.
+						data->indirect[data->extentCount] = newExtent;
+						data->extentCount++;
+					} else {
+						// We need to convert this to ESFS_DATA_INDIRECT_2.
+						data->indirection = ESFS_DATA_INDIRECT_2;
+						newExtentList = (EsFSGlobalExtent *) OSHeapAllocate(extentListMaxSize * sizeof(EsFSGlobalExtent), false);
+						CopyMemory(newExtentList, data->indirect, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
+						newExtentList[data->extentCount++] = newExtent;
+						ZeroMemory(data->indirect, ESFS_INDIRECT_EXTENTS * sizeof(EsFSGlobalExtent));
+					}
 				}
 			} break;
 
@@ -723,10 +744,19 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 					}
 				}
 
-				// Add this extent to the list.
-				newExtentList[data->extentCount++] = newExtent;
+#ifndef ESFS_NO_MERGING
+				if (data->extentCount && newExtentList[data->extentCount - 1].offset + newExtentList[data->extentCount - 1].count == newExtent.offset) {
+					// Merge this extent with the list.
+					newExtentList[data->extentCount - 1].count += newExtent.count;
+				} else {
+#endif
+					// Add this extent to the list.
+					newExtentList[data->extentCount++] = newExtent;
+#ifndef ESFS_NO_MERGING
+				}
+#endif
 
-				if (extentListMaxSize < data->extentCount) {
+				if (extentListMaxSize <= data->extentCount) {
 					// The extent list is too large.
 					// TODO Free the extents we allocated.
 					return false;
@@ -986,7 +1016,6 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 	EsFSFile *parentFile = (EsFSFile *) (parent + 1);
 	EsFSFileEntry *parentFileEntry = (EsFSFileEntry *) (parentFile + 1);
 	EsFSAttributeFileDirectory *parentDirectoryAttribute = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, parentFileEntry + 1);
-	EsFSAttributeFileData *parentDataAttribute = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, parentFileEntry + 1);
 
 	// Load the block that contains the directory entry of the node.
 	uint8_t *containerBlock = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
@@ -1046,16 +1075,10 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 		}
 	}
 	
-	// Was the node was in the last block of the directory?
-	if (GetBlockFromStream(parentDataAttribute, parentDataAttribute->size - superblock.blockSize) == nodeFile->containerBlock) {
-		parentDirectoryAttribute->spaceAvailableInLastBlock += directoryEntrySize;
-	}
-
 	// TODO 
 	// 	- Move entries from end of directory to fill the space.
 	// 		- If these are open nodes, then their containerBlock and offsetIntoBlock/offsetIntoBlock2 will need to be updated.
 	// 	- Remove unused blocks at the end of the directory.
-	// 		- Then calculate the correct spaceAvailableInLastBlock.
 
 	return true;
 }
@@ -1125,7 +1148,6 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 				directory->header.type = ESFS_ATTRIBUTE_FILE_DIRECTORY;
 				directory->header.size = sizeof(EsFSAttributeFileDirectory);
 				directory->itemsInDirectory = 0;
-				directory->spaceAvailableInLastBlock = 0;
 				entryBufferPosition += directory->header.size;
 			}
 
@@ -1148,25 +1170,46 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 	}
 
 	{
-		// Step 3: Store the directory entry.
-		if (directory->spaceAvailableInLastBlock >= entryBufferPosition) {
-			// There is enough space in the last block.
-		} else {
-			// We need to add a new block to the file.
+		// Step 3: Calculate the amount of free space available in the last cluster.
+
+		uint8_t *blockBuffer = (uint8_t *) OSHeapAllocate(superblock.blockSize, true);
+		Defer(OSHeapFree(blockBuffer));
+		uint8_t *position = blockBuffer;
+		size_t spaceRemaining = 0;
+
+		if (data->size) {
+			AccessStream(nullptr, data, data->size - superblock.blockSize, superblock.blockSize, blockBuffer, DRIVE_ACCESS_READ);
+
+			while (position != blockBuffer + superblock.blockSize && *position) {
+				EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) position;
+				EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
+				size_t entrySize = end->size + (uintptr_t) end - (uintptr_t) entry;
+				position += entrySize;
+			}
+
+			spaceRemaining = superblock.blockSize - (position - blockBuffer);
+		}
+
+		// Step 4: Store the directory entry.
+
+		if (spaceRemaining < entryBufferPosition) {
 			ResizeDataStream(data, data->size + superblock.blockSize, true, eFile->containerBlock);
-			directory->spaceAvailableInLastBlock = superblock.blockSize;
 		}
 
 		{
 			// To avoid the Birthday problem,
 			// we'll use the global block number that the directory entry is stored in 
 			// for the high 64-bits of the unique identifier.
-			uint64_t high = GetBlockFromStream(data, data->size - directory->spaceAvailableInLastBlock);
+			uint64_t high = GetBlockFromStream(data, data->size - superblock.blockSize);
 			for (uintptr_t i = 0; i < 8; i++) identifier->d[i + 8] = (uint8_t) (high >> (i << 3));
 		}
 
-		AccessStream(nullptr, data, data->size - directory->spaceAvailableInLastBlock, entryBufferPosition, entryBuffer, true);
-		directory->spaceAvailableInLastBlock -= entryBufferPosition;
+		if (spaceRemaining >= entryBufferPosition) {
+			CopyMemory(position, entryBuffer, entryBufferPosition);
+			AccessStream(nullptr, data, data->size - superblock.blockSize, superblock.blockSize, blockBuffer, DRIVE_ACCESS_WRITE);
+		} else {
+			AccessStream(nullptr, data, data->size - superblock.blockSize, superblock.blockSize, entryBuffer, DRIVE_ACCESS_WRITE);
+		}
 
 		directory->itemsInDirectory++;
 	}

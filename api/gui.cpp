@@ -1864,6 +1864,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 			control->repaintFirstRow = -1;
 			control->repaintLastRow = -1;
+			control->repaintSelectionBox = false;
 
 			result = OS_CALLBACK_HANDLED;
 		} break;

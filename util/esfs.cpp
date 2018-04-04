@@ -165,9 +165,6 @@ struct EsFSAttributeFileDirectory {
 	EsFSAttributeHeader header;
 
 	uint64_t itemsInDirectory;			// The number of items that the directory currently holds.
-	uint16_t spaceAvailableInLastBlock;		// Since directory entries must not span over a block boundary,
-							// we should keep track of whether we need to resize the directory
-							// to insert a new directory entry.
 };
 
 struct EsFSAttributeDirectoryName {
@@ -521,7 +518,6 @@ void FormatVolume(size_t driveSize, char *volumeName, void *kernelData, uint64_t
 		directory->header.type = ESFS_ATTRIBUTE_FILE_DIRECTORY;
 		directory->header.size = sizeof(EsFSAttributeFileDirectory);
 		directory->itemsInDirectory = 0;
-		directory->spaceAvailableInLastBlock = 0;
 		entryBufferPosition += directory->header.size;
 
 		EsFSAttributeHeader *end = (EsFSAttributeHeader *) (entryBuffer + entryBufferPosition);
@@ -1117,7 +1113,6 @@ void AddFile(char *path, char *name, uint16_t type) {
 				directory->header.type = ESFS_ATTRIBUTE_FILE_DIRECTORY;
 				directory->header.size = sizeof(EsFSAttributeFileDirectory);
 				directory->itemsInDirectory = 0;
-				directory->spaceAvailableInLastBlock = 0;
 				entryBufferPosition += directory->header.size;
 			}
 
@@ -1154,21 +1149,43 @@ void AddFile(char *path, char *name, uint16_t type) {
 	}
 
 	// printf("spaceAvailableInLastBlock = %d, entryBufferPosition = %d\n", directory->spaceAvailableInLastBlock, entryBufferPosition);
-
+	//
 	{
-		// Step 3: Store the directory entry.
-		if (directory->spaceAvailableInLastBlock >= entryBufferPosition) {
-			// There is enough space in the last block.
-		} else {
-			// We need to add a new block to the file.
-			ResizeDataStream(data, data->size + blockSize, true, &loadInformation);
-			directory->spaceAvailableInLastBlock = blockSize;
+		// Step 3: Calculate the amount of free space available in the last cluster.
+
+		uint8_t *blockBuffer = (uint8_t *) malloc(blockSize);
+		size_t spaceRemaining = 0;
+		uint8_t *position = blockBuffer;
+
+		if (data->size) {
+			AccessStream(data, data->size - blockSize, blockSize, blockBuffer, false);
+
+			while (position != blockBuffer + blockSize && *position) {
+				EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) position;
+				EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
+				size_t entrySize = end->size + (uintptr_t) end - (uintptr_t) entry;
+				position += entrySize;
+			}
+
+			spaceRemaining = blockSize - (position - blockBuffer);
 		}
 
-		AccessStream(data, data->size - directory->spaceAvailableInLastBlock, entryBufferPosition, entryBuffer, true);
-		directory->spaceAvailableInLastBlock -= entryBufferPosition;
+		// Step 4: Store the directory entry.
+
+		if (spaceRemaining < entryBufferPosition) {
+			ResizeDataStream(data, data->size + blockSize, true, &loadInformation);
+		}
+
+		if (spaceRemaining >= entryBufferPosition) {
+			memcpy(position, entryBuffer, entryBufferPosition);
+			AccessStream(data, data->size - blockSize, blockSize, blockBuffer, true);
+		} else {
+			AccessStream(data, data->size - blockSize, blockSize, entryBuffer, true);
+		}
 
 		directory->itemsInDirectory++;
+
+		free(blockBuffer);
 	}
 
 	// Update the directory's file entry.
