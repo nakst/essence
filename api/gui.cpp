@@ -1653,12 +1653,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					OSFillRectangle(surface, clip, OSColor(0xFFFFFFFF));
 				}
 
-				if (control->dragging == ListView::DRAGGING_SELECTION && control->repaintCustomOnly && control->repaintSelectionBox) {
-					OSRectangle r;
-					ClipRectangle(control->oldSelectionBox, clip, &r);
-					OSFillRectangle(surface, r, OSColor(0xFFFFFFFF));
-				}
-
 				OSRectangle clip2;
 
 				if (control->columns && !control->repaintCustomOnly) {
@@ -1694,6 +1688,12 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				}
 		
 				ClipRectangle(clip, bounds, &clip2);
+
+				if (control->dragging == ListView::DRAGGING_SELECTION && control->repaintCustomOnly && control->repaintSelectionBox) {
+					OSRectangle r;
+					ClipRectangle(control->oldSelectionBox, clip2, &r);
+					OSFillRectangle(surface, r, OSColor(0xFFFFFFFF));
+				}
 
 				int i = 0;
 				int y = -control->scrollY;
@@ -1980,7 +1980,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				RepaintListViewRows(control, row, row);
 
 				// If this was a double-click, "choose" this row.
-				if (message->mousePressed.clickChainCount == 2) {
+				if (message->mousePressed.clickChainCount == 2) { // TODO This seems to only detect triple-clicks?? VirtualBox.
 					m.type = OS_NOTIFICATION_CHOOSE_ITEM;
 					OSForwardMessage(control, control->notificationCallback, &m);
 				}

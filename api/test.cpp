@@ -342,11 +342,11 @@ extern "C" void ProgramEntry() {
 
 	{
 		OSNodeInformation node;
-		OSError error = OSOpenNode(OSLiteral("/ResizeFileTest.txt"), 
+		OSOpenNode(OSLiteral("/ResizeFileTest.txt"), 
 				OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_READ_ACCESS, 
 				&node);
 
-		OSPrint("Opened node, handle = %d, error = %d\n", node.handle, error);
+		// OSPrint("Opened node, handle = %d, error = %d\n", node.handle, error);
 
 #if 0
 		// Commented out because we don't yet the free extents allocated
@@ -364,14 +364,14 @@ extern "C" void ProgramEntry() {
 				buffer[j] = i;
 			}
 
-			OSPrint("Resizing file to %d\n", i * 512);
+			// OSPrint("Resizing file to %d\n", i * 512);
 			OSResizeFile(node.handle, i * 512);
-			OSPrint("Write to %d\n", (i - 1) * 512);
+			// OSPrint("Write to %d\n", (i - 1) * 512);
 			OSWriteFileSync(node.handle, (i - 1) * 512, 512, buffer);
 		}
 
 		for (uintptr_t i = 1; i < 128; i++) {
-			OSPrint("Read from %d\n", (i - 1) * 512);
+			// OSPrint("Read from %d\n", (i - 1) * 512);
 			OSReadFileSync(node.handle, (i - 1) * 512, 512, buffer);
 
 			for (uintptr_t j = 0; j < 512; j++) {
@@ -383,13 +383,13 @@ extern "C" void ProgramEntry() {
 
 #if 1
 		for (uintptr_t i = 126; i > 0; i--) {
-			OSPrint("Resizing file to %d\n", i * 512);
+			// OSPrint("Resizing file to %d\n", i * 512);
 			OSResizeFile(node.handle, i * 512);
 		}
 #endif
 
 		for (uintptr_t i = 1; i < 2; i++) {
-			OSPrint("Read from %d\n", (i - 1) * 512);
+			// OSPrint("Read from %d\n", (i - 1) * 512);
 			OSReadFileSync(node.handle, (i - 1) * 512, 512, buffer);
 
 			for (uintptr_t j = 0; j < 512; j++) {

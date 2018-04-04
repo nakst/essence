@@ -13,6 +13,7 @@
 #ifndef KERNEL
 #include <stdio.h>
 #include <unistd.h>
+#include <assert.h>
 #include <dirent.h>
 #include <string.h>
 #include <stdlib.h>
@@ -52,6 +53,8 @@ struct UniqueIdentifier {
 
 #define ESFS_SIGNATURE_STRING        ("EssenceFS!     \0")
 #define ESFS_SIGNATURE_STRING_LENGTH (16)
+
+#define ESFS_BLOCKS_PER_EXTENT_LIST (8)
 
 struct EsFSLocalExtent {
 	uint16_t offset;				// The offset in blocks from the first block in the group.
@@ -153,8 +156,8 @@ struct EsFSAttributeFileData {
 #define ESFS_INDIRECT_EXTENTS (4)
 		EsFSGlobalExtent indirect[ESFS_INDIRECT_EXTENTS]; // Extents that contain the stream's data.
 	
-#define ESFS_INDIRECT_2_BLOCKS (8)
-		uint64_t indirect2[ESFS_INDIRECT_2_BLOCKS];	// Blocks that contain lists of extents that contain the stream's data.
+#define ESFS_INDIRECT_2_LISTS (8)
+		uint64_t indirect2[ESFS_INDIRECT_2_LISTS];	// Lists of extents that contain the stream's data.
 
 #define ESFS_DIRECT_BYTES (64)
 		uint8_t direct[ESFS_DIRECT_BYTES];		// The actual file data, inline.
@@ -368,6 +371,17 @@ uint64_t BlocksNeededToStore(uint64_t size) {
 	}
 
 	return blocks;
+}
+
+uint64_t ExtentListsNeededToStore(uint64_t extents) {
+	uint64_t size = extents * sizeof(EsFSGlobalExtent);
+	uint64_t lists = size / (blockSize * ESFS_BLOCKS_PER_EXTENT_LIST);
+
+	if (size % (blockSize * ESFS_BOOT_SUPER_BLOCK_SIZE)) {
+		lists++;
+	}
+
+	return lists;
 }
 
 void PrepareCoreData(size_t driveSize, char *volumeName) {
@@ -602,7 +616,7 @@ uint16_t GetBlocksInGroup(uint64_t group) {
 	}
 }
 
-EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
+EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly) {
 	// TODO Optimise this function.
 	// 	- Cache extent tables.
 
@@ -612,8 +626,10 @@ EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 
 	for (uint64_t blockGroup = localGroup; groupsSearched < superblock->groupCount; blockGroup = (blockGroup + 1) % superblock->groupCount, groupsSearched++) {
 		EsFSGroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
+		uint64_t blocksInGroup = GetBlocksInGroup(blockGroup);
 
-		if (descriptor->blocksUsed == GetBlocksInGroup(blockGroup)) {
+		if (descriptor->blocksUsed == blocksInGroup 
+				|| (exactly && blocksInGroup - descriptor->blocksUsed < desiredBlocks)) {
 			continue;
 		} 
 
@@ -663,6 +679,10 @@ EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 			}
 		}
 
+		if (exactly) {
+			continue;
+		}
+
 		// If that didn't work, we'll have to do a partial allocation.
 		extent.offset = extentTable[largestSeenIndex].offset;
 		extent.count = extentTable[largestSeenIndex].count;
@@ -688,10 +708,7 @@ EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks) {
 }
 
 void AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, void *_buffer, bool write, uint64_t *lastAccessedActualBlock) {
-	// TODO Access multiple blocks at a time.
 	// TODO Optimise how the extents are calculated.
-	// TODO Check that we're in valid stream bounds.
-	// TODO Merge last extent if possible.
 	
 	if (!size) return;
 
@@ -713,11 +730,12 @@ void AccessStream(EsFSAttributeFileData *data, uint64_t offset, uint64_t size, v
 	EsFSGlobalExtent *i2ExtentList = nullptr;
 
 	if (data->indirection == ESFS_DATA_INDIRECT_2) {
-		i2ExtentList = (EsFSGlobalExtent *) malloc(BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) * blockSize);
+		i2ExtentList = (EsFSGlobalExtent *) malloc(ExtentListsNeededToStore(data->extentCount) * blockSize * ESFS_BLOCKS_PER_EXTENT_LIST);
 
-		for (int i = 0; i < ESFS_INDIRECT_2_BLOCKS; i++) {
+		for (int i = 0; i < ESFS_INDIRECT_2_LISTS; i++) {
 			if (data->indirect2[i]) {
-				ReadBlock(data->indirect2[i], 1, i2ExtentList + i * (blockSize / sizeof(EsFSGlobalExtent)));
+				ReadBlock(data->indirect2[i], ESFS_BLOCKS_PER_EXTENT_LIST, 
+						i2ExtentList + i * (blockSize * ESFS_BLOCKS_PER_EXTENT_LIST / sizeof(EsFSGlobalExtent)));
 			}
 		}
 	}
@@ -839,11 +857,11 @@ void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearN
 	uint64_t increaseBlocks = newBlocks - oldBlocks;
 
 	EsFSGlobalExtent *newExtentList = nullptr;
-	uint64_t extentListMaxSize = ESFS_INDIRECT_2_BLOCKS * (blockSize / sizeof(EsFSGlobalExtent));
+	uint64_t extentListMaxSize = ESFS_INDIRECT_2_LISTS * (blockSize * ESFS_BLOCKS_PER_EXTENT_LIST / sizeof(EsFSGlobalExtent));
 	uint64_t firstModifiedExtentListBlock = 0;
 
 	while (increaseBlocks) {
-		EsFSGlobalExtent newExtent = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, increaseBlocks);
+		EsFSGlobalExtent newExtent = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, increaseBlocks, false);
 
 		if (clearNewBlocks) {
 			void *zeroData = malloc(blockSize * newExtent.count);
@@ -875,7 +893,9 @@ void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearN
 					newExtentList = (EsFSGlobalExtent *) malloc(extentListMaxSize * sizeof(EsFSGlobalExtent));
 
 					firstModifiedExtentListBlock = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent)) - 1;
-					ReadBlock(data->indirect2[firstModifiedExtentListBlock], 1, newExtentList + firstModifiedExtentListBlock * (blockSize / sizeof(EsFSGlobalExtent)));
+					ReadBlock(data->indirect2[firstModifiedExtentListBlock / ESFS_BLOCKS_PER_EXTENT_LIST] 
+							+ (firstModifiedExtentListBlock % ESFS_BLOCKS_PER_EXTENT_LIST), 
+							1, newExtentList + firstModifiedExtentListBlock * (blockSize / sizeof(EsFSGlobalExtent)));
 				}
 
 				newExtentList[data->extentCount++] = newExtent;
@@ -892,11 +912,13 @@ void ResizeDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearN
 		uint64_t blocksNeeded = BlocksNeededToStore(data->extentCount * sizeof(EsFSGlobalExtent));
 
 		for (unsigned i = firstModifiedExtentListBlock; i < blocksNeeded; i++) {
-			if (!data->indirect2[i]) {
-				data->indirect2[i] = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, 1).offset;
+			if (!data->indirect2[i / ESFS_BLOCKS_PER_EXTENT_LIST]) {
+				EsFSGlobalExtent extent = AllocateExtent(dataLoadInformation->containerBlock / superblock->blocksPerGroup, ESFS_BLOCKS_PER_EXTENT_LIST, true);
+				data->indirect2[i / ESFS_BLOCKS_PER_EXTENT_LIST] = extent.offset;
+				assert(extent.count == ESFS_BLOCKS_PER_EXTENT_LIST);
 			}
 
-			WriteBlock(data->indirect2[i], 1, newExtentList + i * (blockSize / sizeof(EsFSGlobalExtent)));
+			WriteBlock(data->indirect2[i / ESFS_BLOCKS_PER_EXTENT_LIST] + (i % ESFS_BLOCKS_PER_EXTENT_LIST), 1, newExtentList + i * (blockSize / sizeof(EsFSGlobalExtent)));
 		}
 
 		free(newExtentList);
@@ -1151,10 +1173,8 @@ void AddFile(char *path, char *name, uint16_t type) {
 		exit(1);
 	}
 
-	// printf("spaceAvailableInLastBlock = %d, entryBufferPosition = %d\n", directory->spaceAvailableInLastBlock, entryBufferPosition);
-	//
 	{
-		// Step 3: Calculate the amount of free space available in the last cluster.
+		// Step 3: Calculate the amount of free space available in the last block.
 
 		uint8_t *blockBuffer = (uint8_t *) malloc(blockSize);
 		size_t spaceRemaining = 0;
