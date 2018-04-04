@@ -200,7 +200,13 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 						if (data->information.type == OS_NODE_FILE) {
 							int fileSize = data->information.fileSize;
 
-							if (fileSize < 1000) {
+							if (fileSize == 0) {
+								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+										"(empty)");
+							} else if (fileSize == 1) {
+								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+										"1 byte", fileSize);
+							} else if (fileSize < 1000) {
 								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
 										"%d bytes", fileSize);
 							} else if (fileSize < 1000000) {
@@ -214,8 +220,11 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 										"%d.%d GB", fileSize / 1000000000, (fileSize / 1000000000) % 10);
 							}
 						} else if (data->information.type == OS_NODE_DIRECTORY) {
-							message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
-									"%d files", data->information.directoryChildren);
+							uint64_t children = data->information.directoryChildren;
+
+							if (children == 0) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "(empty)");
+							else if (children == 1) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "1 file");
+							else message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "%d files", children);
 						}
 					} break;
 				}

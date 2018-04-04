@@ -802,8 +802,6 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 }
 
 void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
-	// TODO Store directories in less granular blocks.
-
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
 	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
@@ -822,6 +820,8 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	uint64_t blockPosition = 0, blockIndex = 0;
 	uint64_t lastAccessedActualBlock = 0;
 	AccessStream(nullptr, data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+
+	Print("Enumerating directory %x, which has %d items\n", directory, directory->itemsInDirectory);
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
 		if (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
@@ -848,17 +848,33 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (file + 1);
 
 		if (file) {
-			EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
-			EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+			Node *node = vfs.FindOpenNode(fileEntry->identifier, _directory->filesystem);
 
-			if (fileEntry->fileType == ESFS_FILE_TYPE_DIRECTORY && directory) {
-				child->information.type = OS_NODE_DIRECTORY;
-				child->information.directoryChildren = directory->itemsInDirectory;
-			} else if (fileEntry->fileType == ESFS_FILE_TYPE_FILE && data) {
-				child->information.type = OS_NODE_FILE;
-				child->information.fileSize = data->size;
+			if (node) {
+				if (node->data.type == OS_NODE_DIRECTORY) {
+					child->information.type = OS_NODE_DIRECTORY;
+					child->information.directoryChildren = node->data.directory.entryCount;
+				} else if (node->data.type == OS_NODE_FILE) {
+					child->information.type = OS_NODE_FILE;
+					child->information.fileSize = node->data.file.fileSize;
+				} else {
+					child->information.type = OS_NODE_INVALID;
+				}
 			} else {
-				child->information.type = OS_NODE_INVALID;
+				EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
+				EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+
+				if (fileEntry->fileType == ESFS_FILE_TYPE_DIRECTORY && directory) {
+					Print("During enumeration of %x, found directory '%s' of size %d bytes with %d items\n", _directory, name->nameLength, name + 1, data->size, directory->itemsInDirectory);
+					child->information.type = OS_NODE_DIRECTORY;
+					child->information.directoryChildren = directory->itemsInDirectory;
+				} else if (fileEntry->fileType == ESFS_FILE_TYPE_FILE && data) {
+					Print("During enumeration of %x, found file '%s' of size %d bytes\n", _directory, name->nameLength, name + 1, data->size);
+					child->information.type = OS_NODE_FILE;
+					child->information.fileSize = data->size;
+				} else {
+					child->information.type = OS_NODE_INVALID;
+				}
 			}
 		} else {
 			// There isn't a file associated with this directory entry.
@@ -900,6 +916,8 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 	size_t fileEntryLength;
 	EsFSFileEntry *returnValue = nullptr;
+
+	Print("Searching directory %x, which has %d items, for %s\n", directory, directory->itemsInDirectory, nameLength, searchName);
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
 		if (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
@@ -962,6 +980,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 		// If the file is already open, return that file.
 		if ((node = vfs.FindOpenNode(returnValue->identifier, _directory->filesystem))) {
+			Print("Matches existing node.\n");
 			return vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, false);
 		}
 
@@ -978,6 +997,8 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 		CopyMemory(fileEntry, returnValue, fileEntryLength);
 
 		node->data.type = type;
+
+		Print("No existing node in VFS.\n");
 
 		switch (fileEntry->fileType) {
 			case ESFS_FILE_TYPE_FILE: {
@@ -1178,7 +1199,7 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 		size_t spaceRemaining = 0;
 
 		if (data->size) {
-			AccessStream(nullptr, data, data->size - superblock.blockSize, superblock.blockSize, blockBuffer, DRIVE_ACCESS_READ);
+			AccessStream(nullptr, data, (directory->blockCount - 1) * superblock.blockSize, superblock.blockSize, blockBuffer, DRIVE_ACCESS_READ);
 
 			while (position != blockBuffer + superblock.blockSize && *position) {
 				EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) position;
@@ -1193,25 +1214,30 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 		// Step 4: Store the directory entry.
 
 		if (spaceRemaining < entryBufferPosition) {
-			ResizeDataStream(data, data->size + superblock.blockSize, true, eFile->containerBlock);
+			if (data->size == directory->blockCount * superblock.blockSize) {
+				ResizeDataStream(data, data->size + superblock.blockSize * 8, true, eFile->containerBlock);
+			}
+
+			directory->blockCount++;
 		}
 
 		{
 			// To avoid the Birthday problem,
 			// we'll use the global block number that the directory entry is stored in 
 			// for the high 64-bits of the unique identifier.
-			uint64_t high = GetBlockFromStream(data, data->size - superblock.blockSize);
+			uint64_t high = GetBlockFromStream(data, (directory->blockCount - 1) * superblock.blockSize);
 			for (uintptr_t i = 0; i < 8; i++) identifier->d[i + 8] = (uint8_t) (high >> (i << 3));
 		}
 
 		if (spaceRemaining >= entryBufferPosition) {
 			CopyMemory(position, entryBuffer, entryBufferPosition);
-			AccessStream(nullptr, data, data->size - superblock.blockSize, superblock.blockSize, blockBuffer, DRIVE_ACCESS_WRITE);
+			AccessStream(nullptr, data, (directory->blockCount - 1) * superblock.blockSize, superblock.blockSize, blockBuffer, DRIVE_ACCESS_WRITE);
 		} else {
-			AccessStream(nullptr, data, data->size - superblock.blockSize, superblock.blockSize, entryBuffer, DRIVE_ACCESS_WRITE);
+			AccessStream(nullptr, data, (directory->blockCount - 1) * superblock.blockSize, superblock.blockSize, entryBuffer, DRIVE_ACCESS_WRITE);
 		}
 
 		directory->itemsInDirectory++;
+		_directory->data.directory.entryCount++;
 	}
 
 	return true;

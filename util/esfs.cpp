@@ -165,6 +165,9 @@ struct EsFSAttributeFileDirectory {
 	EsFSAttributeHeader header;
 
 	uint64_t itemsInDirectory;			// The number of items that the directory currently holds.
+	uint64_t blockCount;				// The number of blocks used by the directory.
+							// When a directory is resized it will take more blocks than necessary.
+							// This is the number it needs.
 };
 
 struct EsFSAttributeDirectoryName {
@@ -1174,6 +1177,7 @@ void AddFile(char *path, char *name, uint16_t type) {
 
 		if (spaceRemaining < entryBufferPosition) {
 			ResizeDataStream(data, data->size + blockSize, true, &loadInformation);
+			directory->blockCount++;
 		}
 
 		if (spaceRemaining >= entryBufferPosition) {
