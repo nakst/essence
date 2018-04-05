@@ -38,7 +38,7 @@ struct UniqueIdentifier {
 // 	- Superblock (always 8Kib)		)
 // 	- Group descriptor table		)
 // 	- Metadata files			)
-// 	- Block groups (block usage extents, data blocks)
+// 	- Block groups (block usage bitmap, data blocks)
 // 	- Superblock backup
 
 #define ESFS_MAX_BLOCK_SIZE (16384)
@@ -46,7 +46,7 @@ struct UniqueIdentifier {
 // The boot block and superblock are EACH 8KiB.
 #define ESFS_BOOT_SUPER_BLOCK_SIZE (8192)
 
-#define ESFS_DRIVER_VERSION (3)
+#define ESFS_DRIVER_VERSION (4)
 #define ESFS_DRIVE_MINIMUM_SIZE (1048576)
 
 #define ESFS_MAXIMUM_VOLUME_NAME_LENGTH (32)
@@ -83,7 +83,7 @@ struct EsFSSuperblock {
 /**/	
 /*80*/	uint16_t blocksPerGroup;			// The number of blocks in a group.
 /*88*/	uint64_t groupCount;				// The number of groups on the volume.
-/*96*/	uint64_t blocksPerGroupExtentTable;		// The number of blocks used to a store a group's extent table.
+/*96*/	uint64_t blocksPerGroupBlockBitmap;		// The number of blocks used to a store a group's block bitmap.
 /**/	
 /*104*/	EsFSLocalExtent gdt;				// The group descriptor table's location.
 /*108*/	EsFSLocalExtent rootDirectoryFileEntry;		// The file entry for the root directory.
@@ -95,15 +95,10 @@ struct EsFSSuperblock {
 };
 
 struct EsFSGroupDescriptor {
-	uint64_t extentTable;				// The first block containing the extent table.
+	uint64_t blockBitmap;				// The first block containing the bitmap block.
 							// This is usually at the start of the group.
 							// If this is 0 then there is no extent table, and no blocks in the group are used.
-							// As the worst case for a fully merged table in a group will be blocks per group / 2 and each LocalExtent is 2 bytes,
-							// the maximum size of an extent table will be (blocks per group) bytes.
-							// This will therefore be the size of the table.
 
-	uint16_t extentCount;				// The number of extents in the extent table of the group.
-							
 	uint16_t blocksUsed;				// The number of used blocks in this group.
 
 	// TODO Maybe store the size of the largest extent in the group here?
@@ -228,6 +223,16 @@ struct EsFSLoadInformation {
 	uint64_t positionInBlock;
 };
 
+uint16_t ReverseBinaryIndexForBlockGroupSearch(uint16_t index, uint16_t blocksPerGroup) {
+	index = ((index >> 1) & 0x5555) | ((index & 0x5555) << 1);
+	index = ((index >> 2) & 0x3333) | ((index & 0x3333) << 2);
+	index = ((index >> 4) & 0x0F0F) | ((index & 0x0F0F) << 4);
+	index = ((index >> 8) & 0x00FF) | ((index & 0x00FF) << 8);
+
+	uint32_t d = (uint32_t) index * (uint32_t) blocksPerGroup;
+	return (uint16_t) (d >> 16);
+}
+
 #endif 
 
 #ifdef ESFS_IMPLEMENTATION
@@ -243,9 +248,10 @@ EsFSSuperblockP superblockP;
 EsFSSuperblock *superblock = &superblockP.d;
 EsFSGroupDescriptorP *groupDescriptorTable;
 
-uint8_t entryBuffer[ESFS_MAX_BLOCK_SIZE];			// Temporary buffers.
+uint8_t entryBuffer[131072];			// Temporary buffers.
 size_t entryBufferPosition;
-uint8_t extentTableBuffer[ESFS_MAX_BLOCK_SIZE];
+uint8_t blockBitmapBuffer[131072];
+uint16_t freeFromBuffer[65536];
 
 #define ESFS_MAX_TEMP_EXTENTS (16384)
 EsFSGlobalExtent tempExtents[ESFS_MAX_TEMP_EXTENTS];		// A temporary list of the extents in a file as they are allocated.
@@ -426,11 +432,9 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	printf("Blocks per group: %d\n", superblock->blocksPerGroup);
 #endif
 
-	// In the worse case scenario, every other block in a group is in used.
-	// This will require blocksPerGroup / 2 extents.
-	// Each EsFSLocalExtent is 4 bytes.
-	// So for every block we need at least 2 bytes of space.
-	superblock->blocksPerGroupExtentTable = BlocksNeededToStore(superblock->blocksPerGroup * 2);
+	// Each block in the group needs a bit.
+	// blocksPerGroup should be a multiple of 8.
+	superblock->blocksPerGroupBlockBitmap = BlocksNeededToStore(superblock->blocksPerGroup / 8);
 
 	uint64_t blocksInGDT = BlocksNeededToStore(superblock->groupCount * sizeof(EsFSGroupDescriptorP));
 	superblock->gdt.count = blocksInGDT;
@@ -443,7 +447,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	uint64_t initialBlockUsage = bootSuperBlocks	// Boot block and superblock.
 				   + blocksInGDT 	// Block group descriptor table.
 				   + 2			// Metadata files - currently: the root directory and the kernel.
-				   + superblock->blocksPerGroupExtentTable; // First group extent table.
+				   + superblock->blocksPerGroupBlockBitmap; // First group extent table.
 
 	// printf("Blocks used: %d\n", initialBlockUsage);
 
@@ -464,17 +468,17 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	memset(descriptorTable, 0, blocksInGDT * blockSize);
 
 	EsFSGroupDescriptor *firstGroup = &descriptorTable[0].d;
-	firstGroup->extentTable = initialBlockUsage - superblock->blocksPerGroupExtentTable; // Use the few block after the core data for the extent table of the first group.
-	firstGroup->extentCount = 1;			// 1 extent containing all the unused blocks in the group.
+	firstGroup->blockBitmap = initialBlockUsage - superblock->blocksPerGroupBlockBitmap; 
 	firstGroup->blocksUsed = initialBlockUsage;
 
 	// printf("First group extent table: %d\n", firstGroup->extentTable);
 
 	// The extent table for the first group.
-	uint8_t _extent[blockSize] = {}; // TODO Stack overflow?
-	EsFSLocalExtent *extent = (EsFSLocalExtent *) &_extent;
-	extent->offset = initialBlockUsage;
-	extent->count = superblock->blocksPerGroup - initialBlockUsage;
+	uint8_t firstBlockBitmap[blockSize * superblock->blocksPerGroupBlockBitmap]; 
+	memset(firstBlockBitmap, 0, blockSize * superblock->blocksPerGroupBlockBitmap);
+	for (uintptr_t i = 0; i < initialBlockUsage; i++) {
+		firstBlockBitmap[i / 8] |= 1 << (i % 8);
+	}
 
 	// printf("First unused extent offset: %d\n", extent->offset);
 	// printf("First unused extent count: %d\n", extent->count);
@@ -494,7 +498,7 @@ void PrepareCoreData(size_t driveSize, char *volumeName) {
 	WriteBlock(bootSuperBlocks / 2, bootSuperBlocks / 2, superblock);
 	WriteBlock(superblock->blockCount, bootSuperBlocks / 2, superblock);
 	WriteBlock(bootSuperBlocks, blocksInGDT, descriptorTable);
-	WriteBlock(firstGroup->extentTable, 1, &_extent);
+	WriteBlock(firstGroup->blockBitmap, 1, &firstBlockBitmap);
 
 	free(descriptorTable);
 }
@@ -618,11 +622,11 @@ uint16_t GetBlocksInGroup(uint64_t group) {
 
 EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly) {
 	// TODO Optimise this function.
-	// 	- Cache extent tables.
+	// 	- Cache block bitmaps.
 
 	uint64_t groupsSearched = 0;
 
-	// printf("Allocating extent for %d blocks....\n", desiredBlocks);
+	// printf("Allocating extent for %d blocks....\n", (int) desiredBlocks);
 
 	for (uint64_t blockGroup = localGroup; groupsSearched < superblock->groupCount; blockGroup = (blockGroup + 1) % superblock->groupCount, groupsSearched++) {
 		EsFSGroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
@@ -633,48 +637,47 @@ EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, boo
 			continue;
 		} 
 
-		if (descriptor->extentCount * sizeof(EsFSLocalExtent) > ESFS_MAX_BLOCK_SIZE) {
-			// This shouldn't happen as long as the number of blocks in a group does not exceed ESFS_MAX_BLOCK_SIZE.
-			printf("Error: Extent table larger than expected.\n");
-			exit(1);
-		}
-
-		if (!descriptor->extentTable) {
+		if (!descriptor->blockBitmap) {
 			// The group does not have an extent table allocated for it yet, so let's make it.
-			descriptor->extentTable = blockGroup * superblock->blocksPerGroup;
-			descriptor->extentCount = 1;
-			descriptor->blocksUsed = superblock->blocksPerGroupExtentTable;
+			descriptor->blockBitmap = blockGroup * superblock->blocksPerGroup;
+			descriptor->blocksUsed = superblock->blocksPerGroupBlockBitmap;
 
-			EsFSLocalExtent *extent = (EsFSLocalExtent *) extentTableBuffer;
-			extent->offset = superblock->blocksPerGroupExtentTable; 
-			extent->count = GetBlocksInGroup(blockGroup) - superblock->blocksPerGroupExtentTable;
+			memset(blockBitmapBuffer, 0, superblock->blocksPerGroupBlockBitmap * blockSize);
 
-			// The table is saved at the end of the function.
+			for (uintptr_t i = 0; i < superblock->blocksPerGroupBlockBitmap; i++) {
+				blockBitmapBuffer[i / 8] |= 1 << (i % 8);
+			}
+
+			// The bitmap is saved at the end of the function.
 		} else {
-			ReadBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
+			ReadBlock(descriptor->blockBitmap, superblock->blocksPerGroupBlockBitmap * blockSize, blockBitmapBuffer);
 		}
 
-		uint16_t largestSeenIndex = 0;
-		EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
+		uintptr_t count = 0;
+
+		for (intptr_t i = superblock->blocksPerGroup - 1; i >= 0; i--) {
+			if (!(blockBitmapBuffer[i / 8] & (1 << (i % 8)))) {
+				count++;
+			} else {
+				count = 0;
+			}
+
+			freeFromBuffer[i] = count;
+		}
+
+		uint16_t largestSeen = 0;
+
 		EsFSGlobalExtent extent;
 
 		// First, look for an extent with enough size for the whole allocation.
-		for (uint16_t i = 0; i < descriptor->extentCount; i++) {
-			if (extentTable[i].count > desiredBlocks) {
-				extent.offset = extentTable[i].offset;
+		for (uintptr_t i = 0; i < superblock->blocksPerGroup; i++) {
+			if (freeFromBuffer[i] >= desiredBlocks) {
+				extent.offset = i;
 				extent.count = desiredBlocks;
-				extentTable[i].offset += desiredBlocks;
-				extentTable[i].count -= desiredBlocks;
-				goto finish;
-			} else if (extentTable[i].count == desiredBlocks) {
-				extent.offset = extentTable[i].offset;
-				extent.count = desiredBlocks;
-				descriptor->extentCount--;
-				extentTable[i] = extentTable[descriptor->extentCount];
 				goto finish;
 			} else {
-				if (extent.count > extentTable[largestSeenIndex].count) {
-					largestSeenIndex = i;
+				if (freeFromBuffer[i] > freeFromBuffer[largestSeen]) {
+					largestSeen = i;
 				}
 			}
 		}
@@ -684,20 +687,22 @@ EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, boo
 		}
 
 		// If that didn't work, we'll have to do a partial allocation.
-		extent.offset = extentTable[largestSeenIndex].offset;
-		extent.count = extentTable[largestSeenIndex].count;
-		descriptor->extentCount--;
-		extentTable[largestSeenIndex] = extentTable[descriptor->extentCount];
+		extent.offset = largestSeen;
+		extent.count = freeFromBuffer[largestSeen];
 
-		finish:
+		finish:;
+
+		for (uintptr_t i = extent.offset; i < extent.offset + extent.count; i++) {
+			blockBitmapBuffer[i / 8] |= 1 << (i % 8);
+		}
 
 		extent.offset += blockGroup * superblock->blocksPerGroup;
 		descriptor->blocksUsed += extent.count;
 		superblock->blocksUsed += extent.count;
 
-		WriteBlock(descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)), extentTableBuffer);
+		WriteBlock(descriptor->blockBitmap, superblock->blocksPerGroupBlockBitmap, blockBitmapBuffer);
 
-		// printf("Allocated extent: %d -> %d\n", extent.offset, extent.offset + extent.count - 1);
+		// printf("Allocated extent: %d -> %d\n", (int) extent.offset, (int) (extent.offset + extent.count - 1));
 
 		return extent;
 	}
@@ -1299,6 +1304,9 @@ void WriteFile(char *path, void *bufferData, uint64_t dataLength) {
 }
 
 void AvailableExtents(uint64_t group) {
+#if 1
+	printf("Deprecated.\n");
+#else
 	if (group >= superblock->groupCount) {
 		printf("Error: Drive only has %d groups.\n", (int) superblock->groupCount);
 		exit(1);
@@ -1320,6 +1328,7 @@ void AvailableExtents(uint64_t group) {
 	for (uint16_t i = 0; i < descriptor->extentCount; i++) {
 		printf("local extent: offset %d (global %d), count = %d\n", (int) extentTable[i].offset, (int) (extentTable[i].offset + group * superblock->blocksPerGroup), (int) extentTable[i].count);
 	}
+#endif
 }
 
 void Tree(char *path, int indent) {

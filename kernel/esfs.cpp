@@ -395,59 +395,36 @@ void EsFSVolume::FreeExtent(EsFSGlobalExtent extent) {
 	superblock.blocksUsed -= extent.count;
 
 	// Load the extent table.
-	uint8_t *extentTableBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupExtentTable * superblock.blockSize, false);
-	Defer(OSHeapFree(extentTableBuffer));
-	EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
-	AccessBlock(nullptr, descriptor->extentTable, 
-			descriptor->extentCount * sizeof(EsFSLocalExtent), 
-			DRIVE_ACCESS_READ, extentTableBuffer, 0);
+	uint8_t *blockBitmapBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupBlockBitmap * superblock.blockSize, false);
+	Defer(OSHeapFree(blockBitmapBuffer));
+	AccessBlock(nullptr, descriptor->blockBitmap, 
+			superblock.blocksPerGroupBlockBitmap * superblock.blockSize, 
+			DRIVE_ACCESS_READ, blockBitmapBuffer, 0);
 
 	EsFSLocalExtent freeExtent = { (uint16_t) (extent.offset % superblock.blocksPerGroup), (uint16_t) extent.count };
 
-	// Merge the extent.
-	for (uintptr_t i = 0; i < descriptor->extentCount; i++) {
-		EsFSLocalExtent extent = extentTable[i];
-
-		if ((extent.offset + extent.count > freeExtent.offset && extent.offset + extent.count < freeExtent.offset + freeExtent.count)
-				|| (freeExtent.offset + freeExtent.count > extent.offset && freeExtent.offset + freeExtent.count < extent.offset + extent.count)) {
-			KernelPanic("EsFSVolume::FreeExtent - Extent overlap.\n");
-		}
-
-		if (extent.offset + extent.count == freeExtent.offset) {
-			freeExtent.offset = extent.offset;
-			freeExtent.count += extent.count;
-			descriptor->extentCount--;
-			extentTable[i] = extentTable[descriptor->extentCount]; 
-			i--;
-		} else if (freeExtent.offset + freeExtent.count == extent.offset) {
-			freeExtent.count += extent.count;
-			descriptor->extentCount--;
-			extentTable[i] = extentTable[descriptor->extentCount]; 
-			i--;
-		}
-	}
-
-	// Add the extent back into the table.
-	extentTable[descriptor->extentCount] = freeExtent; 
-	descriptor->extentCount++;
-
-	if (descriptor->extentCount * sizeof(EsFSLocalExtent) > superblock.blocksPerGroupExtentTable * superblock.blockSize) {
-		KernelPanic("EsFSVolume::FreeExtent - Extent table larger than expected.\n");
+	for (uintptr_t i = freeExtent.offset; i < freeExtent.offset + freeExtent.count; i++) {
+		blockBitmapBuffer[i / 8] &= ~(1 << (i % 8));
 	}
 
 	// Save the extent table.
-	AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
+	AccessBlock(nullptr, descriptor->blockBitmap, 
+			superblock.blocksPerGroupBlockBitmap * superblock.blockSize, 
+			DRIVE_ACCESS_WRITE, blockBitmapBuffer, 0);
 }
 
 EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly) {
 	// TODO Optimise this function.
 	// 	- Cache extent tables.
 	//
-	// 	Binary ordering/bitmap
+	// 	Reverse binary search ordering
 	// 	Allocate "next to"
 
-	uint8_t *extentTableBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupExtentTable * superblock.blockSize, false);
-	Defer(OSHeapFree(extentTableBuffer));
+	uint8_t *blockBitmapBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupBlockBitmap * superblock.blockSize, false);
+	Defer(OSHeapFree(blockBitmapBuffer));
+
+	uint16_t *freeFromBuffer = (uint16_t *) OSHeapAllocate(superblock.blocksPerGroup * sizeof(uint16_t), false);
+	Defer(OSHeapFree(freeFromBuffer));
 
 	uint64_t groupsSearched = 0;
 
@@ -464,49 +441,50 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 			continue;
 		} 
 
-		if (descriptor->extentCount * sizeof(EsFSLocalExtent) > superblock.blocksPerGroupExtentTable * superblock.blockSize) {
-			KernelPanic("EsFSVolume::AllocateExtent - Extent table larger than expected.\n");
-		}
-
-		if (!descriptor->extentTable) {
+		if (!descriptor->blockBitmap) {
 			// The group does not have an extent table allocated for it yet, so let's make it.
-			descriptor->extentTable = blockGroup * superblock.blocksPerGroup;
-			descriptor->extentCount = 1;
-			descriptor->blocksUsed = superblock.blocksPerGroupExtentTable;
+			descriptor->blockBitmap = blockGroup * superblock.blocksPerGroup;
+			descriptor->blocksUsed = superblock.blocksPerGroupBlockBitmap;
 
-			EsFSLocalExtent *extent = (EsFSLocalExtent *) extentTableBuffer;
-			extent->offset = superblock.blocksPerGroupExtentTable; 
-			extent->count = GetBlocksInGroup(blockGroup) - superblock.blocksPerGroupExtentTable;
+			ZeroMemory(blockBitmapBuffer, superblock.blocksPerGroupBlockBitmap * superblock.blockSize);
 
-			// The table is saved at the end of the function.
+			for (uintptr_t i = 0; i < superblock.blocksPerGroupBlockBitmap; i++) {
+				blockBitmapBuffer[i / 8] |= 1 << (i % 8);
+			}
+
+			// The bitmap is saved at the end of the function.
 		} else {
-			// Load the extent table.
-			AccessBlock(nullptr, descriptor->extentTable, 
-					BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, 
-					DRIVE_ACCESS_READ, extentTableBuffer, 0);
+			// Load the block bitmap.
+			AccessBlock(nullptr, descriptor->blockBitmap, 
+					superblock.blocksPerGroupBlockBitmap * superblock.blockSize, 
+					DRIVE_ACCESS_READ, blockBitmapBuffer, 0);
 		}
 
-		uint16_t largestSeenIndex = 0;
-		EsFSLocalExtent *extentTable = (EsFSLocalExtent *) extentTableBuffer;
+		uintptr_t count = 0;
+
+		for (intptr_t i = superblock.blocksPerGroup - 1; i >= 0; i--) {
+			if (!(blockBitmapBuffer[i / 8] & (1 << (i % 8)))) {
+				count++;
+			} else {
+				count = 0;
+			}
+
+			freeFromBuffer[i] = count;
+		}
+
+		uint16_t largestSeen = 0;
+
 		EsFSGlobalExtent extent;
 
 		// First, look for an extent with enough size for the whole allocation.
-		for (uint16_t i = 0; i < descriptor->extentCount; i++) {
-			if (extentTable[i].count > desiredBlocks) {
-				extent.offset = extentTable[i].offset;
+		for (uintptr_t i = 0; i < superblock.blocksPerGroup; i++) {
+			if (freeFromBuffer[i] >= desiredBlocks) {
+				extent.offset = i;
 				extent.count = desiredBlocks;
-				extentTable[i].offset += desiredBlocks;
-				extentTable[i].count -= desiredBlocks;
-				goto finish;
-			} else if (extentTable[i].count == desiredBlocks) {
-				extent.offset = extentTable[i].offset;
-				extent.count = desiredBlocks;
-				descriptor->extentCount--;
-				extentTable[i] = extentTable[descriptor->extentCount]; // Replace this extent with the last one.
 				goto finish;
 			} else {
-				if (extent.count > extentTable[largestSeenIndex].count) {
-					largestSeenIndex = i;
+				if (freeFromBuffer[i] > freeFromBuffer[largestSeen]) {
+					largestSeen = i;
 				}
 			}
 		}
@@ -515,25 +493,24 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 			continue;
 		}
 
-		if (descriptor->extentCount == 0) {
-			// This shouldn't normally happen, but currently we leave the filesystem in a bad state at reset.
-			continue;
-		}
-
 		// If that didn't work, we'll have to do a partial allocation.
-		extent.offset = extentTable[largestSeenIndex].offset;
-		extent.count = extentTable[largestSeenIndex].count;
-		descriptor->extentCount--;
-		extentTable[largestSeenIndex] = extentTable[descriptor->extentCount];
+		extent.offset = largestSeen;
+		extent.count = freeFromBuffer[largestSeen];
 
-		finish:
+		finish:;
+
+		for (uintptr_t i = extent.offset; i < extent.offset + extent.count; i++) {
+			blockBitmapBuffer[i / 8] |= 1 << (i % 8);
+		}
 
 		extent.offset += blockGroup * superblock.blocksPerGroup;
 		descriptor->blocksUsed += extent.count;
 		superblock.blocksUsed += extent.count;
 
 		// Save the extent table.
-		AccessBlock(nullptr, descriptor->extentTable, BlocksNeededToStore(descriptor->extentCount * sizeof(EsFSLocalExtent)) * superblock.blockSize, DRIVE_ACCESS_WRITE, extentTableBuffer, 0);
+		AccessBlock(nullptr, descriptor->blockBitmap, 
+				superblock.blocksPerGroupBlockBitmap * superblock.blockSize, 
+				DRIVE_ACCESS_WRITE, blockBitmapBuffer, 0);
 
 		return extent;
 	}
