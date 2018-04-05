@@ -590,76 +590,98 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 	}
 }
 
-void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
-		OSRectangle borderDimensions, OSDrawMode mode, uint8_t alpha, bool alreadyLocked) {
-	if (destinationRegion.left >= destinationRegion.right 
-			|| destinationRegion.top >= destinationRegion.bottom
-			|| destinationRegion.right < 0
-			|| destinationRegion.bottom < 0) {
-		return;
-	}
+void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle sourceBorderRegion,
+		OSDrawMode mode, uint8_t alpha, bool alreadyLocked) {
+	// Restriction: The source region must be within the bounds of the source.
 
 	if (sourceRegion.left < 0 || sourceRegion.top < 0
 			|| sourceRegion.right > (intptr_t) source.resX || sourceRegion.bottom > (intptr_t) source.resY
 			|| sourceRegion.left >= sourceRegion.right || sourceRegion.top >= sourceRegion.bottom) {
-		// If the source region was invalid, don't perform the operation.
 		return;
 	}
+
+	// Restriction: The sourceBorderRegion region must be within the bounds of the source.
+
+	if (sourceBorderRegion.left < 0 || sourceBorderRegion.top < 0
+			|| sourceBorderRegion.right > (intptr_t) source.resX || sourceBorderRegion.bottom > (intptr_t) source.resY) {
+		return;
+	}
+
+	// Acquire the lock (if we haven't already).
 
 	if (!alreadyLocked) mutex.Acquire();
 	Defer(if (!alreadyLocked) mutex.Release());
 
-	intptr_t rightBorderStart = destinationRegion.right - (sourceRegion.right - borderDimensions.right);
-	intptr_t bottomBorderStart = destinationRegion.bottom - (sourceRegion.bottom - borderDimensions.bottom);
+	// Clip the destination region to the bounds of the destination.
 
+	OSRectangle clipRegion = OS_MAKE_RECTANGLE(0, resX, 0, resY);
+
+	if (clipRegion.left < destinationRegion.left) clipRegion.left = destinationRegion.left;
+	if (clipRegion.right > destinationRegion.right) clipRegion.right = destinationRegion.right;
+	if (clipRegion.top < destinationRegion.top) clipRegion.top = destinationRegion.top;
+	if (clipRegion.bottom > destinationRegion.bottom) clipRegion.bottom = destinationRegion.bottom;
+
+	sourceRegion.left += clipRegion.left - destinationRegion.left;
+	sourceRegion.right += clipRegion.right - destinationRegion.right;
+	sourceRegion.top += clipRegion.top - destinationRegion.top;
+	sourceRegion.bottom += clipRegion.bottom - destinationRegion.bottom;
+
+	if (sourceRegion.left > sourceBorderRegion.left) sourceRegion.left = sourceBorderRegion.left;
+	if (sourceRegion.right < sourceBorderRegion.right) sourceRegion.right = sourceBorderRegion.right;
+	if (sourceRegion.top > sourceBorderRegion.top) sourceRegion.top = sourceBorderRegion.top;
+	if (sourceRegion.bottom < sourceBorderRegion.bottom) sourceRegion.bottom = sourceBorderRegion.bottom;
+
+	destinationRegion = clipRegion;
+
+	// Work out the border region on the destination.
+
+	OSRectangle destinationBorderRegion = OS_MAKE_RECTANGLE(destinationRegion.left + sourceBorderRegion.left - sourceRegion.left,
+			destinationRegion.right + sourceBorderRegion.right - sourceRegion.right,
+			destinationRegion.top + sourceBorderRegion.top - sourceRegion.top,
+			destinationRegion.bottom + sourceBorderRegion.bottom - sourceRegion.bottom);
+
+	// Can we replace OS_DRAW_MODE_REPEAT_FIRST with FillRectangle?
+
+	bool drawCenter = true;
 	if (mode == OS_DRAW_MODE_REPEAT_FIRST && alpha == 0xFF) {
-		if (borderDimensions.left >= sourceRegion.left && borderDimensions.left < sourceRegion.right
-				&& borderDimensions.top >= sourceRegion.top && borderDimensions.top < sourceRegion.bottom) {
-			uint32_t color = *((uint32_t *) (source.linearBuffer + borderDimensions.left * 4 + borderDimensions.top * source.stride));
+		uint32_t color = *((uint32_t *) (source.linearBuffer + sourceBorderRegion.left * 4 + sourceBorderRegion.top * source.stride));
 
-			if ((color & 0xFF000000) == 0xFF000000) {
-				mode = OS_DRAW_MODE_TRANSPARENT;
-				FillRectangle(OS_MAKE_RECTANGLE(destinationRegion.left + borderDimensions.left - sourceRegion.left,
-							destinationRegion.right + borderDimensions.right - sourceRegion.right,
-							destinationRegion.top + borderDimensions.top - sourceRegion.top,
-							destinationRegion.bottom + borderDimensions.bottom - sourceRegion.bottom), OSColor(color), true);
-			}
+		if ((color & 0xFF000000) == 0xFF000000) {
+			drawCenter = false;
+			FillRectangle(destinationBorderRegion, OSColor(color), true);
 		}
 	}
 
-	for (intptr_t y = destinationRegion.top; y < destinationRegion.bottom; y++) {
-		if (y < 0) continue;
-		if (y >= (intptr_t) resY) break;
+	// For every pixel...
 
+	for (intptr_t y = destinationRegion.top; y < destinationRegion.bottom; y++) {
 		intptr_t sy = y - destinationRegion.top + sourceRegion.top;
-		bool inBorderY = true;
-		if (y >= bottomBorderStart) sy = y - bottomBorderStart + borderDimensions.bottom;
-		else if (sy > borderDimensions.top) {
-			sy = borderDimensions.top;
-			inBorderY = false;
+		bool verticalEdge = false;
+
+		if (y >= destinationBorderRegion.bottom) {
+			sy = sourceBorderRegion.bottom + y - destinationBorderRegion.bottom;
+		} else if (y >= destinationBorderRegion.top) {
+			verticalEdge = true;
+			sy = sourceBorderRegion.top;
 		}
 
-		if (sy < sourceRegion.top || sy >= sourceRegion.bottom) continue;
-
-		InvalidateScanline(y, destinationRegion.left < 0 ? 0 : destinationRegion.left, 
-				      destinationRegion.right >= (intptr_t) resX ? (intptr_t) resX : destinationRegion.right);
+		InvalidateScanline(y, destinationRegion.left, destinationRegion.right);
 
 		for (intptr_t x = destinationRegion.left; x < destinationRegion.right; x++) {
-			if (x < 0) continue;
-			if (x >= (intptr_t) resX) break;
-
 			intptr_t sx = x - destinationRegion.left + sourceRegion.left;
-			if (x >= rightBorderStart) sx = x - rightBorderStart + borderDimensions.right;
-			else if (sx > borderDimensions.left) {
-				sx = borderDimensions.left;
 
-				if (mode == OS_DRAW_MODE_TRANSPARENT && !inBorderY) {
-					x = rightBorderStart - 1;
+			if (x >= destinationBorderRegion.right) {
+				sx = sourceBorderRegion.right + x - destinationBorderRegion.right;
+			} else if (x >= destinationBorderRegion.left) {
+				sx = sourceBorderRegion.left;
+
+				if (verticalEdge && !drawCenter) {
+					x = destinationBorderRegion.right - 1;
 					continue;
 				}
 			}
 
-			if (sx < sourceRegion.left || sx >= sourceRegion.right) continue;
+			// Alpha blend the destination and source.
 
 			uint32_t *destinationPixel = (uint32_t *) (linearBuffer + x * 4 + y * stride);
 			uint32_t *sourcePixel = (uint32_t *) (source.linearBuffer + sx * 4 + sy * source.stride);

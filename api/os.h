@@ -669,7 +669,6 @@ typedef enum OSDrawMode {
 	OS_DRAW_MODE_STRECH, // Not implemented yet.
 	OS_DRAW_MODE_REPEAT, // Not implemented yet.
 	OS_DRAW_MODE_REPEAT_FIRST, // The first non-border pixel is repeated.
-	OS_DRAW_MODE_TRANSPARENT, // Don't draw the non-border pixels.
 } OSDrawMode;
 
 typedef void (*OSThreadEntryFunction)(void *argument);
