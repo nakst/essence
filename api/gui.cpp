@@ -179,9 +179,9 @@ static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}
 static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
 static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
 
-static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 6, 228 + 7, 59 + 6, 59 + 7}};
-static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6, 59 + 7}};
-static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 6, 14 + 228 + 7, 28 + 59 + 6, 28 + 59 + 7}};
+static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 3, 241 - 3, 59 + 3, 72 - 3}};
+static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 3, 14 + 241 - 3, 59 + 3, 72 - 3}};
+static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3, 28 + 72 - 3}};
 static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
 static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
 static UIImage listViewColumnHeaderDivider = {{239, 240, 87, 112}, {239, 239, 87, 88}};
@@ -190,6 +190,8 @@ static UIImage lineHorizontal		= {{40, 52, 115, 117}, {41, 42, 115, 115}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
 static UIImage lineVertical		= {{35, 37, 110, 122}, {35, 35, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
+
+// static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
 
 static struct UIImage *smallArrowUpIcons[] = { &smallArrowUpNormal, &smallArrowUpDisabled, &smallArrowUpHover, &smallArrowUpPressed, };
 static struct UIImage *smallArrowDownIcons[] = { &smallArrowDownNormal, &smallArrowDownDisabled, &smallArrowDownHover, &smallArrowDownPressed, };
@@ -1229,6 +1231,11 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				control->window->lastFocus != control || control->caretBlink,
 				control->textSize, fontRegular, message->paint.clip);
 
+#if 0
+		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->textBounds, 
+				testImage.region, testImage.border, OS_DRAW_MODE_STRECH, 0xFF, message->paint.clip);
+#endif
+
 		result = OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
 		control->textBounds = control->bounds;
@@ -1773,11 +1780,11 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 							if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
 								UIImage image = control->window->focus == control ? listViewSelected : listViewSelected2;
 								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip3);
+										image.region, image.border, OS_DRAW_MODE_STRECH, 0xFF, clip3);
 								previousHadBox = true;
 							} else if (control->highlightRow == i) {
 								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-										listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip3);
+										listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_STRECH, 0xFF, clip3);
 							}
 
 							if (control->lastClickedRow == i && control->window->focus == control) {

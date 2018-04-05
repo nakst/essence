@@ -662,7 +662,22 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 			sy = sourceBorderRegion.bottom + y - destinationBorderRegion.bottom;
 		} else if (y >= destinationBorderRegion.top) {
 			verticalEdge = true;
-			sy = sourceBorderRegion.top;
+
+			switch (mode) {
+				case OS_DRAW_MODE_REPEAT: {
+					sy = sourceBorderRegion.top + ((y - destinationBorderRegion.top) % (sourceBorderRegion.bottom - sourceBorderRegion.top));
+				} break;
+
+				case OS_DRAW_MODE_STRECH: {
+					intptr_t sourceBorderSize = sourceBorderRegion.bottom - sourceBorderRegion.top;
+					intptr_t destinationBorderSize = destinationBorderRegion.bottom - destinationBorderRegion.top;
+					sy = (y - destinationBorderRegion.top) * sourceBorderSize / destinationBorderSize + sourceBorderRegion.top;
+				} break;
+
+				default: {
+					sy = sourceBorderRegion.top;
+				} break;
+			}
 		}
 
 		InvalidateScanline(y, destinationRegion.left, destinationRegion.right);
@@ -673,7 +688,21 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 			if (x >= destinationBorderRegion.right) {
 				sx = sourceBorderRegion.right + x - destinationBorderRegion.right;
 			} else if (x >= destinationBorderRegion.left) {
-				sx = sourceBorderRegion.left;
+				switch (mode) {
+					case OS_DRAW_MODE_REPEAT: {
+						sx = sourceBorderRegion.left + ((x - destinationBorderRegion.left) % (sourceBorderRegion.right - sourceBorderRegion.left));
+					} break;
+
+					case OS_DRAW_MODE_STRECH: {
+						intptr_t sourceBorderSize = sourceBorderRegion.right - sourceBorderRegion.left;
+						intptr_t destinationBorderSize = destinationBorderRegion.right - destinationBorderRegion.left;
+						sx = (x - destinationBorderRegion.left) * sourceBorderSize / destinationBorderSize + sourceBorderRegion.left;
+					} break;
+
+					default: {
+						sx = sourceBorderRegion.left;
+					} break;
+				}
 
 				if (verticalEdge && !drawCenter) {
 					x = destinationBorderRegion.right - 1;
