@@ -42,7 +42,7 @@ struct Surface {
 			OSRectangle borderDimensions, OSDrawMode mode, uint8_t alpha, bool alreadyLocked);
 
 	// Fill a region of this surface with the specified color.
-	void FillRectangle(OSRectangle region, OSColor color);
+	void FillRectangle(OSRectangle region, OSColor color, bool alreadyLocked = false);
 
 	// Mark a region of the surface as modified.
 	void InvalidateScanline(uintptr_t y, uintptr_t from, uintptr_t to);
@@ -612,6 +612,21 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 	intptr_t rightBorderStart = destinationRegion.right - (sourceRegion.right - borderDimensions.right);
 	intptr_t bottomBorderStart = destinationRegion.bottom - (sourceRegion.bottom - borderDimensions.bottom);
 
+	if (mode == OS_DRAW_MODE_REPEAT_FIRST && alpha == 0xFF) {
+		if (borderDimensions.left >= sourceRegion.left && borderDimensions.left < sourceRegion.right
+				&& borderDimensions.top >= sourceRegion.top && borderDimensions.top < sourceRegion.bottom) {
+			uint32_t color = *((uint32_t *) (source.linearBuffer + borderDimensions.left * 4 + borderDimensions.top * source.stride));
+
+			if ((color & 0xFF000000) == 0xFF000000) {
+				mode = OS_DRAW_MODE_TRANSPARENT;
+				FillRectangle(OS_MAKE_RECTANGLE(destinationRegion.left + borderDimensions.left - sourceRegion.left,
+							destinationRegion.right + borderDimensions.right - sourceRegion.right,
+							destinationRegion.top + borderDimensions.top - sourceRegion.top,
+							destinationRegion.bottom + borderDimensions.bottom - sourceRegion.bottom), OSColor(color), true);
+			}
+		}
+	}
+
 	for (intptr_t y = destinationRegion.top; y < destinationRegion.bottom; y++) {
 		if (y < 0) continue;
 		if (y >= (intptr_t) resY) break;
@@ -639,7 +654,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 				sx = borderDimensions.left;
 
 				if (mode == OS_DRAW_MODE_TRANSPARENT && !inBorderY) {
-					x = rightBorderStart;
+					x = rightBorderStart - 1;
 					continue;
 				}
 			}
@@ -675,7 +690,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 	}
 }
 
-void Surface::FillRectangle(OSRectangle region, OSColor color) {
+void Surface::FillRectangle(OSRectangle region, OSColor color, bool alreadyLocked) {
 	if (region.left < 0 || region.top < 0
 			|| region.right > (intptr_t) resX || region.bottom > (intptr_t) resY
 			|| region.left >= region.right || region.top >= region.bottom) {
@@ -683,8 +698,8 @@ void Surface::FillRectangle(OSRectangle region, OSColor color) {
 		return;
 	}
 
-	mutex.Acquire();
-	Defer(mutex.Release());
+	if (!alreadyLocked) mutex.Acquire();
+	Defer(if (!alreadyLocked) mutex.Release());
 
 	uint8_t *destinationPixel = linearBuffer;
 
