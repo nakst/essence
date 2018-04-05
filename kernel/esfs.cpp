@@ -827,7 +827,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	AccessStream(nullptr, data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
-		if (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
+		while (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
 			// We're reached the end of the block.
 			// The next directory entry will be at the start of the next block.
 			blockPosition = 0;
@@ -919,7 +919,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 	EsFSFileEntry *returnValue = nullptr;
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
-		if (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
+		while (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
 			// We're reached the end of the block.
 			// The next directory entry will be at the start of the next block.
 			blockPosition = 0;
@@ -1060,6 +1060,10 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 	parentDirectoryAttribute->itemsInDirectory--;
 	parent->data.directory.entryCount--;
 
+	if (parentDirectoryAttribute->itemsInDirectory != parent->data.directory.entryCount) {
+		KernelPanic("EsFSVolume::RemoveNodeFromParent - Directory entry count mismatch.\n");
+	}
+
 	uint16_t spaceAvailableAtEndOfBlock = superblock.blockSize - nodeFile->offsetIntoBlock2;
 
 	// Update the files that we moved.
@@ -1102,8 +1106,6 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 	bool inLastBlock = lastBlockIndex == nodeFile->containerBlock;
 	bool onlyEntryInBlock = !nodeFile->offsetIntoBlock2;
 
-	// TODO Test and enable these.
-#if 0
 	if (onlyEntryInBlock && inLastBlock) {
 		// We no longer need the block.
 		parentDirectoryAttribute->blockCount--;
@@ -1135,12 +1137,6 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 				uint64_t newContainerBlock = nodeFile->containerBlock;
 				uint64_t positionInBlock = superblock.blockSize - spaceAvailableAtEndOfBlock;
 
-				CopyMemory(containerBlock + positionInBlock, lastEntry, entrySize);
-				ZeroMemory(lastEntry, entrySize);
-
-				if (!AccessBlock(nullptr, lastBlockIndex, superblock.blockSize, DRIVE_ACCESS_WRITE, lastBlock, 0)) return false;
-				if (!AccessBlock(nullptr, newContainerBlock, superblock.blockSize, DRIVE_ACCESS_WRITE, containerBlock, 0)) return false;
-
 				{
 					EsFSAttributeDirectoryFile *fileAttribute = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, lastEntry + 1);
 					EsFSFileEntry *fileEntry = (EsFSFileEntry *) (fileAttribute + 1);
@@ -1158,6 +1154,12 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 					}
 				}
 
+				CopyMemory(containerBlock + positionInBlock, lastEntry, entrySize);
+				ZeroMemory(lastEntry, entrySize);
+
+				if (!AccessBlock(nullptr, lastBlockIndex, superblock.blockSize, DRIVE_ACCESS_WRITE, lastBlock, 0)) return false;
+				if (!AccessBlock(nullptr, newContainerBlock, superblock.blockSize, DRIVE_ACCESS_WRITE, containerBlock, 0)) return false;
+
 				if ((uint8_t *) lastEntry == lastBlock) {
 					// We no longer need the block.
 					parentDirectoryAttribute->blockCount--;
@@ -1165,7 +1167,6 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 			}
 		}
 	}
-#endif
 
 	if ((parentDirectoryAttribute->blockCount & 7) == 0) {
 		// Shrink the data stream.

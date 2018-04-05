@@ -318,6 +318,11 @@ int z = 1;
 
 extern "C" OSObject CreateMenuItem(OSMenuItem item);
 
+void Delete(OSHandle handle) {
+	OSPrint("Deleting %x...\n", handle);
+	OSDeleteNode(handle);
+}
+
 extern "C" void ProgramEntry() {
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
@@ -335,23 +340,25 @@ extern "C" void ProgramEntry() {
 			handles[i] = node.handle;
 		}
 
-		OSDeleteNode(handles[0]);
-		OSDeleteNode(handles[1]);
-		OSDeleteNode(handles[2]);
-		OSDeleteNode(handles[3]);
-		OSDeleteNode(handles[4]);
-		OSDeleteNode(handles[5]);
-		OSDeleteNode(handles[6]);
-		OSDeleteNode(handles[7]);
-		OSDeleteNode(handles[8]);
-		OSDeleteNode(handles[9]);
-		OSDeleteNode(handles[10]);
-		OSDeleteNode(handles[11]);
-		OSDeleteNode(handles[12]);
-		OSDeleteNode(handles[13]);
-		OSDeleteNode(handles[14]);
 #if 0
-		OSDeleteNode(handles[15]);
+		Delete(handles[0]);
+#endif
+		Delete(handles[1]);
+		Delete(handles[2]);
+		Delete(handles[3]);
+		Delete(handles[4]);
+#if 0
+		Delete(handles[5]);
+		Delete(handles[6]);
+		Delete(handles[7]);
+		Delete(handles[8]);
+		Delete(handles[9]);
+		Delete(handles[10]);
+		Delete(handles[11]);
+		Delete(handles[12]);
+		Delete(handles[13]);
+		Delete(handles[14]);
+		Delete(handles[15]);
 #endif
 
 		for (uintptr_t i = 0; i < 16; i++) {
