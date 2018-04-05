@@ -326,16 +326,51 @@ extern "C" void ProgramEntry() {
 
 	{
 		OSNodeInformation node;
+		OSHandle handles[16];
+
+		for (uintptr_t i = 0; i < 16; i++) {
+			char buffer[256];
+			size_t length = OSFormatString(buffer, 256, "/TestFolder/%d", i);
+			OSOpenNode(buffer, length, OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_CREATE_DIRECTORIES, &node);
+			handles[i] = node.handle;
+		}
+
+		OSDeleteNode(handles[0]);
+		OSDeleteNode(handles[1]);
+		OSDeleteNode(handles[2]);
+		OSDeleteNode(handles[3]);
+		OSDeleteNode(handles[4]);
+		OSDeleteNode(handles[5]);
+		OSDeleteNode(handles[6]);
+		OSDeleteNode(handles[7]);
+		OSDeleteNode(handles[8]);
+		OSDeleteNode(handles[9]);
+		OSDeleteNode(handles[10]);
+		OSDeleteNode(handles[11]);
+		OSDeleteNode(handles[12]);
+		OSDeleteNode(handles[13]);
+		OSDeleteNode(handles[14]);
+#if 0
+		OSDeleteNode(handles[15]);
+#endif
+
+		for (uintptr_t i = 0; i < 16; i++) {
+			OSCloseHandle(handles[i]);
+		}
+	}
+
+#if 0
+	{
+		OSNodeInformation node;
 		OSOpenNode(OSLiteral("/RemoveFileTest.txt"), OS_OPEN_NODE_RESIZE_ACCESS, &node);
-		OSRemoveNodeFromParent(node.handle);
+		OSDeleteNode(node.handle);
 		OSCloseHandle(node.handle);
 	}
 
-#if 1
 	{
 		OSNodeInformation node;
 		OSOpenNode(OSLiteral("/stage2"), OS_OPEN_NODE_RESIZE_ACCESS, &node);
-		OSRemoveNodeFromParent(node.handle);
+		OSDeleteNode(node.handle);
 		OSCloseHandle(node.handle);
 	}
 #endif

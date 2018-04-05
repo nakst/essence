@@ -813,11 +813,11 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
 	if (!directory) {
-		KernelPanic("EsFSVolume::SearchDirectory - Directory did not have a directory attribute.\n");
+		KernelPanic("EsFSVolume::Enumerate - Directory did not have a directory attribute.\n");
 	}
 
 	if (!data) {
-		KernelPanic("EsFSVolume::SearchDirectory - Directory did not have a data attribute.\n");
+		KernelPanic("EsFSVolume::Enumerate - Directory did not have a data attribute.\n");
 	}
 
 	uint8_t *directoryBuffer = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
@@ -838,7 +838,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
 
 		if (CompareBytes(entry->signature, (void *) ESFS_DIRECTORY_ENTRY_SIGNATURE, CStringLength((char *) ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
-			KernelPanic("EsFSVolume::SearchDirectory - Directory entry had invalid signature.\n");
+			KernelPanic("EsFSVolume::Enumerate - Directory entry had invalid signature.\n");
 		}
 
 		EsFSAttributeDirectoryName *name = (EsFSAttributeDirectoryName *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_NAME, entry + 1);
@@ -1033,9 +1033,11 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 	EsFSFile *parentFile = (EsFSFile *) (parent + 1);
 	EsFSFileEntry *parentFileEntry = (EsFSFileEntry *) (parentFile + 1);
 	EsFSAttributeFileDirectory *parentDirectoryAttribute = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, parentFileEntry + 1);
+	EsFSAttributeFileData *parentDataAttribute = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, parentFileEntry + 1);
 
 	// Load the block that contains the directory entry of the node.
-	uint8_t *containerBlock = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
+	uint8_t *containerBlock = (uint8_t *) OSHeapAllocate(superblock.blockSize * 2, false);
+	uint8_t *lastBlock = containerBlock + superblock.blockSize;
 	Defer(OSHeapFree(containerBlock));
 	if (!AccessBlock(nullptr, nodeFile->containerBlock, superblock.blockSize, DRIVE_ACCESS_READ, containerBlock, 0)) return false;
 
@@ -1056,6 +1058,9 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 
 	// Decrease the entry count.
 	parentDirectoryAttribute->itemsInDirectory--;
+	parent->data.directory.entryCount--;
+
+	uint16_t spaceAvailableAtEndOfBlock = superblock.blockSize - nodeFile->offsetIntoBlock2;
 
 	// Update the files that we moved.
 	{
@@ -1074,6 +1079,7 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 			EsFSAttributeDirectoryFile *fileAttribute = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, entry + 1);
 
 			size_t entrySize = end->size + (uintptr_t) end - (uintptr_t) entry;
+			spaceAvailableAtEndOfBlock -= entrySize;
 
 			EsFSFileEntry *fileEntry = (EsFSFileEntry *) (fileAttribute + 1);
 			Node *node = vfs.FindOpenNode(fileEntry->identifier, filesystem);
@@ -1091,12 +1097,82 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 			entry = (EsFSDirectoryEntry *) ((uint8_t *) entry + entrySize);
 		}
 	}
-	
-	// TODO 
-	// 	- Move entries from end of directory to fill the space.
-	// 		- If these are open nodes, then their containerBlock and offsetIntoBlock/offsetIntoBlock2 will need to be updated.
-	// 	- Remove unused blocks at the end of the directory.
 
+	uint64_t lastBlockIndex = GetBlockFromStream(parentDataAttribute, superblock.blockSize * (parentDirectoryAttribute->blockCount - 1));
+	bool inLastBlock = lastBlockIndex == nodeFile->containerBlock;
+	bool onlyEntryInBlock = !nodeFile->offsetIntoBlock2;
+
+	// TODO Test and enable these.
+#if 0
+	if (onlyEntryInBlock && inLastBlock) {
+		// We no longer need the block.
+		parentDirectoryAttribute->blockCount--;
+	} else if (!inLastBlock) {
+		// Try to move the last entry in the last block to the newly freed space in this block.
+		if (!AccessBlock(nullptr, lastBlockIndex, superblock.blockSize, DRIVE_ACCESS_READ, lastBlock, 0)) return false;
+
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) lastBlock;
+		EsFSDirectoryEntry *lastEntry = nullptr;
+		size_t entrySize = 0;
+
+		while (true) {
+			if (!entry->signature[0] || (uint8_t *) entry == lastBlock + superblock.blockSize) {
+				break;
+			}
+
+			if (CompareBytes(entry->signature, (void *) ESFS_DIRECTORY_ENTRY_SIGNATURE, CStringLength((char *) ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
+				KernelPanic("EsFSVolume::RemoveNodeFromParent - Directory entry had invalid signature.\n");
+			}
+
+			EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
+			entrySize = end->size + (uintptr_t) end - (uintptr_t) entry;
+			lastEntry = entry;
+			entry = (EsFSDirectoryEntry *) ((uint8_t *) entry + entrySize);
+		}
+
+		if (lastEntry) {
+			if (entrySize <= spaceAvailableAtEndOfBlock) {
+				uint64_t newContainerBlock = nodeFile->containerBlock;
+				uint64_t positionInBlock = superblock.blockSize - spaceAvailableAtEndOfBlock;
+
+				CopyMemory(containerBlock + positionInBlock, lastEntry, entrySize);
+				ZeroMemory(lastEntry, entrySize);
+
+				if (!AccessBlock(nullptr, lastBlockIndex, superblock.blockSize, DRIVE_ACCESS_WRITE, lastBlock, 0)) return false;
+				if (!AccessBlock(nullptr, newContainerBlock, superblock.blockSize, DRIVE_ACCESS_WRITE, containerBlock, 0)) return false;
+
+				{
+					EsFSAttributeDirectoryFile *fileAttribute = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, lastEntry + 1);
+					EsFSFileEntry *fileEntry = (EsFSFileEntry *) (fileAttribute + 1);
+					Node *node = vfs.FindOpenNode(fileEntry->identifier, filesystem);
+					EsFSFile *nodeFile = (EsFSFile *) (node + 1);
+
+					if (node) {
+						node->semaphore.Take();
+						nodeFile->containerBlock = newContainerBlock;
+						nodeFile->offsetIntoBlock = positionInBlock + ((uintptr_t) fileEntry - (uintptr_t) lastEntry);
+						nodeFile->offsetIntoBlock2 = positionInBlock;
+						node->semaphore.Return();
+					} else {
+						// The file was not open.
+					}
+				}
+
+				if ((uint8_t *) lastEntry == lastBlock) {
+					// We no longer need the block.
+					parentDirectoryAttribute->blockCount--;
+				}
+			}
+		}
+	}
+#endif
+
+	if ((parentDirectoryAttribute->blockCount & 7) == 0) {
+		// Shrink the data stream.
+		ResizeDataStream(parentDataAttribute, parentDirectoryAttribute->blockCount * superblock.blockSize,
+				false, 0);
+	}
+	
 	return true;
 }
 

@@ -165,7 +165,8 @@ struct EsFSAttributeFileDirectory {
 	uint64_t itemsInDirectory;			// The number of items that the directory currently holds.
 	uint64_t blockCount;				// The number of blocks used by the directory.
 							// When a directory is resized it will take more blocks than necessary.
-							// This is the number it needs.
+							// This is the number it needs. 
+							// Thus, directory->blockCount * superblock->blockSize <= data->size.
 };
 
 struct EsFSAttributeDirectoryName {

@@ -53,6 +53,9 @@ OSListViewColumn folderListingColumns[] = {
 };
 
 int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
+	// TODO Numeric comparison.
+	// 	https://technet.microsoft.com/en-us/library/hh475812.aspx
+
 	while (length1 || length2) {
 		if (!length1) return -1;
 		if (!length2) return 1;
@@ -482,7 +485,7 @@ void ProgramEntry() {
 	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
 
-	instance->LoadFolder(OSLiteral("/os/"));
+	instance->LoadFolder(OSLiteral("/TestFolder"));
 
 	OSProcessMessages();
 }

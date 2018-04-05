@@ -1696,6 +1696,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 				ClipRectangle(clip, bounds, &clip2);
 
+				// TODO `previousHadBox` doesn't work well with `repaintSelectionBox`.
 				if (control->dragging == ListView::DRAGGING_SELECTION && control->repaintCustomOnly && control->repaintSelectionBox) {
 					OSRectangle r;
 					ClipRectangle(control->oldSelectionBox, clip2, &r);
@@ -1717,7 +1718,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 				bool previousHadBox = false;
 
-				if (i != 0) {
+				if (i != 0 && i - 1 < (int) control->itemCount) {
 					OSMessage message;
 					message.type = OS_NOTIFICATION_GET_ITEM;
 					message.listViewItem.index = i - 1;

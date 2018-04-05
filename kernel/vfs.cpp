@@ -1,7 +1,7 @@
 // TODO
 // 	-> Moving files/directories
-// 	-> Deleting files/directories
 // 	-> Wait for file access
+// 	-> Prevent opening/accessing deleted nodes
 
 #ifndef IMPLEMENTATION
 
@@ -39,14 +39,14 @@ struct Node {
 	bool EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount);
 
 	// General:
-	bool RemoveFromParent();
+	OSError Delete();
 	void CopyInformation(OSNodeInformation *information);
 	void Sync();
 
-	bool modifiedSinceLastSync;
-
 	size_t countRead, countWrite, countResize;
 	size_t blockRead, blockWrite, blockResize;
+
+	bool deleted;
 
 	UniqueIdentifier identifier;
 	struct Filesystem *filesystem;
@@ -126,8 +126,6 @@ bool Node::Resize(uint64_t newSize) {
 	semaphore.Take();
 	Defer(semaphore.Return());
 
-	modifiedSinceLastSync = true;
-
 	bool success = false;
 
 	switch (filesystem->type) {
@@ -142,30 +140,40 @@ bool Node::Resize(uint64_t newSize) {
 		sharedMemoryManager.mutex.Acquire();
 		sharedMemoryManager.ResizeSharedMemory(&region, newSize);
 		sharedMemoryManager.mutex.Release();
-
-		// TODO Resize cache region.
 	}
 
 	return success;
 }
 
-bool Node::RemoveFromParent() {
+OSError Node::Delete() {
 	parent->semaphore.Take();
 	Defer(parent->semaphore.Return());
 
 	semaphore.Take();
 	Defer(semaphore.Return());
 
+	if (data.type == OS_NODE_DIRECTORY && data.directory.entryCount) {
+		return OS_ERROR_DIRECTORY_NOT_EMPTY;
+	}
+
+	OSError result = OS_ERROR_UNKNOWN_OPERATION_FAILURE;
+
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			return EsFSRemove(this);
+			if (EsFSRemove(this)) result = OS_SUCCESS;
 		} break;
 
 		default: {
 			// The filesystem does not support node removal.
-			return false;
+			result = OS_ERROR_UNSUPPORTED_FILESYSTEM;
 		} break;
 	}
+
+	if (result == OS_SUCCESS) {
+		deleted = true;
+	}
+
+	return result;
 }
 
 void Node::Sync() {
@@ -174,12 +182,6 @@ void Node::Sync() {
 
 	semaphore.Take();
 	Defer(semaphore.Return());
-
-	if (!modifiedSinceLastSync) {
-		return;
-	}
-
-	modifiedSinceLastSync = false;
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
@@ -263,8 +265,6 @@ void Node::Write(IOPacket *packet, bool canResize) {
 		return;
 	}
 
-	modifiedSinceLastSync = true;
-
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
 			IOPacket *fsPacket = packet->request->AddPacket(packet);
@@ -341,18 +341,18 @@ void VFS::Initialise() {
 void VFS::DestroyNode(Node *node) {
 	nodeHashTableMutex.AssertLocked();
 
-	vfs.cachedNodes.InsertStart(&node->noHandleCacheItem);
+	vfs.cachedNodes.InsertEnd(&node->noHandleCacheItem);
 
 	if (vfs.cachedNodes.count > MAX_CACHED_NODES) {
+		LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
+		vfs.cachedNodes.Remove(item);
+		Node *node = item->thisItem;
+
 		if (node->nextNodeInHashTableSlot) {
 			node->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node->pointerToThisNodeInHashTableSlot;
 		}
 
 		*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
-
-		LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
-		vfs.cachedNodes.Remove(item);
-		Node *node = item->thisItem;
 		node->Sync();
 		sharedMemoryManager.DestroySharedMemory(&node->region);
 
@@ -386,8 +386,6 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	nodeHashTableMutex.Release();
 
-	// TODO Should this be moved to the top of the function?
-	// 	(With regards to how the node hash table mutex works).
 	if (parent) {
 		CloseNode(parent, DIRECTORY_ACCESS);
 	}
@@ -656,8 +654,7 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 
 	while (node) {
 		if (node->filesystem == filesystem 
-				&& !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier))
-				&& node->handles /* Make sure the node isn't about to be deallocated! */) {
+				&& !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier))) {
 			return node;
 		}
 

@@ -248,6 +248,8 @@ typedef enum OSFatalError {
 #define OS_ERROR_COULD_NOT_ISSUE_PACKET		(-36)
 #define OS_ERROR_HANDLE_TABLE_FULL		(-37)
 #define OS_ERROR_COULD_NOT_RESIZE_FILE		(-38)
+#define OS_ERROR_DIRECTORY_NOT_EMPTY		(-39)
+#define OS_ERROR_UNSUPPORTED_FILESYSTEM		(-40)
 
 typedef intptr_t OSError;
 
@@ -310,7 +312,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_COPY,
 	OS_SYSCALL_GET_CLIPBOARD_HEADER,
 	OS_SYSCALL_PASTE_TEXT,
-	OS_SYSCALL_REMOVE_NODE_FROM_PARENT,
+	OS_SYSCALL_DELETE_NODE,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -860,7 +862,7 @@ OS_EXTERN_C void OSRefreshNodeInformation(OSNodeInformation *information);
 OS_EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
 OS_EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);
 OS_EXTERN_C void OSCancelIORequest(OSHandle ioRequest);
-OS_EXTERN_C void OSRemoveNodeFromParent(OSHandle node);
+OS_EXTERN_C OSError OSDeleteNode(OSHandle node); // Directories must be empty (error = OS_ERROR_DIRECTORY_NOT_EMPTY).
 
 OS_EXTERN_C OSError OSTerminateThread(OSHandle thread);
 OS_EXTERN_C OSError OSTerminateProcess(OSHandle thread);
