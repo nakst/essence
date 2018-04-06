@@ -126,6 +126,7 @@ bool Node::Resize(uint64_t newSize) {
 	semaphore.Take();
 	Defer(semaphore.Return());
 
+	if (deleted) return false;
 	bool success = false;
 
 	switch (filesystem->type) {
@@ -151,6 +152,8 @@ OSError Node::Delete() {
 
 	semaphore.Take();
 	Defer(semaphore.Return());
+
+	if (deleted) return OS_ERROR_NODE_ALREADY_DELETED;
 
 	if (data.type == OS_NODE_DIRECTORY && data.directory.entryCount) {
 		return OS_ERROR_DIRECTORY_NOT_EMPTY;
@@ -183,6 +186,8 @@ void Node::Sync() {
 	semaphore.Take();
 	Defer(semaphore.Return());
 
+	if (deleted) return;
+	
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
 			EsFSSync(this);
@@ -197,6 +202,8 @@ void Node::Sync() {
 bool Node::EnumerateChildren(OSDirectoryChild *buffer, size_t bufferCount) {
 	semaphore.Take();
 	Defer(semaphore.Return());
+
+	if (deleted) return false;
 
 	if (bufferCount < data.directory.entryCount) {
 		return false;
@@ -251,6 +258,11 @@ void Node::Write(IOPacket *packet, bool canResize) {
 
 	semaphore.Take();
 
+	if (deleted) {
+		request->Cancel(OS_ERROR_NODE_ALREADY_DELETED);
+		return;
+	}
+
 	if (request->offset > data.file.fileSize) {
 		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
 		return;
@@ -291,6 +303,11 @@ void Node::Read(IOPacket *packet) {
 	semaphore.Take();
 
 	IORequest *request = packet->request;
+
+	if (deleted) {
+		request->Cancel(OS_ERROR_NODE_ALREADY_DELETED);
+		return;
+	}
 
 	if (request->offset > data.file.fileSize) {
 		request->Cancel(OS_ERROR_ACCESS_NOT_WITHIN_FILE_BOUNDS);
@@ -338,15 +355,23 @@ void VFS::Initialise() {
 	}
 }
 
-void VFS::DestroyNode(Node *node) {
+void VFS::DestroyNode(Node *node2) {
 	nodeHashTableMutex.AssertLocked();
 
-	vfs.cachedNodes.InsertEnd(&node->noHandleCacheItem);
+	bool cacheNode = !node2->deleted;
 
-	if (vfs.cachedNodes.count > MAX_CACHED_NODES) {
-		LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
-		vfs.cachedNodes.Remove(item);
-		Node *node = item->thisItem;
+	if (cacheNode) {
+		vfs.cachedNodes.InsertEnd(&node2->noHandleCacheItem);
+	}
+
+	if (!cacheNode || vfs.cachedNodes.count > MAX_CACHED_NODES) {
+		Node *node = node2;
+
+		if (cacheNode) {
+			LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
+			vfs.cachedNodes.Remove(item);
+			node = item->thisItem;
+		}
 
 		if (node->nextNodeInHashTableSlot) {
 			node->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node->pointerToThisNodeInHashTableSlot;
@@ -653,8 +678,7 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 	Node *node = nodeHashTable[slot];
 
 	while (node) {
-		if (node->filesystem == filesystem 
-				&& !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier))) {
+		if (node->filesystem == filesystem && !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier)) && !node->deleted) {
 			return node;
 		}
 

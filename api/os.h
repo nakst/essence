@@ -250,6 +250,7 @@ typedef enum OSFatalError {
 #define OS_ERROR_COULD_NOT_RESIZE_FILE		(-38)
 #define OS_ERROR_DIRECTORY_NOT_EMPTY		(-39)
 #define OS_ERROR_UNSUPPORTED_FILESYSTEM		(-40)
+#define OS_ERROR_NODE_ALREADY_DELETED		(-41)
 
 typedef intptr_t OSError;
 
@@ -857,7 +858,7 @@ OS_EXTERN_C size_t OSReadFileSync(OSHandle file, uint64_t offset, size_t size, v
 OS_EXTERN_C size_t OSWriteFileSync(OSHandle file, uint64_t offset, size_t size, void *buffer); // If return value >= 0, number of bytes written. Otherwise, OSError.
 OS_EXTERN_C OSHandle OSReadFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); 
 OS_EXTERN_C OSHandle OSWriteFileAsync(OSHandle file, uint64_t offset, size_t size, void *buffer); // TODO Message on completion.
-OS_EXTERN_C OSError OSResizeFile(OSHandle file, uint64_t newSize); // TODO What happens if we resize a flie after issuing an asynchronous access?
+OS_EXTERN_C OSError OSResizeFile(OSHandle file, uint64_t newSize); 
 OS_EXTERN_C void OSRefreshNodeInformation(OSNodeInformation *information);
 OS_EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t bufferCount);
 OS_EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);

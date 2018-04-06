@@ -319,7 +319,7 @@ int z = 1;
 extern "C" OSObject CreateMenuItem(OSMenuItem item);
 
 void Delete(OSHandle handle) {
-	OSPrint("Deleting %x...\n", handle);
+	// OSPrint("Deleting %x...\n", handle);
 	OSDeleteNode(handle);
 }
 
@@ -361,12 +361,24 @@ extern "C" void ProgramEntry() {
 		Delete(handles[15]);
 #endif
 
+		OSError error = OSOpenNode(OSLiteral("/TestFolder/3"), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
+		if (error != OS_ERROR_FILE_DOES_NOT_EXIST) OSCrashProcess(704);
+
+		OSOpenNode(OSLiteral("/TestFolder/File.txt"), OS_FLAGS_DEFAULT, &node);
+		OSCloseHandle(node.handle);
+		OSOpenNode(OSLiteral("/TestFolder/File 2.txt"), OS_FLAGS_DEFAULT, &node);
+		OSCloseHandle(node.handle);
+		OSOpenNode(OSLiteral("/TestFolder/File 3.txt"), OS_FLAGS_DEFAULT, &node);
+		OSOpenNode(OSLiteral("/TestFolder/File 10.txt"), OS_FLAGS_DEFAULT, &node);
+		OSOpenNode(OSLiteral("/TestFolder/14.1.txt"), OS_FLAGS_DEFAULT, &node);
+		OSOpenNode(OSLiteral("/TestFolder/14.2.txt"), OS_FLAGS_DEFAULT, &node);
+
 		for (uintptr_t i = 0; i < 16; i++) {
 			OSCloseHandle(handles[i]);
 		}
 	}
 
-#if 0
+#if 1
 	{
 		OSNodeInformation node;
 		OSOpenNode(OSLiteral("/RemoveFileTest.txt"), OS_OPEN_NODE_RESIZE_ACCESS, &node);

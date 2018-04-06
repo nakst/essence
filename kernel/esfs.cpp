@@ -184,14 +184,9 @@ Node *EsFSVolume::Initialise(Device *_drive) {
 		return nullptr;
 	}
 
-	// TODO Enable this when we have a proper shutdown/unmount facility.
-#if 0
 	// Save the mounted superblock.
 	superblockP->d.mounted = true;
-	if (!drive->block.Access(8192 / drive->block.sectorSize,
-			8192 / drive->block.sectorSize,
-			DRIVE_ACCESS_WRITE, (uint8_t *) superblockP)) return nullptr;
-#endif
+	if (!drive->block.Access(nullptr, 8192, 8192, DRIVE_ACCESS_WRITE, (uint8_t *) superblockP)) return nullptr;
 
 	sectorsPerBlock = superblock.blockSize / drive->block.sectorSize;
 

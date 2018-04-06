@@ -52,10 +52,36 @@ OSListViewColumn folderListingColumns[] = {
 	{ OSLiteral("Size"), 100, OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED, },
 };
 
-int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
-	// TODO Numeric comparison.
-	// 	https://technet.microsoft.com/en-us/library/hh475812.aspx
+int64_t ParseIntegerFromString(char **string, size_t *length, int base) {
+	int64_t value = 0;
+	bool overflow = false;
 
+	while (*length) {
+		char c = (*string)[0];
+
+		if (c >= '0' && c <= '9') {
+			int64_t digit = c - '0';
+			int64_t oldValue = value;
+
+			value *= base;
+			value += digit;
+
+			if (value / base != oldValue) {
+				overflow = true;
+			}
+
+			(*string)++;
+			(*length)--;
+		} else {
+			break;
+		}
+	}
+
+	if (overflow) value = LONG_MAX;
+	return value;
+}
+
+int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
 	while (length1 || length2) {
 		if (!length1) return -1;
 		if (!length2) return 1;
@@ -63,17 +89,28 @@ int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
 		char c1 = *s1;
 		char c2 = *s2;
 
-		if (c1 >= 'a' && c1 <= 'z') c1 = c1 - 'a' + 'A';
-		if (c2 >= 'a' && c2 <= 'z') c2 = c2 - 'a' + 'A';
+		if (c1 >= '0' && c1 <= '9' && c2 >= '0' && c2 <= '9') {
+			int64_t n1 = ParseIntegerFromString(&s1, &length1, 10);
+			int64_t n2 = ParseIntegerFromString(&s2, &length2, 10);
 
-		if (c1 != c2) {
-			return c1 - c2;
+			if (n1 != n2) {
+				return n1 - n2;
+			}
+		} else {
+			if (c1 >= 'a' && c1 <= 'z') c1 = c1 - 'a' + 'A';
+			if (c2 >= 'a' && c2 <= 'z') c2 = c2 - 'a' + 'A';
+			if (c1 == '.') c1 = ' '; else if (c1 == ' ') c1 = '.';
+			if (c2 == '.') c2 = ' '; else if (c2 == ' ') c2 = '.';
+
+			if (c1 != c2) {
+				return c1 - c2;
+			}
+
+			length1--;
+			length2--;
+			s1++;
+			s2++;
 		}
-
-		s1++;
-		s2++;
-		length1--;
-		length2--;
 	}
 
 	return 0;
@@ -485,7 +522,7 @@ void ProgramEntry() {
 	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
 
-	instance->LoadFolder(OSLiteral("/TestFolder"));
+	instance->LoadFolder(OSLiteral("/"));
 
 	OSProcessMessages();
 }
