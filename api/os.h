@@ -785,7 +785,9 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_GRID_NO_GAP               (2)
 #define OS_CREATE_GRID_DRAW_BOX             (4)
 #define OS_CREATE_GRID_MENU	            (8)
+#define OS_CREATE_GRID_STANDARD_BACKGROUND  (0)
 #define OS_CREATE_GRID_NO_BACKGROUND	    (16)
+#define OS_CREATE_GRID_ALT_BACKGROUND	    (32)
 
 #define OS_CREATE_SCROLL_PANE_VERTICAL      (1)
 #define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)

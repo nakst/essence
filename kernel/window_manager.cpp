@@ -229,6 +229,10 @@ void WindowManager::PressKey(unsigned scancode) {
 	mutex.Acquire();
 	Defer(mutex.Release());
 
+	if (scancode == OS_SCANCODE_NUM_DIVIDE) {
+		KernelPanic("WindowManager::PressKey - Panic key pressed.\n");
+	}
+
 	// TODO Caps/num lock.
 
 	if (scancode == OS_SCANCODE_LEFT_CTRL) ctrl = true;

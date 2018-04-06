@@ -493,13 +493,15 @@ void ProgramEntry() {
 	OSSetInstance(window, instance);
 	instance->window = window;
 
-	OSObject layout1 = OSCreateGrid(1, 3, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
+	OSObject layout1 = OSCreateGrid(1, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
 	OSObject layout2 = OSCreateGrid(2, 1, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
 	OSObject layout3 = OSCreateGrid(4, 1, OS_FLAGS_DEFAULT);
+	OSObject layout4 = OSCreateGrid(1, 1, OS_CREATE_GRID_ALT_BACKGROUND);
 
 	OSSetRootGrid(window, layout1);
 	OSAddGrid(layout1, 0, 2, layout2, OS_CELL_FILL);
 	OSAddGrid(layout1, 0, 0, layout3, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddGrid(layout1, 0, 3, layout4, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	OSSetProperty(layout3, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 2);
 	OSSetProperty(layout3, OS_GRID_PROPERTY_GAP_SIZE, (void *) 2);
@@ -521,6 +523,9 @@ void ProgramEntry() {
 	instance->folderPath = OSCreateTextbox(0);
 	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
+
+	OSAddControl(layout4, 0, 0, OSCreateLabel(OSLiteral("Status bar")), OS_FLAGS_DEFAULT);
+	OSSetProperty(layout4, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 4);
 
 	instance->LoadFolder(OSLiteral("/"));
 

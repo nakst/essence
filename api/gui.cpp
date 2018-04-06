@@ -185,10 +185,11 @@ static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 +
 static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
 static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
 static UIImage listViewColumnHeaderDivider = {{239, 240, 87, 112}, {239, 239, 87, 88}};
+static UIImage listViewColumnHeader        = {{233, 239, 87, 112}, {233, 234, 87, 88}};
 
-static UIImage lineHorizontal		= {{40, 52, 115, 117}, {41, 42, 115, 115}};
+static UIImage lineHorizontal		= {{40, 52, 115, 116}, {41, 42, 115, 115}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
-static UIImage lineVertical		= {{35, 37, 110, 122}, {35, 35, 111, 112}};
+static UIImage lineVertical		= {{35, 36, 110, 122}, {35, 35, 111, 112}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
 // static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
@@ -1660,12 +1661,35 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					OSFillRectangle(surface, clip, OSColor(0xFFFFFFFF));
 				}
 
+				OSRectangle listClip;
+
+				{
+					OSRectangle area = control->bounds;
+					area.top += control->columns ? LIST_VIEW_HEADER_HEIGHT : 0;
+
+					if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
+						area.top += STANDARD_BORDER_SIZE;
+						area.bottom -= STANDARD_BORDER_SIZE;
+						area.left += STANDARD_BORDER_SIZE;
+						area.right -= STANDARD_BORDER_SIZE;
+					}
+
+					ClipRectangle(clip, area, &listClip);
+				}
+
 				OSRectangle clip2;
 
 				if (control->columns && !control->repaintCustomOnly) {
 					OSRectangle headerBounds = OS_MAKE_RECTANGLE(bounds.left, bounds.right, 
 							bounds.top - LIST_VIEW_HEADER_HEIGHT - LIST_VIEW_MARGIN / 2, 
 							bounds.top - LIST_VIEW_MARGIN / 2);
+
+					if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER)) {
+						OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
+								OS_MAKE_RECTANGLE(control->bounds.left, control->bounds.right, headerBounds.top, headerBounds.bottom),
+								listViewColumnHeader.region, listViewColumnHeader.border, 
+								OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip);
+					}
 
 					if (ClipRectangle(clip, headerBounds, &clip2)) {
 						int x = 0;
@@ -1696,10 +1720,9 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 				ClipRectangle(clip, bounds, &clip2);
 
-				// TODO `previousHadBox` doesn't work well with `repaintSelectionBox`.
 				if (control->dragging == ListView::DRAGGING_SELECTION && control->repaintCustomOnly && control->repaintSelectionBox) {
 					OSRectangle r;
-					ClipRectangle(control->oldSelectionBox, clip2, &r);
+					ClipRectangle(control->oldSelectionBox, listClip, &r);
 					OSFillRectangle(surface, r, OSColor(0xFFFFFFFF));
 				}
 
@@ -1716,28 +1739,18 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					i = control->repaintFirstRow;
 				}
 
-				bool previousHadBox = false;
-
-				if (i != 0 && i - 1 < (int) control->itemCount) {
-					OSMessage message;
-					message.type = OS_NOTIFICATION_GET_ITEM;
-					message.listViewItem.index = i - 1;
-					message.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-					message.listViewItem.state = 0;
-
-					if (OSForwardMessage(control, control->notificationCallback, &message) != OS_CALLBACK_HANDLED) {
-						OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
-					}
-
-					previousHadBox = (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) || (control->lastClickedRow == i - 1 && control->window->focus == control);
-				}
-
 				int boundsWidth = bounds.right - bounds.left;
+				int rowWidthUnclipped = control->rowWidth ? control->rowWidth : boundsWidth;
 				int rowWidth = control->rowWidth ? (control->rowWidth > boundsWidth ? boundsWidth : control->rowWidth) : boundsWidth; 
+
+				if (i) {
+					i--;
+					y -= LIST_VIEW_ROW_HEIGHT;
+				}
 
 				for (; i < (int) control->itemCount && i <= control->repaintLastRow; i++) {
 					OSRectangle row = OS_MAKE_RECTANGLE(bounds.left, bounds.left + rowWidth, 
-							bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT);
+							bounds.top + y, bounds.top + y + LIST_VIEW_ROW_HEIGHT - 1);
 
 					OSRectangle clip3;
 
@@ -1747,7 +1760,9 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						}
 					}
 		
-					if (ClipRectangle(clip2, row, &clip3)) {
+					if (ClipRectangle(clip, row, &clip3)) {
+						ClipRectangle(clip3, clip2, &clip3);
+
 						OSMessage message;
 						message.type = OS_NOTIFICATION_GET_ITEM;
 						message.listViewItem.index = i;
@@ -1764,38 +1779,32 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 						char *text = message.listViewItem.text;
 						size_t textBytes = message.listViewItem.textBytes;
+
+						OSRectangle fullRow = OS_MAKE_RECTANGLE(bounds.left, bounds.left + rowWidthUnclipped, row.top, row.bottom);
+						OSRectangle clip4;
+						ClipRectangle(clip, fullRow, &clip4);
+						ClipRectangle(clip4, OS_MAKE_RECTANGLE(clip4.left, clip4.right, bounds.top - LIST_VIEW_MARGIN / 2, bounds.bottom), &clip4);
 		
 						{
-							// If the previous row had a box drawn around it, then adjust the row's bounds slightly
-							// to prevent a double-border at the boundary.
-							bool adjustedRow = previousHadBox;
-							if (adjustedRow) row.top--;
-
-							previousHadBox = false;
-
 							// Only redraw the white background if we didn't redraw the whole control.
 							if (control->repaintCustomOnly) {
-								OSFillRectangle(surface, clip3, OSColor(0xFFFFFFFF));
+								OSFillRectangle(surface, clip4, OSColor(0xFFFFFFFF));
 							}
 
 							if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
 								UIImage image = control->window->focus == control ? listViewSelected : listViewSelected2;
-								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-										image.region, image.border, OS_DRAW_MODE_STRECH, 0xFF, clip3);
-								previousHadBox = true;
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, fullRow,
+										image.region, image.border, OS_DRAW_MODE_STRECH, 0xFF, clip4);
 							} else if (control->highlightRow == i) {
-								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-										listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_STRECH, 0xFF, clip3);
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, fullRow,
+										listViewHighlight.region, listViewHighlight.border, OS_DRAW_MODE_STRECH, 0xFF, clip4);
 							}
 
 							if (control->lastClickedRow == i && control->window->focus == control) {
 								UIImage image = listViewLastClicked;
-								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
-										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip3);
-								previousHadBox = true;
+								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, fullRow,
+										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip4);
 							}
-
-							if (adjustedRow) row.top++;
 						}
 
 						OSString string;
@@ -1843,7 +1852,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 								UIImage image = icons16[iconID];
 								OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
 										OS_MAKE_RECTANGLE(region.left, region.left + 16, h, h + 16),
-										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip3);
+										image.region, image.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip4);
 
 								region.left += 20;
 							}
@@ -1852,7 +1861,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 									(rightAligned ? OS_DRAW_STRING_HALIGN_RIGHT : OS_DRAW_STRING_HALIGN_LEFT) 
 									| OS_DRAW_STRING_VALIGN_CENTER,
 									primary ? LIST_VIEW_PRIMARY_TEXT_COLOR : LIST_VIEW_SECONDARY_TEXT_COLOR, -1, 0, 
-									OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip3);
+									OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip4);
 						}
 					}
 		
@@ -1866,7 +1875,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 				if (control->dragging == ListView::DRAGGING_SELECTION) {
 					OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, control->selectionBox,
-							listViewSelectionBox.region, listViewSelectionBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip2);
+							listViewSelectionBox.region, listViewSelectionBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, listClip);
 				}
 			}
 		
@@ -2375,10 +2384,10 @@ OSObject OSCreateLine(bool orientation) {
 	control->backgrounds = orientation ? lineVerticalBackgrounds : lineHorizontalBackgrounds;
 	control->drawParentBackground = true;
 
-	control->preferredWidth = 2;
-	control->preferredHeight = 2;
-	control->minimumWidth = 2;
-	control->minimumHeight = 2;
+	control->preferredWidth = 1;
+	control->preferredHeight = 1;
+	control->minimumWidth = 1;
+	control->minimumHeight = 1;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
@@ -2947,6 +2956,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 6;
 	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
 	if (flags & OS_CREATE_GRID_NO_BACKGROUND) { grid->backgroundColor = 0; }
+	if (flags & OS_CREATE_GRID_ALT_BACKGROUND) { grid->background = &dialogAltAreaBox; }
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
