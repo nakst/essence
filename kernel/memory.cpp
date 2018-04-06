@@ -1,6 +1,3 @@
-// TODO Copy on write for shared memory regions.
-// 	This currently prevents user programs from having writable .data variables.
-
 #ifndef IMPLEMENTATION
 
 #define ArrayAdd(_array, _item, _mmvmm) _ArrayAdd((void **) &(_array), (_array ## Count), (_array ## Allocated), &(_item), sizeof(_item), _mmvmm)

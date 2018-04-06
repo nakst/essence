@@ -225,6 +225,9 @@ struct EsFSLoadInformation {
 };
 
 uint16_t ReverseBinaryIndexForBlockGroupSearch(uint16_t index, uint16_t blocksPerGroup) {
+	// Within a block group, prioritise spacing files out as far as possible from each other.
+	// This means when files grow, they can stay contiguous.
+
 	index = ((index >> 1) & 0x5555) | ((index & 0x5555) << 1);
 	index = ((index >> 2) & 0x3333) | ((index & 0x3333) << 2);
 	index = ((index >> 4) & 0x0F0F) | ((index & 0x0F0F) << 4);
@@ -671,7 +674,10 @@ EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, boo
 		EsFSGlobalExtent extent;
 
 		// First, look for an extent with enough size for the whole allocation.
-		for (uintptr_t i = 0; i < superblock->blocksPerGroup; i++) {
+		for (uintptr_t _i = 0; _i < superblock->blocksPerGroup; _i++) {
+			// uintptr_t i = ReverseBinaryIndexForBlockGroupSearch(_i, superblock->blocksPerGroup);
+			uintptr_t i = _i;
+
 			if (freeFromBuffer[i] >= desiredBlocks) {
 				extent.offset = i;
 				extent.count = desiredBlocks;

@@ -39,7 +39,7 @@ struct EsFSVolume {
 	bool GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, bool clearNewBlocks, uint64_t containerBlock);
 	bool ShrinkDataStream(EsFSAttributeFileData *data, uint64_t newSize);
 	
-	EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly);
+	EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly, uint64_t searchStart);
 	void FreeExtent(EsFSGlobalExtent extent);
 
 	Device *drive;
@@ -413,7 +413,7 @@ void EsFSVolume::FreeExtent(EsFSGlobalExtent extent) {
 			DRIVE_ACCESS_WRITE, blockBitmapBuffer, 0);
 }
 
-EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly) {
+EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly, uint64_t searchStart) {
 	// TODO Optimise this function.
 	// 	- Cache extent tables.
 	//
@@ -477,7 +477,17 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 		EsFSGlobalExtent extent;
 
 		// First, look for an extent with enough size for the whole allocation.
-		for (uintptr_t i = 0; i < superblock.blocksPerGroup; i++) {
+
+		// Can we allocate a extent contiguous with the previous extent in the file?
+		if (blockGroup == localGroup && freeFromBuffer[searchStart] >= desiredBlocks) {
+			extent.offset = searchStart;
+			extent.count = desiredBlocks;
+			goto finish;
+		}
+
+		for (uintptr_t _i = 0; _i < superblock.blocksPerGroup; _i++) {
+			uintptr_t i = ReverseBinaryIndexForBlockGroupSearch(_i, superblock.blocksPerGroup);
+
 			if (freeFromBuffer[i] >= desiredBlocks) {
 				extent.offset = i;
 				extent.count = desiredBlocks;
@@ -675,8 +685,26 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 
 	// While we still have blocks to find...
 	while (increaseBlocks) {
+		uint64_t merge = containerBlock;
+
+		switch (data->indirection) {
+			case ESFS_DATA_INDIRECT: {
+				if (data->extentCount) {
+					EsFSGlobalExtent previous = data->indirect[data->extentCount - 1];
+					merge = previous.offset + previous.count;
+				}
+			} break;
+
+			case ESFS_DATA_INDIRECT_2: {
+				if (newExtentList && data->extentCount > firstModifiedExtentListBlock * (superblock.blockSize / sizeof(EsFSGlobalExtent))) {
+					EsFSGlobalExtent previous = newExtentList[data->extentCount - 1];
+					merge = previous.offset + previous.count;
+				}
+			} break;
+		}
+
 		// Try to allocate an extent encompassing all of the blocks.
-		EsFSGlobalExtent newExtent = AllocateExtent(containerBlock / superblock.blocksPerGroup, increaseBlocks, false);
+		EsFSGlobalExtent newExtent = AllocateExtent(merge / superblock.blocksPerGroup, increaseBlocks, false, merge % superblock.blocksPerGroup);
 
 		// If the extent couldn't be allocated, the volume is full.
 		if (!newExtent.count) return false;
@@ -700,9 +728,6 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 		switch (data->indirection) {
 			case ESFS_DATA_INDIRECT: {
 				if (data->extentCount) {
-#ifdef ESFS_NO_MERGING
-					goto cannotMerge;
-#else
 					EsFSGlobalExtent previous = data->indirect[data->extentCount - 1];
 
 					if (previous.offset + previous.count == newExtent.offset) {
@@ -711,7 +736,6 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 					} else {
 						goto cannotMerge;
 					}
-#endif
 				} else {
 					cannotMerge:;
 
@@ -745,17 +769,14 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 					}
 				}
 
-#ifndef ESFS_NO_MERGING
-				if (data->extentCount && newExtentList[data->extentCount - 1].offset + newExtentList[data->extentCount - 1].count == newExtent.offset) {
+				if (data->extentCount > firstModifiedExtentListBlock * (superblock.blockSize / sizeof(EsFSGlobalExtent)) 
+						&& newExtentList[data->extentCount - 1].offset + newExtentList[data->extentCount - 1].count == newExtent.offset) {
 					// Merge this extent with the list.
 					newExtentList[data->extentCount - 1].count += newExtent.count;
 				} else {
-#endif
 					// Add this extent to the list.
 					newExtentList[data->extentCount++] = newExtent;
-#ifndef ESFS_NO_MERGING
 				}
-#endif
 
 				if (extentListMaxSize <= data->extentCount) {
 					// The extent list is too large.
@@ -771,8 +792,20 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 
 		for (uintptr_t i = firstModifiedExtentListBlock /*We haven't actually loaded the extents prior into the list.*/; i < blocksNeeded; i++) {
 			if (!data->indirect2[i / ESFS_BLOCKS_PER_EXTENT_LIST]) {
+				uint64_t merge = containerBlock;
+
+				if (i >= ESFS_BLOCKS_PER_EXTENT_LIST) {
+					merge = data->indirect2[i / ESFS_BLOCKS_PER_EXTENT_LIST - 1];
+
+					if (!merge) {
+						KernelPanic("EsFSVolume::GrowDataStream - Missing indirect2 extent.\n");
+					}
+
+					merge += ESFS_BLOCKS_PER_EXTENT_LIST;
+				}
+
 				// Allocate a new indirect 2 block to store the extents into.
-				EsFSGlobalExtent extent = AllocateExtent(containerBlock / superblock.blocksPerGroup, ESFS_BLOCKS_PER_EXTENT_LIST, true);
+				EsFSGlobalExtent extent = AllocateExtent(merge / superblock.blocksPerGroup, ESFS_BLOCKS_PER_EXTENT_LIST, true, merge % superblock.blocksPerGroup);
 
 				if (extent.count != ESFS_BLOCKS_PER_EXTENT_LIST) {
 					// TODO Free the extents we allocated.
