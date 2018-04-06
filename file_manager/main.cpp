@@ -546,5 +546,8 @@ void ProgramEntry() {
 
 	instance->LoadFolder(OSLiteral("/"));
 
+	OSShowDialogAlert(OSLiteral("License"), OSLiteral("Please read LICENSE.md."), OSLiteral("To use Essence you must agree to this license."), 
+			OS_ICON_ERROR, window);
+
 	OSProcessMessages();
 }

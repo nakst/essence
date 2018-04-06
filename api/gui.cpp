@@ -1283,6 +1283,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			message.type = OS_NOTIFICATION_START_EDIT;
 			OSForwardMessage(control, control->notificationCallback, &message);
 		}
+
+		OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
 	} else if (message->type == OS_MESSAGE_CLIPBOARD_UPDATED) {
 		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
@@ -3687,7 +3689,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 						window->lastFocus = control;
 						message.type = OS_MESSAGE_START_FOCUS;
 						OSSendMessage(control, &message);
-						OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
 					}
 				}
 			}
