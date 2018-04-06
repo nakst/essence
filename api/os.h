@@ -251,6 +251,10 @@ typedef enum OSFatalError {
 #define OS_ERROR_DIRECTORY_NOT_EMPTY		(-39)
 #define OS_ERROR_UNSUPPORTED_FILESYSTEM		(-40)
 #define OS_ERROR_NODE_ALREADY_DELETED		(-41)
+#define OS_ERROR_NODE_IS_ROOT			(-42)
+#define OS_ERROR_VOLUME_MISMATCH		(-43)
+#define OS_ERROR_TARGET_WITHIN_SOURCE		(-44)
+#define OS_ERROR_TARGET_INVALID_TYPE		(-45)
 
 typedef intptr_t OSError;
 
@@ -314,6 +318,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_GET_CLIPBOARD_HEADER,
 	OS_SYSCALL_PASTE_TEXT,
 	OS_SYSCALL_DELETE_NODE,
+	OS_SYSCALL_MOVE_NODE,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -864,6 +869,8 @@ OS_EXTERN_C OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectory
 OS_EXTERN_C void OSGetIORequestProgress(OSHandle ioRequest, OSIORequestProgress *buffer);
 OS_EXTERN_C void OSCancelIORequest(OSHandle ioRequest);
 OS_EXTERN_C OSError OSDeleteNode(OSHandle node); // Directories must be empty (error = OS_ERROR_DIRECTORY_NOT_EMPTY).
+OS_EXTERN_C OSError OSMoveNode(OSHandle node, OSHandle newDirectory, char *newName, size_t newNameLength); // Does not handle the following cases (yet): moving between volumes, replacing existing files.
+#define OSRenameNode(_node, _newName, _newNameLength) OSMoveNode(_node, OS_INVALID_HANDLE, _newName, _newNameLength)
 
 OS_EXTERN_C OSError OSTerminateThread(OSHandle thread);
 OS_EXTERN_C OSError OSTerminateProcess(OSHandle thread);

@@ -271,3 +271,7 @@ void OSBatch(OSBatchCall *calls, size_t count) {
 OSError OSDeleteNode(OSHandle node) {
 	return OSSyscall(OS_SYSCALL_DELETE_NODE, node, 0, 0, 0);
 }
+
+OSError OSMoveNode(OSHandle node, OSHandle directory, char *newPath, size_t newPathLength) {
+	return OSSyscall(OS_SYSCALL_MOVE_NODE, node, directory, (uintptr_t) newPath, newPathLength);
+}

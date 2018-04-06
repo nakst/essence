@@ -378,6 +378,19 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
+	{
+		OSNodeInformation node1, node2;
+
+		OSOpenNode(OSLiteral("/TestFolder/Move"), OS_FLAGS_DEFAULT, &node1);
+		OSOpenNode(OSLiteral("/"), OS_OPEN_NODE_DIRECTORY, &node2);
+
+		OSError error = OSMoveNode(node1.handle, node2.handle, OSLiteral("stage2"));
+		OSPrint("move error = %d\n", error);
+
+		OSCloseHandle(node1.handle);
+		OSCloseHandle(node2.handle);
+	}
+
 #if 1
 	{
 		OSNodeInformation node;

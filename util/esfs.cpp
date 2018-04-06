@@ -188,6 +188,7 @@ struct EsFSFileEntry {
 #define ESFS_FILE_TYPE_FILE (1)
 #define ESFS_FILE_TYPE_DIRECTORY (2)
 #define ESFS_FILE_TYPE_SYMBOLIC_LINK (3)
+#define ESFS_FILE_TYPE_USE_EXISTING_ENTRY (100)
 /*24*/	uint8_t fileType;
 
 /*32*/	uint64_t creationTime;				// TODO Decide the format for times?

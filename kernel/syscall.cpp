@@ -638,6 +638,21 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 		} break;
 
+		case OS_SYSCALL_MOVE_NODE: {
+			KernelObjectType type = KERNEL_OBJECT_NODE;
+			Node *file = (Node *) currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_USE);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(file, argument0));
+
+			type = (KernelObjectType) (KERNEL_OBJECT_NODE | KERNEL_OBJECT_NONE);
+			Node *directory = (Node *) currentProcess->handleTable.ResolveHandle(argument1, type, RESOLVE_HANDLE_TO_USE);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(if (directory) currentProcess->handleTable.CompleteHandle(file, argument1));
+
+			SYSCALL_BUFFER(argument2, argument3, 1);
+			SYSCALL_RETURN(file->Move(directory, (char *) argument2, (size_t) argument3), false);
+		} break;
+
 		case OS_SYSCALL_READ_FILE_SYNC: {
 			KernelObjectType type = KERNEL_OBJECT_NODE;
 			Handle *handleData;

@@ -40,6 +40,7 @@ struct Node {
 
 	// General:
 	OSError Delete();
+	OSError Move(Node *newDirectory, char *newName, size_t newNameLength);
 	void CopyInformation(OSNodeInformation *information);
 	void Sync();
 
@@ -174,6 +175,70 @@ OSError Node::Delete() {
 
 	if (result == OS_SUCCESS) {
 		deleted = true;
+	}
+
+	return result;
+}
+
+OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
+	if (!newDirectory) {
+		if (!parent) {
+			return OS_ERROR_NODE_IS_ROOT;
+		}
+
+		newDirectory = parent;
+	}
+
+	if (newDirectory->data.type != OS_NODE_DIRECTORY) {
+		return OS_ERROR_TARGET_INVALID_TYPE;
+	}
+
+	bool takeSemaphoreOnParentFirst = false;
+
+	{
+		Node *n = newDirectory;
+
+		while (n) {
+			n = n->parent;
+
+			if (n == parent) {
+				// We are trying to move this node into a child folder of the current parent.
+				takeSemaphoreOnParentFirst = true;
+			} else if (n == this) {
+				// We are trying to move this node into a folder within itself.
+				return OS_ERROR_TARGET_WITHIN_SOURCE;
+			}
+		}
+	}
+
+	// Eww....
+
+	if (!takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Take();
+	Defer(if (!takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Return());
+
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
+
+	if (takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Take();
+	Defer(if (takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Return());
+
+	semaphore.Take();
+	Defer(semaphore.Return());
+
+	if (deleted) return OS_ERROR_NODE_ALREADY_DELETED;
+	if (newDirectory->filesystem != parent->filesystem) return OS_ERROR_VOLUME_MISMATCH;
+
+	OSError result = OS_ERROR_UNKNOWN_OPERATION_FAILURE;
+
+	switch (filesystem->type) {
+		case FILESYSTEM_ESFS: {
+			if (EsFSMove(this, newDirectory, newName, newNameLength)) result = OS_SUCCESS;
+		} break;
+
+		default: {
+			// The filesystem does not support node removal.
+			result = OS_ERROR_UNSUPPORTED_FILESYSTEM;
+		} break;
 	}
 
 	return result;

@@ -21,6 +21,10 @@ enum KernelObjectType {
 	KERNEL_OBJECT_NONE		= 0x00008000,
 };
 
+inline KernelObjectType operator|(KernelObjectType a, KernelObjectType b) {
+	return (KernelObjectType) ((int) a | (int) b);
+}
+
 struct Handle {
 	KernelObjectType type;
 	void *object;
