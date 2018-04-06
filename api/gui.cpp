@@ -30,7 +30,7 @@ static void EnterDebugger() {
 #define LIST_VIEW_MARGIN (10)
 #define LIST_VIEW_TEXT_MARGIN (6)
 #define LIST_VIEW_WITH_BORDER_MARGIN (LIST_VIEW_MARGIN + STANDARD_BORDER_SIZE)
-#define LIST_VIEW_ROW_HEIGHT (20)
+#define LIST_VIEW_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 #define LIST_VIEW_COLUMN_TEXT_COLOR (0x4D6278)
 #define LIST_VIEW_PRIMARY_TEXT_COLOR (0x000000)
@@ -50,6 +50,7 @@ static void EnterDebugger() {
 struct UIImage {
 	OSRectangle region;
 	OSRectangle border;
+	OSDrawMode drawMode;
 };
 
 #if 0
@@ -136,11 +137,11 @@ static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 
 
 static UIImage gridBox 			= {{1, 7, 17, 23}, {3, 4, 19, 20}};
 static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
-static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 124, 124}};
+static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 128, 144}, OS_DRAW_MODE_STRECH};
 static UIImage dialogAltAreaBox		= {{18, 19, 17, 22}, {18, 19, 21, 22}};
 
-static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 152}};
-static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 152}};
+static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 157}, OS_DRAW_MODE_STRECH};
+static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 157}, OS_DRAW_MODE_STRECH};
 
 static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 122, 62, 62}};
 static UIImage scrollbarTrackHorizontalPressed  = {{117, 118, 62, 79}, {117, 118, 62, 62}};
@@ -185,7 +186,7 @@ static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 +
 static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
 static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
 static UIImage listViewColumnHeaderDivider = {{239, 240, 87, 112}, {239, 239, 87, 88}};
-static UIImage listViewColumnHeader        = {{233, 239, 87, 112}, {233, 234, 87, 88}};
+static UIImage listViewColumnHeader        = {{233, 239, 87, 112}, {233, 239, 87, 88}};
 
 static UIImage lineHorizontal		= {{40, 52, 115, 116}, {41, 42, 115, 115}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -764,22 +765,22 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				if (control->backgrounds) {
 					if (control->backgrounds[0]) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
-								control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+								control->backgrounds[0]->border, control->backgrounds[0]->drawMode, 0xFF, message->paint.clip);
 					}
 
 					if (control->backgrounds[2] && control->current2) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
-								control->backgrounds[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
+								control->backgrounds[2]->border, control->backgrounds[2]->drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
 					}
 
 					if (control->backgrounds[3] && control->current3) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
-								control->backgrounds[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
+								control->backgrounds[3]->border, control->backgrounds[3]->drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
 					if (control->backgrounds[1] && control->current4) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
-								control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+								control->backgrounds[1]->border, control->backgrounds[1]->drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
 					}
 				}
 
@@ -799,22 +800,22 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 					if (control->current1) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[0]->region, 
-								control->icons[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+								control->icons[0]->border, control->icons[0]->drawMode, 0xFF, message->paint.clip);
 					}
 
 					if (control->current2) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[2]->region, 
-								control->icons[2]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
+								control->icons[2]->border, control->icons[2]->drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
 					}
 
 					if (control->current3) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[3]->region, 
-								control->icons[3]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
+								control->icons[3]->border, control->icons[3]->drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
 					if (control->current4) {
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[1]->region, 
-								control->icons[1]->border, OS_DRAW_MODE_REPEAT_FIRST, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+								control->icons[1]->border, control->icons[1]->drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
 					}
 				}
 
@@ -1688,7 +1689,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
 								OS_MAKE_RECTANGLE(control->bounds.left, control->bounds.right, headerBounds.top, headerBounds.bottom),
 								listViewColumnHeader.region, listViewColumnHeader.border, 
-								OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip);
+								OS_DRAW_MODE_STRECH, 0xFF, clip);
 					}
 
 					if (ClipRectangle(clip, headerBounds, &clip2)) {
@@ -1875,7 +1876,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		
 				if (control->dragging == ListView::DRAGGING_SELECTION) {
 					OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, control->selectionBox,
-							listViewSelectionBox.region, listViewSelectionBox.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, listClip);
+							listViewSelectionBox.region, listViewSelectionBox.border, listViewSelectionBox.drawMode, 0xFF, listClip);
 				}
 			}
 		
@@ -1932,7 +1933,23 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_PRESSED: {
-			if (!IsPointInRectangle(control->bounds, message->mousePressed.positionX, message->mousePressed.positionY)
+			OSRectangle listClip;
+
+			{
+				OSRectangle area = control->bounds;
+				area.top += control->columns ? LIST_VIEW_HEADER_HEIGHT : 0;
+
+				if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
+					area.top += STANDARD_BORDER_SIZE;
+					area.bottom -= STANDARD_BORDER_SIZE;
+					area.left += STANDARD_BORDER_SIZE;
+					area.right -= STANDARD_BORDER_SIZE;
+				}
+
+				ClipRectangle(control->bounds, area, &listClip);
+			}
+
+			if (!IsPointInRectangle(listClip, message->mousePressed.positionX, message->mousePressed.positionY)
 					|| !(control->flags & OS_CREATE_LIST_VIEW_ANY_SELECTIONS)) {
 				break;
 			}
@@ -2454,10 +2471,10 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 
 			if (control->disabled) {
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->backgrounds[1]->region, control->backgrounds[1]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+						control->backgrounds[1]->region, control->backgrounds[1]->border, control->backgrounds[1]->drawMode, 0xFF, message->paint.clip);
 			} else {
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->backgrounds[0]->region, control->backgrounds[0]->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+						control->backgrounds[0]->region, control->backgrounds[0]->border, control->backgrounds[0]->drawMode, 0xFF, message->paint.clip);
 
 				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
 
@@ -2473,7 +2490,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 						bounds.left += 3 + i * 9;
 						bounds.right = bounds.left + 8;
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+								progressBarPellet.region, progressBarPellet.border, progressBarPellet.drawMode, 0xFF, message->paint.clip);
 					}
 				} else {
 					if (control->value >= pelletCount) control->value -= pelletCount;
@@ -2487,7 +2504,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 						bounds.left += 3 + j * 9;
 						bounds.right = bounds.left + 8;
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+								progressBarPellet.region, progressBarPellet.border, progressBarPellet.drawMode, 0xFF, message->paint.clip);
 					}
 				}
 			}
@@ -2860,7 +2877,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					if (m.paint.force) {
 						if (grid->background) {
 							OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
-									grid->background->border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip);
+									grid->background->border, grid->background->drawMode, 0xFF, clip);
 						} else if (grid->backgroundColor) {
 							OSFillRectangle(message->paint.surface, clip, OSColor(grid->backgroundColor));
 						}
@@ -2890,7 +2907,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					OSRectangle border = grid->background->border;
 
 					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, full, region,
-							border, OS_DRAW_MODE_REPEAT_FIRST, 0xFF, clip);
+							border, grid->background->drawMode, 0xFF, clip);
 				} else if (grid->backgroundColor) {
 					OSFillRectangle(message->paint.surface, clip, OSColor(grid->backgroundColor));
 				}
@@ -2957,6 +2974,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
 	if (flags & OS_CREATE_GRID_NO_BACKGROUND) { grid->backgroundColor = 0; }
 	if (flags & OS_CREATE_GRID_ALT_BACKGROUND) { grid->background = &dialogAltAreaBox; }
+	if (flags & OS_CREATE_GRID_MENUBAR_BACKGROUND) { grid->background = &menubarBackground; } 
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
@@ -3326,6 +3344,7 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 	if (contentSize <= viewportSize) {
 		scrollbar->enabled = false;
 		scrollbar->height = 0;
+		scrollbar->position = 0;
 
 		OSDisableControl(scrollbar->objects[0], true);
 		OSDisableControl(scrollbar->objects[2], true);

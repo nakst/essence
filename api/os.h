@@ -674,9 +674,9 @@ typedef struct OSMessage {
 
 // Determines how the image is scaled.
 typedef enum OSDrawMode {
-	OS_DRAW_MODE_STRECH, // Not implemented yet.
-	OS_DRAW_MODE_REPEAT, // Not implemented yet.
-	OS_DRAW_MODE_REPEAT_FIRST, // The first non-border pixel is repeated.
+	OS_DRAW_MODE_REPEAT_FIRST = 0, // The first non-border pixel is repeated.
+	OS_DRAW_MODE_STRECH, 
+	OS_DRAW_MODE_REPEAT,
 } OSDrawMode;
 
 typedef void (*OSThreadEntryFunction)(void *argument);
@@ -788,6 +788,7 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_GRID_STANDARD_BACKGROUND  (0)
 #define OS_CREATE_GRID_NO_BACKGROUND	    (16)
 #define OS_CREATE_GRID_ALT_BACKGROUND	    (32)
+#define OS_CREATE_GRID_MENUBAR_BACKGROUND   (64)
 
 #define OS_CREATE_SCROLL_PANE_VERTICAL      (1)
 #define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)

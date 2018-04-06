@@ -7,6 +7,8 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/os/file_manager.manifest.h"
 
+// TODO Why does the scrollbar start at the bottom when changing folders?
+
 struct FolderChild {
 	OSDirectoryChild data;
 	bool selected;
@@ -15,6 +17,7 @@ struct FolderChild {
 struct Instance {
 	OSObject folderListing,
 		 folderPath,
+		 statusLabel,
 		 window;
 
 	FolderChild *folderChildren;
@@ -51,6 +54,9 @@ OSListViewColumn folderListingColumns[] = {
 #define COLUMN_SIZE (3)
 	{ OSLiteral("Size"), 100, OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED, },
 };
+
+#define GUI_STRING_BUFFER_LENGTH (1024)
+char guiStringBuffer[GUI_STRING_BUFFER_LENGTH];
 
 int64_t ParseIntegerFromString(char **string, size_t *length, int base) {
 	int64_t value = 0;
@@ -263,8 +269,8 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 							uint64_t children = data->information.directoryChildren;
 
 							if (children == 0) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "(empty)");
-							else if (children == 1) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "1 file");
-							else message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "%d files", children);
+							else if (children == 1) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "1 item");
+							else message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "%d items", children);
 						}
 					} break;
 				}
@@ -455,6 +461,7 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	// Update the UI.
 	OSListViewReset(folderListing);
 	OSListViewInsert(folderListing, 0, childCount);
+	OSSetScrollbarPosition(folderListing, 0, false);
 	OSSetText(folderPath, path, pathBytes);
 	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
 
@@ -484,6 +491,15 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 			OSEnableCommand(window, commandNavigateForwards, false);
 		}
 	}
+
+	// Update the status label.
+	{
+		size_t length;
+		if (folderChildCount == 0) length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "(empty)");
+		else if (folderChildCount == 1) length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "1 item");
+		else length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%d items", folderChildCount);
+		OSSetText(statusLabel, guiStringBuffer, length);
+	}
 }
 
 void ProgramEntry() {
@@ -495,23 +511,24 @@ void ProgramEntry() {
 
 	OSObject layout1 = OSCreateGrid(1, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
 	OSObject layout2 = OSCreateGrid(2, 1, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
-	OSObject layout3 = OSCreateGrid(4, 1, OS_FLAGS_DEFAULT);
-	OSObject layout4 = OSCreateGrid(1, 1, OS_CREATE_GRID_ALT_BACKGROUND);
+	OSObject layout3 = OSCreateGrid(4, 1, OS_CREATE_GRID_MENUBAR_BACKGROUND);
+	OSObject layout4 = OSCreateGrid(2, 1, OS_CREATE_GRID_ALT_BACKGROUND);
 
 	OSSetRootGrid(window, layout1);
 	OSAddGrid(layout1, 0, 2, layout2, OS_CELL_FILL);
 	OSAddGrid(layout1, 0, 0, layout3, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSAddGrid(layout1, 0, 3, layout4, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
-	OSSetProperty(layout3, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 2);
-	OSSetProperty(layout3, OS_GRID_PROPERTY_GAP_SIZE, (void *) 2);
+	OSSetProperty(layout3, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 6);
+	OSSetProperty(layout3, OS_GRID_PROPERTY_GAP_SIZE, (void *) 6);
+	OSSetProperty(layout4, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 4);
 
 	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
 	OSAddControl(layout2, 1, 0, instance->folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(instance->folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
 	OSSetObjectNotificationCallback(instance->folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, instance));
 
-	OSAddControl(layout1, 0, 1, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	// OSAddControl(layout1, 0, 1, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	OSObject backButton = OSCreateButton(commandNavigateBackwards);
 	OSAddControl(layout3, 0, 0, backButton, OS_FLAGS_DEFAULT);
@@ -524,8 +541,8 @@ void ProgramEntry() {
 	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
 
-	OSAddControl(layout4, 0, 0, OSCreateLabel(OSLiteral("Status bar")), OS_FLAGS_DEFAULT);
-	OSSetProperty(layout4, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 4);
+	instance->statusLabel = OSCreateLabel(OSLiteral(""));
+	OSAddControl(layout4, 1, 0, instance->statusLabel, OS_FLAGS_DEFAULT);
 
 	instance->LoadFolder(OSLiteral("/"));
 
