@@ -929,7 +929,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				if (!control->customTextRendering) {
 					OSRectangle textBounds = control->textBounds;
 
-					if (control->textShadow && !control->disabled) {
+					if (control->textShadow && (!control->disabled || control->noDisabledTextColorChange)) {
 						OSRectangle bounds = textBounds;
 						bounds.top++; bounds.bottom++; 
 						// bounds.left++; bounds.right++;
@@ -1198,6 +1198,7 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 			control->textShadow = true;
 			control->textBold = true;
 			control->textSize = 11;
+			control->textShadowBlur = true;
 		} break;
 	}
 

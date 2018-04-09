@@ -720,7 +720,7 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 
 	existingNode->handles++;
 
-	if (1 == existingNode->handles && parent) {
+	if (isNodeNew && parent) {
 		existingNode->filesystem = parent->filesystem;
 		existingNode->parent = parent; // The handle to the parent will be closed when the file is closed.
 
