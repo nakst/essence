@@ -95,9 +95,9 @@ struct EsFSSuperblock {
 };
 
 struct EsFSGroupDescriptor {
-	uint64_t blockBitmap;				// The first block containing the bitmap block.
+	uint64_t blockBitmap;				// The block that contains the block bitmap for the group.
 							// This is usually at the start of the group.
-							// If this is 0 then there is no extent table, and no blocks in the group are used.
+							// If this is 0 then there is no block bitmap, and no blocks in the group are used.
 
 	uint16_t blocksUsed;				// The number of used blocks in this group.
 

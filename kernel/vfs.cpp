@@ -751,7 +751,8 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 			return node;
 		}
 
-		// TODO Bug: the following sometimes happens.
+		// Bug: the following sometimes happens.
+		// 	-> I think I fixed this in the previous commit?
 		if (node == node->nextNodeInHashTableSlot) {
 			KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
 		}
