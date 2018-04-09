@@ -144,11 +144,47 @@ static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle 
 	}
 }
 
+inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, uint32_t sourcePixel, uint32_t selectionColor, int32_t backgroundColor, uint8_t pixel, bool selected) {
+	uint32_t *destination = (uint32_t *) ((uint8_t *) bitmap + 
+			(oX) * 4 + 
+			(oY) * stride);
+
+	if (pixel == 0xFF) {
+		*destination = sourcePixel;
+	} else if (pixel) {
+		uint32_t original;
+
+		if (selected) {
+			original = selectionColor;
+		} else if (backgroundColor < 0) {
+			original = *destination;
+		} else {
+			original = backgroundColor;
+		}
+
+		uint32_t modified = sourcePixel;
+
+		uint32_t alpha1 = (modified & 0xFF000000) >> 24;
+		uint32_t alpha2 = 255 - alpha1;
+		uint32_t r2 = alpha2 * ((original & 0x000000FF) >> 0);
+		uint32_t g2 = alpha2 * ((original & 0x0000FF00) >> 8);
+		uint32_t b2 = alpha2 * ((original & 0x00FF0000) >> 16);
+		uint32_t r1 = alpha1 * ((modified & 0x000000FF) >> 0);
+		uint32_t g1 = alpha1 * ((modified & 0x0000FF00) >> 8);
+		uint32_t b1 = alpha1 * ((modified & 0x00FF0000) >> 16);
+		uint32_t result = 0xFF000000 | (0x00FF0000 & ((b1 + b2) << 8)) 
+			| (0x0000FF00 & ((g1 + g2) << 0)) 
+			| (0x000000FF & ((r1 + r2) >> 8));
+
+		*destination = result;
+	}
+}
+
 static OSError DrawString(OSHandle surface, OSRectangle region, 
 		OSString *string,
 		unsigned alignment, uint32_t color, int32_t backgroundColor, uint32_t selectionColor,
 		OSPoint coordinate, OSCaret *caret, uintptr_t caretIndex, uintptr_t caretIndex2, bool caretBlink,
-		int size, Font &font, OSRectangle clipRegion) {
+		int size, Font &font, OSRectangle clipRegion, int blur) {
 	bool actuallyDraw = caret == nullptr;
 
 	OSFontRendererInitialise();
@@ -358,7 +394,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 			for (int x = 0; x < width; x++) {
 				int oX = outputPosition.x + xoff + x;
-			
+
 				if (oX < region.left) continue;
 				if (oX >= region.right) break;
 
@@ -368,41 +404,44 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
 				if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
-				uint8_t pixel = output[x + y * width];
-				uint32_t *destination = (uint32_t *) ((uint8_t *) bitmap + 
-						(oX) * 4 + 
-						(oY) * linearBuffer.stride);
+				if (blur) {
+					uint8_t pixelRaw = output[x + y * width];
 
-				uint32_t sourcePixel = (pixel << 24) | color;
+					for (int i = -blur; i <= blur; i++) {
+						int oY = outputPosition.y + yoff + y + i;
 
-				if (pixel == 0xFF) {
-					*destination = sourcePixel;
-				} else if (pixel) {
-					uint32_t original;
+						if (oY < region.top) continue;
+						if (oY >= region.bottom) break;
 
-					if (selected) {
-						original = selectionColor;
-					} else if (backgroundColor < 0) {
-						original = *destination;
-					} else {
-						original = backgroundColor;
+						if (oY < 0) continue;
+						if (oY >= (int) linearBuffer.height) break;
+
+						if (oY < invalidatedRegion.top) invalidatedRegion.top = oY;
+						if (oY > invalidatedRegion.bottom) invalidatedRegion.bottom = oY;
+
+						for (int j = -blur; j <= blur; j++) {
+							int oX = outputPosition.x + xoff + x + j;
+
+							if (oX < region.left) continue;
+							if (oX >= region.right) break;
+
+							if (oX < 0) continue;
+							if (oX >= (int) linearBuffer.width) break;
+
+							if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
+							if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
+
+							uint8_t pixel = pixelRaw / 49;
+							uint32_t sourcePixel = (pixel << 24) | color;
+
+							DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, sourcePixel, selectionColor, backgroundColor, pixel, selected);
+						}
 					}
+				} else {
+					uint8_t pixel = output[x + y * width];
+					uint32_t sourcePixel = (pixel << 24) | color;
 
-					uint32_t modified = sourcePixel;
-
-					uint32_t alpha1 = (modified & 0xFF000000) >> 24;
-					uint32_t alpha2 = 255 - alpha1;
-					uint32_t r2 = alpha2 * ((original & 0x000000FF) >> 0);
-					uint32_t g2 = alpha2 * ((original & 0x0000FF00) >> 8);
-					uint32_t b2 = alpha2 * ((original & 0x00FF0000) >> 16);
-					uint32_t r1 = alpha1 * ((modified & 0x000000FF) >> 0);
-					uint32_t g1 = alpha1 * ((modified & 0x0000FF00) >> 8);
-					uint32_t b1 = alpha1 * ((modified & 0x00FF0000) >> 16);
-					uint32_t result = 0xFF000000 | (0x00FF0000 & ((b1 + b2) << 8)) 
-						| (0x0000FF00 & ((g1 + g2) << 0)) 
-						| (0x000000FF & ((r1 + r2) >> 8));
-
-					*destination = result;
+					DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, sourcePixel, selectionColor, backgroundColor, pixel, selected);
 				}
 			}
 		}
@@ -447,13 +486,13 @@ OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coor
 	return DrawString(OS_INVALID_HANDLE, region, string,
 			flags, 0, 0, 0,
 			coordinate, position, -1, -1, false,
-			fontSize ? fontSize : FONT_SIZE, fontRegular, OS_MAKE_RECTANGLE(-1, -1, -1, -1));
+			fontSize ? fontSize : FONT_SIZE, fontRegular, OS_MAKE_RECTANGLE(-1, -1, -1, -1), 0);
 }
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
 		OSString *string, int fontSize,
-		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion) {
+		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur) {
 	return DrawString(surface, region, string,
 			alignment ? alignment : OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, color, backgroundColor, 0,
-			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular, clipRegion);
+			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular, clipRegion, blur);
 }

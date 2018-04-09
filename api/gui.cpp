@@ -37,7 +37,7 @@ static void EnterDebugger() {
 #define LIST_VIEW_SECONDARY_TEXT_COLOR (0x686868)
 #define LIST_VIEW_BACKGROUND_COLOR (0xFFFFFFFF)
 
-#define TEXT_COLOR_DEFAULT (0)
+#define TEXT_COLOR_DEFAULT (0x000515)
 #define TEXT_COLOR_DISABLED (0x777777)
 #define TEXT_COLOR_DISABLED_SHADOW (0xEEEEEE)
 #define TEXT_COLOR_HEADING (0x003296)
@@ -420,7 +420,7 @@ struct Control : GUIObject {
 		firstPaint : 1,
 		useSingleIcon : 1;
 	uint8_t	repaintCustomOnly : 1,
-		noDisabledTextShadow : 1,
+		textShadowBlur : 1,
 		cursor : 5;
 
 	LinkedItem<Control> timerControlItem;
@@ -918,7 +918,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
-				textColor = control->textColor;
+				textColor = control->textColor ? control->textColor : TEXT_COLOR_DEFAULT;
 				textShadowColor = 0xFFFFFF - textColor;
 
 				if (control->disabled && !control->noDisabledTextColorChange) {
@@ -929,16 +929,17 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				if (!control->customTextRendering) {
 					OSRectangle textBounds = control->textBounds;
 
-					if (control->textShadow || (control->disabled && !control->noDisabledTextShadow)) {
+					if (control->textShadow && !control->disabled) {
 						OSRectangle bounds = textBounds;
-						bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
+						bounds.top++; bounds.bottom++; 
+						// bounds.left++; bounds.right++;
 
 						OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-								control->textAlign, textShadowColor, -1, control->textBold, message->paint.clip);
+								control->textAlign, textShadowColor, -1, control->textBold, message->paint.clip, control->textShadowBlur ? 3 : 0);
 					}
 
 					OSDrawString(message->paint.surface, textBounds, &control->text, control->textSize,
-							control->textAlign, textColor, -1, control->textBold, message->paint.clip);
+							control->textAlign, textColor, -1, control->textBold, message->paint.clip, 0);
 				}
 
 				repaintCustom:;
@@ -1336,7 +1337,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
 				control->window->lastFocus != control || control->caretBlink,
-				control->textSize, fontRegular, message->paint.clip);
+				control->textSize, fontRegular, message->paint.clip, 0);
 
 #if 0
 		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->textBounds, 
@@ -1843,7 +1844,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 									headerBounds.top + 2, headerBounds.bottom);
 
 							DrawString(surface, OS_MAKE_RECTANGLE(region.left, region.right - 10, region.top, region.bottom), &string, OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-									LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip2);
+									LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip2, 0);
 
 							OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, 
 									OS_MAKE_RECTANGLE(region.right - 8, region.right - 7, 
@@ -1999,7 +2000,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 									(rightAligned ? OS_DRAW_STRING_HALIGN_RIGHT : OS_DRAW_STRING_HALIGN_LEFT) 
 									| OS_DRAW_STRING_VALIGN_CENTER,
 									primary ? LIST_VIEW_PRIMARY_TEXT_COLOR : LIST_VIEW_SECONDARY_TEXT_COLOR, -1, 0, 
-									OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip4);
+									OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, clip4, 0);
 						}
 					}
 		
@@ -2528,14 +2529,13 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 	}
 
 	if (style == OS_BUTTON_STYLE_TOOLBAR) {
-		control->noDisabledTextShadow = true;
 		control->textColor = TEXT_COLOR_TOOLBAR;
 		control->horizontalMargin = 12;
 		control->preferredWidth = 0;
 		control->preferredHeight = 31;
 		control->verbose = true;
-
-		// TODO Shadow blur radius = 3, offset y = +1
+		control->textShadowBlur = true;
+		control->textShadow = true;
 	}
 
 #if 0

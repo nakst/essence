@@ -140,8 +140,8 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
 
-#if 0
-	LoadImageIntoSurface((char *) "/OS/sample_images/Flower.jpg", OS_SURFACE_WALLPAPER, true);
+#if 1
+	LoadImageIntoSurface((char *) "/OS/Sample Images/Nebula.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
