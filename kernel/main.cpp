@@ -13,7 +13,7 @@ void KernelInitialisation() {
 	deviceManager.Initialise();
 	windowManager.Initialise();
 
-	char *desktop = (char *) "/os/desktop";
+	char *desktop = (char *) "/OS/desktop";
 	desktopProcess = scheduler.SpawnProcess(desktop, CStringLength(desktop));
 
 	scheduler.TerminateThread(GetCurrentThread());

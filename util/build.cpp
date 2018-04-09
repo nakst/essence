@@ -42,7 +42,7 @@ void Build(bool enableOptimisations) {
 	system("chmod +x manifest_parser");
 
 	printf("Creating output directories...\n");
-	system("mkdir -p bin/os");
+	system("mkdir -p bin/OS");
 
 	printf("Creating MBR...\n");
 	system("nasm -fbin boot/x86/mbr.s -obin/mbr");
@@ -68,13 +68,13 @@ void Build(bool enableOptimisations) {
 	system("rm bin/stage1");
 
 	printf("Formatting drive...\n");
-	system("./esfs drive 2048 format 66060288 \"Essence HD\" bin/os/kernel");
+	system("./esfs drive 2048 format 66060288 \"Essence HD\" bin/OS/kernel");
 	sprintf(buffer, "./esfs drive 2048 set-installation %s", installationIdentifier);
 	system(buffer);
 
 	printf("Copying files to the drive...\n");
 	system("./esfs drive 2048 import / bin/");
-	system("./esfs drive 2048 import /os/ res/");
+	system("./esfs drive 2048 import /OS/ res/");
 
 	printf("Build complete.\n");
 }

@@ -171,6 +171,8 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_FILE 		(1)
 #define OS_ICON_FOLDER 		(2)
 #define OS_ICON_ERROR 		(3)
+#define OS_ICON_FORWARD		(4)
+#define OS_ICON_BACK 		(5)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -399,6 +401,7 @@ typedef struct OSRectangle {
 	int32_t bottom; // Exclusive.
 } OSRectangle;
 
+#define OS_MAKE_RECTANGLE_ALL(x) ((OSRectangle){(int32_t)(x),(int32_t)(x),(int32_t)(x),(int32_t)(x)})
 #define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(int32_t)(l),(int32_t)(r),(int32_t)(t),(int32_t)(b)})
 #define OS_MAKE_CALLBACK(a, b) ((OSCallback){(a),(b)})
 #define OS_MAKE_POINT(x, y) ((OSPoint){(int32_t)(x),(int32_t)(y)})
@@ -485,6 +488,29 @@ typedef struct OSClipboardHeader {
 	size_t textBytes;
 	uintptr_t unused;
 } OSClipboardHeader;
+
+typedef enum OSButtonStyle {
+	OS_BUTTON_STYLE_NORMAL,
+	OS_BUTTON_STYLE_TOOLBAR,
+} OSButtonStyle;
+
+typedef enum OSTextboxStyle {
+	OS_TEXTBOX_STYLE_NORMAL,
+	OS_TEXTBOX_STYLE_COMMAND,
+	OS_TEXTBOX_STYLE_LARGE,
+} OSTextboxStyle;
+
+typedef enum OSGridStyle {
+	OS_GRID_STYLE_GROUP_BOX,
+	OS_GRID_STYLE_MENU,
+	OS_GRID_STYLE_MENUBAR,
+	OS_GRID_STYLE_LAYOUT,
+	OS_GRID_STYLE_CONTAINER,
+	OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER,
+	OS_GRID_STYLE_CONTAINER_ALT,
+	OS_GRID_STYLE_STATUS_BAR,
+	OS_GRID_STYLE_TOOLBAR,
+} OSGridStyle;
 
 typedef enum OSMessageType {
 	// GUI messages:
@@ -617,7 +643,6 @@ typedef struct OSMessage {
 
 		struct {
 			int preferredWidth, preferredHeight;
-			int minimumWidth, minimumHeight;
 		} measure;
 
 		struct {
@@ -725,6 +750,8 @@ typedef struct OSCommand {
 		defaultDisabled : 1,
 		dangerous : 1;
 
+	uint16_t iconID;
+
 	OSCallback callback;
 } OSCommand;
 
@@ -754,6 +781,7 @@ typedef struct OSListViewColumn {
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
+#define OS_CALLBACK_REJECTED (-2)
 #define OS_CALLBACK_DEBUGGER_MESSAGES ((OSObject) 0x800)
 
 #define OS_CREATE_WINDOW_MENU (2)
@@ -780,15 +808,6 @@ typedef struct OSListViewColumn {
 // Some common layouts...
 #define OS_CELL_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
 #define OS_CELL_CENTER	  (OS_CELL_H_CENTER | OS_CELL_V_CENTER)
-
-#define OS_CREATE_GRID_NO_BORDER            (1)
-#define OS_CREATE_GRID_NO_GAP               (2)
-#define OS_CREATE_GRID_DRAW_BOX             (4)
-#define OS_CREATE_GRID_MENU	            (8)
-#define OS_CREATE_GRID_STANDARD_BACKGROUND  (0)
-#define OS_CREATE_GRID_NO_BACKGROUND	    (16)
-#define OS_CREATE_GRID_ALT_BACKGROUND	    (32)
-#define OS_CREATE_GRID_MENUBAR_BACKGROUND   (64)
 
 #define OS_CREATE_SCROLL_PANE_VERTICAL      (1)
 #define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)
@@ -919,6 +938,8 @@ OS_EXTERN_C void OSRedrawAll();
 
 #define OS_GRID_PROPERTY_BORDER_SIZE (1)
 #define OS_GRID_PROPERTY_GAP_SIZE (2)
+#define OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH (3)
+#define OS_GUI_OBJECT_PROPERTY_SUGGESTED_HEIGHT (4)
 OS_EXTERN_C void OSSetProperty(OSObject object, uintptr_t index, void *value);
 
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
@@ -926,14 +947,19 @@ OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback call
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
 OS_EXTERN_C void OSProcessMessages();
 
+#define OS_RESIZE_MODE_IGNORE (0)
+#define OS_RESIZE_MODE_GROW_ONLY (1)
+#define OS_RESIZE_MODE_EXACT (2)
+
 OS_EXTERN_C void OSGetText(OSObject control, OSString *string);
-OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes);
+OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes, unsigned resizeMode);
 OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
 OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
 OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback callback);
+OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
@@ -943,11 +969,11 @@ OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
-OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags);
+OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style);
 OS_EXTERN_C OSObject OSCreateScrollPane(OSObject content, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
 #define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
-#define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, 0)
+#define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_CELL_FILL)
 
 OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
@@ -957,8 +983,8 @@ OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);
-OS_EXTERN_C OSObject OSCreateButton(OSCommand *command);
-OS_EXTERN_C OSObject OSCreateTextbox(unsigned fontSize);
+OS_EXTERN_C OSObject OSCreateButton(OSCommand *command, OSButtonStyle style);
+OS_EXTERN_C OSObject OSCreateTextbox(OSTextboxStyle style);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);

@@ -742,12 +742,26 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 
 	Node *node = nodeHashTable[slot];
 
+	if (node && node->pointerToThisNodeInHashTableSlot != nodeHashTable + slot) {
+		KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
+	}
+
 	while (node) {
 		if (node->filesystem == filesystem && !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier)) && !node->deleted) {
 			return node;
 		}
 
+		// TODO Bug: the following sometimes happens.
+		if (node == node->nextNodeInHashTableSlot) {
+			KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
+		}
+
+		Node **t = &node->nextNodeInHashTableSlot;
 		node = node->nextNodeInHashTableSlot;
+
+		if (node && node->pointerToThisNodeInHashTableSlot != t) {
+			KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
+		}
 	}
 
 	return nullptr; // The node is not currently open.

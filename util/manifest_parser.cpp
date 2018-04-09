@@ -352,6 +352,12 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.dangerous = %s,\n", "false");
 			}
 
+			if (FindProperty("iconID", &value)) {
+				fprintf(output, "\t.iconID = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.iconID = %s,\n", "0");
+			}
+
 			fprintf(output, "\t.callback = { ");
 
 			if (FindProperty("callback", &value)) {
@@ -489,15 +495,15 @@ int main(int argc, char **argv) {
 
 	if (autoBuild.found) {
 		char buffer[4096];
-		sprintf(buffer, "x86_64-elf-g++ -c %.*s -o bin/os/%.*s.o %s %s", autoBuild.source.bytes, autoBuild.source.text, autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
+		sprintf(buffer, "x86_64-elf-g++ -c %.*s -o bin/OS/%.*s.o %s %s", autoBuild.source.bytes, autoBuild.source.text, autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
 		system(buffer);
-		system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` bin/os/crtbegin.o");
-		system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` bin/os/crtend.o");
-		sprintf(buffer, "x86_64-elf-gcc -o bin/os/%.*s bin/os/crti.o bin/os/crtbegin.o bin/os/%.*s.o bin/os/crtend.o bin/os/crtn.o %s", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
+		system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` bin/OS/crtbegin.o");
+		system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` bin/OS/crtend.o");
+		sprintf(buffer, "x86_64-elf-gcc -o bin/OS/%.*s bin/OS/crti.o bin/OS/crtbegin.o bin/OS/%.*s.o bin/OS/crtend.o bin/OS/crtn.o %s", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
 		system(buffer);
-		sprintf(buffer, "cp bin/os/%.*s bin/os/%.*s_symbols", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text);
+		sprintf(buffer, "cp bin/OS/%.*s bin/OS/%.*s_symbols", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text);
 		system(buffer);
-		sprintf(buffer, "x86_64-elf-strip --strip-all bin/os/%.*s", autoBuild.output.bytes, autoBuild.output.text);
+		sprintf(buffer, "x86_64-elf-strip --strip-all bin/OS/%.*s", autoBuild.output.bytes, autoBuild.output.text);
 		system(buffer);
 	}
 

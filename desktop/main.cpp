@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/os/desktop.manifest.h"
+#include "../bin/OS/desktop.manifest.h"
 
 char *errorMessages[] = {
 	(char *) "INVALID_BUFFER",
@@ -68,7 +68,7 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 			specification.titleBytes = OSCStringLength(specification.title);
 			OSObject window = OSCreateWindow(&specification);
 
-			OSObject content = OSCreateGrid(1, 1, 0);
+			OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 			OSSetRootGrid(window, content);
 			OSAddControl(content, 0, 0, OSCreateLabel(crashMessage, crashMessageLength), 0);
 
@@ -138,10 +138,10 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 }
 
 extern "C" void ProgramEntry() {
-	LoadImageIntoSurface((char *) "/os/UISheet.png", OS_SURFACE_UI_SHEET, false);
+	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
 
-#if 1
-	LoadImageIntoSurface((char *) "/os/sample_images/Flower.jpg", OS_SURFACE_WALLPAPER, true);
+#if 0
+	LoadImageIntoSurface((char *) "/OS/sample_images/Flower.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
@@ -150,17 +150,26 @@ extern "C" void ProgramEntry() {
 
 	OSRedrawAll();
 
+#if 1
+	{
+		OSProcessInformation process;
+		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+	}
+#else
 	{
 		for (int i = 0; i < 1; i++) {
-			// const char *path = "/os/calculator";
-			// const char *path = "/os/test";
-			const char *path = "/os/file_manager";
+			// const char *path = "/OS/calculator";
+			// const char *path = "/OS/test";
+			const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);
 			OSCloseHandle(process.handle);
 		}
 	}
+#endif
 
 	OSSetCallback(OS_CALLBACK_DEBUGGER_MESSAGES, OS_MAKE_CALLBACK(ProcessDebuggerMessage, nullptr));
 	OSProcessMessages();

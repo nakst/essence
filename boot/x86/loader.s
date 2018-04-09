@@ -50,7 +50,7 @@ enable_video_mode:
 ; 1024x768
 %define video_mode 280
 ; 1280x1024
-; %define video_mode 283
+ ;%define video_mode 283
 ;%define video_mode 287
 	mov	cx,video_mode | (1 << 14)
 	int	0x10

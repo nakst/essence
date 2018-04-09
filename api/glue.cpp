@@ -3,4 +3,4 @@
 #include "../api/os.h"
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/os/standard.manifest.h"
+#include "../bin/OS/standard.manifest.h"

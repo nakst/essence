@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/os/test.manifest.h"
+#include "../bin/OS/test.manifest.h"
 
 #include "../freetype/ft2build.h"
 #include FT_FREETYPE_H
@@ -113,7 +113,7 @@ OSListViewColumn columns[] = {
 
 void CreateList(OSObject content) {
 	size_t length;
-	char *file = (char *) OSReadEntireFile(OSLiteral("/os/scarlet.txt"), &length);
+	char *file = (char *) OSReadEntireFile(OSLiteral("/OS/scarlet.txt"), &length);
 
 	if (!file || !length) {
 		OSCrashProcess(2000);
@@ -601,7 +601,7 @@ extern "C" void ProgramEntry() {
 		for (int i = 0; i < 256; i++) if (m[i] != n[i]) OSCrashProcess(202);
 	}
 
-	char *path = (char *) "/os/new_dir/test2.txt";
+	char *path = (char *) "/OS/new_dir/test2.txt";
 	OSNodeInformation node;
 	OSError error = OSOpenNode(path, OSCStringLength(path), 
 			OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_CREATE_DIRECTORIES, &node);
@@ -630,7 +630,7 @@ extern "C" void ProgramEntry() {
 	}
 
 	{
-		char *path = (char *) "/os/sample_images";
+		char *path = (char *) "/OS/sample_images";
 		OSNodeInformation node;
 		OSError error = OSOpenNode(path, OSCStringLength(path), OS_OPEN_NODE_DIRECTORY, &node);
 		OSDirectoryChild buffer[16];
@@ -643,7 +643,7 @@ extern "C" void ProgramEntry() {
 	}
 
 	{
-		char *path = (char *) "/os/act.txt";
+		char *path = (char *) "/OS/act.txt";
 
 		OSNodeInformation node1, node2, node3;
 
@@ -691,7 +691,7 @@ extern "C" void ProgramEntry() {
 	}
 
 	{
-		char *path = (char *) "/os/test.txt";
+		char *path = (char *) "/OS/test.txt";
 		OSNodeInformation node;
 		OSError error = OSOpenNode(path, OSCStringLength(path), 
 				OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_WRITE_ACCESS,
@@ -766,30 +766,30 @@ extern "C" void ProgramEntry() {
 	window = OSCreateWindow(&ws);
 
 	OSObject b;
-	OSObject content = OSCreateGrid(4, 5, 0);
+	OSObject content = OSCreateGrid(4, 5, OS_GRID_STYLE_CONTAINER);
 	OSObject scrollPane = OSCreateScrollPane(content, OS_CREATE_SCROLL_PANE_VERTICAL | OS_CREATE_SCROLL_PANE_HORIZONTAL);
 	OSSetRootGrid(window, scrollPane);
-	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK), 0);
+	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK, OS_BUTTON_STYLE_NORMAL), 0);
 
 	OSAddControl(content, 1, 0, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND);
 
-	OSAddControl(content, 0, 2, b = OSCreateTextbox(0), 0);
+	OSAddControl(content, 0, 2, b = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), 0);
 
 	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_CALLBACK(ToggleEnabled, b));
-	OSAddControl(content, 0, 1, OSCreateButton(actionToggleEnabled), 0);
+	OSAddControl(content, 0, 1, OSCreateButton(actionToggleEnabled, OS_BUTTON_STYLE_NORMAL), 0);
 
-	OSAddControl(content, 1, 2, OSCreateTextbox(0), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+	OSAddControl(content, 1, 2, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
 	// OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
-	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything), 0);
+	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything, OS_BUTTON_STYLE_NORMAL), 0);
 
 	{
-		OSObject textbox = OSCreateTextbox(0);
+		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
 		// OSDebugGUIObject(textbox);
-		OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_DRAW_BOX);
+		OSObject grid = OSCreateGrid(2, 2, OS_GRID_STYLE_GROUP_BOX);
 		OSAddGrid(content, 1, 4, grid, OS_CELL_H_RIGHT);
 		OSAddControl(grid, 0, 0, textbox, OS_CELL_H_LEFT);
-		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled), OS_CELL_H_LEFT);
+		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
 	}
 
 #if 0

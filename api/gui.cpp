@@ -1,4 +1,4 @@
-#include "../bin/os/standard.manifest.h"
+#include "../bin/OS/standard.manifest.h"
 
 static void EnterDebugger() {
 	asm volatile ("xchg %bx,%bx");
@@ -35,16 +35,24 @@ static void EnterDebugger() {
 #define LIST_VIEW_COLUMN_TEXT_COLOR (0x4D6278)
 #define LIST_VIEW_PRIMARY_TEXT_COLOR (0x000000)
 #define LIST_VIEW_SECONDARY_TEXT_COLOR (0x686868)
+#define LIST_VIEW_BACKGROUND_COLOR (0xFFFFFFFF)
+
+#define TEXT_COLOR_DEFAULT (0)
+#define TEXT_COLOR_DISABLED (0x777777)
+#define TEXT_COLOR_DISABLED_SHADOW (0xEEEEEE)
+#define TEXT_COLOR_HEADING (0x003296)
+#define TEXT_COLOR_TITLEBAR (0xFFFFFF)
+#define TEXT_COLOR_TOOLBAR (0xFFFFFF)
+
+#define ICON_TEXT_GAP (5)
 
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
-// TODO Minimum size is smaller than expected?
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
-// TODO Redo minimum/preferred/fill sizes.
 // TODO Multiple-cell positions.
 
 struct UIImage {
@@ -108,10 +116,10 @@ static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
 static UIImage progressBarPellet     	= {{18, 26, 128, 143}, {18, 18, 128, 128}};
 
 #ifndef SUPER_COOL_BUTTONS
-static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 88 + 10, 88 + 11}};
-static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 98, 99}};
-static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 98, 99}};
-static UIImage buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 98, 99}};
+static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 91, 106}, OS_DRAW_MODE_STRECH};
+static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 91, 106}, OS_DRAW_MODE_STRECH};
+static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 91, 106}, OS_DRAW_MODE_STRECH};
+static UIImage buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 91, 106}, OS_DRAW_MODE_STRECH};
 static UIImage buttonDangerousDragged	= {{24, 32, 105, 126}, {24 + 3, 24 + 5, 105 + 10, 105 + 11}};
 static UIImage buttonDangerousHover	= {{-18 + 51, -18 + 59, 88, 109}, {-18 + 54, -18 + 56, 98, 99}};
 #else
@@ -134,6 +142,8 @@ static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
 static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
 static UIImage textboxHover		= {{-11 + 52, -11 + 61, 166, 189}, {-11 + 55, -11 + 58, 169, 186}};
 static UIImage textboxDisabled		= {{22 + 52, 22 + 61, 166, 189}, {22 + 55, 22 + 58, 169, 186}};
+static UIImage textboxCommand		= {{33 + 52, 33 + 61, 166, 189}, {33 + 55, 33 + 58, 169, 186}};
+static UIImage textboxCommandHover	= {{44 + 52, 44 + 61, 166, 189}, {44 + 55, 44 + 58, 169, 186}};
 
 static UIImage gridBox 			= {{1, 7, 17, 23}, {3, 4, 19, 20}};
 static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
@@ -142,6 +152,10 @@ static UIImage dialogAltAreaBox		= {{18, 19, 17, 22}, {18, 19, 21, 22}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 157}, OS_DRAW_MODE_STRECH};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 157}, OS_DRAW_MODE_STRECH};
+
+static UIImage toolbarBackground	= {{0, 0 + 60, 195, 195 + 31}, {0 + 1, 0 + 59, 195 + 1, 195 + 29}, OS_DRAW_MODE_STRECH};
+static UIImage toolbarHover		= {{73, 84, 195, 226}, {78, 79, 203, 204}};
+static UIImage toolbarPressed		= {{73 - 12, 84 - 12, 195, 226}, {78 - 12, 79 - 12, 203, 204}};
 
 static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 122, 62, 62}};
 static UIImage scrollbarTrackHorizontalPressed  = {{117, 118, 62, 79}, {117, 118, 62, 62}};
@@ -204,6 +218,7 @@ static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVe
 static struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
 
 #define ICON16(x, y) {{x, x + 16, y, y + 16}, {x, x, y, y}}
+#define ICON24(x, y) {{x, x + 24, y, y + 24}, {x, x, y, y}}
 #define ICON32(x, y) {{x, x + 32, y, y + 32}, {x, x, y, y}}
 
 static UIImage icons16[] = {
@@ -211,6 +226,8 @@ static UIImage icons16[] = {
 	ICON16(237, 117),
 	ICON16(220, 117),
 	{{}, {}},
+	ICON16(204, 176),
+	ICON16(204, 192),
 };
 
 static UIImage icons32[] = {
@@ -218,6 +235,8 @@ static UIImage icons32[] = {
 	{{}, {}},
 	{{}, {}},
 	ICON32(220, 135),
+	{{}, {}},
+	{{}, {}},
 };
 
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
@@ -250,6 +269,13 @@ static UIImage *menuItemBackgrounds[] = {
 	&menuItemDragged,
 };
 
+struct UIImage *toolbarItemBackgrounds[] = {
+	nullptr,
+	nullptr,
+	&toolbarHover,
+	&toolbarPressed,
+};
+
 static UIImage *checkboxIcons[] = {
 	&checkboxNormal, 
 	&checkboxDisabled, 
@@ -268,6 +294,13 @@ static UIImage *textboxBackgrounds[] = {
 	&textboxNormal,
 	&textboxDisabled,
 	&textboxHover,
+	&textboxFocus,
+};
+
+static UIImage *textboxCommandBackgrounds[] = {
+	&textboxCommand,
+	&textboxDisabled,
+	&textboxCommandHover,
 	&textboxFocus,
 };
 
@@ -323,8 +356,11 @@ struct GUIObject : APIObject {
 	uint16_t descendentInvalidationFlags;
 	uint16_t layout;
 	uint16_t preferredWidth, preferredHeight;
-	uint16_t minimumWidth, minimumHeight;
-	bool verbose;
+	uint16_t horizontalMargin : 4, verticalMargin : 4,
+		verbose : 1,
+		suggestWidth : 1,
+		suggestHeight : 1,
+		relayout : 1, repaint : 1;
 };
 
 static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
@@ -347,7 +383,12 @@ struct Control : GUIObject {
 #define UI_IMAGE_DISABLED (1)
 #define UI_IMAGE_HOVER (2)
 #define UI_IMAGE_DRAG (3)
-	UIImage **backgrounds, **icons;
+	UIImage **backgrounds;
+
+	union {
+		UIImage **icons;
+		UIImage *singleIcon;
+	};
 
 	void *context;
 
@@ -362,24 +403,24 @@ struct Control : GUIObject {
 	uint32_t textColor;
 	uint8_t textSize, textAlign;
 
-	uint32_t textShadow : 1, 
+	uint8_t textShadow : 1, 
 		textBold : 1,
-		repaint : 1, 
-		repaintCustomOnly : 1,
-		relayout : 1,
 		noAnimations : 1,
 		focusable : 1,
 		customTextRendering : 1,
 		drawParentBackground : 1,
 		noDisabledTextColorChange : 1,
-		keepCustomCursorWhenDisabled : 1,
-		disabled : 1, 
+		keepCustomCursorWhenDisabled : 1;
+	uint8_t disabled : 1, 
 		isChecked : 1, 
 		checkable : 1,
 		ignoreActivationClicks : 1,
 		checkboxIcons : 1,
 		centerIcons : 1,
 		firstPaint : 1,
+		useSingleIcon : 1;
+	uint8_t	repaintCustomOnly : 1,
+		noDisabledTextShadow : 1,
 		cursor : 5;
 
 	LinkedItem<Control> timerControlItem;
@@ -429,6 +470,8 @@ struct Textbox : Control {
 	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
 	uint8_t caretBlink : 1;
 	bool sentEditResultNotification;
+	OSString previousString;
+	OSTextboxStyle style;
 };
 
 struct ProgressBar : Control {
@@ -445,9 +488,9 @@ struct Grid : GUIObject {
 	GUIObject **objects;
 	int *widths, *heights;
 	int *minimumWidths, *minimumHeights;
-	uint8_t relayout : 1, repaint : 1;
-	unsigned flags;
-	int borderSize, gapSize;
+	OSGridStyle style;
+	OSRectangle borderSize;
+	uint16_t gapSize;
 	UIImage *background;
 	uint32_t backgroundColor;
 	OSCallback notificationCallback;
@@ -581,11 +624,19 @@ static inline void UpdateCheckboxIcons(Control *control) {
 	control->icons = control->isChecked ? checkboxIconsChecked : checkboxIcons;
 }
 
-static void SetControlCommand(Control *control, OSCommand *_command) {
+void OSSetControlCommand(OSObject _control, OSCommand *_command) {
+	Control *control = (Control *) _control;
+	
+	if (_command->iconID) {
+		control->singleIcon = icons16 + _command->iconID;
+		control->useSingleIcon = true;
+	}
+
 	if (_command->identifier == OS_COMMAND_DYNAMIC) {
 		control->isChecked = _command->defaultCheck;
 		control->disabled = _command->defaultDisabled;
 		control->notificationCallback = _command->callback;
+
 		return;
 	}
 
@@ -634,8 +685,8 @@ static void StandardCellLayout(GUIObject *object) {
 	int width = object->bounds.right - object->bounds.left;
 	int height = object->bounds.bottom - object->bounds.top;
 
-	int preferredWidth = object->preferredWidth == DIMENSION_PUSH ? width : object->preferredWidth;
-	int preferredHeight = object->preferredHeight == DIMENSION_PUSH ? height : object->preferredHeight;
+	int preferredWidth = (object->layout & OS_CELL_H_EXPAND) ? width : (object->preferredWidth + object->horizontalMargin * 2);
+	int preferredHeight = (object->layout & OS_CELL_V_EXPAND) ? height : (object->preferredHeight + object->verticalMargin * 2);
 
 	if (width > preferredWidth) {
 		if (object->layout & OS_CELL_H_EXPAND) {
@@ -662,6 +713,36 @@ static void StandardCellLayout(GUIObject *object) {
 	}
 }
 
+static void SetGUIObjectProperty(GUIObject *object, OSMessage *message) {
+	uintptr_t value = (uintptr_t) message->setProperty.value;
+
+	switch (message->setProperty.index) {
+		case OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH: {
+			object->suggestWidth = true;
+			object->preferredWidth = value;
+			object->relayout = true;
+
+			{
+				OSMessage message;
+				message.type = OS_MESSAGE_CHILD_UPDATED;
+				OSSendMessage(object->parent, &message);
+			}
+		} break;
+
+		case OS_GUI_OBJECT_PROPERTY_SUGGESTED_HEIGHT: {
+			object->suggestHeight = true;
+			object->preferredHeight = value;
+			object->relayout = true;
+
+			{
+				OSMessage message;
+				message.type = OS_MESSAGE_CHILD_UPDATED;
+				OSSendMessage(object->parent, &message);
+			}
+		} break;
+	}
+}
+
 static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Control *control = (Control *) _object;
@@ -679,6 +760,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			control->bounds = OS_MAKE_RECTANGLE(
 					message->layout.left, message->layout.right,
 					message->layout.top, message->layout.bottom);
+
+			if (control->verbose) {
+				OSPrint("Cell layout for control %x: %d->%d, %d->%d\n", control, control->bounds.left, control->bounds.right, control->bounds.top, control->bounds.bottom);
+			}
+
 			StandardCellLayout(control);
 			ClipRectangle(message->layout.clip, control->bounds, &control->inputBounds);
 
@@ -699,21 +785,23 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_LAYOUT_TEXT: {
-			control->textBounds = control->bounds;
+			OSRectangle contentBounds = control->bounds;
+			contentBounds.left += control->horizontalMargin;
+			contentBounds.right -= control->horizontalMargin;
+			contentBounds.top += control->verticalMargin;
+			contentBounds.bottom -= control->verticalMargin;
+
+			control->textBounds = contentBounds;
 
 			if (control->icons) {
-				control->textBounds.left += control->icons[0]->region.right - control->icons[0]->region.left + 4;
+				UIImage *firstIcon = !control->useSingleIcon ? control->icons[0] : control->singleIcon;
+				control->textBounds.left += firstIcon->region.right - firstIcon->region.left + ICON_TEXT_GAP;
 			}
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
-			if (control->layout & OS_CELL_H_PUSH) message->measure.preferredWidth = DIMENSION_PUSH;
-			else message->measure.preferredWidth = control->preferredWidth;
-			if (control->layout & OS_CELL_V_PUSH) message->measure.preferredHeight = DIMENSION_PUSH;
-			else message->measure.preferredHeight = control->preferredHeight;
-			
-			message->measure.minimumWidth = control->minimumWidth;
-			message->measure.minimumHeight = control->minimumHeight;
+			message->measure.preferredWidth = control->preferredWidth + control->horizontalMargin * 2;
+			message->measure.preferredHeight = control->preferredHeight + control->verticalMargin * 2;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -725,6 +813,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				bool normal, hover, pressed, disabled;
 				uint32_t textShadowColor, textColor;
 
+				OSRectangle contentBounds = control->bounds;
+				contentBounds.left += control->horizontalMargin;
+				contentBounds.right -= control->horizontalMargin;
+				contentBounds.top += control->verticalMargin;
+				contentBounds.bottom -= control->verticalMargin;
 				if (control->repaintCustomOnly && !message->paint.force) {
 					goto repaintCustom;
 				} else {
@@ -785,37 +878,43 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				if (control->icons) {
-					OSRectangle bounds = control->bounds;
+					OSRectangle bounds = contentBounds;
+
+					UIImage *firstIcon = !control->useSingleIcon ? control->icons[0] : control->singleIcon;
 					
 					if (control->centerIcons) {
-						bounds.left += (bounds.right - bounds.left) / 2 - (control->icons[0]->region.right - control->icons[0]->region.left) / 2;
-						bounds.right = bounds.left + control->icons[0]->region.right - control->icons[0]->region.left;
-						bounds.top += (bounds.bottom - bounds.top) / 2 - (control->icons[0]->region.bottom - control->icons[0]->region.top) / 2;
-						bounds.bottom = bounds.top + control->icons[0]->region.bottom - control->icons[0]->region.top;
+						bounds.left += (bounds.right - bounds.left) / 2 - (firstIcon->region.right - firstIcon->region.left) / 2;
+						bounds.right = bounds.left + firstIcon->region.right - firstIcon->region.left;
+						bounds.top += (bounds.bottom - bounds.top) / 2 - (firstIcon->region.bottom - firstIcon->region.top) / 2;
+						bounds.bottom = bounds.top + firstIcon->region.bottom - firstIcon->region.top;
 					} else {
-						bounds.right = bounds.left + control->icons[0]->region.right - control->icons[0]->region.left;
-						bounds.top += (bounds.bottom - bounds.top) / 2 - (control->icons[0]->region.bottom - control->icons[0]->region.top) / 2;
-						bounds.bottom = bounds.top + control->icons[0]->region.bottom - control->icons[0]->region.top;
+						bounds.right = bounds.left + firstIcon->region.right - firstIcon->region.left;
+						bounds.top += (bounds.bottom - bounds.top) / 2 - (firstIcon->region.bottom - firstIcon->region.top) / 2;
+						bounds.bottom = bounds.top + firstIcon->region.bottom - firstIcon->region.top;
 					}
 
 					if (control->current1) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[0]->region, 
-								control->icons[0]->border, control->icons[0]->drawMode, 0xFF, message->paint.clip);
+						UIImage *image = firstIcon;
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
+								image->border, image->drawMode, 0xFF, message->paint.clip);
 					}
 
 					if (control->current2) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[2]->region, 
-								control->icons[2]->border, control->icons[2]->drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
+						UIImage *image = !control->useSingleIcon ? control->icons[2] : control->singleIcon;
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
+								image->border, image->drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
 					}
 
 					if (control->current3) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[3]->region, 
-								control->icons[3]->border, control->icons[3]->drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
+						UIImage *image = !control->useSingleIcon ? control->icons[3] : control->singleIcon;
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
+								image->border, image->drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
 					if (control->current4) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, control->icons[1]->region, 
-								control->icons[1]->border, control->icons[1]->drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+						UIImage *image = !control->useSingleIcon ? control->icons[1] : control->singleIcon;
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
+								image->border, image->drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
 					}
 				}
 
@@ -823,20 +922,22 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				textShadowColor = 0xFFFFFF - textColor;
 
 				if (control->disabled && !control->noDisabledTextColorChange) {
-					textColor = 0x777777;
-					textShadowColor = 0xEEEEEE;
+					textColor ^= TEXT_COLOR_DISABLED;
+					textShadowColor = TEXT_COLOR_DISABLED_SHADOW;
 				}
 
 				if (!control->customTextRendering) {
-					if (control->textShadow || control->disabled) {
-						OSRectangle bounds = control->textBounds;
+					OSRectangle textBounds = control->textBounds;
+
+					if (control->textShadow || (control->disabled && !control->noDisabledTextShadow)) {
+						OSRectangle bounds = textBounds;
 						bounds.top++; bounds.bottom++; bounds.left++; bounds.right++;
 
 						OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
 								control->textAlign, textShadowColor, -1, control->textBold, message->paint.clip);
 					}
 
-					OSDrawString(message->paint.surface, control->textBounds, &control->text, control->textSize,
+					OSDrawString(message->paint.surface, textBounds, &control->text, control->textSize,
 							control->textAlign, textColor, -1, control->textBold, message->paint.clip);
 				}
 
@@ -860,7 +961,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			OSRepaintControl(control);
 
 			if (control->command) {
-				SetControlCommand(control, control->command);
+				OSSetControlCommand(control, control->command);
 
 				if (control->checkboxIcons) {
 					UpdateCheckboxIcons(control);
@@ -970,6 +1071,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 		} break;
 
+		case OS_MESSAGE_SET_PROPERTY: {
+			SetGUIObjectProperty(control, message);
+		} break;
+
 		default: {
 			response = OS_CALLBACK_NOT_HANDLED;
 		} break;
@@ -978,18 +1083,20 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 	return response;
 }
 
-static void CreateString(char *text, size_t textBytes, OSString *string) {
+static void CreateString(char *text, size_t textBytes, OSString *string, size_t characterCount = 0) {
 	OSHeapFree(string->buffer);
 	string->buffer = (char *) OSHeapAllocate(textBytes, false);
 	string->bytes = textBytes;
-	string->characters = 0;
+	string->characters = characterCount;
 	OSCopyMemory(string->buffer, text, textBytes);
 
 	char *m = string->buffer;
 
-	while (m < string->buffer + textBytes) {
-		m = utf8_advance(m);
-		string->characters++;
+	if (!string->characters) {
+		while (m < string->buffer + textBytes) {
+			m = utf8_advance(m);
+			string->characters++;
+		}
 	}
 }
 
@@ -1058,8 +1165,6 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 	control->backgrounds = images;
 	control->preferredWidth = images[0]->region.right - images[0]->region.left;
 	control->preferredHeight = images[0]->region.bottom - images[0]->region.top;
-	control->minimumWidth = images[0]->region.right - images[0]->region.left;
-	control->minimumHeight = images[0]->region.bottom - images[0]->region.top;
 	control->direction = direction;
 	control->noAnimations = true;
 	control->noDisabledTextColorChange = true;
@@ -1088,7 +1193,7 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 			break;
 
 		case RESIZE_MOVE: {
-			control->textColor = 0xFFFFFF;
+			control->textColor = TEXT_COLOR_TITLEBAR;
 			control->textShadow = true;
 			control->textBold = true;
 			control->textSize = 11;
@@ -1227,7 +1332,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		DrawString(message->paint.surface, control->textBounds, 
-				&control->text, control->textAlign, control->textColor, 0xFFFFFF, control->window->focus == control ? 0xFFC4D9F9 : 0xFFDDDDDD,
+				&control->text, control->textAlign, control->textColor, -1, control->window->focus == control ? 0xFFC4D9F9 : 0xFFDDDDDD,
 				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
 				control->window->lastFocus != control || control->caretBlink,
@@ -1254,10 +1359,19 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		if (!control->sentEditResultNotification) {
 			message.type = OS_NOTIFICATION_CANCEL_EDIT;
 			OSForwardMessage(control, control->notificationCallback, &message);
+
+			if (control->style == OS_TEXTBOX_STYLE_COMMAND) {
+				CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
+			}
 		}
 
 		message.type = OS_NOTIFICATION_END_EDIT;
 		OSForwardMessage(control, control->notificationCallback, &message);
+		control->cursor = control->style == OS_TEXTBOX_STYLE_COMMAND ? OS_CURSOR_NORMAL : OS_CURSOR_TEXT;
+		control->window->cursor = (OSCursorStyle) control->cursor;
+
+		OSHeapFree(control->previousString.buffer);
+		control->previousString.buffer = nullptr;
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
@@ -1282,6 +1396,12 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			OSMessage message;
 			message.type = OS_NOTIFICATION_START_EDIT;
 			OSForwardMessage(control, control->notificationCallback, &message);
+			control->cursor = OS_CURSOR_TEXT;
+			control->window->cursor = (OSCursorStyle) control->cursor;
+
+			if (control->style == OS_TEXTBOX_STYLE_COMMAND) {
+				CreateString(control->text.buffer, control->text.bytes, &control->previousString, control->text.characters);
+			}
 		}
 
 		OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
@@ -1352,6 +1472,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSRepaintControl(control);
 	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
 		control->caret = control->caret2;
+	} else if (message->type == OS_MESSAGE_DESTROY) {
+		OSHeapFree(control->previousString.buffer);
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
@@ -1483,6 +1605,17 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				message.type = OS_NOTIFICATION_CONFIRM_EDIT;
 				OSForwardMessage(control, control->notificationCallback, &message);
 				control->sentEditResultNotification = true;
+
+				message.type = OS_NOTIFICATION_COMMAND;
+				message.command.window = control->window;
+				message.command.command = control->command;
+
+				OSCallbackResponse response = OSForwardMessage(control, control->notificationCallback, &message);
+
+				if (response == OS_CALLBACK_REJECTED) {
+					CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
+				}
+
 				message.type = OS_MESSAGE_END_FOCUS;
 				OSSendMessage(control, &message);
 				control->window->focus = nullptr;
@@ -1537,21 +1670,21 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
-OSObject OSCreateTextbox(unsigned fontSize) {
+OSObject OSCreateTextbox(OSTextboxStyle style) {
 	Textbox *control = (Textbox *) OSHeapAllocate(sizeof(Textbox), true);
 
 	control->type = API_OBJECT_CONTROL;
 	control->preferredWidth = 160;
 	control->drawParentBackground = true;
-	control->backgrounds = textboxBackgrounds;
-	control->cursor = OS_CURSOR_TEXT;
+	control->backgrounds = style == OS_TEXTBOX_STYLE_COMMAND ? textboxCommandBackgrounds : textboxBackgrounds;
+	control->cursor = style == OS_TEXTBOX_STYLE_COMMAND ? OS_CURSOR_NORMAL : OS_CURSOR_TEXT;
 	control->focusable = true;
 	control->customTextRendering = true;
 	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-	control->textSize = fontSize ? fontSize : FONT_SIZE;
-	control->textColor = 0x000000;
-	control->minimumHeight = control->preferredHeight = 23 - 9 + control->textSize;
-	control->minimumWidth = 16;
+	control->textSize = style == OS_TEXTBOX_STYLE_LARGE ? FONT_SIZE * 2 : FONT_SIZE;
+	control->textColor = TEXT_COLOR_DEFAULT;
+	control->preferredHeight = 23 - 9 + control->textSize;
+	control->style = style;
 	control->rightClickMenu = osMenuTextboxContext;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
@@ -1620,6 +1753,8 @@ static OSCallbackResponse ListViewScrollbarMoved(OSObject object, OSMessage *mes
 }
 
 static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *message) {
+	// TODO Rewrite all of this.
+
 	ListView *control = (ListView *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 
@@ -1661,7 +1796,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			if (ClipRectangle(message->paint.clip, control->bounds, &clip)) {
 				if (!(control->flags & OS_CREATE_LIST_VIEW_BORDER) && !control->repaintCustomOnly) {
 					// Draw the background.
-					OSFillRectangle(surface, clip, OSColor(0xFFFFFFFF));
+					OSFillRectangle(surface, clip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 				}
 
 				OSRectangle listClip;
@@ -1726,7 +1861,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				if (control->dragging == ListView::DRAGGING_SELECTION && control->repaintCustomOnly && control->repaintSelectionBox) {
 					OSRectangle r;
 					ClipRectangle(control->oldSelectionBox, listClip, &r);
-					OSFillRectangle(surface, r, OSColor(0xFFFFFFFF));
+					OSFillRectangle(surface, r, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 				}
 
 				int i = 0;
@@ -1791,7 +1926,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 						{
 							// Only redraw the white background if we didn't redraw the whole control.
 							if (control->repaintCustomOnly) {
-								OSFillRectangle(surface, clip4, OSColor(0xFFFFFFFF));
+								OSFillRectangle(surface, clip4, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 							}
 
 							if (message.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
@@ -1925,6 +2060,22 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			OSRectangle inputArea = OS_MAKE_RECTANGLE(bounds.left, control->columns ? control->rowWidth + bounds.left : bounds.right, bounds.top, bounds.bottom);
 
+			ClipRectangle(inputArea, control->inputBounds, &inputArea);
+
+			{
+				OSRectangle area = control->bounds;
+				area.top += control->columns ? LIST_VIEW_HEADER_HEIGHT : 0;
+
+				if (control->flags & OS_CREATE_LIST_VIEW_BORDER) {
+					area.top += STANDARD_BORDER_SIZE;
+					area.bottom -= STANDARD_BORDER_SIZE;
+					area.left += STANDARD_BORDER_SIZE;
+					area.right -= STANDARD_BORDER_SIZE + SCROLLBAR_SIZE;
+				}
+
+				ClipRectangle(inputArea, area, &inputArea);
+			}
+
 			if (!IsPointInRectangle(inputArea, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
 				control->highlightRow = -1;
 				break;
@@ -1945,10 +2096,10 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 					area.top += STANDARD_BORDER_SIZE;
 					area.bottom -= STANDARD_BORDER_SIZE;
 					area.left += STANDARD_BORDER_SIZE;
-					area.right -= STANDARD_BORDER_SIZE;
+					area.right -= STANDARD_BORDER_SIZE + SCROLLBAR_SIZE;
 				}
 
-				ClipRectangle(control->bounds, area, &listClip);
+				ClipRectangle(control->inputBounds, area, &listClip);
 			}
 
 			if (!IsPointInRectangle(listClip, message->mousePressed.positionX, message->mousePressed.positionY)
@@ -2016,7 +2167,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				RepaintListViewRows(control, row, row);
 
 				// If this was a double-click, "choose" this row.
-				if (message->mousePressed.clickChainCount == 2) { // TODO This seems to only detect triple-clicks?? VirtualBox.
+				if (message->mousePressed.clickChainCount == 2) { 
 					m.type = OS_NOTIFICATION_CHOOSE_ITEM;
 					OSForwardMessage(control, control->notificationCallback, &m);
 				}
@@ -2073,7 +2224,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			if (control->dragging == ListView::DRAGGING_COLUMN) {
 				OSRepaintControl(control);
 
-				int newWidth = message->mouseDragged.newPositionX - control->draggingColumnX - 16;
+				int newWidth = message->mouseDragged.newPositionX - control->draggingColumnX - control->bounds.left;
 				if (newWidth < 64) newWidth = 64;
 				control->rowWidth += newWidth - control->columns[control->draggingColumnIndex].width;
 				control->columns[control->draggingColumnIndex].width = newWidth;
@@ -2231,10 +2382,8 @@ OSObject OSCreateListView(unsigned flags) {
 	control->type = API_OBJECT_CONTROL;
 	control->flags = flags;
 
-	control->preferredWidth = 40;
-	control->preferredHeight = 40;
-	control->minimumWidth = 20;
-	control->minimumHeight = 20;
+	control->preferredWidth = 80;
+	control->preferredHeight = 80;
 	control->ignoreActivationClicks = true;
 	control->noAnimations = true;
 	control->focusable = true;
@@ -2246,6 +2395,7 @@ OSObject OSCreateListView(unsigned flags) {
 
 	control->scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
 	((Control *) control->scrollbar)->parent = control;
+	((Control *) control->scrollbar)->layout = OS_CELL_FILL;
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessListViewMessage, nullptr));
 	OSSetObjectNotificationCallback(control->scrollbar, OS_MAKE_CALLBACK(ListViewScrollbarMoved, control));
 
@@ -2325,8 +2475,6 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 
 	control->preferredWidth = !menubar ? 70 : 21;
 	control->preferredHeight = 21;
-	control->minimumWidth = !menubar ? 70 : 21;
-	control->minimumHeight = 21;
 	control->drawParentBackground = true;
 	control->textAlign = menubar ? OS_FLAGS_DEFAULT : (OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT);
 	control->backgrounds = menuItemBackgrounds;
@@ -2338,11 +2486,11 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 
 	if (item.type == OSMenuItem::COMMAND) {
 		OSCommand *command = (OSCommand *) item.value;
-		SetControlCommand(control, command);
-		OSSetText(control, command->label, command->labelBytes);
+		OSSetControlCommand(control, command);
+		OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
 	} else if (item.type == OSMenuItem::SUBMENU) {
 		OSMenuSpecification *menu = (OSMenuSpecification *) item.value;
-		OSSetText(control, menu->name, menu->nameBytes);
+		OSSetText(control, menu->name, menu->nameBytes, OS_RESIZE_MODE_GROW_ONLY);
 		if (!menubar) control->icons = smallArrowRightIcons;
 	}
 
@@ -2357,42 +2505,46 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	return control;
 }
 
-OSObject OSCreateButton(OSCommand *command) {
+OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 
-#ifndef SUPER_COOL_BUTTONS
 	control->preferredWidth = 80;
 	control->preferredHeight = 21;
-#else
-	control->preferredWidth = 86;
-	control->preferredHeight = 29;
-
-	if (!command->checkable) {
-		control->textColor = 0xFFFFFF;
-		control->textShadow = true;
-	}
-#endif
+	control->textColor = TEXT_COLOR_DEFAULT;
 
 	control->drawParentBackground = true;
 	control->ignoreActivationClicks = true;
 
-	SetControlCommand(control, command);
+	OSSetControlCommand(control, command);
 
 	if (control->checkable) {
 		UpdateCheckboxIcons(control);
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-		control->minimumHeight = control->icons[0]->region.bottom - control->icons[0]->region.top;
 		control->checkboxIcons = true;
-		control->minimumWidth = control->icons[0]->region.right - control->icons[0]->region.left;
 	} else {
-		control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
-		control->minimumWidth = 40;
-		control->minimumHeight = 21;
+		control->backgrounds = style == OS_BUTTON_STYLE_TOOLBAR ? toolbarItemBackgrounds
+			: (command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds);
 	}
 
+	if (style == OS_BUTTON_STYLE_TOOLBAR) {
+		control->noDisabledTextShadow = true;
+		control->textColor = TEXT_COLOR_TOOLBAR;
+		control->horizontalMargin = 12;
+		control->preferredWidth = 0;
+		control->preferredHeight = 31;
+		control->verbose = true;
+
+		// TODO Shadow blur radius = 3, offset y = +1
+	}
+
+#if 0
+	control->backgrounds = toolbarItemBackgrounds;
+	control->preferredHeight = 31;
+#endif
+
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
-	OSSetText(control, command->label, command->labelBytes);
+	OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
 
 	return control;
 }
@@ -2405,8 +2557,6 @@ OSObject OSCreateLine(bool orientation) {
 
 	control->preferredWidth = 1;
 	control->preferredHeight = 1;
-	control->minimumWidth = 1;
-	control->minimumHeight = 1;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
@@ -2431,8 +2581,8 @@ OSObject OSCreateIconDisplay(uint16_t iconID) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->drawParentBackground = true;
-	control->minimumWidth = control->preferredWidth = 32;
-	control->minimumHeight = control->preferredHeight = 32;
+	control->preferredWidth = 32;
+	control->preferredHeight = 32;
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessIconDisplayMessage, (void *) (uintptr_t) iconID));
 	return control;
@@ -2444,11 +2594,8 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 	control->drawParentBackground = true;
 	control->textAlign = OS_DRAW_STRING_HALIGN_LEFT;
 
-	OSSetText(control, text, textBytes);
+	OSSetText(control, text, textBytes, OS_RESIZE_MODE_EXACT);
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
-
-	control->minimumWidth = control->preferredWidth;
-	control->minimumHeight = control->preferredHeight;
 
 	return control;
 }
@@ -2545,8 +2692,6 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
 
 	control->preferredWidth = 168;
 	control->preferredHeight = 21;
-	control->minimumWidth = 168;
-	control->minimumHeight = 21;
 
 	control->drawParentBackground = true;
 
@@ -2577,34 +2722,37 @@ void OSGetText(OSObject _control, OSString *string) {
 	*string = control->text;
 }
 
-void OSSetText(OSObject _control, char *text, size_t textBytes) {
+void OSSetText(OSObject _control, char *text, size_t textBytes, unsigned resizeMode) {
 	Control *control = (Control *) _control;
 	CreateString(text, textBytes, &control->text);
 
 	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 8;
 	int suggestedHeight = FONT_SIZE + 8;
 
-	if (control->icons && control->icons[UI_IMAGE_NORMAL]) {
-		suggestedWidth += control->icons[UI_IMAGE_NORMAL]->region.right - control->icons[0]->region.left + 4;
+	if (control->icons) {
+		UIImage *firstIcon = !control->useSingleIcon ? control->icons[0] : control->singleIcon;
+		suggestedWidth += firstIcon->region.right - firstIcon->region.left + ICON_TEXT_GAP;
 	}
 
-	if (suggestedWidth > control->minimumWidth) control->preferredWidth = suggestedWidth;
-	if (suggestedHeight > control->minimumHeight) control->preferredHeight = suggestedHeight;
+	OSMessage message;
 
-	control->relayout = true;
-	OSRepaintControl(control);
+	if (resizeMode) {
+		if (resizeMode == OS_RESIZE_MODE_EXACT || suggestedWidth > control->preferredWidth) {
+			control->preferredWidth = suggestedWidth;
+		}
 
-	{
-		OSMessage message;
+		if (resizeMode == OS_RESIZE_MODE_EXACT || suggestedHeight > control->preferredHeight) {
+			control->preferredHeight = suggestedHeight;
+		}
+
+		control->relayout = true;
 		message.type = OS_MESSAGE_CHILD_UPDATED;
 		OSSendMessage(control->parent, &message);
 	}
 
-	{
-		OSMessage message;
-		message.type = OS_MESSAGE_TEXT_UPDATED;
-		OSSendMessage(control, &message);
-	}
+	OSRepaintControl(control);
+	message.type = OS_MESSAGE_TEXT_UPDATED;
+	OSSendMessage(control, &message);
 }
 
 void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _control, unsigned layout) {
@@ -2665,13 +2813,17 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 			switch (message->setProperty.index) {
 				case OS_GRID_PROPERTY_BORDER_SIZE: {
-					grid->borderSize = valueInt;
+					grid->borderSize = OS_MAKE_RECTANGLE_ALL(valueInt);
 					repaint = true;
 				} break;
 
 				case OS_GRID_PROPERTY_GAP_SIZE: {
 					grid->gapSize = valueInt;
 					repaint = true;
+				} break;
+
+				default: {
+					SetGUIObjectProperty(grid, message);
 				} break;
 			}
 
@@ -2717,13 +2869,13 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 						// OSPrint("Measuring %d, %d: %d, %d, %d, %d\n", i, j, width, height, message.measure.minimumWidth, message.measure.minimumHeight);
 
-						if (width == DIMENSION_PUSH) { bool a = grid->widths[i] == DIMENSION_PUSH; grid->widths[i] = DIMENSION_PUSH; if (!a) pushH++; }
+						if ((*object)->layout & OS_CELL_H_PUSH) { bool a = grid->widths[i] == DIMENSION_PUSH; grid->widths[i] = DIMENSION_PUSH; if (!a) pushH++; }
 						else if (grid->widths[i] < width && grid->widths[i] != DIMENSION_PUSH) grid->widths[i] = width;
-						if (height == DIMENSION_PUSH) { bool a = grid->heights[j] == DIMENSION_PUSH; grid->heights[j] = DIMENSION_PUSH; if (!a) pushV++; }
+						if ((*object)->layout & OS_CELL_V_PUSH) { bool a = grid->heights[j] == DIMENSION_PUSH; grid->heights[j] = DIMENSION_PUSH; if (!a) pushV++; }
 						else if (grid->heights[j] < height && grid->heights[j] != DIMENSION_PUSH) grid->heights[j] = height;
 
-						if (grid->minimumWidths[i] < message.measure.minimumWidth) grid->minimumWidths[i] = message.measure.minimumWidth;
-						if (grid->minimumHeights[j] < message.measure.minimumHeight) grid->minimumHeights[j] = message.measure.minimumHeight;
+						if (grid->minimumWidths[i] < message.measure.preferredWidth) grid->minimumWidths[i] = message.measure.preferredWidth;
+						if (grid->minimumHeights[j] < message.measure.preferredHeight) grid->minimumHeights[j] = message.measure.preferredHeight;
 					}
 				}
 
@@ -2740,7 +2892,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 #endif
 
 				if (pushH) {
-					int usedWidth = grid->borderSize * 2 + grid->gapSize * (grid->columns - 1); 
+					int usedWidth = grid->borderSize.left + grid->borderSize.right + grid->gapSize * (grid->columns - 1); 
 					for (uintptr_t i = 0; i < grid->columns; i++) if (grid->widths[i] != DIMENSION_PUSH) usedWidth += grid->widths[i];
 					int widthPerPush = (grid->bounds.right - grid->bounds.left - usedWidth) / pushH;
 
@@ -2756,7 +2908,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				}
 
 				if (pushV) {
-					int usedHeight = grid->borderSize * 2 + grid->gapSize * (grid->rows - 1); 
+					int usedHeight = grid->borderSize.top + grid->borderSize.bottom + grid->gapSize * (grid->rows - 1); 
 					for (uintptr_t j = 0; j < grid->rows; j++) if (grid->heights[j] != DIMENSION_PUSH) usedHeight += grid->heights[j];
 					int heightPerPush = (grid->bounds.bottom - grid->bounds.top - usedHeight) / pushV; 
 
@@ -2776,10 +2928,10 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				OSMessage message2;
 
-				int posX = grid->bounds.left + grid->borderSize - grid->xOffset;
+				int posX = grid->bounds.left + grid->borderSize.left - grid->xOffset;
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
-					int posY = grid->bounds.top + grid->borderSize - grid->yOffset;
+					int posY = grid->bounds.top + grid->borderSize.top - grid->yOffset;
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						GUIObject **object = grid->objects + (j * grid->columns + i);
@@ -2821,10 +2973,6 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		case OS_MESSAGE_MEASURE: {
 			OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
 			OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
-			OSZeroMemory(grid->minimumWidths, sizeof(int) * grid->columns);
-			OSZeroMemory(grid->minimumHeights, sizeof(int) * grid->rows);
-
-			bool pushH = false, pushV = false;
 
 			for (uintptr_t i = 0; i < grid->columns; i++) {
 				for (uintptr_t j = 0; j < grid->rows; j++) {
@@ -2834,35 +2982,20 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					int width = message->measure.preferredWidth;
 					int height = message->measure.preferredHeight;
 
-					int minimumWidth = message->measure.minimumWidth;
-					int minimumHeight = message->measure.minimumHeight;
-
-					if (width == DIMENSION_PUSH) pushH = true;
-					if (height == DIMENSION_PUSH) pushV = true;
-
 					if (grid->widths[i] < width) grid->widths[i] = width;
 					if (grid->heights[j] < height) grid->heights[j] = height;
-
-					if (grid->minimumWidths[i] < minimumWidth) grid->minimumWidths[i] = minimumWidth;
-					if (grid->minimumHeights[j] < minimumHeight) grid->minimumHeights[j] = minimumHeight;
 				}
 			}
 
-			int width = pushH ? DIMENSION_PUSH : grid->borderSize, height = pushV ? DIMENSION_PUSH : grid->borderSize;
-			int minimumWidth = grid->borderSize, minimumHeight = grid->borderSize;
+			int width = grid->borderSize.left, height = grid->borderSize.top;
 
-			if (!pushH) for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + (i == grid->columns - 1 ? grid->borderSize : grid->gapSize);
-			if (!pushV) for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + (j == grid->rows - 1 ? grid->borderSize : grid->gapSize);
-			for (uintptr_t i = 0; i < grid->columns; i++) minimumWidth += grid->minimumWidths[i] + (i == grid->columns - 1 ? grid->borderSize : grid->gapSize);
-			for (uintptr_t j = 0; j < grid->rows; j++) minimumHeight += grid->minimumHeights[j] + (j == grid->rows - 1 ? grid->borderSize : grid->gapSize);
+			for (uintptr_t i = 0; i < grid->columns; i++) width += grid->widths[i] + (i == grid->columns - 1 ? grid->borderSize.left : grid->gapSize);
+			for (uintptr_t j = 0; j < grid->rows; j++) height += grid->heights[j] + (j == grid->rows - 1 ? grid->borderSize.top : grid->gapSize);
 
-			grid->preferredWidth = message->measure.preferredWidth = width;
-			grid->preferredHeight = message->measure.preferredHeight = height;
-			grid->minimumWidth = message->measure.minimumWidth = minimumWidth;
-			grid->minimumHeight = message->measure.minimumHeight = minimumHeight;
-
-			if (grid->layout & OS_CELL_H_PUSH) message->measure.preferredWidth = DIMENSION_PUSH;
-			if (grid->layout & OS_CELL_V_PUSH) message->measure.preferredHeight = DIMENSION_PUSH;
+			if (!grid->suggestWidth) grid->preferredWidth = message->measure.preferredWidth = width;
+			else message->measure.preferredWidth = grid->preferredWidth;
+			if (!grid->suggestHeight) grid->preferredHeight = message->measure.preferredHeight = height;
+			else message->measure.preferredHeight = grid->preferredHeight;
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -2955,7 +3088,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 	return response;
 }
 
-OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
+OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + 2 * sizeof(int) * (columns + rows), true);
 
 	Grid *grid = (Grid *) memory;
@@ -2969,14 +3102,63 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, unsigned flags) {
 	grid->heights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns);
 	grid->minimumWidths = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns + sizeof(int) * rows);
 	grid->minimumHeights = (int *) (memory + sizeof(Grid) + sizeof(OSObject) * columns * rows + sizeof(int) * columns + sizeof(int) * rows + sizeof(int) * columns);
-	grid->flags = flags;
+	grid->style = style;
 
-	if (flags & OS_CREATE_GRID_NO_BORDER) grid->borderSize = 0; else grid->borderSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 8;
-	if (flags & OS_CREATE_GRID_NO_GAP) grid->gapSize = 0; else grid->gapSize = (flags & OS_CREATE_GRID_MENU) ? 4 : 6;
-	if (flags & OS_CREATE_GRID_DRAW_BOX) { grid->borderSize += 4; grid->background = &gridBox;  }
-	if (flags & OS_CREATE_GRID_NO_BACKGROUND) { grid->backgroundColor = 0; }
-	if (flags & OS_CREATE_GRID_ALT_BACKGROUND) { grid->background = &dialogAltAreaBox; }
-	if (flags & OS_CREATE_GRID_MENUBAR_BACKGROUND) { grid->background = &menubarBackground; } 
+	switch (style) {
+		case OS_GRID_STYLE_GROUP_BOX: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(12);
+			grid->gapSize = 6;
+			grid->background = &gridBox;
+		} break;
+
+		case OS_GRID_STYLE_MENU: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(4);
+			grid->gapSize = 0;
+			grid->background = &menuBox;
+		} break;
+
+		case OS_GRID_STYLE_MENUBAR: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(0);
+			grid->gapSize = 0;
+			grid->background = &menubarBackground;
+		} break;
+
+		case OS_GRID_STYLE_LAYOUT: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(0);
+			grid->gapSize = 0;
+			grid->backgroundColor = 0;
+		} break;
+
+		case OS_GRID_STYLE_CONTAINER: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(8);
+			grid->gapSize = 6;
+		} break;
+
+		case OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(0);
+			grid->gapSize = 6;
+		} break;
+
+		case OS_GRID_STYLE_CONTAINER_ALT: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(8);
+			grid->gapSize = 6;
+			grid->background = &dialogAltAreaBox;
+		} break;
+
+		case OS_GRID_STYLE_STATUS_BAR: {
+			grid->borderSize = OS_MAKE_RECTANGLE_ALL(4);
+			grid->gapSize = 6;
+			grid->background = &dialogAltAreaBox;
+		} break;
+
+		case OS_GRID_STYLE_TOOLBAR: {
+			grid->borderSize = OS_MAKE_RECTANGLE(5, 5, 0, 0);
+			grid->gapSize = 4;
+			grid->preferredHeight = 31;
+			grid->suggestHeight = true;
+			grid->background = &toolbarBackground;
+		} break;
+	}
 
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
 
@@ -3010,8 +3192,8 @@ static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *
 
 			int contentWidth = message->layout.right - message->layout.left - (grid->objects[1] ? SCROLLBAR_SIZE : 0);
 			int contentHeight = message->layout.bottom - message->layout.top - (grid->objects[2] ? SCROLLBAR_SIZE : 0);
-			int minimumWidth = m.measure.minimumWidth;
-			int minimumHeight = m.measure.minimumHeight;
+			int minimumWidth = m.measure.preferredWidth;
+			int minimumHeight = m.measure.preferredHeight;
 
 			m.type = OS_MESSAGE_LAYOUT;
 			m.layout.force = true;
@@ -3035,6 +3217,14 @@ static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *
 				OSSetScrollbarMeasurements(grid->objects[2], minimumWidth, contentWidth);
 			}
 
+			{
+				m.layout.top = message->layout.bottom - SCROLLBAR_SIZE;
+				m.layout.bottom = message->layout.bottom;
+				m.layout.left = message->layout.right - SCROLLBAR_SIZE;
+				m.layout.right = message->layout.right;
+				OSSendMessage(grid->objects[3], &m);
+			}
+
 			m.layout.top = message->layout.top;
 			m.layout.bottom = message->layout.top + contentHeight;
 			m.layout.left = message->layout.left;
@@ -3044,10 +3234,8 @@ static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *
 			response = OS_CALLBACK_HANDLED;
 		}
 	} else if (message->type == OS_MESSAGE_MEASURE) {
-		message->measure.preferredWidth = DIMENSION_PUSH;
-		message->measure.preferredHeight = DIMENSION_PUSH;
-		message->measure.minimumWidth = SCROLLBAR_SIZE * 3;
-		message->measure.minimumHeight = SCROLLBAR_SIZE * 3;
+		message->measure.preferredWidth = SCROLLBAR_SIZE * 3;
+		message->measure.preferredHeight = SCROLLBAR_SIZE * 3;
 		response = OS_CALLBACK_HANDLED;
 	}
 
@@ -3077,22 +3265,27 @@ OSCallbackResponse ScrollPaneBarMoved(OSObject _object, OSMessage *message) {
 }
 
 OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
-	OSObject grid = OSCreateGrid(2, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER);
+	OSObject grid = OSCreateGrid(2, 2, OS_GRID_STYLE_LAYOUT);
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessScrollPaneMessage, nullptr));
 	OSAddGrid(grid, 0, 0, content, OS_CELL_FILL);
 
 	if (flags & OS_CREATE_SCROLL_PANE_VERTICAL) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
-		OSAddGrid(grid, 1, 0, scrollbar, OS_FLAGS_DEFAULT);
+		OSAddGrid(grid, 1, 0, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
 		// OSPrint("vertical %x\n", scrollbar);
 	}
 
 	if (flags & OS_CREATE_SCROLL_PANE_HORIZONTAL) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
-		OSAddGrid(grid, 0, 1, scrollbar, OS_FLAGS_DEFAULT);
+		OSAddGrid(grid, 0, 1, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
 		// OSPrint("horizontal %x\n", scrollbar);
+	}
+
+	{
+		OSObject corner = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
+		OSAddGrid(grid, 1, 1, corner, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	}
 
 	return grid;
@@ -3224,8 +3417,6 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 		case OS_MESSAGE_MEASURE: {
 			message->measure.preferredWidth = grid->preferredWidth;
 			message->measure.preferredHeight = grid->preferredHeight;
-			message->measure.minimumWidth = grid->minimumWidth;
-			message->measure.minimumHeight = grid->minimumHeight;
 			result = OS_CALLBACK_HANDLED;
 		} break;
 
@@ -3411,10 +3602,8 @@ OSObject OSCreateScrollbar(bool orientation) {
 	scrollbar->columns = 1;
 	scrollbar->rows = 5;
 	scrollbar->objects = (GUIObject **) (memory + sizeof(Scrollbar));
-	scrollbar->preferredWidth = !orientation ? DIMENSION_PUSH : SCROLLBAR_SIZE;
-	scrollbar->preferredHeight = !orientation ? SCROLLBAR_SIZE : DIMENSION_PUSH;
-	scrollbar->minimumWidth = !orientation ? SCROLLBAR_SIZE * 2 + 4 : SCROLLBAR_SIZE;
-	scrollbar->minimumHeight = !orientation ? SCROLLBAR_SIZE : SCROLLBAR_SIZE * 2 + 4;
+	scrollbar->preferredWidth = !orientation ? 64 : SCROLLBAR_SIZE;
+	scrollbar->preferredHeight = !orientation ? SCROLLBAR_SIZE : 64;
 
 	OSCommand command = {};
 	command.defaultDisabled = true;
@@ -3436,7 +3625,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	OSSetCallback(nudgeDown, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_UP);
-	Control *up = (Control *) OSCreateButton(&command);
+	Control *up = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
 	up->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	up->context = scrollbar;
 	up->icons = orientation ? smallArrowUpIcons : smallArrowLeftIcons;
@@ -3449,15 +3638,15 @@ OSObject OSCreateScrollbar(bool orientation) {
 	OSSetCallback(grip, OS_MAKE_CALLBACK(ProcessScrollbarGripMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_DOWN);
-	Control *down = (Control *) OSCreateButton(&command);
+	Control *down = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
 	down->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	down->context = scrollbar;
 	down->icons = orientation ? smallArrowDownIcons : smallArrowRightIcons;
 	down->centerIcons = true;
 
-	OSAddControl(scrollbar, 0, 0, up, OS_FLAGS_DEFAULT);
+	OSAddControl(scrollbar, 0, 0, up, OS_CELL_H_EXPAND);
 	OSAddControl(scrollbar, 0, 1, grip, OS_CELL_V_EXPAND | OS_CELL_H_EXPAND);
-	OSAddControl(scrollbar, 0, 2, down, OS_FLAGS_DEFAULT);
+	OSAddControl(scrollbar, 0, 2, down, OS_CELL_H_EXPAND);
 	OSAddControl(scrollbar, 0, 3, nudgeUp, OS_CELL_V_EXPAND | OS_CELL_H_EXPAND);
 	OSAddControl(scrollbar, 0, 4, nudgeDown, OS_CELL_V_EXPAND | OS_CELL_H_EXPAND);
 
@@ -3952,7 +4141,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
 
-	window->root = (Grid *) OSCreateGrid(3, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
+	window->root = (Grid *) OSCreateGrid(3, 4, OS_GRID_STYLE_LAYOUT);
 	window->root->parent = window;
 
 	{
@@ -3965,14 +4154,14 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	if (flags & OS_CREATE_WINDOW_NORMAL) {
 		OSObject titlebar = CreateWindowResizeHandle(windowBorder22, RESIZE_MOVE);
 		OSAddControl(window->root, 1, 1, titlebar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
-		OSSetText(titlebar, specification->title, specification->titleBytes);
+		OSSetText(titlebar, specification->title, specification->titleBytes, OS_RESIZE_MODE_IGNORE);
 
 		if (flags & OS_CREATE_WINDOW_DIALOG) {
-			OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(dialogBorder11, RESIZE_NONE), 0);
-			OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(dialogBorder12, RESIZE_NONE), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-			OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(dialogBorder13, RESIZE_NONE), 0);
-			OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(dialogBorder21, RESIZE_NONE), 0);
-			OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(dialogBorder23, RESIZE_NONE), 0);
+			OSAddControl(window->root, 0, 0, CreateWindowResizeHandle(dialogBorder11, RESIZE_MOVE), 0);
+			OSAddControl(window->root, 1, 0, CreateWindowResizeHandle(dialogBorder12, RESIZE_MOVE), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+			OSAddControl(window->root, 2, 0, CreateWindowResizeHandle(dialogBorder13, RESIZE_MOVE), 0);
+			OSAddControl(window->root, 0, 1, CreateWindowResizeHandle(dialogBorder21, RESIZE_MOVE), 0);
+			OSAddControl(window->root, 2, 1, CreateWindowResizeHandle(dialogBorder23, RESIZE_MOVE), 0);
 			OSAddControl(window->root, 0, 2, CreateWindowResizeHandle(dialogBorder31, RESIZE_NONE), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 			OSAddControl(window->root, 2, 2, CreateWindowResizeHandle(dialogBorder33, RESIZE_NONE), OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 			OSAddControl(window->root, 0, 3, CreateWindowResizeHandle(dialogBorder41, RESIZE_NONE), 0);
@@ -3992,7 +4181,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 		}
 
 		if (flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
-			OSObject grid = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_GAP | OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_BACKGROUND);
+			OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
 			OSAddGrid(window->root, 1, 2, grid, OS_CELL_FILL);
 			OSAddGrid(grid, 0, 0, OSCreateMenu(specification->menubar, nullptr, OS_MAKE_POINT(0, 0), OS_CREATE_MENUBAR), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		}
@@ -4028,26 +4217,23 @@ void OSShowDialogAlert(char *title, size_t titleBytes,
 
 	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent);
 
-	OSObject layout1 = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
-	OSObject layout2 = OSCreateGrid(2, 1, OS_FLAGS_DEFAULT);
-	OSObject layout3 = OSCreateGrid(1, 2, OS_CREATE_GRID_NO_BORDER);
-	OSObject layout4 = OSCreateGrid(1, 1, OS_FLAGS_DEFAULT);
-
-	((Grid *) layout4)->background = &dialogAltAreaBox;
-	((Grid *) layout2)->gapSize *= 2;
+	OSObject layout1 = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
+	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_CONTAINER);
+	OSObject layout3 = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER);
+	OSObject layout4 = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER_ALT);
 
 	OSSetRootGrid(dialog, layout1);
 	OSAddGrid(layout1, 0, 0, layout2, OS_CELL_FILL);
-	OSAddGrid(layout2, 1, 0, layout3, OS_CELL_FILL);
+	OSAddGrid(layout2, 2, 0, layout3, OS_CELL_FILL);
 	OSAddGrid(layout1, 0, 1, layout4, OS_CELL_H_EXPAND);
 
-	OSObject okButton = OSCreateButton(osDialogStandardOK);
+	OSObject okButton = OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layout4, 0, 0, okButton, OS_CELL_H_PUSH | OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
 
 	Control *label = (Control *) OSCreateLabel(message, messageBytes);
 	label->textSize = 10;
-	label->textColor = 0x003399;
+	label->textColor = TEXT_COLOR_HEADING;
 	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
@@ -4098,8 +4284,7 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 	}
 
 
-	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, OS_CREATE_GRID_MENU | OS_CREATE_GRID_NO_GAP | (menubar ? OS_CREATE_GRID_NO_BORDER : 0));
-	((Grid *) grid)->background = menubar ? &menubarBackground : &menuBox;
+	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, menubar ? OS_GRID_STYLE_MENUBAR : OS_GRID_STYLE_MENU);
 
 	OSObject returnValue = grid;
 

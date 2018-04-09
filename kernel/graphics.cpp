@@ -273,10 +273,6 @@ void Graphics::Initialise() {
 		resX = 640;
 		resY = 480;
 		colorMode = VIDEO_COLOR_VGA_PLANES;
-
-#if 0
-		KernelPanic("Graphics::Initialise - Booted in an unsupported graphics mode.\n");
-#endif
 	}
 
 	surfacePool.Initialise(sizeof(Surface));
@@ -615,22 +611,7 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 	// Clip the destination region to the bounds of the destination.
 
 	OSRectangle clipRegion = OS_MAKE_RECTANGLE(0, resX, 0, resY);
-
-	if (clipRegion.left < destinationRegion.left) clipRegion.left = destinationRegion.left;
-	if (clipRegion.right > destinationRegion.right) clipRegion.right = destinationRegion.right;
-	if (clipRegion.top < destinationRegion.top) clipRegion.top = destinationRegion.top;
-	if (clipRegion.bottom > destinationRegion.bottom) clipRegion.bottom = destinationRegion.bottom;
-
-	sourceRegion.left += clipRegion.left - destinationRegion.left;
-	sourceRegion.right += clipRegion.right - destinationRegion.right;
-	sourceRegion.top += clipRegion.top - destinationRegion.top;
-	sourceRegion.bottom += clipRegion.bottom - destinationRegion.bottom;
-
-	if (sourceRegion.left > sourceBorderRegion.left) sourceRegion.left = sourceBorderRegion.left;
-	if (sourceRegion.right < sourceBorderRegion.right) sourceRegion.right = sourceBorderRegion.right;
-	if (sourceRegion.top > sourceBorderRegion.top) sourceRegion.top = sourceBorderRegion.top;
-	if (sourceRegion.bottom < sourceBorderRegion.bottom) sourceRegion.bottom = sourceBorderRegion.bottom;
-
+	OSClipDrawSourceRegion(&sourceRegion, &sourceBorderRegion, &destinationRegion, &clipRegion, mode);
 	destinationRegion = clipRegion;
 
 	// Work out the border region on the destination.

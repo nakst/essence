@@ -3,9 +3,10 @@
 #define COMMAND_NAVIGATE_BACKWARDS (1)
 #define COMMAND_NAVIGATE_FORWARDS  (2)
 #define COMMAND_NAVIGATE_PARENT    (3)
+#define COMMAND_NAVIGATE_PATH	   (4)
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/os/file_manager.manifest.h"
+#include "../bin/OS/file_manager.manifest.h"
 
 // TODO Why does the scrollbar start at the bottom when changing folders?
 
@@ -36,7 +37,7 @@ struct Instance {
 
 #define LOAD_FOLDER_BACKWARDS (1)
 #define LOAD_FOLDER_FORWARDS (2)
-	void LoadFolder(char *path, size_t pathBytes, 
+	bool LoadFolder(char *path, size_t pathBytes, 
 			char *path2 = nullptr, size_t pathBytes2 = 0,
 			unsigned historyMode = 0);
 
@@ -143,41 +144,54 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 }
 
 OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
 	(void) object;
 
-	switch ((uintptr_t) message->context) {
-		case COMMAND_NAVIGATE_BACKWARDS: {
-			instance->pathBackwardHistoryPosition--;
-			instance->LoadFolder(instance->pathBackwardHistory[instance->pathBackwardHistoryPosition],
-					instance->pathBackwardHistoryBytes[instance->pathBackwardHistoryPosition],
-					nullptr, 0, LOAD_FOLDER_BACKWARDS);
-		} break;
+	if (message->type == OS_NOTIFICATION_COMMAND) {
+		Instance *instance = (Instance *) OSGetInstance(message->command.window);
 
-		case COMMAND_NAVIGATE_FORWARDS: {
-			instance->pathForwardHistoryPosition--;
-			instance->LoadFolder(instance->pathForwardHistory[instance->pathForwardHistoryPosition],
-					instance->pathForwardHistoryBytes[instance->pathForwardHistoryPosition],
-					nullptr, 0, LOAD_FOLDER_FORWARDS);
-		} break;
-
-		case COMMAND_NAVIGATE_PARENT: {
-			size_t s = instance->pathBytes;
-
-			while (true) {
-				if (instance->path[--s] == '/') {
-					break;
+		switch ((uintptr_t) message->context) {
+			case COMMAND_NAVIGATE_BACKWARDS: {
+				instance->pathBackwardHistoryPosition--;
+				instance->LoadFolder(instance->pathBackwardHistory[instance->pathBackwardHistoryPosition],
+						instance->pathBackwardHistoryBytes[instance->pathBackwardHistoryPosition],
+						nullptr, 0, LOAD_FOLDER_BACKWARDS);
+			} break;
+		
+			case COMMAND_NAVIGATE_FORWARDS: {
+				instance->pathForwardHistoryPosition--;
+				instance->LoadFolder(instance->pathForwardHistory[instance->pathForwardHistoryPosition],
+						instance->pathForwardHistoryBytes[instance->pathForwardHistoryPosition],
+						nullptr, 0, LOAD_FOLDER_FORWARDS);
+			} break;
+		
+			case COMMAND_NAVIGATE_PARENT: {
+				size_t s = instance->pathBytes;
+		
+				while (true) {
+					if (instance->path[--s] == '/') {
+						break;
+					}
 				}
-			}
+		
+				if (!s) s++;
+		
+				instance->LoadFolder(instance->path, s);
+			} break;
+		
+			case COMMAND_NAVIGATE_PATH: {
+				OSString string;
+				OSGetText(object, &string);
 
-			if (!s) s++;
+				if (!instance->LoadFolder(string.buffer, string.bytes)) {
+					return OS_CALLBACK_REJECTED;
+				}
+			} break;
+		}
 
-			instance->LoadFolder(instance->path, s);
-		} break;
+		OSEnableCommand(instance->window, commandNavigateBackwards, instance->pathBackwardHistoryPosition);
+		OSEnableCommand(instance->window, commandNavigateForwards, instance->pathForwardHistoryPosition);
 	}
 
-	OSEnableCommand(instance->window, commandNavigateBackwards, instance->pathBackwardHistoryPosition);
-	OSEnableCommand(instance->window, commandNavigateForwards, instance->pathForwardHistoryPosition);
 
 	return OS_CALLBACK_HANDLED;
 }
@@ -188,7 +202,7 @@ OSCallbackResponse ProcessFolderPathNotification(OSObject object, OSMessage *mes
 	
 	switch (message->type) {
 		case OS_NOTIFICATION_CANCEL_EDIT: {
-			OSSetText(object, instance->path, instance->pathBytes);
+			OSSetText(object, instance->path, instance->pathBytes, OS_RESIZE_MODE_IGNORE);
 			return OS_CALLBACK_HANDLED;
 		} break;
 
@@ -197,7 +211,7 @@ OSCallbackResponse ProcessFolderPathNotification(OSObject object, OSMessage *mes
 			OSGetText(object, &string);
 
 			if (!string.bytes) {
-				OSSetText(object, instance->path, instance->pathBytes);
+				OSSetText(object, instance->path, instance->pathBytes, OS_RESIZE_MODE_IGNORE);
 			} else {
 				instance->LoadFolder(string.buffer, string.bytes);
 			}
@@ -374,7 +388,9 @@ void Instance::ReportError(unsigned where, OSError error) {
 			OS_ICON_ERROR, window);
 }
 
-void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pathBytes2, unsigned historyMode) {
+bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pathBytes2, unsigned historyMode) {
+	if (!pathBytes1) return false;
+
 	char *oldPath = path;
 	size_t oldPathBytes = pathBytes;
 	char *newPath;
@@ -383,8 +399,7 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		goto normal;
 		fail:;
 		OSHeapFree(newPath);
-		OSSetText(folderPath, oldPath, oldPathBytes);
-		return;
+		return false;
 		normal:;
 	}
 
@@ -461,8 +476,7 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	// Update the UI.
 	OSListViewReset(folderListing);
 	OSListViewInsert(folderListing, 0, childCount);
-	OSSetScrollbarPosition(folderListing, 0, false);
-	OSSetText(folderPath, path, pathBytes);
+	OSSetText(folderPath, path, pathBytes, OS_RESIZE_MODE_IGNORE);
 	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
 
 	// Add the previous folder to the history.
@@ -498,8 +512,10 @@ void Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		if (folderChildCount == 0) length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "(empty)");
 		else if (folderChildCount == 1) length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "1 item");
 		else length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%d items", folderChildCount);
-		OSSetText(statusLabel, guiStringBuffer, length);
+		OSSetText(statusLabel, guiStringBuffer, length, OS_RESIZE_MODE_GROW_ONLY);
 	}
+
+	return true;
 }
 
 void ProgramEntry() {
@@ -509,45 +525,44 @@ void ProgramEntry() {
 	OSSetInstance(window, instance);
 	instance->window = window;
 
-	OSObject layout1 = OSCreateGrid(1, 4, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
-	OSObject layout2 = OSCreateGrid(2, 1, OS_CREATE_GRID_NO_BORDER | OS_CREATE_GRID_NO_GAP);
-	OSObject layout3 = OSCreateGrid(4, 1, OS_CREATE_GRID_MENUBAR_BACKGROUND);
-	OSObject layout4 = OSCreateGrid(2, 1, OS_CREATE_GRID_ALT_BACKGROUND);
+	OSObject layout1 = OSCreateGrid(1, 4, OS_GRID_STYLE_LAYOUT);
+	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
+	OSObject layout3 = OSCreateGrid(4, 1, OS_GRID_STYLE_TOOLBAR);
+	OSObject layout4 = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 
 	OSSetRootGrid(window, layout1);
 	OSAddGrid(layout1, 0, 2, layout2, OS_CELL_FILL);
 	OSAddGrid(layout1, 0, 0, layout3, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSAddGrid(layout1, 0, 3, layout4, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
-	OSSetProperty(layout3, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 6);
-	OSSetProperty(layout3, OS_GRID_PROPERTY_GAP_SIZE, (void *) 6);
-	OSSetProperty(layout4, OS_GRID_PROPERTY_BORDER_SIZE, (void *) 4);
+	OSObject bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+	OSAddControl(layout2, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
+	OSSetProperty(bookmarkList, OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH, (void *) 160);
 
 	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
-	OSAddControl(layout2, 1, 0, instance->folderListing, OS_CELL_FILL);
+	OSAddControl(layout2, 2, 0, instance->folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(instance->folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
 	OSSetObjectNotificationCallback(instance->folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, instance));
 
 	// OSAddControl(layout1, 0, 1, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout2, 1, 0, OSCreateLine(OS_ORIENTATION_VERTICAL), OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 
-	OSObject backButton = OSCreateButton(commandNavigateBackwards);
-	OSAddControl(layout3, 0, 0, backButton, OS_FLAGS_DEFAULT);
-	OSObject forwardButton = OSCreateButton(commandNavigateForwards);
-	OSAddControl(layout3, 1, 0, forwardButton, OS_FLAGS_DEFAULT);
-	OSObject parentButton = OSCreateButton(commandNavigateParent);
-	OSAddControl(layout3, 2, 0, parentButton, OS_FLAGS_DEFAULT);
+	OSObject backButton = OSCreateButton(commandNavigateBackwards, OS_BUTTON_STYLE_TOOLBAR);
+	OSAddControl(layout3, 0, 0, backButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSObject forwardButton = OSCreateButton(commandNavigateForwards, OS_BUTTON_STYLE_TOOLBAR);
+	OSAddControl(layout3, 1, 0, forwardButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSObject parentButton = OSCreateButton(commandNavigateParent, OS_BUTTON_STYLE_TOOLBAR);
+	OSAddControl(layout3, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
-	instance->folderPath = OSCreateTextbox(0);
-	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
-	OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
+	instance->folderPath = OSCreateTextbox(OS_TEXTBOX_STYLE_COMMAND);
+	OSSetControlCommand(instance->folderPath, commandNavigatePath);
+	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	// OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
 
 	instance->statusLabel = OSCreateLabel(OSLiteral(""));
 	OSAddControl(layout4, 1, 0, instance->statusLabel, OS_FLAGS_DEFAULT);
 
 	instance->LoadFolder(OSLiteral("/"));
-
-	OSShowDialogAlert(OSLiteral("License"), OSLiteral("Please read LICENSE.md."), OSLiteral("To use Essence you must agree to this license."), 
-			OS_ICON_ERROR, window);
 
 	OSProcessMessages();
 }

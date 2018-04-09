@@ -422,6 +422,61 @@ void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, 
 	OSSort(base + j * size, nmemb - j, size, compar, argument);
 }
 
+void OSClipDrawSourceRegion(OSRectangle *source, OSRectangle *border, OSRectangle *destination, OSRectangle *clip, OSDrawMode mode) {
+	// Clip *clip* to *destination*.
+	if (clip->left < destination->left) clip->left = destination->left;
+	if (clip->right > destination->right) clip->right = destination->right;
+	if (clip->top < destination->top) clip->top = destination->top;
+	if (clip->bottom > destination->bottom) clip->bottom = destination->bottom;
+
+	// Fix the source region based on the scaling.
+	switch (mode) {
+		case OS_DRAW_MODE_STRECH: {
+			// Move the source region, assuming there's no scaling.
+			source->left += clip->left - destination->left;
+			source->right += clip->right - destination->right;
+			source->top += clip->top - destination->top;
+			source->bottom += clip->bottom - destination->bottom;
+
+			// If the source is inside content, then interpolate its new position.
+			//
+			if (source->left > border->left) { 
+				source->left = border->left + (clip->left - destination->left) * (border->right - border->left) / (destination->right - destination->left); 
+				border->left = source->left; 
+			}
+
+			if (source->right < border->right) { 
+				source->right = border->right + (clip->right - destination->right) * (border->right - border->left) / (destination->right - destination->left); 
+				border->right = source->right; 
+			}
+
+			if (source->top > border->top) { 
+				source->top = border->top + (clip->top - destination->top) * (border->bottom - border->top) / (destination->bottom - destination->top); 
+				border->top = source->top; 
+			}
+
+			if (source->bottom < border->bottom) { 
+				source->bottom = border->bottom + (clip->bottom - destination->bottom) * (border->bottom - border->top) / (destination->bottom - destination->top); 
+				border->bottom = source->bottom; 
+			}
+		} break;
+
+		default: {
+			// Move the source region, assuming there's no scaling.
+			source->left += clip->left - destination->left;
+			source->right += clip->right - destination->right;
+			source->top += clip->top - destination->top;
+			source->bottom += clip->bottom - destination->bottom;
+
+			// Then clip *source* to the *border*.
+			if (source->left > border->left) source->left = border->left;
+			if (source->right < border->right) source->right = border->right;
+			if (source->top > border->top) source->top = border->top;
+			if (source->bottom < border->bottom) source->bottom = border->bottom;
+		} break;
+	}
+}
+
 #ifndef KERNEL
 static int64_t ConvertCharacterToDigit(int character, int base) {
 	int64_t result = -1;

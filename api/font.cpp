@@ -46,13 +46,13 @@ static void OSFontRendererInitialise() {
 	OSError error;
 
 	OSNodeInformation nodeRegular;
-	error = OSOpenNode(OSLiteral("/os/noto_sans/regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeRegular);
+	error = OSOpenNode(OSLiteral("/OS/Fonts/Noto Sans Regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeRegular);
 	if (error != OS_SUCCESS) return;
 	void *loadedFontRegular = OSMapObject(nodeRegular.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
 	if (!loadedFontRegular) return;
 
 	OSNodeInformation nodeBold;
-	error = OSOpenNode(OSLiteral("/os/noto_sans/bold.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeBold);
+	error = OSOpenNode(OSLiteral("/OS/Fonts/Noto Sans Bold.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeBold);
 	if (error != OS_SUCCESS) return;
 	void *loadedFontBold = OSMapObject(nodeBold.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
 	if (!loadedFontBold) return;
