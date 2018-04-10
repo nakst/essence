@@ -495,6 +495,7 @@ struct Grid : GUIObject {
 	uint32_t backgroundColor;
 	OSCallback notificationCallback;
 	int xOffset, yOffset;
+	bool ignoreMinimumDimensions;
 };
 
 struct Scrollbar : Grid {
@@ -1197,7 +1198,7 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 			control->textColor = TEXT_COLOR_TITLEBAR;
 			control->textShadow = true;
 			control->textBold = true;
-			control->textSize = 11;
+			control->textSize = 10;
 			control->textShadowBlur = true;
 		} break;
 	}
@@ -2899,7 +2900,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 					for (uintptr_t i = 0; i < grid->columns; i++) {
 						if (grid->widths[i] == DIMENSION_PUSH) {
-							if (widthPerPush >= grid->minimumWidths[i]) {
+							if (widthPerPush >= grid->minimumWidths[i] || grid->ignoreMinimumDimensions) {
 								grid->widths[i] = widthPerPush;
 							} else {
 								grid->widths[i] = grid->minimumWidths[i];
@@ -2915,7 +2916,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						if (grid->heights[j] == DIMENSION_PUSH) {
-							if (heightPerPush >= grid->minimumHeights[j]) {
+							if (heightPerPush >= grid->minimumHeights[j] || grid->ignoreMinimumDimensions) {
 								grid->heights[j] = heightPerPush;
 							} else {
 								grid->heights[j] = grid->minimumHeights[j];
@@ -4144,6 +4145,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	window->root = (Grid *) OSCreateGrid(3, 4, OS_GRID_STYLE_LAYOUT);
 	window->root->parent = window;
+	((Grid *) window->root)->ignoreMinimumDimensions = true;
 
 	{
 		OSMessage message;
@@ -4183,6 +4185,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 		if (flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
 			OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
+			((Grid *) grid)->ignoreMinimumDimensions = true;
 			OSAddGrid(window->root, 1, 2, grid, OS_CELL_FILL);
 			OSAddGrid(grid, 0, 0, OSCreateMenu(specification->menubar, nullptr, OS_MAKE_POINT(0, 0), OS_CREATE_MENUBAR), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		}

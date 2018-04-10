@@ -34,12 +34,12 @@ dangerous = true;
 [command commandLaunchCalculator]
 label = "Calculator";
 callback = Launch;
-callbackArgument = "/os/calculator";
+callbackArgument = "/OS/calculator";
 
 [command commandLaunchFileManager]
 label = "File Manager";
 callback = Launch;
-callbackArgument = "/os/file_manager";
+callbackArgument = "/OS/file_manager";
 
 [menu menuPrograms]
 commandLaunchCalculator;

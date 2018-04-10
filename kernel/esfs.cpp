@@ -923,6 +923,8 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
 	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
 
+	// Print("Searching directory %x (%d items in %d blocks) for %s\n", _directory, directory->itemsInDirectory, directory->blockCount, nameLength, searchName);
+
 	if (!directory) {
 		KernelPanic("EsFSVolume::SearchDirectory - Directory did not have a directory attribute.\n");
 	}
@@ -954,8 +956,15 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 			// The next directory entry will be at the start of the next block.
 			blockPosition = 0;
 			blockIndex++;
+
+			if (blockIndex == directory->blockCount) {
+				KernelPanic("EsFSVolume::SearchDirectory - Reached end of directory without finding all items.\n");
+			}
+
 			AccessStream(nullptr, data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 		}
+
+		// Print("Item %d at %d of block %d (%d)\n", i, blockPosition, blockIndex, lastAccessedActualBlock);
 
 		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
 
@@ -1139,7 +1148,7 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 
 	uint64_t lastBlockIndex = GetBlockFromStream(parentDataAttribute, superblock.blockSize * (parentDirectoryAttribute->blockCount - 1));
 	bool inLastBlock = lastBlockIndex == nodeFile->containerBlock;
-	bool onlyEntryInBlock = !nodeFile->offsetIntoBlock2;
+	bool onlyEntryInBlock = spaceAvailableAtEndOfBlock == superblock.blockSize;
 
 	if (onlyEntryInBlock && inLastBlock) {
 		// We no longer need the block.

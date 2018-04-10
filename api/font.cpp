@@ -197,7 +197,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 	char *stringEnd = string->buffer + string->bytes;
 
-	OSLinearBuffer linearBuffer;
+	OSLinearBuffer linearBuffer = {};
 	void *bitmap = nullptr;
 	if (surface != OS_INVALID_HANDLE) {
 		OSGetLinearBuffer(surface, &linearBuffer);

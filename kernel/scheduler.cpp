@@ -941,6 +941,7 @@ void Scheduler::Yield(InterruptContext *context) {
 
 	local->currentThread->interruptContext = context;
 
+	ProcessorDisableInterrupts(); // We don't want interrupts to get reenabled after the context switch.
 	lock.Acquire();
 
 	local->currentThread->executing = false;
