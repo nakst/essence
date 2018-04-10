@@ -5,6 +5,8 @@
 #define COMMAND_NAVIGATE_PARENT    (3)
 #define COMMAND_NAVIGATE_PATH	   (4)
 
+#define COMMAND_NEW_FOLDER         (1)
+
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/file_manager.manifest.h"
 
@@ -37,11 +39,13 @@ struct Instance {
 
 #define LOAD_FOLDER_BACKWARDS (1)
 #define LOAD_FOLDER_FORWARDS (2)
+#define LOAD_FOLDER_NO_HISTORY (3)
 	bool LoadFolder(char *path, size_t pathBytes, 
 			char *path2 = nullptr, size_t pathBytes2 = 0,
 			unsigned historyMode = 0);
 
 #define ERROR_CANNOT_LOAD_FOLDER (0)
+#define ERROR_CANNOT_CREATE_FOLDER (1)
 	void ReportError(unsigned where, OSError error);
 };
 
@@ -143,55 +147,114 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 	return CompareStrings(s1, s2, length1, length2);
 }
 
+OSCallbackResponse CommandNew(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+
+	switch ((uintptr_t) message->context) {
+		case COMMAND_NEW_FOLDER: {
+			size_t length;
+			uintptr_t attempt = 1;
+
+			while (attempt < 1000) {
+				if (attempt == 1) {
+					length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "New folder");
+				} else {
+					length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "New folder %d", attempt);
+				}
+
+				for (uintptr_t i = 0; i < instance->folderChildCount; i++) {
+					FolderChild *child = instance->folderChildren + i;
+
+					if (CompareStrings(child->data.name, guiStringBuffer, child->data.nameLengthBytes, length) == 0) {
+						goto nextAttempt;
+					}
+				}
+
+				break;
+				nextAttempt:;
+				attempt++;
+			}
+
+			bool addSeparator = instance->pathBytes > 1;
+			size_t fullPathLength = instance->pathBytes + length + (addSeparator ? 1 : 0);
+			char *fullPath = (char *) OSHeapAllocate(fullPathLength, false);
+			OSCopyMemory(fullPath, instance->path, instance->pathBytes);
+			if (addSeparator) fullPath[instance->pathBytes] = '/';
+			OSCopyMemory(fullPath + instance->pathBytes + (addSeparator ? 1 : 0), guiStringBuffer, length);
+
+			OSNodeInformation node;
+			OSError error = OSOpenNode(fullPath, fullPathLength, OS_OPEN_NODE_DIRECTORY | OS_OPEN_NODE_FAIL_IF_FOUND, &node);
+
+			if (error != OS_SUCCESS) {
+				instance->ReportError(ERROR_CANNOT_CREATE_FOLDER, error);
+			} else {
+				OSCloseHandle(node.handle);
+				instance->LoadFolder(instance->path, instance->pathBytes, nullptr, 0, LOAD_FOLDER_NO_HISTORY);
+			}
+
+			OSHeapFree(fullPath);
+		} break;
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
 	(void) object;
 
-	if (message->type == OS_NOTIFICATION_COMMAND) {
-		Instance *instance = (Instance *) OSGetInstance(message->command.window);
-
-		switch ((uintptr_t) message->context) {
-			case COMMAND_NAVIGATE_BACKWARDS: {
-				instance->pathBackwardHistoryPosition--;
-				instance->LoadFolder(instance->pathBackwardHistory[instance->pathBackwardHistoryPosition],
-						instance->pathBackwardHistoryBytes[instance->pathBackwardHistoryPosition],
-						nullptr, 0, LOAD_FOLDER_BACKWARDS);
-			} break;
-		
-			case COMMAND_NAVIGATE_FORWARDS: {
-				instance->pathForwardHistoryPosition--;
-				instance->LoadFolder(instance->pathForwardHistory[instance->pathForwardHistoryPosition],
-						instance->pathForwardHistoryBytes[instance->pathForwardHistoryPosition],
-						nullptr, 0, LOAD_FOLDER_FORWARDS);
-			} break;
-		
-			case COMMAND_NAVIGATE_PARENT: {
-				size_t s = instance->pathBytes;
-		
-				while (true) {
-					if (instance->path[--s] == '/') {
-						break;
-					}
-				}
-		
-				if (!s) s++;
-		
-				instance->LoadFolder(instance->path, s);
-			} break;
-		
-			case COMMAND_NAVIGATE_PATH: {
-				OSString string;
-				OSGetText(object, &string);
-
-				if (!instance->LoadFolder(string.buffer, string.bytes)) {
-					return OS_CALLBACK_REJECTED;
-				}
-			} break;
-		}
-
-		OSEnableCommand(instance->window, commandNavigateBackwards, instance->pathBackwardHistoryPosition);
-		OSEnableCommand(instance->window, commandNavigateForwards, instance->pathForwardHistoryPosition);
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
 	}
 
+	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+
+	switch ((uintptr_t) message->context) {
+		case COMMAND_NAVIGATE_BACKWARDS: {
+			instance->pathBackwardHistoryPosition--;
+			instance->LoadFolder(instance->pathBackwardHistory[instance->pathBackwardHistoryPosition],
+					instance->pathBackwardHistoryBytes[instance->pathBackwardHistoryPosition],
+					nullptr, 0, LOAD_FOLDER_BACKWARDS);
+		} break;
+	
+		case COMMAND_NAVIGATE_FORWARDS: {
+			instance->pathForwardHistoryPosition--;
+			instance->LoadFolder(instance->pathForwardHistory[instance->pathForwardHistoryPosition],
+					instance->pathForwardHistoryBytes[instance->pathForwardHistoryPosition],
+					nullptr, 0, LOAD_FOLDER_FORWARDS);
+		} break;
+	
+		case COMMAND_NAVIGATE_PARENT: {
+			size_t s = instance->pathBytes;
+	
+			while (true) {
+				if (instance->path[--s] == '/') {
+					break;
+				}
+			}
+	
+			if (!s) s++;
+	
+			instance->LoadFolder(instance->path, s);
+		} break;
+	
+		case COMMAND_NAVIGATE_PATH: {
+			OSString string;
+			OSGetText(object, &string);
+
+			if (!instance->LoadFolder(string.buffer, string.bytes)) {
+				return OS_CALLBACK_REJECTED;
+			}
+		} break;
+	}
+
+	OSEnableCommand(instance->window, commandNavigateBackwards, instance->pathBackwardHistoryPosition);
+	OSEnableCommand(instance->window, commandNavigateForwards, instance->pathForwardHistoryPosition);
 
 	return OS_CALLBACK_HANDLED;
 }
@@ -236,12 +299,9 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			OSDirectoryChild *data = &child->data;
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-#define BUFFER_SIZE (1024)
-				static char buffer[BUFFER_SIZE];
-
 				switch (message->listViewItem.column) {
 					case COLUMN_NAME: {
-						message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%s", data->nameLengthBytes, data->name);
 					} break;
 
@@ -250,7 +310,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 					} break;
 
 					case COLUMN_TYPE: {
-						message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%z", data->information.type == OS_NODE_FILE ? "File" : "Directory");
 					} break;
 
@@ -261,36 +321,35 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 							int fileSize = data->information.fileSize;
 
 							if (fileSize == 0) {
-								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"(empty)");
 							} else if (fileSize == 1) {
-								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"1 byte", fileSize);
 							} else if (fileSize < 1000) {
-								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d bytes", fileSize);
 							} else if (fileSize < 1000000) {
-								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d KB", fileSize / 1000, (fileSize / 100) % 10);
 							} else if (fileSize < 1000000000) {
-								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d MB", fileSize / 1000000, (fileSize / 1000000) % 10);
 							} else {
-								message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, 
+								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d GB", fileSize / 1000000000, (fileSize / 1000000000) % 10);
 							}
 						} else if (data->information.type == OS_NODE_DIRECTORY) {
 							uint64_t children = data->information.directoryChildren;
 
-							if (children == 0) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "(empty)");
-							else if (children == 1) message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "1 item");
-							else message->listViewItem.textBytes = OSFormatString(buffer, BUFFER_SIZE, "%d items", children);
+							if (children == 0) message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "(empty)");
+							else if (children == 1) message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "1 item");
+							else message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%d items", children);
 						}
 					} break;
 				}
-#undef BUFFER_SIZE
 
-				message->listViewItem.text = buffer;
+				message->listViewItem.text = guiStringBuffer;
 			}
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
@@ -360,6 +419,10 @@ void Instance::ReportError(unsigned where, OSError error) {
 			message = "Could not open the folder.";
 			description = "The specified path was invalid.";
 		} break;
+
+		case ERROR_CANNOT_CREATE_FOLDER: {
+			message = "Could not create a new folder.";
+		} break;
 	}
 
 	switch (error) {
@@ -371,6 +434,10 @@ void Instance::ReportError(unsigned where, OSError error) {
 			description = "The folder does not exist.";
 		} break;
 
+		case OS_ERROR_FILE_ALREADY_EXISTS: {
+			description = "The folder already exists.";
+		} break;
+
 		case OS_ERROR_FILE_PERMISSION_NOT_GRANTED: {
 			description = "You do not have permission to view the contents of this folder.";
 		} break;
@@ -380,7 +447,7 @@ void Instance::ReportError(unsigned where, OSError error) {
 		} break;
 
 		case OS_ERROR_DRIVE_CONTROLLER_REPORTED: {
-			description = "An error occurred while reading from your drive.";
+			description = "An error occurred while accessing your drive.";
 		} break;
 	}
 
@@ -420,9 +487,11 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		newPathBytes += pathBytes2 + 1;
 	}
 
+#if 0
 	if (oldPath && !CompareStrings(oldPath, newPath, oldPathBytes, newPathBytes)) {
 		goto fail;
 	}
+#endif
 
 	OSNodeInformation node;
 	OSError error;
@@ -480,7 +549,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
 
 	// Add the previous folder to the history.
-	if (oldPath) {
+	if (oldPath && historyMode != LOAD_FOLDER_NO_HISTORY) {
 		char **history = historyMode == LOAD_FOLDER_BACKWARDS ? pathForwardHistory : pathBackwardHistory;
 		size_t *historyBytes = historyMode == LOAD_FOLDER_BACKWARDS ? pathForwardHistoryBytes : pathBackwardHistoryBytes;
 		uintptr_t &historyPosition = historyMode == LOAD_FOLDER_BACKWARDS ? pathForwardHistoryPosition : pathBackwardHistoryPosition;
@@ -525,42 +594,43 @@ void ProgramEntry() {
 	OSSetInstance(window, instance);
 	instance->window = window;
 
-	OSObject layout1 = OSCreateGrid(1, 4, OS_GRID_STYLE_LAYOUT);
-	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
-	OSObject layout3 = OSCreateGrid(4, 1, OS_GRID_STYLE_TOOLBAR);
-	OSObject layout4 = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
+	OSObject rootLayout = OSCreateGrid(1, 4, OS_GRID_STYLE_LAYOUT);
+	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
+	OSObject toolbar = OSCreateGrid(5, 1, OS_GRID_STYLE_TOOLBAR);
+	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 
-	OSSetRootGrid(window, layout1);
-	OSAddGrid(layout1, 0, 2, layout2, OS_CELL_FILL);
-	OSAddGrid(layout1, 0, 0, layout3, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
-	OSAddGrid(layout1, 0, 3, layout4, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSSetRootGrid(window, rootLayout);
+	OSAddGrid(rootLayout, 0, 2, contentSplit, OS_CELL_FILL);
+	OSAddGrid(rootLayout, 0, 0, toolbar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddGrid(rootLayout, 0, 3, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	OSObject bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT);
-	OSAddControl(layout2, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
+	OSAddControl(contentSplit, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSSetProperty(bookmarkList, OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH, (void *) 160);
 
 	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
-	OSAddControl(layout2, 2, 0, instance->folderListing, OS_CELL_FILL);
+	OSAddControl(contentSplit, 2, 0, instance->folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(instance->folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
 	OSSetObjectNotificationCallback(instance->folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, instance));
 
-	// OSAddControl(layout1, 0, 1, OSCreateLine(OS_ORIENTATION_HORIZONTAL), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
-	OSAddControl(layout2, 1, 0, OSCreateLine(OS_ORIENTATION_VERTICAL), OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
+	OSAddControl(contentSplit, 1, 0, OSCreateLine(OS_ORIENTATION_VERTICAL), OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 
 	OSObject backButton = OSCreateButton(commandNavigateBackwards, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(layout3, 0, 0, backButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 0, 0, backButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSObject forwardButton = OSCreateButton(commandNavigateForwards, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(layout3, 1, 0, forwardButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 1, 0, forwardButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSObject parentButton = OSCreateButton(commandNavigateParent, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(layout3, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	instance->folderPath = OSCreateTextbox(OS_TEXTBOX_STYLE_COMMAND);
 	OSSetControlCommand(instance->folderPath, commandNavigatePath);
-	OSAddControl(layout3, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
-	// OSSetObjectNotificationCallback(instance->folderPath, OS_MAKE_CALLBACK(ProcessFolderPathNotification, instance));
+	OSAddControl(toolbar, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+
+	OSObject newFolderButton = OSCreateButton(commandNewFolder, OS_BUTTON_STYLE_TOOLBAR);
+	OSAddControl(toolbar, 4, 0, newFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	instance->statusLabel = OSCreateLabel(OSLiteral(""));
-	OSAddControl(layout4, 1, 0, instance->statusLabel, OS_FLAGS_DEFAULT);
+	OSAddControl(statusBar, 1, 0, instance->statusLabel, OS_FLAGS_DEFAULT);
 
 	instance->LoadFolder(OSLiteral("/"));
 

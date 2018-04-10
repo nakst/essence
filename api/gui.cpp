@@ -2535,7 +2535,6 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		control->horizontalMargin = 12;
 		control->preferredWidth = 0;
 		control->preferredHeight = 31;
-		control->verbose = true;
 		control->textShadowBlur = true;
 		control->textShadow = true;
 	}

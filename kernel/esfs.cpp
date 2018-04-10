@@ -1,3 +1,5 @@
+// TODO Case insensitivity.
+
 bool EsFSRead(IOPacket *packet);
 bool EsFSWrite(IOPacket *packet);
 void EsFSSync(Node *node);

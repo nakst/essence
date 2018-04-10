@@ -140,7 +140,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
 
-#if 1
+#if 0
 	LoadImageIntoSurface((char *) "/OS/Sample Images/Nebula.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
@@ -161,8 +161,8 @@ extern "C" void ProgramEntry() {
 	{
 		for (int i = 0; i < 1; i++) {
 			// const char *path = "/OS/calculator";
-			const char *path = "/OS/test";
-			// const char *path = "/OS/file_manager";
+			// const char *path = "/OS/test";
+			const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

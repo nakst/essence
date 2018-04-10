@@ -629,6 +629,7 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 
 				node = parent;
 				secondAttempt = true;
+				flags &= ~OS_OPEN_NODE_FAIL_IF_FOUND;
 				goto tryAgain;
 			}
 		} 

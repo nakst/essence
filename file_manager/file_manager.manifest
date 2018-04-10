@@ -35,3 +35,9 @@ label = "Parent";
 defaultDisabled = false;
 callback = CommandNavigate;
 callbackArgument = COMMAND_NAVIGATE_PARENT;
+
+[command commandNewFolder]
+label = "New folder";
+defaultDisabled = false;
+callback = CommandNew;
+callbackArgument = COMMAND_NEW_FOLDER;
