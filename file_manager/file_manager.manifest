@@ -42,3 +42,10 @@ label = "New folder";
 defaultDisabled = false;
 callback = CommandNew;
 callbackArgument = COMMAND_NEW_FOLDER;
+
+[command commandBookmarkFolder]
+label = "Bookmark folder";
+defaultDisabled = false;
+callback = CallbackBookmarkFolder;
+checkable = true;
+iconID = OS_ICON_BOOKMARK;

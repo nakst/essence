@@ -174,6 +174,7 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_FORWARD		(4)
 #define OS_ICON_BACK 		(5)
 #define OS_ICON_PARENT		(6)
+#define OS_ICON_BOOKMARK	(7)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -679,6 +680,7 @@ typedef struct OSMessage {
 		} valueChanged;
 
 #define OS_LIST_VIEW_ITEM_SELECTED	   (0x0001)
+#define OS_LIST_VIEW_ITEM_CUSTOM	   (0x0002)
 #define OS_LIST_VIEW_ITEM_TEXT             (0x10000)
 #define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
 		struct {
@@ -958,6 +960,7 @@ OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes, unsig
 OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
 OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
+OS_EXTERN_C void OSCheckCommand(OSObject window, OSCommand *command, bool checked);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
 OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback callback);

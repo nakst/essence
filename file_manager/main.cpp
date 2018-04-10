@@ -11,6 +11,7 @@
 #include "../bin/OS/file_manager.manifest.h"
 
 // TODO Why does the scrollbar start at the bottom when changing folders?
+// TODO Think about having a global bookmark list?
 
 struct FolderChild {
 	OSDirectoryChild data;
@@ -21,7 +22,8 @@ struct Instance {
 	OSObject folderListing,
 		 folderPath,
 		 statusLabel,
-		 window;
+		 window,
+		 bookmarkList;
 
 	FolderChild *folderChildren;
 	size_t folderChildCount;
@@ -37,6 +39,8 @@ struct Instance {
 	size_t pathForwardHistoryBytes[PATH_HISTORY_MAX];
 	uintptr_t pathForwardHistoryPosition;
 
+	void CreateWindow();
+
 #define LOAD_FOLDER_BACKWARDS (1)
 #define LOAD_FOLDER_FORWARDS (2)
 #define LOAD_FOLDER_NO_HISTORY (3)
@@ -46,8 +50,22 @@ struct Instance {
 
 #define ERROR_CANNOT_LOAD_FOLDER (0)
 #define ERROR_CANNOT_CREATE_FOLDER (1)
+#define ERROR_INTERNAL (2)
 	void ReportError(unsigned where, OSError error);
 };
+
+struct Bookmark {
+	char *path;
+	size_t pathBytes;
+	bool selected;
+};
+
+struct Global {
+	Bookmark *bookmarks;
+	size_t bookmarkCount, bookmarkAllocated;
+};
+
+Global global;
 
 OSListViewColumn folderListingColumns[] = {
 #define COLUMN_NAME (0)
@@ -259,24 +277,120 @@ OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse ProcessFolderPathNotification(OSObject object, OSMessage *message) {
+OSCallbackResponse CallbackBookmarkFolder(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+
+	bool checked = message->command.checked;
+
+	if (checked) {
+		// Add bookmark.
+
+		if (global.bookmarkAllocated == global.bookmarkCount) {
+			global.bookmarkAllocated = (global.bookmarkAllocated + 8) * 2;
+			Bookmark *replacement = (Bookmark *) OSHeapAllocate(global.bookmarkAllocated * sizeof(Bookmark), false);
+			OSCopyMemory(replacement, global.bookmarks, global.bookmarkCount * sizeof(Bookmark));
+			OSHeapFree(global.bookmarks);
+			global.bookmarks = replacement;
+		}
+
+		Bookmark *bookmark = global.bookmarks + global.bookmarkCount;
+
+		bookmark->pathBytes = instance->pathBytes;
+		bookmark->path = (char *) OSHeapAllocate(instance->pathBytes, false);
+		bookmark->selected = true;
+		OSCopyMemory(bookmark->path, instance->path, instance->pathBytes);
+
+		global.bookmarkCount++;
+		OSListViewInsert(instance->bookmarkList, global.bookmarkCount - 1, 1);
+	} else {
+		// Remove bookmark.
+
+		bool found = false;
+
+		for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
+			if (CompareStrings(global.bookmarks[i].path, instance->path, global.bookmarks[i].pathBytes, instance->pathBytes) == 0) {
+				OSMoveMemory(global.bookmarks + i + 1, global.bookmarks + global.bookmarkCount, -1 * sizeof(Bookmark), false);
+				global.bookmarkCount--;
+
+				// TODO Removing items from a list view.
+				OSListViewReset(instance->bookmarkList);
+				OSListViewInsert(instance->bookmarkList, 0, global.bookmarkCount);
+
+				found = true;
+
+				break;
+			}
+		}
+
+		if (!found) {
+			instance->ReportError(ERROR_INTERNAL, OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+		}
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
+
+OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage *message) {
 	Instance *instance = (Instance *) message->context;
 	(void) object;
 	
 	switch (message->type) {
-		case OS_NOTIFICATION_CANCEL_EDIT: {
-			OSSetText(object, instance->path, instance->pathBytes, OS_RESIZE_MODE_IGNORE);
+		case OS_NOTIFICATION_GET_ITEM: {
+			uintptr_t index = message->listViewItem.index;
+			Bookmark *bookmark = global.bookmarks + index;
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
+				size_t length = 0;
+
+				if (bookmark->pathBytes != 1) {
+					while (bookmark->path[bookmark->pathBytes - ++length] != '/');
+					length--;
+				} else {
+					length = 1;
+				}
+
+				message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+						"%s", length, bookmark->path + bookmark->pathBytes - length);
+				message->listViewItem.text = guiStringBuffer;
+			}
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+				if (bookmark->selected) {
+					message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
+				}
+			}
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
+				message->listViewItem.iconID = OS_ICON_FOLDER;
+			}
+
 			return OS_CALLBACK_HANDLED;
 		} break;
 
-		case OS_NOTIFICATION_CONFIRM_EDIT: {
-			OSString string;
-			OSGetText(object, &string);
+		case OS_NOTIFICATION_DESELECT_ALL: {
+			for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
+				global.bookmarks[i].selected = false;
+			}
 
-			if (!string.bytes) {
-				OSSetText(object, instance->path, instance->pathBytes, OS_RESIZE_MODE_IGNORE);
-			} else {
-				instance->LoadFolder(string.buffer, string.bytes);
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_NOTIFICATION_SET_ITEM: {
+			uintptr_t index = message->listViewItem.index;
+			Bookmark *bookmark = global.bookmarks + index;
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+				bookmark->selected = message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+
+				if (bookmark->selected && !(message->listViewItem.mask & OS_LIST_VIEW_ITEM_CUSTOM)) {
+					instance->LoadFolder(bookmark->path, bookmark->pathBytes);
+				}
 			}
 
 			return OS_CALLBACK_HANDLED;
@@ -423,6 +537,10 @@ void Instance::ReportError(unsigned where, OSError error) {
 		case ERROR_CANNOT_CREATE_FOLDER: {
 			message = "Could not create a new folder.";
 		} break;
+
+		case ERROR_INTERNAL: {
+			message = "An internal error occurred.";
+		} break;
 	}
 
 	switch (error) {
@@ -548,6 +666,31 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSSetText(folderPath, path, pathBytes, OS_RESIZE_MODE_IGNORE);
 	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
 
+	{
+		OSMessage message;
+		message.context = this;
+
+		message.type = OS_NOTIFICATION_DESELECT_ALL;
+		ProcessBookmarkListingNotification(nullptr, &message);
+
+		bool found = false;
+
+		for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
+			if (CompareStrings(global.bookmarks[i].path, path, global.bookmarks[i].pathBytes, pathBytes) == 0) {
+				message.type = OS_NOTIFICATION_SET_ITEM;
+				message.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_CUSTOM;
+				message.listViewItem.index = i;
+				message.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+				ProcessBookmarkListingNotification(nullptr, &message);
+
+				found = true;
+				break;
+			}
+		}
+
+		OSCheckCommand(window, commandBookmarkFolder, found);
+	}
+
 	// Add the previous folder to the history.
 	if (oldPath && historyMode != LOAD_FOLDER_NO_HISTORY) {
 		char **history = historyMode == LOAD_FOLDER_BACKWARDS ? pathForwardHistory : pathBackwardHistory;
@@ -587,16 +730,13 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	return true;
 }
 
-void ProgramEntry() {
-	Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
-
-	OSObject window = OSCreateWindow(mainWindow);
-	OSSetInstance(window, instance);
-	instance->window = window;
+void Instance::CreateWindow() {
+	window = OSCreateWindow(mainWindow);
+	OSSetInstance(window, this);
 
 	OSObject rootLayout = OSCreateGrid(1, 4, OS_GRID_STYLE_LAYOUT);
 	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
-	OSObject toolbar = OSCreateGrid(5, 1, OS_GRID_STYLE_TOOLBAR);
+	OSObject toolbar = OSCreateGrid(6, 1, OS_GRID_STYLE_TOOLBAR);
 	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 
 	OSSetRootGrid(window, rootLayout);
@@ -604,14 +744,16 @@ void ProgramEntry() {
 	OSAddGrid(rootLayout, 0, 0, toolbar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSAddGrid(rootLayout, 0, 3, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
-	OSObject bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT);
 	OSAddControl(contentSplit, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSSetProperty(bookmarkList, OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH, (void *) 160);
+	OSListViewInsert(bookmarkList, 0, global.bookmarkCount);
+	OSSetObjectNotificationCallback(bookmarkList, OS_MAKE_CALLBACK(ProcessBookmarkListingNotification, this));
 
-	instance->folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
-	OSAddControl(contentSplit, 2, 0, instance->folderListing, OS_CELL_FILL);
-	OSListViewSetColumns(instance->folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
-	OSSetObjectNotificationCallback(instance->folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, instance));
+	folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
+	OSAddControl(contentSplit, 2, 0, folderListing, OS_CELL_FILL);
+	OSListViewSetColumns(folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
+	OSSetObjectNotificationCallback(folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, this));
 
 	OSAddControl(contentSplit, 1, 0, OSCreateLine(OS_ORIENTATION_VERTICAL), OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 
@@ -622,17 +764,22 @@ void ProgramEntry() {
 	OSObject parentButton = OSCreateButton(commandNavigateParent, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
 	OSAddControl(toolbar, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
-	instance->folderPath = OSCreateTextbox(OS_TEXTBOX_STYLE_COMMAND);
-	OSSetControlCommand(instance->folderPath, commandNavigatePath);
-	OSAddControl(toolbar, 3, 0, instance->folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	folderPath = OSCreateTextbox(OS_TEXTBOX_STYLE_COMMAND);
+	OSSetControlCommand(folderPath, commandNavigatePath);
+	OSAddControl(toolbar, 3, 0, folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
+	OSObject bookmarkFolderButton = OSCreateButton(commandBookmarkFolder, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
+	OSAddControl(toolbar, 4, 0, bookmarkFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSObject newFolderButton = OSCreateButton(commandNewFolder, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(toolbar, 4, 0, newFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 5, 0, newFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
-	instance->statusLabel = OSCreateLabel(OSLiteral(""));
-	OSAddControl(statusBar, 1, 0, instance->statusLabel, OS_FLAGS_DEFAULT);
+	statusLabel = OSCreateLabel(OSLiteral(""));
+	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);
 
-	instance->LoadFolder(OSLiteral("/"));
+	LoadFolder(OSLiteral("/"));
+}
 
+void ProgramEntry() {
+	((Instance *) OSHeapAllocate(sizeof(Instance), true))->CreateWindow();
 	OSProcessMessages();
 }

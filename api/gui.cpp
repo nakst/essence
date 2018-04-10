@@ -163,6 +163,7 @@ static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 
 static UIImage toolbarBackground	= {{0, 0 + 60, 195, 195 + 31}, {0 + 1, 0 + 59, 195 + 1, 195 + 29}, OS_DRAW_MODE_STRECH};
 static UIImage toolbarHover		= {{73, 84, 195, 226}, {78, 79, 203, 204}};
 static UIImage toolbarPressed		= {{73 - 12, 84 - 12, 195, 226}, {78 - 12, 79 - 12, 203, 204}};
+static UIImage toolbarNormal		= {{73 + 12, 84 + 12, 195, 226}, {78 + 12, 79 + 12, 203, 204}};
 
 static UIImage scrollbarTrackHorizontalEnabled  = {{121, 122, 62, 79}, {121, 122, 62, 62}};
 static UIImage scrollbarTrackHorizontalPressed  = {{117, 118, 62, 79}, {117, 118, 62, 62}};
@@ -219,6 +220,7 @@ static UIImage icons16[] = {
 	ICON16(512 + 320, 208),
 	ICON16(512 + 320, 160),
 	ICON16(512 + 64, 192),
+	ICON16(512 + 320, 288),
 };
 
 static UIImage icons32[] = {
@@ -262,6 +264,10 @@ static UIImage *menuItemBackgrounds[] = {
 
 struct UIImage *toolbarItemBackgrounds[] = {
 	nullptr,
+	nullptr,
+	&toolbarHover,
+	&toolbarPressed,
+	&toolbarNormal,
 	nullptr,
 	&toolbarHover,
 	&toolbarPressed,
@@ -394,6 +400,7 @@ struct Control : GUIObject {
 	uint8_t	repaintCustomOnly : 1,
 		textShadowBlur : 1,
 		iconHasVariants : 1,
+		additionalCheckedBackgrounds : 1,
 		cursor : 5;
 
 	LinkedItem<Control> timerControlItem;
@@ -829,24 +836,29 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
 
 				if (control->backgrounds) {
-					if (control->backgrounds[0]) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[0]->region, 
-								control->backgrounds[0]->border, control->backgrounds[0]->drawMode, 0xFF, message->paint.clip);
+					uintptr_t offset = (control->isChecked && control->additionalCheckedBackgrounds) ? 4 : 0;
+
+					if (control->backgrounds[offset + 0]) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 0]->region, 
+								control->backgrounds[offset + 0]->border, control->backgrounds[offset + 0]->drawMode, 0xFF, message->paint.clip);
 					}
 
-					if (control->backgrounds[2] && control->current2) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[2]->region, 
-								control->backgrounds[2]->border, control->backgrounds[2]->drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
+					if (control->backgrounds[offset + 2] && control->current2) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 2]->region, 
+								control->backgrounds[offset + 2]->border, control->backgrounds[offset + 2]->drawMode, 
+								control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
 					}
 
-					if (control->backgrounds[3] && control->current3) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
-								control->backgrounds[3]->border, control->backgrounds[3]->drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
+					if (control->backgrounds[offset + 3] && control->current3) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 3]->region, 
+								control->backgrounds[offset + 3]->border, control->backgrounds[offset + 3]->drawMode, 
+								control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
-					if (control->backgrounds[1] && control->current4) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[1]->region, 
-								control->backgrounds[1]->border, control->backgrounds[1]->drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+					if (control->backgrounds[offset + 1] && control->current4) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 1]->region, 
+								control->backgrounds[offset + 1]->border, control->backgrounds[offset + 1]->drawMode, 
+								control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
 					}
 				}
 
@@ -1017,17 +1029,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 				if (control->command) {
 					// Update the command.
-					CommandWindow *command = control->window->commands + control->command->identifier;
-					command->checked = control->isChecked;
-					LinkedItem<Control> *item = command->controls.firstItem;
-
-					while (item) {
-						item->thisItem->isChecked = control->isChecked;
-						UpdateCheckboxIcons(item->thisItem);
-						OSRepaintControl(item->thisItem);
-						item = item->nextItem;
-					}
-				} else {
+					OSCheckCommand(control->window, control->command, control->isChecked);
+				} else if (control->checkboxIcons) {
 					UpdateCheckboxIcons(control);
 				}
 			}
@@ -2493,15 +2496,6 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 
 	OSSetControlCommand(control, command);
 
-	if (control->checkable) {
-		UpdateCheckboxIcons(control);
-		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-		control->checkboxIcons = true;
-		control->iconHasVariants = true;
-	} else {
-		control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
-	}
-
 	if (style == OS_BUTTON_STYLE_TOOLBAR) {
 		control->textColor = TEXT_COLOR_TOOLBAR;
 		control->horizontalMargin = 12;
@@ -2510,12 +2504,23 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		control->textShadowBlur = true;
 		control->textShadow = true;
 		control->backgrounds = toolbarItemBackgrounds;
+		control->additionalCheckedBackgrounds = true;
 	} else if (style == OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
 		control->horizontalMargin = 6;
 		control->preferredWidth = 32;
 		control->preferredHeight = 31;
 		control->centerIcons = true;
 		control->backgrounds = toolbarItemBackgrounds;
+		control->additionalCheckedBackgrounds = true;
+	} else {
+		if (control->checkable) {
+			UpdateCheckboxIcons(control);
+			control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
+			control->checkboxIcons = true;
+			control->iconHasVariants = true;
+		} else {
+			control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
+		}
 	}
 
 #if 0
@@ -3700,6 +3705,25 @@ void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 	while (item) {
 		Control *control = item->thisItem;
 		OSDisableControl(control, disabled);
+		item = item->nextItem;
+	}
+}
+
+void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
+	Window *window = (Window *) _window;
+
+	CommandWindow *command = window->commands + _command->identifier;
+	command->checked = checked;
+	LinkedItem<Control> *item = command->controls.firstItem;
+
+	while (item) {
+		item->thisItem->isChecked = checked;
+
+		if (item->thisItem->checkboxIcons) {
+			UpdateCheckboxIcons(item->thisItem);
+		}
+
+		OSRepaintControl(item->thisItem);
 		item = item->nextItem;
 	}
 }
