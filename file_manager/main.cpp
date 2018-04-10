@@ -617,9 +617,9 @@ void ProgramEntry() {
 
 	OSObject backButton = OSCreateButton(commandNavigateBackwards, OS_BUTTON_STYLE_TOOLBAR);
 	OSAddControl(toolbar, 0, 0, backButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
-	OSObject forwardButton = OSCreateButton(commandNavigateForwards, OS_BUTTON_STYLE_TOOLBAR);
+	OSObject forwardButton = OSCreateButton(commandNavigateForwards, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
 	OSAddControl(toolbar, 1, 0, forwardButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
-	OSObject parentButton = OSCreateButton(commandNavigateParent, OS_BUTTON_STYLE_TOOLBAR);
+	OSObject parentButton = OSCreateButton(commandNavigateParent, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
 	OSAddControl(toolbar, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	instance->folderPath = OSCreateTextbox(OS_TEXTBOX_STYLE_COMMAND);

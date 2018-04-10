@@ -431,7 +431,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 							if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
 							if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
-							uint8_t pixel = pixelRaw / 49;
+							uint8_t pixel = pixelRaw / (i * i + j * j + 1) / 6;
 							uint32_t sourcePixel = (pixel << 24) | color;
 
 							DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, sourcePixel, selectionColor, backgroundColor, pixel, selected);

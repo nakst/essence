@@ -8,7 +8,7 @@ source = "file_manager/main.cpp";
 [window mainWindow]
 width = 850;
 height = 600;
-minimumWidth = 200;
+minimumWidth = 300;
 minimumHeight = 200;
 title = "File Manager";
 
@@ -35,6 +35,7 @@ label = "Parent";
 defaultDisabled = false;
 callback = CommandNavigate;
 callbackArgument = COMMAND_NAVIGATE_PARENT;
+iconID = OS_ICON_PARENT;
 
 [command commandNewFolder]
 label = "New folder";

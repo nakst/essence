@@ -83,7 +83,7 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 	return response;
 }
 
-bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
+bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center, uintptr_t atX = 0, uintptr_t atY = 0) {
 	size_t fileSize;
 	uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(cPath, OSCStringLength(cPath), &fileSize);
 
@@ -101,9 +101,10 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 			OSGetLinearBuffer(surface, &buffer);
 
 			void *bitmap = OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
-			int xOffset = 0, yOffset = 0;
 
 			if (center) {
+				int xOffset = 0, yOffset = 0;
+
 				if (imageX > (int) buffer.width) {
 					xOffset = imageX / 2 - buffer.width / 2;
 				}
@@ -111,17 +112,29 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 				if (imageY > (int) buffer.height) {
 					yOffset = imageY / 2 - buffer.height / 2;
 				}
-			}
 
-			for (uintptr_t y = 0; y < buffer.height; y++) {
-				for (uintptr_t x = 0; x < buffer.width; x++) {
-					uint8_t *destination = (uint8_t *) bitmap + y * buffer.stride + x * 4;
-					uint8_t *source = image + (y + yOffset) * imageX * 4 + (x + xOffset) * 4;
+				for (uintptr_t y = 0; y < buffer.height; y++) {
+					for (uintptr_t x = 0; x < buffer.width; x++) {
+						uint8_t *destination = (uint8_t *) bitmap + (y) * buffer.stride + (x) * 4;
+						uint8_t *source = image + (y + yOffset) * imageX * 4 + (x + xOffset) * 4;
 
-					destination[2] = source[0];
-					destination[1] = source[1];
-					destination[0] = source[2];
-					destination[3] = source[3];
+						destination[2] = source[0];
+						destination[1] = source[1];
+						destination[0] = source[2];
+						destination[3] = source[3];
+					}
+				}
+			} else {
+				for (uintptr_t y = atY; y < atY + imageY; y++) {
+					for (uintptr_t x = atX; x < atX + imageX; x++) {
+						uint8_t *destination = (uint8_t *) bitmap + (y) * buffer.stride + (x) * 4;
+						uint8_t *source = image + (y - atY) * imageX * 4 + (x - atX) * 4;
+
+						destination[2] = source[0];
+						destination[1] = source[1];
+						destination[0] = source[2];
+						destination[3] = source[3];
+					}
 				}
 			}
 
@@ -139,6 +152,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center) {
 
 extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
+	LoadImageIntoSurface((char *) "/OS/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 
 #if 0
 	LoadImageIntoSurface((char *) "/OS/Sample Images/Nebula.jpg", OS_SURFACE_WALLPAPER, true);
@@ -150,7 +164,7 @@ extern "C" void ProgramEntry() {
 
 	OSRedrawAll();
 
-#if 0
+#if 1
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);

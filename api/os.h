@@ -173,6 +173,7 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_ERROR 		(3)
 #define OS_ICON_FORWARD		(4)
 #define OS_ICON_BACK 		(5)
+#define OS_ICON_PARENT		(6)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -492,6 +493,7 @@ typedef struct OSClipboardHeader {
 typedef enum OSButtonStyle {
 	OS_BUTTON_STYLE_NORMAL,
 	OS_BUTTON_STYLE_TOOLBAR,
+	OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY,
 } OSButtonStyle;
 
 typedef enum OSTextboxStyle {

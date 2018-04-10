@@ -59,6 +59,19 @@ struct UIImage {
 	OSRectangle region;
 	OSRectangle border;
 	OSDrawMode drawMode;
+
+	UIImage Translate(int x, int y) {
+		UIImage a = *this;
+		a.region.left += x;
+		a.region.right += x;
+		a.border.left += x;
+		a.border.right += x;
+		a.region.top += y;
+		a.region.bottom += y;
+		a.border.top += y;
+		a.border.bottom += y;
+		return a;
+	}
 };
 
 #if 0
@@ -129,14 +142,8 @@ static UIImage buttonHover		= {{76, 76 + 86, 194, 194 + 29}, {76 + 43, 76 + 44, 
 static UIImage buttonDisabled		= {{86 + 76, 86 + 76 + 86, 29 + 194, 29 + 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
 #endif
 
-static UIImage checkboxNormal		= {{95, 108, 120, 133}, {95, 95, 120, 120}};
-static UIImage checkboxDragged		= {{14 + 95, 14 + 108, 120, 133}, {14 + 95, 14 + 95, 120, 120}};
 static UIImage checkboxHover		= {{-14 + 95, -14 + 108, 120, 133}, {-14 + 95, -14 + 95, 120, 120}};
-static UIImage checkboxDisabled		= {{28 + 95, 28 + 108, 120, 133}, {28 + 95, 28 + 95, 120, 120}};
-static UIImage checkboxNormalChecked	= {{95, 108, 14 + 120, 14 + 133}, {95, 95, 14 + 120, 14 + 120}};
-static UIImage checkboxDraggedChecked	= {{14 + 95, 14 + 108, 14 + 120, 14 + 133}, {14 + 95, 14 + 95, 14 + 120, 14 + 120}};
 static UIImage checkboxHoverChecked	= {{-14 + 95, -14 + 108, 14 + 120, 14 + 133}, {-14 + 95, -14 + 95, 14 + 120, 14 + 120}};
-static UIImage checkboxDisabledChecked	= {{28 + 95, 28 + 108, 14 + 120, 14 + 133}, {28 + 95, 28 + 95, 14 + 120, 14 + 120}};
 
 static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
 static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
@@ -177,22 +184,10 @@ static UIImage scrollbarNotchesVertical         = {{165, 173, 80, 85}, {165, 165
 static UIImage resizePad               = {{123, 140, 62, 79}, {123, 123, 62, 62}};
 #endif
 
-static UIImage smallArrowUpNormal      = {{206, 217, 21, 30}, {206, 206, 21, 21}};
-static UIImage smallArrowUpHover       = {{218, 229, 21, 30}, {218, 218, 21, 21}};
-static UIImage smallArrowUpPressed     = {{230, 241, 21, 30}, {230, 230, 21, 21}};
-static UIImage smallArrowUpDisabled    = {{242, 253, 21, 30}, {242, 242, 21, 21}};
-static UIImage smallArrowDownNormal    = {{206, 217, 31, 40}, {206, 206, 31, 31}};
-static UIImage smallArrowDownHover     = {{218, 229, 31, 40}, {218, 218, 31, 31}};
-static UIImage smallArrowDownPressed   = {{230, 241, 31, 40}, {230, 230, 31, 31}};
-static UIImage smallArrowDownDisabled  = {{242, 253, 31, 40}, {242, 242, 31, 31}};
-static UIImage smallArrowLeftNormal    = {{208, 217, 39, 50}, {208, 208, 39, 39}};
-static UIImage smallArrowLeftHover     = {{208, 217, 51, 62}, {208, 208, 51, 51}};
-static UIImage smallArrowLeftPressed   = {{208, 217, 63, 74}, {208, 208, 63, 63}};
-static UIImage smallArrowLeftDisabled  = {{208, 217, 75, 86}, {208, 208, 75, 75}};
-static UIImage smallArrowRightNormal   = {{218, 227, 39, 50}, {218, 218, 39, 39}};
-static UIImage smallArrowRightHover    = {{218, 227, 51, 62}, {218, 218, 51, 51}};
-static UIImage smallArrowRightPressed  = {{218, 227, 63, 74}, {218, 218, 63, 63}};
-static UIImage smallArrowRightDisabled = {{218, 227, 75, 86}, {218, 218, 75, 75}};
+static UIImage smallArrowUpNormal      = {{206, 217, 25, 34}, {206, 206, 25, 25}};
+static UIImage smallArrowDownNormal    = {{206, 217, 35, 44}, {206, 206, 35, 35}};
+static UIImage smallArrowLeftNormal    = {{204, 213, 14, 25}, {204, 204, 14, 14}};
+static UIImage smallArrowRightNormal   = {{204, 213, 3, 14}, {204, 204, 3, 3}};
 
 static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 3, 241 - 3, 59 + 3, 72 - 3}};
 static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 3, 14 + 241 - 3, 59 + 3, 72 - 3}};
@@ -209,11 +204,6 @@ static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lin
 
 // static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
 
-static struct UIImage *smallArrowUpIcons[] = { &smallArrowUpNormal, &smallArrowUpDisabled, &smallArrowUpHover, &smallArrowUpPressed, };
-static struct UIImage *smallArrowDownIcons[] = { &smallArrowDownNormal, &smallArrowDownDisabled, &smallArrowDownHover, &smallArrowDownPressed, };
-static struct UIImage *smallArrowLeftIcons[] = { &smallArrowLeftNormal, &smallArrowLeftDisabled, &smallArrowLeftHover, &smallArrowLeftPressed, };
-static struct UIImage *smallArrowRightIcons[] = { &smallArrowRightNormal, &smallArrowRightDisabled, &smallArrowRightHover, &smallArrowRightPressed, };
-
 static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalDisabled, &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalPressed, };
 static struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
 
@@ -226,8 +216,9 @@ static UIImage icons16[] = {
 	ICON16(237, 117),
 	ICON16(220, 117),
 	{{}, {}},
-	ICON16(204, 176),
-	ICON16(204, 192),
+	ICON16(512 + 320, 208),
+	ICON16(512 + 320, 160),
+	ICON16(512 + 64, 192),
 };
 
 static UIImage icons32[] = {
@@ -274,20 +265,6 @@ struct UIImage *toolbarItemBackgrounds[] = {
 	nullptr,
 	&toolbarHover,
 	&toolbarPressed,
-};
-
-static UIImage *checkboxIcons[] = {
-	&checkboxNormal, 
-	&checkboxDisabled, 
-	&checkboxHover, 
-	&checkboxDragged,
-};
-
-static UIImage *checkboxIconsChecked[] = {
-	&checkboxNormalChecked, 
-	&checkboxDisabledChecked, 
-	&checkboxHoverChecked, 
-	&checkboxDraggedChecked,
 };
 
 static UIImage *textboxBackgrounds[] = {
@@ -384,11 +361,7 @@ struct Control : GUIObject {
 #define UI_IMAGE_HOVER (2)
 #define UI_IMAGE_DRAG (3)
 	UIImage **backgrounds;
-
-	union {
-		UIImage **icons;
-		UIImage *singleIcon;
-	};
+	UIImage *icon;
 
 	void *context;
 
@@ -417,10 +390,10 @@ struct Control : GUIObject {
 		ignoreActivationClicks : 1,
 		checkboxIcons : 1,
 		centerIcons : 1,
-		firstPaint : 1,
-		useSingleIcon : 1;
+		firstPaint : 1;
 	uint8_t	repaintCustomOnly : 1,
 		textShadowBlur : 1,
+		iconHasVariants : 1,
 		cursor : 5;
 
 	LinkedItem<Control> timerControlItem;
@@ -622,15 +595,15 @@ static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 }
 
 static inline void UpdateCheckboxIcons(Control *control) {
-	control->icons = control->isChecked ? checkboxIconsChecked : checkboxIcons;
+	control->icon = control->isChecked ? &checkboxHoverChecked : &checkboxHover;
 }
 
 void OSSetControlCommand(OSObject _control, OSCommand *_command) {
 	Control *control = (Control *) _control;
 	
 	if (_command->iconID) {
-		control->singleIcon = icons16 + _command->iconID;
-		control->useSingleIcon = true;
+		control->icon = icons16 + _command->iconID;
+		control->iconHasVariants = true;
 	}
 
 	if (_command->identifier == OS_COMMAND_DYNAMIC) {
@@ -794,9 +767,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			control->textBounds = contentBounds;
 
-			if (control->icons) {
-				UIImage *firstIcon = !control->useSingleIcon ? control->icons[0] : control->singleIcon;
-				control->textBounds.left += firstIcon->region.right - firstIcon->region.left + ICON_TEXT_GAP;
+			if (control->icon) {
+				control->textBounds.left += control->icon->region.right - control->icon->region.left + ICON_TEXT_GAP;
 			}
 		} break;
 
@@ -878,44 +850,44 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
-				if (control->icons) {
+				if (control->icon) {
 					OSRectangle bounds = contentBounds;
 
-					UIImage *firstIcon = !control->useSingleIcon ? control->icons[0] : control->singleIcon;
+					UIImage *icon = control->icon;
 					
 					if (control->centerIcons) {
-						bounds.left += (bounds.right - bounds.left) / 2 - (firstIcon->region.right - firstIcon->region.left) / 2;
-						bounds.right = bounds.left + firstIcon->region.right - firstIcon->region.left;
-						bounds.top += (bounds.bottom - bounds.top) / 2 - (firstIcon->region.bottom - firstIcon->region.top) / 2;
-						bounds.bottom = bounds.top + firstIcon->region.bottom - firstIcon->region.top;
+						bounds.left += (bounds.right - bounds.left) / 2 - (icon->region.right - icon->region.left) / 2;
+						bounds.right = bounds.left + icon->region.right - icon->region.left;
+						bounds.top += (bounds.bottom - bounds.top) / 2 - (icon->region.bottom - icon->region.top) / 2;
+						bounds.bottom = bounds.top + icon->region.bottom - icon->region.top;
 					} else {
-						bounds.right = bounds.left + firstIcon->region.right - firstIcon->region.left;
-						bounds.top += (bounds.bottom - bounds.top) / 2 - (firstIcon->region.bottom - firstIcon->region.top) / 2;
-						bounds.bottom = bounds.top + firstIcon->region.bottom - firstIcon->region.top;
+						bounds.right = bounds.left + icon->region.right - icon->region.left;
+						bounds.top += (bounds.bottom - bounds.top) / 2 - (icon->region.bottom - icon->region.top) / 2;
+						bounds.bottom = bounds.top + icon->region.bottom - icon->region.top;
 					}
 
-					if (control->current1) {
-						UIImage *image = firstIcon;
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
-								image->border, image->drawMode, 0xFF, message->paint.clip);
+					if (control->current1 || !control->iconHasVariants) {
+						UIImage icon = *control->icon;
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region, 
+								icon.border, icon.drawMode, 0xFF, message->paint.clip);
 					}
 
-					if (control->current2) {
-						UIImage *image = !control->useSingleIcon ? control->icons[2] : control->singleIcon;
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
-								image->border, image->drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
+					if (control->current2 && control->iconHasVariants) {
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * 3, 0);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
+								icon.border, icon.drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
 					}
 
-					if (control->current3) {
-						UIImage *image = !control->useSingleIcon ? control->icons[3] : control->singleIcon;
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
-								image->border, image->drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
+					if (control->current3 && control->iconHasVariants) {
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * 2, 0);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
+								icon.border, icon.drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
-					if (control->current4) {
-						UIImage *image = !control->useSingleIcon ? control->icons[1] : control->singleIcon;
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, image->region, 
-								image->border, image->drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+					if (control->current4 && control->iconHasVariants) {
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * 1, 0);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
+								icon.border, icon.drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
 					}
 				}
 
@@ -2494,7 +2466,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	} else if (item.type == OSMenuItem::SUBMENU) {
 		OSMenuSpecification *menu = (OSMenuSpecification *) item.value;
 		OSSetText(control, menu->name, menu->nameBytes, OS_RESIZE_MODE_GROW_ONLY);
-		if (!menubar) control->icons = smallArrowRightIcons;
+		if (!menubar) control->icon = &smallArrowRightNormal;
 	}
 
 	if (menubar) {
@@ -2525,9 +2497,9 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		UpdateCheckboxIcons(control);
 		control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
 		control->checkboxIcons = true;
+		control->iconHasVariants = true;
 	} else {
-		control->backgrounds = style == OS_BUTTON_STYLE_TOOLBAR ? toolbarItemBackgrounds
-			: (command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds);
+		control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
 	}
 
 	if (style == OS_BUTTON_STYLE_TOOLBAR) {
@@ -2537,6 +2509,13 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		control->preferredHeight = 31;
 		control->textShadowBlur = true;
 		control->textShadow = true;
+		control->backgrounds = toolbarItemBackgrounds;
+	} else if (style == OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
+		control->horizontalMargin = 6;
+		control->preferredWidth = 32;
+		control->preferredHeight = 31;
+		control->centerIcons = true;
+		control->backgrounds = toolbarItemBackgrounds;
 	}
 
 #if 0
@@ -2545,7 +2524,10 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 #endif
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
-	OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
+
+	if (style != OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
+		OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
+	} 
 
 	return control;
 }
@@ -2730,9 +2712,8 @@ void OSSetText(OSObject _control, char *text, size_t textBytes, unsigned resizeM
 	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 8;
 	int suggestedHeight = FONT_SIZE + 8;
 
-	if (control->icons) {
-		UIImage *firstIcon = !control->useSingleIcon ? control->icons[0] : control->singleIcon;
-		suggestedWidth += firstIcon->region.right - firstIcon->region.left + ICON_TEXT_GAP;
+	if (control->icon) {
+		suggestedWidth += control->icon->region.right - control->icon->region.left + ICON_TEXT_GAP;
 	}
 
 	OSMessage message;
@@ -3629,7 +3610,8 @@ OSObject OSCreateScrollbar(bool orientation) {
 	Control *up = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
 	up->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	up->context = scrollbar;
-	up->icons = orientation ? smallArrowUpIcons : smallArrowLeftIcons;
+	up->icon = orientation ? &smallArrowUpNormal : &smallArrowLeftNormal;
+	up->iconHasVariants = true;
 	up->centerIcons = true;
 
 	Control *grip = (Control *) OSHeapAllocate(sizeof(Control), true);
@@ -3642,7 +3624,8 @@ OSObject OSCreateScrollbar(bool orientation) {
 	Control *down = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
 	down->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	down->context = scrollbar;
-	down->icons = orientation ? smallArrowDownIcons : smallArrowRightIcons;
+	down->icon = orientation ? &smallArrowDownNormal : &smallArrowRightNormal;
+	down->iconHasVariants = true;
 	down->centerIcons = true;
 
 	OSAddControl(scrollbar, 0, 0, up, OS_CELL_H_EXPAND);
