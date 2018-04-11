@@ -350,16 +350,23 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 		}
 
 		if (!output) {
-			FT_Render_Glyph(font->glyph, FT_RENDER_MODE_NORMAL);
+			FT_Render_Glyph(font->glyph, FT_RENDER_MODE_LCD);
 
 			FT_Bitmap *bitmap = &font->glyph->bitmap;
-			width = bitmap->width;
+			width = bitmap->width / 3;
 			height = bitmap->rows;
 			xoff = font->glyph->bitmap_left;
 			yoff = -font->glyph->bitmap_top;
 
-			output = (uint8_t *) OSHeapAllocate(width * height, false);
-			OSCopyMemory(output, bitmap->buffer, width * height);
+			output = (uint8_t *) OSHeapAllocate(width * height * 3, false);
+
+			for (int y = 0; y < height; y++) {
+				for (int x = 0; x < width; x++) {
+					output[(x + y * width) * 3 + 0] = ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 0];
+					output[(x + y * width) * 3 + 1] = ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 1];
+					output[(x + y * width) * 3 + 2] = ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 2];
+				}
+			}
 
 			if (output) {
 				FontCacheEntry *entry = fontCache + fontCachePosition;
@@ -405,7 +412,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
 				if (blur) {
-					uint8_t pixelRaw = output[x + y * width];
+					uint8_t pixelRaw = output[x * 3 + y * width * 3];
 
 					for (int i = -blur; i <= blur; i++) {
 						int oY = outputPosition.y + yoff + y + i;
@@ -438,7 +445,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 						}
 					}
 				} else {
-					uint8_t pixel = output[x + y * width];
+					uint8_t pixel = output[x * 3 + y * width * 3];
 					uint32_t sourcePixel = (pixel << 24) | color;
 
 					DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, sourcePixel, selectionColor, backgroundColor, pixel, selected);
