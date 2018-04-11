@@ -54,6 +54,7 @@ static void EnterDebugger() {
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
 // TODO Multiple-cell positions.
+// TODO Wrapping.
 
 struct UIImage {
 	OSRectangle region;
@@ -341,8 +342,8 @@ struct GUIObject : APIObject {
 	uint16_t preferredWidth, preferredHeight;
 	uint16_t horizontalMargin : 4, verticalMargin : 4,
 		verbose : 1,
-		suggestWidth : 1,
-		suggestHeight : 1,
+		suggestWidth : 1, // Prevent recalculation of the preferred[Width/Height]
+		suggestHeight : 1, // on MEASURE messages with grids.
 		relayout : 1, repaint : 1;
 };
 
@@ -475,7 +476,7 @@ struct Grid : GUIObject {
 	uint32_t backgroundColor;
 	OSCallback notificationCallback;
 	int xOffset, yOffset;
-	bool ignoreMinimumDimensions;
+	bool treatPreferredDimensionsAsMinima; // Used with scroll panes for PUSH objects.
 };
 
 struct Scrollbar : Grid {
@@ -2443,7 +2444,7 @@ void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
 	}
 }
 
-void OSListViewInvalidate(OSObject _listView, uintptr_t index, size_t count) {
+void OSListViewInvalidate(OSObject _listView, int32_t index, int32_t count) {
 	RepaintListViewRows((ListView *) _listView, index, index + count - 1);
 }
 
@@ -2831,6 +2832,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				if (!grid->layout) grid->layout = OS_CELL_H_EXPAND | OS_CELL_V_EXPAND;
 				StandardCellLayout(grid);
 
+				tryAgain:;
+
 				OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
 				OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
 				OSZeroMemory(grid->minimumWidths, sizeof(int) * grid->columns);
@@ -2885,10 +2888,10 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 					for (uintptr_t i = 0; i < grid->columns; i++) {
 						if (grid->widths[i] == DIMENSION_PUSH) {
-							if (widthPerPush >= grid->minimumWidths[i] || grid->ignoreMinimumDimensions) {
-								grid->widths[i] = widthPerPush;
-							} else {
+							if (widthPerPush < grid->minimumWidths[i] && grid->treatPreferredDimensionsAsMinima) {
 								grid->widths[i] = grid->minimumWidths[i];
+							} else {
+								grid->widths[i] = widthPerPush;
 							}
 						}
 					}
@@ -2901,12 +2904,25 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						if (grid->heights[j] == DIMENSION_PUSH) {
-							if (heightPerPush >= grid->minimumHeights[j] || grid->ignoreMinimumDimensions) {
+							if (heightPerPush >= grid->minimumHeights[j] || !grid->treatPreferredDimensionsAsMinima) {
 								grid->heights[j] = heightPerPush;
 							} else {
 								grid->heights[j] = grid->minimumHeights[j];
 							}
 						}
+					}
+				}
+
+				{
+					OSMessage message;
+					message.type = OS_MESSAGE_CHECK_LAYOUT;
+					message.checkLayout.widths = grid->widths;
+					message.checkLayout.heights = grid->heights;
+
+					OSCallbackResponse response = OSSendMessage(grid, &message);
+
+					if (response == OS_CALLBACK_REJECTED) {
+						goto tryAgain;
 					}
 				}
 
@@ -3254,7 +3270,9 @@ OSCallbackResponse ScrollPaneBarMoved(OSObject _object, OSMessage *message) {
 OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
 	OSObject grid = OSCreateGrid(2, 2, OS_GRID_STYLE_LAYOUT);
 	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessScrollPaneMessage, nullptr));
+
 	OSAddGrid(grid, 0, 0, content, OS_CELL_FILL);
+	((Grid *) content)->treatPreferredDimensionsAsMinima = true;
 
 	if (flags & OS_CREATE_SCROLL_PANE_VERTICAL) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
@@ -4151,7 +4169,6 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	window->root = (Grid *) OSCreateGrid(3, 4, OS_GRID_STYLE_LAYOUT);
 	window->root->parent = window;
-	((Grid *) window->root)->ignoreMinimumDimensions = true;
 
 	{
 		OSMessage message;
@@ -4191,7 +4208,6 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 		if (flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
 			OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
-			((Grid *) grid)->ignoreMinimumDimensions = true;
 			OSAddGrid(window->root, 1, 2, grid, OS_CELL_FILL);
 			OSAddGrid(grid, 0, 0, OSCreateMenu(specification->menubar, nullptr, OS_MAKE_POINT(0, 0), OS_CREATE_MENUBAR), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		}

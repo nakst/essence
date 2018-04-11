@@ -524,6 +524,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_PAINT			= 0x0203,
 	OS_MESSAGE_PAINT_BACKGROUND		= 0x0204,
 	OS_MESSAGE_CUSTOM_PAINT			= 0x0205,
+	OS_MESSAGE_CHECK_LAYOUT			= 0x0206, // Return OS_CALLBACK_REJECTED to relayout after modifications.
 
 	OS_MESSAGE_DESTROY			= 0x0210,
 	OS_MESSAGE_PARENT_UPDATED		= 0x0211,
@@ -643,6 +644,10 @@ typedef struct OSMessage {
 			OSRectangle clip;
 			bool force;
 		} layout;
+
+		struct {
+			int *widths, *heights;
+		} checkLayout;
 
 		struct {
 			int preferredWidth, preferredHeight;
@@ -796,18 +801,16 @@ typedef struct OSListViewColumn {
 #define OS_ORIENTATION_HORIZONTAL (false)
 #define OS_ORIENTATION_VERTICAL   (true)
 
-#define OS_CELL_H_PUSH    (0x0001)
-#define OS_CELL_H_EXPAND  (0x0002)
-#define OS_CELL_H_LEFT    (0x0004)
-#define OS_CELL_H_CENTER  (0x0008)
-#define OS_CELL_H_RIGHT   (0x0010)
-#define OS_CELL_H_ACROSS  (0x0020)
-#define OS_CELL_V_PUSH    (0x0100)
-#define OS_CELL_V_EXPAND  (0x0200)
-#define OS_CELL_V_TOP     (0x0400)
-#define OS_CELL_V_CENTER  (0x0800)
-#define OS_CELL_V_BOTTOM  (0x1000)
-#define OS_CELL_V_ACROSS  (0x2000)
+#define OS_CELL_H_PUSH          (0x0001)
+#define OS_CELL_H_EXPAND        (0x0002)
+#define OS_CELL_H_LEFT          (0x0004)
+#define OS_CELL_H_CENTER        (0x0008)
+#define OS_CELL_H_RIGHT         (0x0010)
+#define OS_CELL_V_PUSH          (0x0100)
+#define OS_CELL_V_EXPAND        (0x0200)
+#define OS_CELL_V_TOP           (0x0400)
+#define OS_CELL_V_CENTER        (0x0800)
+#define OS_CELL_V_BOTTOM        (0x1000)
 
 // Some common layouts...
 #define OS_CELL_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_PUSH | OS_CELL_V_EXPAND)

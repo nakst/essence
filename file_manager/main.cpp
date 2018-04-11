@@ -10,8 +10,7 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/file_manager.manifest.h"
 
-// TODO Why does the scrollbar start at the bottom when changing folders?
-// TODO Think about having a global bookmark list?
+// TODO Move the scrollbar to the top when switching folders.
 
 struct FolderChild {
 	OSDirectoryChild data;
@@ -57,7 +56,6 @@ struct Instance {
 struct Bookmark {
 	char *path;
 	size_t pathBytes;
-	bool selected;
 };
 
 struct Global {
@@ -303,7 +301,6 @@ OSCallbackResponse CallbackBookmarkFolder(OSObject object, OSMessage *message) {
 
 		bookmark->pathBytes = instance->pathBytes;
 		bookmark->path = (char *) OSHeapAllocate(instance->pathBytes, false);
-		bookmark->selected = true;
 		OSCopyMemory(bookmark->path, instance->path, instance->pathBytes);
 
 		global.bookmarkCount++;
@@ -361,7 +358,7 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 			}
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				if (bookmark->selected) {
+				if (!CompareStrings(bookmark->path, instance->path, bookmark->pathBytes, instance->pathBytes)) {
 					message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
 				}
 			}
@@ -374,11 +371,7 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 		} break;
 
 		case OS_NOTIFICATION_DESELECT_ALL: {
-			for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
-				global.bookmarks[i].selected = false;
-			}
-
-			return OS_CALLBACK_HANDLED;
+			return OS_CALLBACK_REJECTED;
 		} break;
 
 		case OS_NOTIFICATION_SET_ITEM: {
@@ -386,9 +379,7 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 			Bookmark *bookmark = global.bookmarks + index;
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				bookmark->selected = message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
-
-				if (bookmark->selected && !(message->listViewItem.mask & OS_LIST_VIEW_ITEM_CUSTOM)) {
+				if (message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
 					instance->LoadFolder(bookmark->path, bookmark->pathBytes);
 				}
 			}
@@ -665,24 +656,13 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSListViewInsert(folderListing, 0, childCount);
 	OSSetText(folderPath, path, pathBytes, OS_RESIZE_MODE_IGNORE);
 	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
+	OSListViewInvalidate(bookmarkList, 0, global.bookmarkCount);
 
 	{
-		OSMessage message;
-		message.context = this;
-
-		message.type = OS_NOTIFICATION_DESELECT_ALL;
-		ProcessBookmarkListingNotification(nullptr, &message);
-
 		bool found = false;
 
 		for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
 			if (CompareStrings(global.bookmarks[i].path, path, global.bookmarks[i].pathBytes, pathBytes) == 0) {
-				message.type = OS_NOTIFICATION_SET_ITEM;
-				message.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_CUSTOM;
-				message.listViewItem.index = i;
-				message.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
-				ProcessBookmarkListingNotification(nullptr, &message);
-
 				found = true;
 				break;
 			}
