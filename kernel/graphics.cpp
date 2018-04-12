@@ -602,6 +602,8 @@ void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle
 
 	__m128i thisDepth = _mm_set1_epi16(depth);
 
+	__m128i constant255 = _mm_set1_epi32(0xFF);
+
 	while (y < sourceRegion.bottom) {
 		size_t countX = sourceRegion.right - sourceRegion.left;
 		InvalidateScanline(y - sourceRegion.top + destinationPoint.y, destinationPoint.x, destinationPoint.x + sourceRegion.right - sourceRegion.left);
@@ -610,15 +612,32 @@ void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle
 		uint16_t *c = depthPixel;
 
 		while (countX >= 4) {
-			__m128i oldDepth = _mm_loadl_epi64((__m128i *) depthPixel);
-			__m128i maskDepth = _mm_cmplt_epi16(thisDepth, oldDepth);
-			__m128i maskDepth128 = _mm_unpacklo_epi16(maskDepth, maskDepth);
+			__m128i oldDepth 	 = _mm_loadl_epi64((__m128i *) depthPixel);
+			__m128i maskDepth 	 = _mm_cmplt_epi16(thisDepth, oldDepth);
+			__m128i maskDepth128 	 = _mm_unpacklo_epi16(maskDepth, maskDepth);
+
 			__m128i destinationValue = _mm_loadu_si128((__m128i *) destinationPixel);
-			__m128i sourceValue = _mm_loadu_si128((__m128i *) sourcePixel);
-			__m128i blendedValue = _mm_or_si128(_mm_and_si128(maskDepth128, destinationValue), _mm_andnot_si128(maskDepth128, sourceValue));
-			__m128i blendedDepth = _mm_or_si128(_mm_and_si128(maskDepth, oldDepth), _mm_andnot_si128(maskDepth, thisDepth));
-			_mm_storeu_si128((__m128i *) destinationPixel, blendedValue);
-			_mm_storel_epi64((__m128i *) depthPixel, blendedDepth);
+			__m128i sourceValue 	 = _mm_loadu_si128((__m128i *) sourcePixel);
+
+			__m128i alpha = _mm_srli_epi32(sourceValue, 24);
+			alpha = _mm_and_si128(alpha, constant255);
+
+			__m128i red 	= _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi32(sourceValue, 0),  constant255), alpha);
+			__m128i green 	= _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi32(sourceValue, 8),  constant255), alpha);
+			__m128i blue 	= _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi32(sourceValue, 16), constant255), alpha);
+
+			alpha = _mm_sub_epi32(constant255, alpha);
+
+			red 	= _mm_srli_epi32(_mm_add_epi32(red,   _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi32(destinationValue, 0),  constant255), alpha)), 8);
+			green 	= _mm_srli_epi32(_mm_add_epi32(green, _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi32(destinationValue, 8),  constant255), alpha)), 8);
+			blue 	= _mm_srli_epi32(_mm_add_epi32(blue,  _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi32(destinationValue, 16), constant255), alpha)), 8);
+
+			sourceValue = _mm_or_si128(_mm_slli_epi32(red, 0), _mm_or_si128(_mm_slli_epi32(green, 8), _mm_slli_epi32(blue, 16)));
+
+			__m128i combinedValue = _mm_or_si128(_mm_and_si128(maskDepth128, destinationValue), _mm_andnot_si128(maskDepth128, sourceValue));
+			__m128i combinedDepth = _mm_or_si128(_mm_and_si128(maskDepth, oldDepth), _mm_andnot_si128(maskDepth, thisDepth));
+			_mm_storeu_si128((__m128i *) destinationPixel, combinedValue);
+			_mm_storel_epi64((__m128i *) depthPixel, combinedDepth);
 
 			destinationPixel += 16;
 			sourcePixel += 16;

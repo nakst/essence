@@ -154,7 +154,7 @@ extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
 	LoadImageIntoSurface((char *) "/OS/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 
-#if 0
+#if 1
 	LoadImageIntoSurface((char *) "/OS/Sample Images/Nebula.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
@@ -164,7 +164,7 @@ extern "C" void ProgramEntry() {
 
 	OSRedrawAll();
 
-#if 0
+#if 1
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);
@@ -174,9 +174,9 @@ extern "C" void ProgramEntry() {
 #else
 	{
 		for (int i = 0; i < 1; i++) {
-			// const char *path = "/OS/calculator";
+			const char *path = "/OS/calculator";
 			// const char *path = "/OS/test";
-			const char *path = "/OS/file_manager";
+			// const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

@@ -829,11 +829,29 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 			rectangle.bottom = position.y - window->position.y + height;
 		}
 
+#ifdef TRANSPARENT_WINDOWS
+		if (rectangle.left + window->position.x < 0) {
+			rectangle.left = -window->position.x;
+		}
+
+		if (rectangle.top + window->position.y < 0) {
+			rectangle.top = -window->position.y;
+		}
+
+		if (rectangle.right + window->position.x >= (int32_t) graphics.frameBuffer.resX) {
+			rectangle.right = graphics.frameBuffer.resX - window->position.x;
+		}
+
+		if (rectangle.bottom + window->position.y >= (int32_t) graphics.frameBuffer.resY) {
+			rectangle.bottom = graphics.frameBuffer.resY - window->position.y;
+		}
+#else
 		window->surface->InvalidateRectangle(rectangle);
+#endif
 
 		if (!window->resizing) {
 #ifdef TRANSPARENT_WINDOWS
-			graphics.frameBuffer.BlendWindow(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), window->z + 1);
+			graphics.frameBuffer.BlendWindow(*window->surface, { window->position.x + rectangle.left, window->position.y + rectangle.top }, rectangle, window->z + 1);
 #else
 			graphics.frameBuffer.Copy(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), true, window->z + 1);
 #endif
