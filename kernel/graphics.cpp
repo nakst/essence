@@ -589,8 +589,6 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 }
 
 void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle sourceRegion, uint16_t depth) {
-	// TODO Alpha blending.
-
 	mutex.Acquire();
 	Defer(mutex.Release());
 
@@ -612,10 +610,6 @@ void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle
 		uint16_t *c = depthPixel;
 
 		while (countX >= 4) {
-			__m128i oldDepth 	 = _mm_loadl_epi64((__m128i *) depthPixel);
-			__m128i maskDepth 	 = _mm_cmplt_epi16(thisDepth, oldDepth);
-			__m128i maskDepth128 	 = _mm_unpacklo_epi16(maskDepth, maskDepth);
-
 			__m128i destinationValue = _mm_loadu_si128((__m128i *) destinationPixel);
 			__m128i sourceValue 	 = _mm_loadu_si128((__m128i *) sourcePixel);
 
@@ -634,10 +628,8 @@ void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle
 
 			sourceValue = _mm_or_si128(_mm_slli_epi32(red, 0), _mm_or_si128(_mm_slli_epi32(green, 8), _mm_slli_epi32(blue, 16)));
 
-			__m128i combinedValue = _mm_or_si128(_mm_and_si128(maskDepth128, destinationValue), _mm_andnot_si128(maskDepth128, sourceValue));
-			__m128i combinedDepth = _mm_or_si128(_mm_and_si128(maskDepth, oldDepth), _mm_andnot_si128(maskDepth, thisDepth));
-			_mm_storeu_si128((__m128i *) destinationPixel, combinedValue);
-			_mm_storel_epi64((__m128i *) depthPixel, combinedDepth);
+			_mm_storeu_si128((__m128i *) destinationPixel, sourceValue);
+			_mm_storel_epi64((__m128i *) depthPixel, thisDepth);
 
 			destinationPixel += 16;
 			sourcePixel += 16;
@@ -646,13 +638,22 @@ void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle
 		}
 
 		while (countX >= 1) {
-			if (*depthPixel <= depth) {
-				*depthPixel = depth;
-				destinationPixel[0] = sourcePixel[0];
-				destinationPixel[1] = sourcePixel[1];
-				destinationPixel[2] = sourcePixel[2];
-				destinationPixel[3] = sourcePixel[3];
-			}
+			uint32_t modified = *sourcePixel;
+			uint32_t original = *destinationPixel;
+			uint32_t alpha1 = (modified & 0xFF000000) >> 24;
+			uint32_t alpha2 = 255 - alpha1;
+			uint32_t r2 = alpha2 * ((original & 0x000000FF) >> 0);
+			uint32_t g2 = alpha2 * ((original & 0x0000FF00) >> 8);
+			uint32_t b2 = alpha2 * ((original & 0x00FF0000) >> 16);
+			uint32_t r1 = alpha1 * ((modified & 0x000000FF) >> 0);
+			uint32_t g1 = alpha1 * ((modified & 0x0000FF00) >> 8);
+			uint32_t b1 = alpha1 * ((modified & 0x00FF0000) >> 16);
+			uint32_t result = 0xFF000000 | (0x00FF0000 & ((b1 + b2) << 8)) 
+				| (0x0000FF00 & ((g1 + g2) << 0)) 
+				| (0x000000FF & ((r1 + r2) >> 8));
+
+			*destinationPixel = result;
+			*depthPixel = depth;
 
 			destinationPixel += 4;
 			sourcePixel += 4;
@@ -823,10 +824,10 @@ void Surface::FillRectangle(OSRectangle region, OSColor color, bool alreadyLocke
 	uint8_t green = color.green;
 	uint8_t blue = color.blue;
 
-	__m128i w = _mm_set_epi8(0, red, green, blue,
-	 			 0, red, green, blue,
-				 0, red, green, blue,
-				 0, red, green, blue);
+	__m128i w = _mm_set_epi8(0xFF, red, green, blue,
+	 			 0xFF, red, green, blue,
+				 0xFF, red, green, blue,
+				 0xFF, red, green, blue);
 
 	for (intptr_t y = region.top; y < region.bottom; y++) {
 		uintptr_t remainingX = region.right - region.left;
@@ -844,6 +845,7 @@ void Surface::FillRectangle(OSRectangle region, OSColor color, bool alreadyLocke
 			destinationPixel[0] = color.blue;
 			destinationPixel[1] = color.green;
 			destinationPixel[2] = color.red;
+			destinationPixel[3] = 0xFF;
 			destinationPixel += 4;
 			remainingX--;
 		}

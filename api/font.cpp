@@ -150,7 +150,7 @@ inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, 
 			(oY) * stride);
 
 	if (pixel == 0xFFFFFF) {
-		*destination = textColor;
+		*destination = 0xFF000000 | textColor;
 	} else if (pixel) {
 		uint32_t original;
 

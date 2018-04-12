@@ -791,9 +791,13 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 #endif
 	}
 
+#ifdef TRANSPARENT_WINDOWS
+	for (int index = 0; index < (int) windowsCount; index++) {
+#else
 	int index = windowsCount - 1;
 
 	for (; index >= 0; index--) {
+#endif
 		Window *window = windows[index];
 
 		if ((int) window->z != index) {
