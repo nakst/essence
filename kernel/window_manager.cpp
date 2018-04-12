@@ -1,5 +1,7 @@
 #ifndef IMPLEMENTATION
 
+// #define TRANSPARENT_WINDOWS
+
 #define SCANCODE_KEY_RELEASED (1 << 15)
 #define SCANCODE_KEY_PRESSED  (0 << 15)
 
@@ -598,7 +600,7 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 		window->height = height;
 		window->owner = process;
 		window->menuParent = menuParentWindow;
-		if (modalParentWindow) modalParentWindow->modalChild = window;
+		if (modalParentWindow && !modalParentWindow->modalChild) modalParentWindow->modalChild = window;
 		window->handles = 1;
 
 		// KernelLog(LOG_VERBOSE, "Created window %x, handles = %d, menuParent = %x\n", window, window->handles, window->menuParent);
@@ -830,7 +832,11 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 		window->surface->InvalidateRectangle(rectangle);
 
 		if (!window->resizing) {
+#ifdef TRANSPARENT_WINDOWS
+			graphics.frameBuffer.BlendWindow(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), window->z + 1);
+#else
 			graphics.frameBuffer.Copy(*window->surface, window->position, OS_MAKE_RECTANGLE(0, window->width, 0, window->height), true, window->z + 1);
+#endif
 		}
 
 		window->surface->mutex.Acquire();
@@ -848,7 +854,13 @@ void Window::Update(bool fromUser) {
 
 	resizing = false;
 
+#ifdef TRANSPARENT_WINDOWS
+	windowManager.mutex.Acquire();
+	windowManager.Redraw(position, width, height);
+	windowManager.mutex.Release();
+#else
 	graphics.frameBuffer.Copy(*surface, position, OS_MAKE_RECTANGLE(0, width, 0, height), true, z + 1);
+#endif
 	graphics.UpdateScreen();
 
 	surface->mutex.Acquire();

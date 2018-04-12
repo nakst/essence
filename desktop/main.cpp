@@ -164,7 +164,7 @@ extern "C" void ProgramEntry() {
 
 	OSRedrawAll();
 
-#if 0
+#if 1
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);

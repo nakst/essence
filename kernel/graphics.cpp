@@ -41,6 +41,8 @@ struct Surface {
 	void Draw(Surface &source, OSRectangle destinationRegion, OSRectangle sourceRegion, 
 			OSRectangle borderDimensions, OSDrawMode mode, uint8_t alpha, bool alreadyLocked);
 
+	void BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle sourceRegion, uint16_t depth);
+
 	// Fill a region of this surface with the specified color.
 	void FillRectangle(OSRectangle region, OSColor color, bool alreadyLocked = false);
 
@@ -583,6 +585,66 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 		depthPixel = depthStart + resX;
 		destinationY++;
 		sourceY++;
+	}
+}
+
+void Surface::BlendWindow(Surface &source, OSPoint destinationPoint, OSRectangle sourceRegion, uint16_t depth) {
+	// TODO Alpha blending.
+
+	mutex.Acquire();
+	Defer(mutex.Release());
+
+	intptr_t y = sourceRegion.top;
+
+	uint8_t *destinationPixel = linearBuffer + destinationPoint.y * stride + destinationPoint.x * 4;
+	uint8_t *sourcePixel = source.linearBuffer + sourceRegion.top * source.stride + sourceRegion.left * 4;
+	uint16_t *depthPixel = depthBuffer + destinationPoint.y * resX + destinationPoint.x;
+
+	__m128i thisDepth = _mm_set1_epi16(depth);
+
+	while (y < sourceRegion.bottom) {
+		size_t countX = sourceRegion.right - sourceRegion.left;
+		InvalidateScanline(y - sourceRegion.top + destinationPoint.y, destinationPoint.x, destinationPoint.x + sourceRegion.right - sourceRegion.left);
+
+		uint8_t *a = destinationPixel, *b = sourcePixel;
+		uint16_t *c = depthPixel;
+
+		while (countX >= 4) {
+			__m128i oldDepth = _mm_loadl_epi64((__m128i *) depthPixel);
+			__m128i maskDepth = _mm_cmplt_epi16(thisDepth, oldDepth);
+			__m128i maskDepth128 = _mm_unpacklo_epi16(maskDepth, maskDepth);
+			__m128i destinationValue = _mm_loadu_si128((__m128i *) destinationPixel);
+			__m128i sourceValue = _mm_loadu_si128((__m128i *) sourcePixel);
+			__m128i blendedValue = _mm_or_si128(_mm_and_si128(maskDepth128, destinationValue), _mm_andnot_si128(maskDepth128, sourceValue));
+			__m128i blendedDepth = _mm_or_si128(_mm_and_si128(maskDepth, oldDepth), _mm_andnot_si128(maskDepth, thisDepth));
+			_mm_storeu_si128((__m128i *) destinationPixel, blendedValue);
+			_mm_storel_epi64((__m128i *) depthPixel, blendedDepth);
+
+			destinationPixel += 16;
+			sourcePixel += 16;
+			depthPixel += 4;
+			countX -= 4;
+		}
+
+		while (countX >= 1) {
+			if (*depthPixel <= depth) {
+				*depthPixel = depth;
+				destinationPixel[0] = sourcePixel[0];
+				destinationPixel[1] = sourcePixel[1];
+				destinationPixel[2] = sourcePixel[2];
+				destinationPixel[3] = sourcePixel[3];
+			}
+
+			destinationPixel += 4;
+			sourcePixel += 4;
+			depthPixel += 1;
+			countX -= 1;
+		}
+
+		y++;
+		destinationPixel = a + stride;
+		sourcePixel = b + source.stride;
+		depthPixel = c + resX;
 	}
 }
 
