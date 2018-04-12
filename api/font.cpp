@@ -144,13 +144,13 @@ static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle 
 	}
 }
 
-inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, uint32_t sourcePixel, uint32_t selectionColor, int32_t backgroundColor, uint8_t pixel, bool selected) {
+inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, uint32_t textColor, uint32_t selectionColor, int32_t backgroundColor, uint32_t pixel, bool selected) {
 	uint32_t *destination = (uint32_t *) ((uint8_t *) bitmap + 
 			(oX) * 4 + 
 			(oY) * stride);
 
-	if (pixel == 0xFF) {
-		*destination = sourcePixel;
+	if (pixel == 0xFFFFFF) {
+		*destination = textColor;
 	} else if (pixel) {
 		uint32_t original;
 
@@ -162,16 +162,16 @@ inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, 
 			original = backgroundColor;
 		}
 
-		uint32_t modified = sourcePixel;
+		uint32_t ra = (pixel & 0x000000FF) >> 0;
+		uint32_t ga = (pixel & 0x0000FF00) >> 8;
+		uint32_t ba = (pixel & 0x00FF0000) >> 16;
+		uint32_t r2 = (255 - ra) * ((original & 0x000000FF) >> 0);
+		uint32_t g2 = (255 - ga) * ((original & 0x0000FF00) >> 8);
+		uint32_t b2 = (255 - ba) * ((original & 0x00FF0000) >> 16);
+		uint32_t r1 = ra * ((textColor & 0x000000FF) >> 0);
+		uint32_t g1 = ga * ((textColor & 0x0000FF00) >> 8);
+		uint32_t b1 = ba * ((textColor & 0x00FF0000) >> 16);
 
-		uint32_t alpha1 = (modified & 0xFF000000) >> 24;
-		uint32_t alpha2 = 255 - alpha1;
-		uint32_t r2 = alpha2 * ((original & 0x000000FF) >> 0);
-		uint32_t g2 = alpha2 * ((original & 0x0000FF00) >> 8);
-		uint32_t b2 = alpha2 * ((original & 0x00FF0000) >> 16);
-		uint32_t r1 = alpha1 * ((modified & 0x000000FF) >> 0);
-		uint32_t g1 = alpha1 * ((modified & 0x0000FF00) >> 8);
-		uint32_t b1 = alpha1 * ((modified & 0x00FF0000) >> 16);
 		uint32_t result = 0xFF000000 | (0x00FF0000 & ((b1 + b2) << 8)) 
 			| (0x0000FF00 & ((g1 + g2) << 0)) 
 			| (0x000000FF & ((r1 + r2) >> 8));
@@ -358,13 +358,23 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			xoff = font->glyph->bitmap_left;
 			yoff = -font->glyph->bitmap_top;
 
-			output = (uint8_t *) OSHeapAllocate(width * height * 3, false);
+			output = (uint8_t *) OSHeapAllocate(width * height * 4, false);
 
 			for (int y = 0; y < height; y++) {
 				for (int x = 0; x < width; x++) {
-					output[(x + y * width) * 3 + 0] = ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 0];
-					output[(x + y * width) * 3 + 1] = ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 1];
-					output[(x + y * width) * 3 + 2] = ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 2];
+					 uint32_t r = (uint32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 0];
+					 uint32_t g = (uint32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 1];
+					 uint32_t b = (uint32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 2];
+
+					 // Reduce how noticible the colour fringes are.
+					 uint32_t average = (r + g + b) / 3;
+					 r -= (r - average) / 2;
+					 g -= (g - average) / 2;
+					 b -= (b - average) / 2;
+
+					 output[(x + y * width) * 4 + 0] = (uint8_t) r;
+					 output[(x + y * width) * 4 + 1] = (uint8_t) g;
+					 output[(x + y * width) * 4 + 2] = (uint8_t) b;
 				}
 			}
 
@@ -412,7 +422,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 				if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
 				if (blur) {
-					uint8_t pixelRaw = output[x * 3 + y * width * 3];
+					uint32_t pixel = *((uint32_t *) (output + (x * 4 + y * width * 4)));
 
 					for (int i = -blur; i <= blur; i++) {
 						int oY = outputPosition.y + yoff + y + i;
@@ -438,17 +448,15 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 							if (oX < invalidatedRegion.left) invalidatedRegion.left = oX;
 							if (oX > invalidatedRegion.right) invalidatedRegion.right = oX;
 
-							uint8_t pixel = pixelRaw / (i * i + j * j + 1) / 6;
-							uint32_t sourcePixel = (pixel << 24) | color;
+							uint32_t divisor = (6 * (i * i + j * j + 1));
+							uint32_t r = ((pixel & 0xFF) >> 0) / divisor;
 
-							DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, sourcePixel, selectionColor, backgroundColor, pixel, selected);
+							DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, color, selectionColor, backgroundColor, r | (r << 8) | (r << 16), selected);
 						}
 					}
 				} else {
-					uint8_t pixel = output[x * 3 + y * width * 3];
-					uint32_t sourcePixel = (pixel << 24) | color;
-
-					DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, sourcePixel, selectionColor, backgroundColor, pixel, selected);
+					uint32_t pixel = *((uint32_t *) (output + (x * 4 + y * width * 4)));
+					DrawStringPixel(oX, oY, bitmap, linearBuffer.stride, color, selectionColor, backgroundColor, pixel, selected);
 				}
 			}
 		}
