@@ -272,6 +272,7 @@ struct AHCIController {
 	void RemoveBlockingPacket(struct IOPacket *packet);
 	bool Access(struct IOPacket *packet, uintptr_t drive, uint64_t offset, size_t count, int operation, uint8_t *buffer); // Returns true on success.
 	bool FinishOperation(AHCIOperation *operation);
+	void AcquireMutex();
 
 	bool present;
 	struct PCIDevice *pciDevice;
@@ -288,8 +289,19 @@ AHCIController ahci;
 
 #else
 
+void AHCIController::AcquireMutex() {
+	mutex.Acquire();
+
+	if (kernelVMM.lock.owner == GetCurrentThread()) {
+		// TODO I think this can happen?
+		// 	It seemed to appear in the analyse_mutex_log program as a potential problem.
+		// 	...but that could be buggy.
+		KernelPanic("Potential deadlock.\n");
+	}
+}
+
 bool AHCIController::FinishOperation(AHCIOperation *operation) {
-	ahci.mutex.Acquire();
+	AcquireMutex();
 
 	bool success = false;
 
@@ -342,7 +354,7 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 
 	operation->issued.timeout.Remove();
 
-	ahci.mutex.Release();
+	mutex.Release();
 
 	if (ioPacket) {
 		ioPacket->request->mutex.Acquire();
@@ -363,12 +375,12 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 	}
 
 	// Mark the command index as available.
-	ahci.mutex.Acquire();
+	AcquireMutex();
 	drive->commandsInUse &= ~(1 << commandIndex);
-	ahci.mutex.Release();
+	mutex.Release();
 
 	{
-		ahci.mutex.Acquire();
+		AcquireMutex();
 
 		// Unblock a packet.
 		drive->available.Return(1);
@@ -380,7 +392,7 @@ bool AHCIController::FinishOperation(AHCIOperation *operation) {
 			drive->blockedOperations.Remove(drive->blockedOperations.firstItem);
 		}
 
-		ahci.mutex.Release();
+		mutex.Release();
 
 		if (operation) {
 			operation->ioPacket->request->mutex.Acquire();
@@ -693,7 +705,7 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	if (ioPacket) {
 		ioPacket->driverState = IO_PACKET_DRIVER_BLOCKING;
 
-		mutex.Acquire();
+		AcquireMutex();
 
 		if (!drive->available.units) {
 			// Queue the operation to be performed when a command is freed up.
@@ -710,7 +722,7 @@ bool AHCIController::Access(IOPacket *ioPacket, uintptr_t _drive, uint64_t offse
 	} else {
 		while (true) {
 			drive->available.available.Wait(OS_WAIT_NO_TIMEOUT);
-			mutex.Acquire();
+			AcquireMutex();
 
 			if (drive->available.units) {
 				break;

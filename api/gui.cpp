@@ -51,6 +51,8 @@ uint32_t TEXT_COLOR_TOOLBAR = 0xFFFFFF;
 uint32_t TEXTBOX_SELECTED_COLOR_1 = 0xFFC4D9F9;
 uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
+uint32_t DISABLE_TEXT_SHADOWS = 1;
+
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
@@ -920,13 +922,14 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				if (!control->customTextRendering) {
 					OSRectangle textBounds = control->textBounds;
 
-					if (control->textShadow && (!control->disabled || control->noDisabledTextColorChange)) {
+					if (control->textShadow && !DISABLE_TEXT_SHADOWS && (!control->disabled || control->noDisabledTextColorChange)) {
 						OSRectangle bounds = textBounds;
 						bounds.top++; bounds.bottom++; 
 						// bounds.left++; bounds.right++;
 
 						OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-								control->textAlign, textShadowColor, -1, control->textBold, message->paint.clip, control->textShadowBlur ? 3 : 0);
+								control->textAlign, textShadowColor, -1, control->textBold, message->paint.clip, 
+								control->textShadowBlur ? 3 : 0);
 					}
 
 					OSDrawString(message->paint.surface, textBounds, &control->text, control->textSize,
@@ -4413,7 +4416,7 @@ void OSInitialiseGUI() {
 	LIST_VIEW_BACKGROUND_COLOR = skin[4 * 3 + 25 * buffer.width];
 	
 	TEXT_COLOR_DEFAULT = skin[5 * 3 + 25 * buffer.width];
-	TEXT_COLOR_DISABLED = skin[6 * 3 + 25 * buffer.width];
+	// TEXT_COLOR_DISABLED = skin[6 * 3 + 25 * buffer.width];
 	TEXT_COLOR_DISABLED_SHADOW = skin[7 * 3 + 25 * buffer.width];
 	TEXT_COLOR_HEADING = skin[8 * 3 + 25 * buffer.width];
 	TEXT_COLOR_TITLEBAR = skin[0 * 3 + 28 * buffer.width];
@@ -4421,6 +4424,8 @@ void OSInitialiseGUI() {
 	
 	TEXTBOX_SELECTED_COLOR_1 = skin[2 * 3 + 28 * buffer.width];
 	TEXTBOX_SELECTED_COLOR_2 = skin[3 * 3 + 28 * buffer.width];
+
+	DISABLE_TEXT_SHADOWS = skin[4 * 3 + 28 * buffer.width];
 
 	OSFree(skin);
 	OSCloseHandle(buffer.handle);

@@ -1237,10 +1237,14 @@ void Mutex::Acquire() {
 
 	acquireAddress = (uintptr_t) __builtin_return_address(0);
 	AssertLocked();
+
+	// Print("%x:%x:1\n", owner, this);
 }
 
 void Mutex::Release() {
 	if (scheduler.panic) return;
+
+	// Print("%x:%x:0\n", owner, this);
 
 	AssertLocked();
 

@@ -91,7 +91,8 @@ void Build(bool enableOptimisations) {
 void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 	switch (emulator) {
 		case EMULATOR_QEMU: {
-			sprintf(buffer, "qemu-system-x86_64 %s -m %d -s %s -smp cores=%d %s", 
+			// -serial file:out.txt
+			sprintf(buffer, "qemu-system-x86_64  %s -m %d -s %s -smp cores=%d %s", 
 					drive == DRIVE_ATA ? "-drive file=drive,format=raw,media=disk,index=0" : 
 						"-drive file=drive,if=none,id=mydisk,format=raw,media=disk,index=0 -device ich9-ahci,id=ahci -device ide-drive,drive=mydisk,bus=ahci.0",
 					memory, gdb ? "-S" : "", cores,

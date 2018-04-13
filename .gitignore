@@ -17,3 +17,8 @@ start.sh
 manifest_parser
 AcceptedLicense
 build_system_config.dat
+out.txt
+out2.txt
+out3.txt
+out4.txt
+analyse_mutex_log
