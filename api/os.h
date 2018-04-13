@@ -435,7 +435,7 @@ typedef enum OSColorFormat {
 typedef struct OSLinearBuffer {
 	size_t width, height, stride;
 	OSColorFormat colorFormat;
-	OSHandle handle; // A shared memory region. See OSMapSharedMemory.
+	OSHandle handle; // A shared memory region. See OSMapObject.
 } OSLinearBuffer;
 
 typedef struct _OSRectangleAndColor {

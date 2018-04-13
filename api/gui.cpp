@@ -24,7 +24,6 @@ static void EnterDebugger() {
 #define SCROLLBAR_MINIMUM (16)
 #define SCROLLBAR_BUTTON_AMOUNT (64)
 
-#define STANDARD_BACKGROUND_COLOR (0xF5F6F9)
 #define STANDARD_BORDER_SIZE (2)
 
 #define LIST_VIEW_MARGIN (10)
@@ -32,19 +31,25 @@ static void EnterDebugger() {
 #define LIST_VIEW_WITH_BORDER_MARGIN (LIST_VIEW_MARGIN + STANDARD_BORDER_SIZE)
 #define LIST_VIEW_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
-#define LIST_VIEW_COLUMN_TEXT_COLOR (0x4D6278)
-#define LIST_VIEW_PRIMARY_TEXT_COLOR (0x000000)
-#define LIST_VIEW_SECONDARY_TEXT_COLOR (0x686868)
-#define LIST_VIEW_BACKGROUND_COLOR (0xFFFFFFFF)
-
-#define TEXT_COLOR_DEFAULT (0x000515)
-#define TEXT_COLOR_DISABLED (0x777777)
-#define TEXT_COLOR_DISABLED_SHADOW (0xEEEEEE)
-#define TEXT_COLOR_HEADING (0x003296)
-#define TEXT_COLOR_TITLEBAR (0xFFFFFF)
-#define TEXT_COLOR_TOOLBAR (0xFFFFFF)
 
 #define ICON_TEXT_GAP (5)
+
+uint32_t STANDARD_BACKGROUND_COLOR = 0xF5F6F9;
+
+uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
+uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
+uint32_t LIST_VIEW_SECONDARY_TEXT_COLOR = 0x686868;
+uint32_t LIST_VIEW_BACKGROUND_COLOR = 0xFFFFFFFF;
+
+uint32_t TEXT_COLOR_DEFAULT = 0x000515;
+uint32_t TEXT_COLOR_DISABLED = 0x777777;
+uint32_t TEXT_COLOR_DISABLED_SHADOW = 0xEEEEEE;
+uint32_t TEXT_COLOR_HEADING = 0x003296;
+uint32_t TEXT_COLOR_TITLEBAR = 0xFFFFFF;
+uint32_t TEXT_COLOR_TOOLBAR = 0xFFFFFF;
+
+uint32_t TEXTBOX_SELECTED_COLOR_1 = 0xFFC4D9F9;
+uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
@@ -1311,7 +1316,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		DrawString(message->paint.surface, control->textBounds, 
-				&control->text, control->textAlign, control->textColor, -1, control->window->focus == control ? 0xFFC4D9F9 : 0xFFDDDDDD,
+				&control->text, control->textAlign, control->textColor, -1, control->window->focus == control ? TEXTBOX_SELECTED_COLOR_1 : TEXTBOX_SELECTED_COLOR_2,
 				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
 				control->window->lastFocus != control || control->caretBlink,
@@ -4395,4 +4400,28 @@ void OSSetProperty(OSObject object, uintptr_t index, void *value) {
 }
 
 void OSInitialiseGUI() {
+	OSLinearBuffer buffer;
+	OSGetLinearBuffer(OS_SURFACE_UI_SHEET, &buffer);
+
+	uint32_t *skin = (uint32_t *) OSMapObject(buffer.handle, 0, buffer.width * buffer.height * 4, OS_FLAGS_DEFAULT);
+
+	STANDARD_BACKGROUND_COLOR = skin[0 * 3 + 25 * buffer.width];
+	
+	LIST_VIEW_COLUMN_TEXT_COLOR = skin[1 * 3 + 25 * buffer.width];
+	LIST_VIEW_PRIMARY_TEXT_COLOR = skin[2 * 3 + 25 * buffer.width];
+	LIST_VIEW_SECONDARY_TEXT_COLOR = skin[3 * 3 + 25 * buffer.width];
+	LIST_VIEW_BACKGROUND_COLOR = skin[4 * 3 + 25 * buffer.width];
+	
+	TEXT_COLOR_DEFAULT = skin[5 * 3 + 25 * buffer.width];
+	TEXT_COLOR_DISABLED = skin[6 * 3 + 25 * buffer.width];
+	TEXT_COLOR_DISABLED_SHADOW = skin[7 * 3 + 25 * buffer.width];
+	TEXT_COLOR_HEADING = skin[8 * 3 + 25 * buffer.width];
+	TEXT_COLOR_TITLEBAR = skin[0 * 3 + 28 * buffer.width];
+	TEXT_COLOR_TOOLBAR = skin[1 * 3 + 28 * buffer.width];
+	
+	TEXTBOX_SELECTED_COLOR_1 = skin[2 * 3 + 28 * buffer.width];
+	TEXTBOX_SELECTED_COLOR_2 = skin[3 * 3 + 28 * buffer.width];
+
+	OSFree(skin);
+	OSCloseHandle(buffer.handle);
 }

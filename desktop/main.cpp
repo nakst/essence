@@ -151,7 +151,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center, uintptr_t 
 }
 
 extern "C" void ProgramEntry() {
-	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
+	LoadImageIntoSurface((char *) "/OS/UI Skin 2.png", OS_SURFACE_UI_SHEET, false);
 	LoadImageIntoSurface((char *) "/OS/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 
 #if 1

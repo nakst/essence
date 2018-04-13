@@ -762,11 +762,12 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 	}
 
 	{
-		pmm.lock.Acquire();
-		Defer(pmm.lock.Release());
-
 		virtualAddressSpace->lock.Acquire();
 		Defer(virtualAddressSpace->lock.Release());
+
+		// The PMM lock must be acquired after the virtual address space lock.
+		pmm.lock.Acquire();
+		Defer(pmm.lock.Release());
 
 		for (uintptr_t address = region->baseAddress;
 				address < region->baseAddress + (region->pageCount << PAGE_BITS);
