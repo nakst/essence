@@ -53,17 +53,14 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
-// TODO Calculator textbox - selection extends out of top of textbox
-// TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
-// 	- Tab stop with last focus
-// 	- Tab traversal wrap around at end of window doesn't work with file manager
 // 	- Up/down/left/right
 // 	- Enter/escape/space
 // 	- Keyboard shortcuts and access keys
 // 	- Make buttons focusable? 
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
-// TODO Timer messages seem to be buggy?
+// TODO Minor menu[bar] border adjustments; menu icons.
+// TODO Calculator textbox - selection extends out of top of textbox
 // TODO Memory "arenas".
 // TODO Is the automatic scrollbar positioning correct?
 // TODO Multiple-cell positions.
@@ -834,6 +831,13 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (control->repaint || message->paint.force) {
 				// if (!control->firstPaint) OSPrint("first paint %x\n", control);
 				control->firstPaint = true;
+
+#if 0
+				if (control->window->focus == control) {
+					OSFillRectangle(message->paint.surface, message->paint.clip, OSColor(255, 0, 255));
+					break;
+				}
+#endif
 
 				bool menuSource;
 				bool normal, hover, pressed, disabled;
@@ -2833,10 +2837,6 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	control->layout = layout;
 	control->parent = grid;
 
-	if (control->tabStop) {
-		grid->tabStop = true;
-	}
-
 	GUIObject **object = grid->objects + (row * grid->columns + column);
 	if (*object) OSCrashProcess(OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT);
 	*object = control;
@@ -3155,7 +3155,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				intptr_t i = 0;
 
 				for (; i < grid->columns * grid->rows; i++) {
-					if (grid->objects[i] == previousFocus) {
+					if (grid->objects[i] == previousFocus && previousFocus) {
 						break;
 					}
 				}
@@ -3165,6 +3165,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				} else {
 					i += delta;
 				}
+
 
 				while (i != end) {
 					if (grid->objects[i] && grid->objects[i]->tabStop && !grid->objects[i]->disabled) {
@@ -3204,6 +3205,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 
 	Grid *grid = (Grid *) memory;
 	grid->type = API_OBJECT_GRID;
+	grid->tabStop = true;
 
 	grid->backgroundColor = STANDARD_BACKGROUND_COLOR;
 	grid->columns = columns;
@@ -3928,9 +3930,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSSendMessage(window, message);
 			} else if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
 				EnterDebugger();
-			} else if (window->focus) {
-				message->type = OS_MESSAGE_KEY_TYPED;
-				OSCallbackResponse response = OSSendMessage(window->focus, message);
+			} else if (window->lastFocus) {
+				OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
+
+				if (window->focus) {
+					message->type = OS_MESSAGE_KEY_TYPED;
+					response = OSSendMessage(window->focus, message);
+				}
 
 				GUIObject *control = window->lastFocus;
 				message->keyboard.notHandledBy = nullptr;
@@ -3941,8 +3947,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					message->keyboard.notHandledBy = control;
 					control = (GUIObject *) control->parent;
 				}
-
-				OSPrint("%x\n", window->focus);
 
 				if (response == OS_CALLBACK_NOT_HANDLED) {
 					if (message->keyboard.scancode == OS_SCANCODE_TAB 
