@@ -633,7 +633,7 @@ typedef struct OSMessage {
 		struct {
 			unsigned scancode; 
 			bool alt, ctrl, shift;
-			OSObject notHandledBy;
+			OSObject notHandledBy; // Used in tab traversal.
 		} keyboard;
 
 		struct {

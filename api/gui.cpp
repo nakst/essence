@@ -56,6 +56,12 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // TODO Calculator textbox - selection extends out of top of textbox
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Keyboard controls.
+// 	- Tab stop with last focus
+// 	- Tab traversal wrap around at end of window doesn't work with file manager
+// 	- Up/down/left/right
+// 	- Enter/escape/space
+// 	- Keyboard shortcuts and access keys
+// 	- Make buttons focusable? 
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Timer messages seem to be buggy?
 // TODO Memory "arenas".
@@ -352,7 +358,8 @@ struct GUIObject : APIObject {
 		verbose : 1,
 		suggestWidth : 1, // Prevent recalculation of the preferred[Width/Height]
 		suggestHeight : 1, // on MEASURE messages with grids.
-		relayout : 1, repaint : 1;
+		relayout : 1, repaint : 1,
+		tabStop : 1, disabled : 1;
 };
 
 static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
@@ -415,8 +422,7 @@ struct Control : GUIObject {
 
 	// State:
 
-	uint32_t disabled : 1, 
-		isChecked : 1, 
+	uint32_t isChecked : 1, 
 		firstPaint : 1,
 		repaintCustomOnly : 1;
 
@@ -737,6 +743,25 @@ static void SetGUIObjectProperty(GUIObject *object, OSMessage *message) {
 	}
 }
 
+static void OSSetFocusedControl(Control *control) {
+	Window *window = control->window;
+	OSMessage message;
+
+	// Remove previous any last focus.
+	if (window->lastFocus && control != window->lastFocus) {
+		message.type = OS_MESSAGE_END_LAST_FOCUS;
+		OSSendMessage(window->lastFocus, &message);
+	}
+
+	// And give this control focus, if it doesn't already have it.
+	if (control != window->focus) {
+		window->focus = control;
+		window->lastFocus = control;
+		message.type = OS_MESSAGE_START_FOCUS;
+		OSSendMessage(control, &message);
+	}
+}
+
 static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Control *control = (Control *) _object;
@@ -795,6 +820,14 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		case OS_MESSAGE_MEASURE: {
 			message->measure.preferredWidth = control->preferredWidth + control->horizontalMargin * 2;
 			message->measure.preferredHeight = control->preferredHeight + control->verticalMargin * 2;
+		} break;
+
+		case OS_MESSAGE_KEY_PRESSED: {
+			if (control->tabStop && control->window->lastFocus != control && message->keyboard.scancode == OS_SCANCODE_TAB) {
+				OSSetFocusedControl(control);
+			} else {
+				response = OS_CALLBACK_NOT_HANDLED;
+			}
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -1643,6 +1676,7 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	Textbox *control = (Textbox *) OSHeapAllocate(sizeof(Textbox), true);
 
 	control->type = API_OBJECT_CONTROL;
+	control->tabStop = true;
 	control->preferredWidth = 160;
 	control->drawParentBackground = true;
 	control->backgrounds = style == OS_TEXTBOX_STYLE_COMMAND ? textboxCommandBackgrounds : textboxBackgrounds;
@@ -1699,6 +1733,7 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
+	control->tabStop = true;
 
 	control->preferredWidth = 80;
 	control->preferredHeight = 21;
@@ -2434,6 +2469,7 @@ OSObject OSCreateListView(unsigned flags) {
 	ListView *control = (ListView *) OSHeapAllocate(sizeof(ListView), true);
 	control->type = API_OBJECT_CONTROL;
 	control->flags = flags;
+	control->tabStop = true;
 
 	control->preferredWidth = 80;
 	control->preferredHeight = 80;
@@ -2797,6 +2833,10 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	control->layout = layout;
 	control->parent = grid;
 
+	if (control->tabStop) {
+		grid->tabStop = true;
+	}
+
 	GUIObject **object = grid->objects + (row * grid->columns + column);
 	if (*object) OSCrashProcess(OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT);
 	*object = control;
@@ -3104,9 +3144,15 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		} break;
 
 		case OS_MESSAGE_KEY_PRESSED: {
-			if (message->keyboard.scancode == OS_SCANCODE_TAB && !message->keyboard.shift && !message->keyboard.ctrl && !message->keyboard.alt) {
+			if (message->keyboard.scancode == OS_SCANCODE_TAB 
+					&& !message->keyboard.ctrl && !message->keyboard.alt) {
+				int delta = message->keyboard.shift ? -1 : 1;
+				int start = message->keyboard.shift ? grid->columns * grid->rows - 1 : 0;
+				int end = message->keyboard.shift ? -1 : grid->columns * grid->rows;
+
 				OSObject previousFocus = message->keyboard.notHandledBy;
-				uintptr_t i = 0;
+				retryTab:;
+				intptr_t i = 0;
 
 				for (; i < grid->columns * grid->rows; i++) {
 					if (grid->objects[i] == previousFocus) {
@@ -3115,15 +3161,33 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				}
 
 				if (i == grid->columns * grid->rows) {
-					i = 0;
+					i = start;
+				} else {
+					i += delta;
+				}
 
-					if (grid->columns * grid->rows == 0) {
-						response = OS_CALLBACK_NOT_HANDLED;
+				while (i != end) {
+					if (grid->objects[i] && grid->objects[i]->tabStop && !grid->objects[i]->disabled) {
 						break;
+					} else {
+						i += delta;
 					}
 				}
 
-				// TODO Tab traversal.
+				if (i == end) {
+					// We're out of tab-stops in this grid.
+					response = OS_CALLBACK_NOT_HANDLED;
+				} else {
+					OSObject focus = grid->objects[i];
+					response = OSSendMessage(focus, message);
+
+					if (response == OS_CALLBACK_NOT_HANDLED) {
+						previousFocus = focus;
+						goto retryTab;
+					}
+				}
+			} else {
+				response = OS_CALLBACK_NOT_HANDLED;
 			}
 		} break;
 
@@ -3868,17 +3932,25 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				message->type = OS_MESSAGE_KEY_TYPED;
 				OSCallbackResponse response = OSSendMessage(window->focus, message);
 
-				Control *control = window->focus;
+				GUIObject *control = window->lastFocus;
 				message->keyboard.notHandledBy = nullptr;
+				message->type = OS_MESSAGE_KEY_PRESSED;
 
-				while (response == OS_CALLBACK_NOT_HANDLED && control) {
-					message->type = OS_MESSAGE_KEY_PRESSED;
-					response = OSSendMessage(window->focus, message);
+				while (response == OS_CALLBACK_NOT_HANDLED && control != window) {
+					response = OSSendMessage(control, message);
 					message->keyboard.notHandledBy = control;
-					control = (Control *) control->parent;
+					control = (GUIObject *) control->parent;
 				}
 
+				OSPrint("%x\n", window->focus);
+
 				if (response == OS_CALLBACK_NOT_HANDLED) {
+					if (message->keyboard.scancode == OS_SCANCODE_TAB 
+							&& !message->keyboard.ctrl && !message->keyboard.alt) {
+						message->keyboard.notHandledBy = nullptr;
+						OSSendMessage(window->root, message);
+					}
+
 					// TODO Keyboard shortcuts and access keys.
 				}
 			}
@@ -3949,19 +4021,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 				// And it is focusable...
 				if (control->focusable) {
-					// Remove previous any last focus.
-					if (window->lastFocus && control != window->lastFocus) {
-						message.type = OS_MESSAGE_END_LAST_FOCUS;
-						OSSendMessage(window->lastFocus, &message);
-					}
-
-					// And give this control focus, if it doesn't already have it.
-					if (control != window->focus) {
-						window->focus = control;
-						window->lastFocus = control;
-						message.type = OS_MESSAGE_START_FOCUS;
-						OSSendMessage(control, &message);
-					}
+					OSSetFocusedControl(control);
 				}
 			}
 		} break;
