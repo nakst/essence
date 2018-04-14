@@ -1007,6 +1007,9 @@ OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
 #define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
 
+OS_EXTERN_C void OSSetFocusedControl(OSObject control);
+OS_EXTERN_C OSObject OSGetFocusedControl(OSObject window, bool ignoreWeakFocus);
+
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
 
 OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);

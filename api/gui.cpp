@@ -54,10 +54,10 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
-// 	- Up/down/left/right
-// 	- Enter/escape/space
+// 	- Space to invoke focused buttons
+// 	- Enter and escape in dialog boxes
 // 	- Keyboard shortcuts and access keys
-// 	- Make buttons focusable? 
+// 	- List view navigation
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Calculator textbox - selection extends out of top of textbox
@@ -139,19 +139,14 @@ static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
 static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
 static UIImage progressBarPellet     	= {{18, 26, 128, 143}, {18, 18, 128, 128}};
 
-#ifndef SUPER_COOL_BUTTONS
-static UIImage buttonNormal		= {{51, 59, 88, 109}, {51 + 3, 51 + 5, 91, 106}, OS_DRAW_MODE_STRECH};
-static UIImage buttonDragged		= {{9 + 51, 9 + 59, 88, 109}, {9 + 54, 9 + 56, 91, 106}, OS_DRAW_MODE_STRECH};
-static UIImage buttonHover		= {{-9 + 51, -9 + 59, 88, 109}, {-9 + 54, -9 + 56, 91, 106}, OS_DRAW_MODE_STRECH};
-static UIImage buttonDisabled		= {{18 + 51, 18 + 59, 88, 109}, {18 + 54, 18 + 56, 91, 106}, OS_DRAW_MODE_STRECH};
-static UIImage buttonDangerousDragged	= {{24, 32, 105, 126}, {24 + 3, 24 + 5, 105 + 10, 105 + 11}};
-static UIImage buttonDangerousHover	= {{-18 + 51, -18 + 59, 88, 109}, {-18 + 54, -18 + 56, 98, 99}};
-#else
-static UIImage buttonNormal		= {{86 + 76, 86 + 76 + 86, 194, 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 194 + 14, 194 + 15}};
-static UIImage buttonDragged		= {{76, 76 + 86, 29 + 194, 29 + 194 + 29}, {76 + 43, 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
-static UIImage buttonHover		= {{76, 76 + 86, 194, 194 + 29}, {76 + 43, 76 + 44, 194 + 14, 194 + 15}};
-static UIImage buttonDisabled		= {{86 + 76, 86 + 76 + 86, 29 + 194, 29 + 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
-#endif
+static UIImage buttonNormal		= {{0 * 9 + 0, 0 * 9 + 8, 88, 109}, {0 * 9 + 3, 0 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonDisabled		= {{1 * 9 + 0, 1 * 9 + 8, 88, 109}, {1 * 9 + 3, 1 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonHover		= {{2 * 9 + 0, 2 * 9 + 8, 88, 109}, {2 * 9 + 3, 2 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonPressed		= {{3 * 9 + 0, 3 * 9 + 8, 88, 109}, {3 * 9 + 3, 3 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonFocused		= {{4 * 9 + 0, 4 * 9 + 8, 88, 109}, {4 * 9 + 3, 4 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonDangerousHover	= {{5 * 9 + 0, 5 * 9 + 8, 88, 109}, {5 * 9 + 3, 5 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonDangerousPressed	= {{6 * 9 + 0, 6 * 9 + 8, 88, 109}, {6 * 9 + 3, 6 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonDangerousFocused	= {{7 * 9 + 0, 7 * 9 + 8, 88, 109}, {7 * 9 + 3, 7 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 
 static UIImage checkboxHover		= {{99, 112, 242, 255}, {99, 100, 242, 243}};
 
@@ -303,14 +298,16 @@ static UIImage *buttonBackgrounds[] = {
 	&buttonNormal,
 	&buttonDisabled,
 	&buttonHover,
-	&buttonDragged,
+	&buttonPressed,
+	&buttonFocused,
 };
 
 static UIImage *buttonDangerousBackgrounds[] = {
 	&buttonNormal,
 	&buttonDisabled,
 	&buttonDangerousHover,
-	&buttonDangerousDragged,
+	&buttonDangerousPressed,
+	&buttonDangerousFocused,
 };
 
 static UIImage *progressBarBackgrounds[] = {
@@ -411,6 +408,7 @@ struct Control : GUIObject {
 
 		additionalCheckedBackgrounds : 1,
 		additionalCheckedIcons : 1,
+		hasFocusedBackground : 1,
 		centerIcons : 1,
 		iconHasVariants : 1,
 
@@ -740,7 +738,18 @@ static void SetGUIObjectProperty(GUIObject *object, OSMessage *message) {
 	}
 }
 
-static void OSSetFocusedControl(Control *control) {
+OSObject OSGetFocusedControl(OSObject _window, bool ignoreWeakFocus) {
+	Window *window = (Window *) _window;
+
+	if (ignoreWeakFocus) {
+		return window->focus;
+	} else {
+		return window->lastFocus;
+	}
+}
+
+void OSSetFocusedControl(OSObject _control) {
+	Control *control = (Control *) _control;
 	Window *window = control->window;
 	OSMessage message;
 
@@ -820,7 +829,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_KEY_PRESSED: {
-			if (control->tabStop && control->window->lastFocus != control && message->keyboard.scancode == OS_SCANCODE_TAB) {
+			if (control->tabStop && control->window->lastFocus != control) {
 				OSSetFocusedControl(control);
 			} else {
 				response = OS_CALLBACK_NOT_HANDLED;
@@ -840,7 +849,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 #endif
 
 				bool menuSource;
-				bool normal, hover, pressed, disabled;
+				bool normal, hover, pressed, disabled, actuallyPressed;
 				uint32_t textShadowColor, textColor;
 
 				OSRectangle contentBounds = control->bounds;
@@ -875,9 +884,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
-				disabled = control->disabled,
-				pressed = ((control->window->pressed == control && control->window->hover == control) || control->window->focus == control || menuSource) && !disabled,
-				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled,
+				actuallyPressed = (control->window->pressed == control && control->window->hover == control);
+				disabled = control->disabled;
+				pressed = (actuallyPressed || (control->window->focus == control && control->window->hover != control && control->window->pressed != control) || menuSource) && !disabled;
+				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
 				normal = !hover && !pressed && !disabled;
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
@@ -900,8 +910,9 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 
 					if (control->backgrounds[offset + 3] && control->current3) {
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 3]->region, 
-								control->backgrounds[offset + 3]->border, control->backgrounds[offset + 3]->drawMode, 
+						uintptr_t index = offset + 3 + (control->hasFocusedBackground && !actuallyPressed && !menuSource ? 1 : 0);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[index]->region, 
+								control->backgrounds[index]->border, control->backgrounds[index]->drawMode, 
 								control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
@@ -1765,6 +1776,9 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		control->backgrounds = toolbarItemBackgrounds;
 		control->additionalCheckedBackgrounds = true;
 	} else {
+		control->focusable = true;
+		control->hasFocusedBackground = true;
+
 		if (control->checkable) {
 			control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
 			control->icon = &checkboxHover;
@@ -2492,7 +2506,7 @@ OSObject OSCreateListView(unsigned flags) {
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessListViewMessage, nullptr));
 	OSSetObjectNotificationCallback(control->scrollbar, OS_MAKE_CALLBACK(ListViewScrollbarMoved, control));
 
-	control->lastClickedRow = -1;
+	control->lastClickedRow = 0;
 	control->highlightRow = -1;
 
 	{
@@ -2849,6 +2863,16 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 	}
 }
 
+static uintptr_t FindObjectInGrid(Grid *grid, OSObject object) {
+	for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+		if (grid->objects[i] == object && object) {
+			return i;
+		}
+	}
+
+	return grid->columns * grid->rows;
+}
+
 static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Grid *grid = (Grid *) _object;
@@ -3144,51 +3168,77 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		} break;
 
 		case OS_MESSAGE_KEY_PRESSED: {
-			if (message->keyboard.scancode == OS_SCANCODE_TAB 
-					&& !message->keyboard.ctrl && !message->keyboard.alt) {
-				int delta = message->keyboard.shift ? -1 : 1;
-				int start = message->keyboard.shift ? grid->columns * grid->rows - 1 : 0;
-				int end = message->keyboard.shift ? -1 : grid->columns * grid->rows;
+			response = OS_CALLBACK_NOT_HANDLED;
 
-				OSObject previousFocus = message->keyboard.notHandledBy;
-				retryTab:;
-				intptr_t i = 0;
+			if (message->keyboard.ctrl || message->keyboard.alt) {
+				break;
+			}
 
-				for (; i < grid->columns * grid->rows; i++) {
-					if (grid->objects[i] == previousFocus && previousFocus) {
-						break;
-					}
-				}
+			OSObject previousFocus = message->keyboard.notHandledBy;
+			int delta, start, end, i = FindObjectInGrid(grid, previousFocus);
+			bool loopAround, foundFirstTime = i != (int) (grid->columns * grid->rows);
 
-				if (i == grid->columns * grid->rows) {
-					i = start;
+			if (message->keyboard.scancode == OS_SCANCODE_TAB) {
+				delta = message->keyboard.shift ? -1 : 1;
+				start = message->keyboard.shift ? grid->columns * grid->rows - 1 : 0;
+				end = message->keyboard.shift ? -1 : grid->columns * grid->rows;
+				loopAround = false;
+			} else if (message->keyboard.scancode == OS_SCANCODE_LEFT_ARROW && foundFirstTime) {
+				delta = -1;
+				end = i - (i % grid->columns) - 1;
+				start = end + grid->columns;
+				loopAround = true;
+			} else if (message->keyboard.scancode == OS_SCANCODE_UP_ARROW && foundFirstTime) {
+				delta = -grid->columns;
+				end = (i % grid->columns) - grid->columns;
+				start = end + grid->columns * grid->rows;
+				loopAround = true;
+			} else if (message->keyboard.scancode == OS_SCANCODE_DOWN_ARROW && foundFirstTime) {
+				delta = grid->columns;
+				start = (i % grid->columns);
+				end = start + grid->columns * grid->rows;
+				loopAround = true;
+			} else if (message->keyboard.scancode == OS_SCANCODE_RIGHT_ARROW && foundFirstTime) {
+				delta = 1;
+				start = i - (i % grid->columns);
+				end = start + grid->columns;
+				loopAround = true;
+			} else {
+				break;
+			}
+
+			retryTab:;
+			i = FindObjectInGrid(grid, previousFocus);
+
+			if (i == (int) (grid->columns * grid->rows)) {
+				i = start;
+			} else {
+				i += delta;
+			}
+
+			while (i != end) {
+				if (grid->objects[i] && grid->objects[i]->tabStop && !grid->objects[i]->disabled) {
+					break;
 				} else {
 					i += delta;
 				}
+			}
 
-
-				while (i != end) {
-					if (grid->objects[i] && grid->objects[i]->tabStop && !grid->objects[i]->disabled) {
-						break;
-					} else {
-						i += delta;
-					}
-				}
-
-				if (i == end) {
-					// We're out of tab-stops in this grid.
-					response = OS_CALLBACK_NOT_HANDLED;
-				} else {
-					OSObject focus = grid->objects[i];
-					response = OSSendMessage(focus, message);
-
-					if (response == OS_CALLBACK_NOT_HANDLED) {
-						previousFocus = focus;
-						goto retryTab;
-					}
-				}
-			} else {
+			if (i == end && !loopAround) {
+				// We're out of tab-stops in this grid.
 				response = OS_CALLBACK_NOT_HANDLED;
+			} else {
+				if (loopAround && i == end) {
+					i = start;
+				}
+
+				OSObject focus = grid->objects[i];
+				response = OSSendMessage(focus, message);
+
+				if (response == OS_CALLBACK_NOT_HANDLED) {
+					previousFocus = focus;
+					goto retryTab;
+				}
 			}
 		} break;
 
@@ -3930,7 +3980,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSSendMessage(window, message);
 			} else if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
 				EnterDebugger();
-			} else if (window->lastFocus) {
+			} else {
 				OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
 				if (window->focus) {
@@ -3942,7 +3992,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				message->keyboard.notHandledBy = nullptr;
 				message->type = OS_MESSAGE_KEY_PRESSED;
 
-				while (response == OS_CALLBACK_NOT_HANDLED && control != window) {
+				while (control && control != window && response == OS_CALLBACK_NOT_HANDLED) {
 					response = OSSendMessage(control, message);
 					message->keyboard.notHandledBy = control;
 					control = (GUIObject *) control->parent;

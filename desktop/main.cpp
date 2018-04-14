@@ -175,8 +175,8 @@ extern "C" void ProgramEntry() {
 #else
 	{
 		for (int i = 0; i < 1; i++) {
-			// const char *path = "/OS/calculator";
-			const char *path = "/OS/test";
+			const char *path = "/OS/calculator";
+			// const char *path = "/OS/test";
 			// const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
