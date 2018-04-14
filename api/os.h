@@ -513,6 +513,7 @@ typedef enum OSGridStyle {
 	OS_GRID_STYLE_CONTAINER_ALT,
 	OS_GRID_STYLE_STATUS_BAR,
 	OS_GRID_STYLE_TOOLBAR,
+	OS_GRID_STYLE_TOOLBAR_ALT,
 } OSGridStyle;
 
 typedef enum OSMessageType {
@@ -632,6 +633,7 @@ typedef struct OSMessage {
 		struct {
 			unsigned scancode; 
 			bool alt, ctrl, shift;
+			OSObject notHandledBy;
 		} keyboard;
 
 		struct {
@@ -753,6 +755,9 @@ typedef struct OSCommand {
 
 	char *shortcut;
 	size_t shortcutBytes;
+
+	char *access;
+	size_t accessBytes;
 
 	uint8_t checkable : 1, 
 		defaultCheck : 1, 

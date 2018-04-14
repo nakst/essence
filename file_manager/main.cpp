@@ -13,6 +13,7 @@
 #include "../bin/OS/file_manager.manifest.h"
 
 // TODO Move the scrollbar to the top when switching folders.
+// TODO Closing instances.
 
 struct FolderChild {
 	OSDirectoryChild data;
@@ -744,15 +745,17 @@ void Instance::Initialise() {
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);
 
-	OSObject rootLayout = OSCreateGrid(1, 4, OS_GRID_STYLE_LAYOUT);
+	OSObject rootLayout = OSCreateGrid(1, 6, OS_GRID_STYLE_LAYOUT);
 	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
-	OSObject toolbar = OSCreateGrid(6, 1, OS_GRID_STYLE_TOOLBAR);
+	OSObject toolbar1 = OSCreateGrid(5, 1, OS_GRID_STYLE_TOOLBAR);
+	OSObject toolbar2 = OSCreateGrid(1, 1, OS_GRID_STYLE_TOOLBAR_ALT);
 	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 
 	OSSetRootGrid(window, rootLayout);
-	OSAddGrid(rootLayout, 0, 2, contentSplit, OS_CELL_FILL);
-	OSAddGrid(rootLayout, 0, 0, toolbar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
-	OSAddGrid(rootLayout, 0, 3, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddGrid(rootLayout, 0, 3, contentSplit, OS_CELL_FILL);
+	OSAddGrid(rootLayout, 0, 0, toolbar1, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddGrid(rootLayout, 0, 1, toolbar2, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddGrid(rootLayout, 0, 5, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT);
 	OSAddControl(contentSplit, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
@@ -768,20 +771,21 @@ void Instance::Initialise() {
 	OSAddControl(contentSplit, 1, 0, OSCreateLine(OS_ORIENTATION_VERTICAL), OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 
 	OSObject backButton = OSCreateButton(commandNavigateBackwards, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(toolbar, 0, 0, backButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar1, 0, 0, backButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSObject forwardButton = OSCreateButton(commandNavigateForwards, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
-	OSAddControl(toolbar, 1, 0, forwardButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar1, 1, 0, forwardButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSObject parentButton = OSCreateButton(commandNavigateParent, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
-	OSAddControl(toolbar, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar1, 2, 0, parentButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	folderPath = OSCreateTextbox(OS_TEXTBOX_STYLE_COMMAND);
 	OSSetControlCommand(folderPath, commandNavigatePath);
-	OSAddControl(toolbar, 3, 0, folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar1, 3, 0, folderPath, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	OSObject bookmarkFolderButton = OSCreateButton(commandBookmarkFolder, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
-	OSAddControl(toolbar, 4, 0, bookmarkFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar1, 4, 0, bookmarkFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+
 	OSObject newFolderButton = OSCreateButton(commandNewFolder, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(toolbar, 5, 0, newFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar2, 0, 0, newFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	statusLabel = OSCreateLabel(OSLiteral(""));
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);

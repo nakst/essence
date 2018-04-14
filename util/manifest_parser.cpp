@@ -327,6 +327,14 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.shortcutBytes = 0,\n");
 			}
 
+			if (FindProperty("access", &value)) {
+				fprintf(output, "\t.access = (char *) %.*s,\n", value.bytes, value.text);
+				fprintf(output, "\t.accessBytes = %d,\n", value.bytes - 2);
+			} else {
+				fprintf(output, "\t.access = (char *) \"\",\n");
+				fprintf(output, "\t.accessBytes = 0,\n");
+			}
+
 			if (FindProperty("checkable", &value)) {
 				fprintf(output, "\t.checkable = %.*s,\n", value.bytes, value.text);
 			} else {

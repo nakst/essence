@@ -168,6 +168,8 @@ static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 157}, OS_DRAW
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 157}, OS_DRAW_MODE_STRECH};
 
 static UIImage toolbarBackground	= {{0, 0 + 60, 195, 195 + 31}, {0 + 1, 0 + 59, 195 + 1, 195 + 29}, OS_DRAW_MODE_STRECH};
+static UIImage toolbarBackgroundAlt	= {{98 + 0, 98 + 0 + 60, 195, 195 + 31}, {98 + 0 + 1, 98 + 0 + 59, 195 + 1, 195 + 29}, OS_DRAW_MODE_STRECH};
+
 static UIImage toolbarHover		= {{73, 84, 195, 226}, {78, 79, 203, 204}};
 static UIImage toolbarPressed		= {{73 - 12, 84 - 12, 195, 226}, {78 - 12, 79 - 12, 203, 204}};
 static UIImage toolbarNormal		= {{73 + 12, 84 + 12, 195, 226}, {78 + 12, 79 + 12, 203, 204}};
@@ -1441,6 +1443,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 		int ic = -1, isc = -1;
 
+		result = OS_CALLBACK_HANDLED;
+
 		switch (message->keyboard.scancode) {
 			case OS_SCANCODE_A: ic = 'a'; isc = 'A'; break;
 			case OS_SCANCODE_B: ic = 'b'; isc = 'B'; break;
@@ -1583,6 +1587,10 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				message.type = OS_MESSAGE_END_LAST_FOCUS;
 				OSSendMessage(control, &message);
 				control->window->lastFocus = nullptr;
+			} break;
+
+			default: {
+				result = OS_CALLBACK_NOT_HANDLED;
 			} break;
 		}
 
@@ -3095,6 +3103,30 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			}
 		} break;
 
+		case OS_MESSAGE_KEY_PRESSED: {
+			if (message->keyboard.scancode == OS_SCANCODE_TAB && !message->keyboard.shift && !message->keyboard.ctrl && !message->keyboard.alt) {
+				OSObject previousFocus = message->keyboard.notHandledBy;
+				uintptr_t i = 0;
+
+				for (; i < grid->columns * grid->rows; i++) {
+					if (grid->objects[i] == previousFocus) {
+						break;
+					}
+				}
+
+				if (i == grid->columns * grid->rows) {
+					i = 0;
+
+					if (grid->columns * grid->rows == 0) {
+						response = OS_CALLBACK_NOT_HANDLED;
+						break;
+					}
+				}
+
+				// TODO Tab traversal.
+			}
+		} break;
+
 		default: {
 			response = OS_CALLBACK_NOT_HANDLED;
 		} break;
@@ -3172,6 +3204,14 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 			grid->preferredHeight = 31;
 			grid->suggestHeight = true;
 			grid->background = &toolbarBackground;
+		} break;
+
+		case OS_GRID_STYLE_TOOLBAR_ALT: {
+			grid->borderSize = OS_MAKE_RECTANGLE(5, 5, 0, 0);
+			grid->gapSize = 4;
+			grid->preferredHeight = 31;
+			grid->suggestHeight = true;
+			grid->background = &toolbarBackgroundAlt;
 		} break;
 	}
 
@@ -3631,7 +3671,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	nudgeUp->context = scrollbar;
 	nudgeUp->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_UP);
 	nudgeUp->backgrounds = orientation ? scrollbarTrackVerticalBackgrounds : scrollbarTrackHorizontalBackgrounds;
-	OSSetCallback(nudgeUp, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+	OSSetCallback(nudgeUp, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
 	Control *nudgeDown = (Control *) OSHeapAllocate(sizeof(Control), true);
@@ -3639,7 +3679,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	nudgeDown->context = scrollbar;
 	nudgeDown->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
 	nudgeDown->backgrounds = orientation ? scrollbarTrackVerticalBackgrounds : scrollbarTrackHorizontalBackgrounds;
-	OSSetCallback(nudgeDown, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+	OSSetCallback(nudgeDown, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_UP);
 	Control *up = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
@@ -3777,8 +3817,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_ACTIVATED: {
-			if (!window->created) break;
-
 			for (int i = 0; i < 12; i++) {
 				if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
 				OSDisableControl(window->root->objects[i], false);
@@ -3793,8 +3831,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DEACTIVATED: {
-			if (!window->created) break;
-
 			for (int i = 0; i < 12; i++) {
 				if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
 				OSDisableControl(window->root->objects[i], true);
@@ -3830,7 +3866,21 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				EnterDebugger();
 			} else if (window->focus) {
 				message->type = OS_MESSAGE_KEY_TYPED;
-				OSSendMessage(window->focus, message);
+				OSCallbackResponse response = OSSendMessage(window->focus, message);
+
+				Control *control = window->focus;
+				message->keyboard.notHandledBy = nullptr;
+
+				while (response == OS_CALLBACK_NOT_HANDLED && control) {
+					message->type = OS_MESSAGE_KEY_PRESSED;
+					response = OSSendMessage(window->focus, message);
+					message->keyboard.notHandledBy = control;
+					control = (Control *) control->parent;
+				}
+
+				if (response == OS_CALLBACK_NOT_HANDLED) {
+					// TODO Keyboard shortcuts and access keys.
+				}
 			}
 		} break;
 
