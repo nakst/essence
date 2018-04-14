@@ -150,8 +150,7 @@ static UIImage buttonHover		= {{76, 76 + 86, 194, 194 + 29}, {76 + 43, 76 + 44, 
 static UIImage buttonDisabled		= {{86 + 76, 86 + 76 + 86, 29 + 194, 29 + 194 + 29}, {86 + 76 + 43, 86 + 76 + 44, 29 + 194 + 14, 29 + 194 + 15}};
 #endif
 
-static UIImage checkboxHover		= {{-14 + 95, -14 + 108, 120, 133}, {-14 + 95, -14 + 95, 120, 120}};
-static UIImage checkboxHoverChecked	= {{-14 + 95, -14 + 108, 14 + 120, 14 + 133}, {-14 + 95, -14 + 95, 14 + 120, 14 + 120}};
+static UIImage checkboxHover		= {{99, 112, 242, 255}, {99, 100, 242, 243}};
 
 static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
 static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
@@ -389,27 +388,35 @@ struct Control : GUIObject {
 	OSRectangle textBounds;
 	uint32_t textColor;
 	uint8_t textSize, textAlign;
-
 	uint8_t textShadow : 1, 
 		textBold : 1,
-		noAnimations : 1,
-		focusable : 1,
-		customTextRendering : 1,
-		drawParentBackground : 1,
-		noDisabledTextColorChange : 1,
-		keepCustomCursorWhenDisabled : 1;
-	uint8_t disabled : 1, 
-		isChecked : 1, 
-		checkable : 1,
-		ignoreActivationClicks : 1,
-		checkboxIcons : 1,
-		centerIcons : 1,
-		firstPaint : 1;
-	uint8_t	repaintCustomOnly : 1,
 		textShadowBlur : 1,
-		iconHasVariants : 1,
+		customTextRendering : 1;
+
+	// Configuration:
+
+	uint32_t focusable : 1,
+		checkable : 1,
+
+		noAnimations : 1,
+		noDisabledTextColorChange : 1,
+		ignoreActivationClicks : 1,
+		drawParentBackground : 1,
+
 		additionalCheckedBackgrounds : 1,
+		additionalCheckedIcons : 1,
+		centerIcons : 1,
+		iconHasVariants : 1,
+
+		keepCustomCursorWhenDisabled : 1,
 		cursor : 5;
+
+	// State:
+
+	uint32_t disabled : 1, 
+		isChecked : 1, 
+		firstPaint : 1,
+		repaintCustomOnly : 1;
 
 	LinkedItem<Control> timerControlItem;
 
@@ -607,10 +614,6 @@ static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	}
 	
 	return true;
-}
-
-static inline void UpdateCheckboxIcons(Control *control) {
-	control->icon = control->isChecked ? &checkboxHoverChecked : &checkboxHover;
 }
 
 void OSSetControlCommand(OSObject _control, OSCommand *_command) {
@@ -872,7 +875,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 				if (control->icon) {
 					OSRectangle bounds = contentBounds;
-
 					UIImage *icon = control->icon;
 					
 					if (control->centerIcons) {
@@ -886,26 +888,28 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						bounds.bottom = bounds.top + icon->region.bottom - icon->region.top;
 					}
 
+					uintptr_t offset = (control->isChecked && control->additionalCheckedIcons) ? 4 : 0;
+
 					if (control->current1 || !control->iconHasVariants) {
-						UIImage icon = *control->icon;
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * (0 + offset), 0);
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region, 
 								icon.border, icon.drawMode, 0xFF, message->paint.clip);
 					}
 
 					if (control->current2 && control->iconHasVariants) {
-						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * 3, 0);
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * (3 + offset), 0);
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
 								icon.border, icon.drawMode, control->current2 == 15 ? 0xFF : 0xF * control->current2, message->paint.clip);
 					}
 
 					if (control->current3 && control->iconHasVariants) {
-						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * 2, 0);
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * (2 + offset), 0);
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
 								icon.border, icon.drawMode, control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
 					if (control->current4 && control->iconHasVariants) {
-						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * 1, 0);
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * (1 + offset), 0);
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
 								icon.border, icon.drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
 					}
@@ -957,10 +961,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			if (control->command) {
 				OSSetControlCommand(control, control->command);
-
-				if (control->checkboxIcons) {
-					UpdateCheckboxIcons(control);
-				}
 			}
 		} break;
 
@@ -1028,32 +1028,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			} else {
 				control->animationStep++;
 				OSRepaintControl(control);
-			}
-		} break;
-
-		case OS_MESSAGE_CLICKED: {
-			if (control->checkable) {
-				// Update the checked state.
-				control->isChecked = !control->isChecked;
-
-				if (control->command) {
-					// Update the command.
-					OSCheckCommand(control->window, control->command, control->isChecked);
-				} else if (control->checkboxIcons) {
-					UpdateCheckboxIcons(control);
-				}
-			}
-
-			OSMessage message;
-			message.type = OS_NOTIFICATION_COMMAND;
-			message.command.checked = control->isChecked;
-			message.command.window = control->window;
-			message.command.command = control->command;
-			OSForwardMessage(control, control->notificationCallback, &message);
-
-			if (control->window->flags & OS_CREATE_WINDOW_MENU) {
-				message.type = OS_MESSAGE_DESTROY;
-				OSSendMessage(openMenus[0].window, &message);
 			}
 		} break;
 
@@ -1679,6 +1653,90 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	return control;
 }
 
+OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
+	Control *control = (Control *) object;
+	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+	
+	if (message->type == OS_MESSAGE_CLICKED) {
+		if (control->checkable) {
+			// Update the checked state.
+			control->isChecked = !control->isChecked;
+
+			if (control->command) {
+				// Update the command.
+				OSCheckCommand(control->window, control->command, control->isChecked);
+			}
+		}
+
+		OSMessage message;
+		message.type = OS_NOTIFICATION_COMMAND;
+		message.command.checked = control->isChecked;
+		message.command.window = control->window;
+		message.command.command = control->command;
+		OSForwardMessage(control, control->notificationCallback, &message);
+
+		if (control->window->flags & OS_CREATE_WINDOW_MENU) {
+			message.type = OS_MESSAGE_DESTROY;
+			OSSendMessage(openMenus[0].window, &message);
+		}
+	}
+
+	if (result == OS_CALLBACK_NOT_HANDLED) {
+		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	return result;
+}
+
+OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+
+	control->preferredWidth = 80;
+	control->preferredHeight = 21;
+	control->textColor = TEXT_COLOR_DEFAULT;
+
+	control->drawParentBackground = true;
+	control->ignoreActivationClicks = true;
+
+	OSSetControlCommand(control, command);
+
+	if (style == OS_BUTTON_STYLE_TOOLBAR) {
+		control->textColor = TEXT_COLOR_TOOLBAR;
+		control->horizontalMargin = 12;
+		control->preferredWidth = 0;
+		control->preferredHeight = 31;
+		control->textShadowBlur = true;
+		control->textShadow = true;
+		control->backgrounds = toolbarItemBackgrounds;
+		control->additionalCheckedBackgrounds = true;
+	} else if (style == OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
+		control->horizontalMargin = 6;
+		control->preferredWidth = 32;
+		control->preferredHeight = 31;
+		control->centerIcons = true;
+		control->backgrounds = toolbarItemBackgrounds;
+		control->additionalCheckedBackgrounds = true;
+	} else {
+		if (control->checkable) {
+			control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
+			control->icon = &checkboxHover;
+			control->iconHasVariants = true;
+			control->additionalCheckedIcons = true;
+		} else {
+			control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
+		}
+	}
+
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
+
+	if (style != OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
+		OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
+	} 
+
+	return control;
+}
+
 OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	MenuItem *control = (MenuItem *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
@@ -1704,7 +1762,7 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
-		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr), message);
 	}
 
 	return result;
@@ -2488,60 +2546,6 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	}
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, nullptr));
-
-	return control;
-}
-
-OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
-	control->type = API_OBJECT_CONTROL;
-
-	control->preferredWidth = 80;
-	control->preferredHeight = 21;
-	control->textColor = TEXT_COLOR_DEFAULT;
-
-	control->drawParentBackground = true;
-	control->ignoreActivationClicks = true;
-
-	OSSetControlCommand(control, command);
-
-	if (style == OS_BUTTON_STYLE_TOOLBAR) {
-		control->textColor = TEXT_COLOR_TOOLBAR;
-		control->horizontalMargin = 12;
-		control->preferredWidth = 0;
-		control->preferredHeight = 31;
-		control->textShadowBlur = true;
-		control->textShadow = true;
-		control->backgrounds = toolbarItemBackgrounds;
-		control->additionalCheckedBackgrounds = true;
-	} else if (style == OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
-		control->horizontalMargin = 6;
-		control->preferredWidth = 32;
-		control->preferredHeight = 31;
-		control->centerIcons = true;
-		control->backgrounds = toolbarItemBackgrounds;
-		control->additionalCheckedBackgrounds = true;
-	} else {
-		if (control->checkable) {
-			UpdateCheckboxIcons(control);
-			control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-			control->checkboxIcons = true;
-			control->iconHasVariants = true;
-		} else {
-			control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
-		}
-	}
-
-#if 0
-	control->backgrounds = toolbarItemBackgrounds;
-	control->preferredHeight = 31;
-#endif
-
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
-
-	if (style != OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
-		OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
-	} 
 
 	return control;
 }
@@ -3744,11 +3748,6 @@ void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 
 	while (item) {
 		item->thisItem->isChecked = checked;
-
-		if (item->thisItem->checkboxIcons) {
-			UpdateCheckboxIcons(item->thisItem);
-		}
-
 		OSRepaintControl(item->thisItem);
 		item = item->nextItem;
 	}

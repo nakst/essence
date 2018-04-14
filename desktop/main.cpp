@@ -151,7 +151,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center, uintptr_t 
 }
 
 extern "C" void ProgramEntry() {
-	LoadImageIntoSurface((char *) "/OS/UI Skin 2.png", OS_SURFACE_UI_SHEET, false);
+	LoadImageIntoSurface((char *) "/OS/UI Skin.png", OS_SURFACE_UI_SHEET, false);
 	LoadImageIntoSurface((char *) "/OS/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 
 #if 1
@@ -162,6 +162,7 @@ extern "C" void ProgramEntry() {
 	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(0x5372A6));
 #endif
 
+	OSInitialiseGUI();
 	OSRedrawAll();
 
 #if 1
@@ -174,8 +175,8 @@ extern "C" void ProgramEntry() {
 #else
 	{
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/OS/calculator";
-			// const char *path = "/OS/test";
+			// const char *path = "/OS/calculator";
+			const char *path = "/OS/test";
 			// const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);

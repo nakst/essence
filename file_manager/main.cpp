@@ -1,4 +1,6 @@
 #include "../api/os.h"
+#define Defer(x) OSDefer(x)
+#include "../api/linked_list.cpp"
 
 #define COMMAND_NAVIGATE_BACKWARDS (1)
 #define COMMAND_NAVIGATE_FORWARDS  (2)
@@ -30,6 +32,8 @@ struct Instance {
 	char *path;
 	size_t pathBytes;
 
+	LinkedItem<Instance> thisItem;
+
 #define PATH_HISTORY_MAX (64)
 	char *pathBackwardHistory[PATH_HISTORY_MAX];
 	size_t pathBackwardHistoryBytes[PATH_HISTORY_MAX];
@@ -38,7 +42,7 @@ struct Instance {
 	size_t pathForwardHistoryBytes[PATH_HISTORY_MAX];
 	uintptr_t pathForwardHistoryPosition;
 
-	void CreateWindow();
+	void Initialise();
 
 #define LOAD_FOLDER_BACKWARDS (1)
 #define LOAD_FOLDER_FORWARDS (2)
@@ -61,6 +65,11 @@ struct Bookmark {
 struct Global {
 	Bookmark *bookmarks;
 	size_t bookmarkCount, bookmarkAllocated;
+
+	LinkedList<Instance> instances;
+
+	void AddBookmark(char *path, size_t pathBytes);
+	bool RemoveBookmark(char *path, size_t pathBytes);
 };
 
 Global global;
@@ -288,44 +297,10 @@ OSCallbackResponse CallbackBookmarkFolder(OSObject object, OSMessage *message) {
 
 	if (checked) {
 		// Add bookmark.
-
-		if (global.bookmarkAllocated == global.bookmarkCount) {
-			global.bookmarkAllocated = (global.bookmarkAllocated + 8) * 2;
-			Bookmark *replacement = (Bookmark *) OSHeapAllocate(global.bookmarkAllocated * sizeof(Bookmark), false);
-			OSCopyMemory(replacement, global.bookmarks, global.bookmarkCount * sizeof(Bookmark));
-			OSHeapFree(global.bookmarks);
-			global.bookmarks = replacement;
-		}
-
-		Bookmark *bookmark = global.bookmarks + global.bookmarkCount;
-
-		bookmark->pathBytes = instance->pathBytes;
-		bookmark->path = (char *) OSHeapAllocate(instance->pathBytes, false);
-		OSCopyMemory(bookmark->path, instance->path, instance->pathBytes);
-
-		global.bookmarkCount++;
-		OSListViewInsert(instance->bookmarkList, global.bookmarkCount - 1, 1);
+		global.AddBookmark(instance->path, instance->pathBytes);
 	} else {
 		// Remove bookmark.
-
-		bool found = false;
-
-		for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
-			if (CompareStrings(global.bookmarks[i].path, instance->path, global.bookmarks[i].pathBytes, instance->pathBytes) == 0) {
-				OSMoveMemory(global.bookmarks + i + 1, global.bookmarks + global.bookmarkCount, -1 * sizeof(Bookmark), false);
-				global.bookmarkCount--;
-
-				// TODO Removing items from a list view.
-				OSListViewReset(instance->bookmarkList);
-				OSListViewInsert(instance->bookmarkList, 0, global.bookmarkCount);
-
-				found = true;
-
-				break;
-			}
-		}
-
-		if (!found) {
+		if (!global.RemoveBookmark(instance->path, instance->pathBytes)) {
 			instance->ReportError(ERROR_INTERNAL, OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 		}
 	}
@@ -512,6 +487,58 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 		default: {
 			return OS_CALLBACK_NOT_HANDLED;
 		} break;
+	}
+}
+
+bool Global::RemoveBookmark(char *path, size_t pathBytes) {
+	for (uintptr_t i = 0; i < bookmarkCount; i++) {
+		if (CompareStrings(bookmarks[i].path, path, bookmarks[i].pathBytes, pathBytes) == 0) {
+			OSMoveMemory(bookmarks + i + 1, bookmarks + bookmarkCount, -1 * sizeof(Bookmark), false);
+			bookmarkCount--;
+
+			{
+				LinkedItem<Instance> *instance = instances.firstItem;
+
+				while (instance) {
+					// TODO Removing items from a list view.
+					OSListViewReset(instance->thisItem->bookmarkList);
+					OSListViewInsert(instance->thisItem->bookmarkList, 0, bookmarkCount);
+
+					instance = instance->nextItem;
+				}
+			}
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void Global::AddBookmark(char *path, size_t pathBytes) {
+	if (bookmarkAllocated == bookmarkCount) {
+		bookmarkAllocated = (bookmarkAllocated + 8) * 2;
+		Bookmark *replacement = (Bookmark *) OSHeapAllocate(bookmarkAllocated * sizeof(Bookmark), false);
+		OSCopyMemory(replacement, bookmarks, bookmarkCount * sizeof(Bookmark));
+		OSHeapFree(bookmarks);
+		bookmarks = replacement;
+	}
+
+	Bookmark *bookmark = bookmarks + bookmarkCount;
+
+	bookmark->pathBytes = pathBytes;
+	bookmark->path = (char *) OSHeapAllocate(pathBytes, false);
+	OSCopyMemory(bookmark->path, path, pathBytes);
+
+	bookmarkCount++;
+
+	{
+		LinkedItem<Instance> *instance = instances.firstItem;
+
+		while (instance) {
+			OSListViewInsert(instance->thisItem->bookmarkList, bookmarkCount - 1, 1);
+			instance = instance->nextItem;
+		}
 	}
 }
 
@@ -710,7 +737,10 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	return true;
 }
 
-void Instance::CreateWindow() {
+void Instance::Initialise() {
+	thisItem.thisItem = this;
+	global.instances.InsertEnd(&thisItem);
+
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);
 
@@ -760,6 +790,8 @@ void Instance::CreateWindow() {
 }
 
 void ProgramEntry() {
-	((Instance *) OSHeapAllocate(sizeof(Instance), true))->CreateWindow();
+	global.AddBookmark(OSLiteral("/OS"));
+	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
+	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
 	OSProcessMessages();
 }

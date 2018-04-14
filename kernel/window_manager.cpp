@@ -552,7 +552,7 @@ void WMTimerMessages(WindowManager *windowManager) {
 void WindowManager::Initialise() {
 	mutex.Acquire();
 
-	uiSheetSurface.Initialise(1024, 1024, false);
+	uiSheetSurface.Initialise(1024, 512, false);
 	wallpaperSurface.Initialise(graphics.resX, graphics.resY, false);
 
 	cursorX = graphics.resX / 2;

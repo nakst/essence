@@ -715,7 +715,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 		KernelPanic("VMM::Free - Trying to free region that has already been freed.\n");
 	}
 
-	// Print("Freeing region %x\n", region);
+	// Print("Freeing region %x, %d bytes\n", region, region->pageCount * PAGE_SIZE);
 
 	if (object) *object = region->object;
 	if (type) *type = region->type;
