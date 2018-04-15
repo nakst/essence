@@ -169,7 +169,7 @@ extern "C" void ProgramEntry() {
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
 		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
 	}
 #else

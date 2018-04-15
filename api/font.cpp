@@ -362,15 +362,15 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 			for (int y = 0; y < height; y++) {
 				for (int x = 0; x < width; x++) {
-					 uint32_t r = (uint32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 0];
-					 uint32_t g = (uint32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 1];
-					 uint32_t b = (uint32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 2];
+					 int32_t r = (int32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 0];
+					 int32_t g = (int32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 1];
+					 int32_t b = (int32_t) ((uint8_t *) bitmap->buffer)[x * 3 + y * bitmap->pitch + 2];
 
 					 // Reduce how noticible the colour fringes are.
-					 uint32_t average = (r + g + b) / 3;
-					 r -= (r - average) / 2;
-					 g -= (g - average) / 2;
-					 b -= (b - average) / 2;
+					 int32_t average = (r + g + b) / 3;
+					 r -= (r - average) / 3;
+					 g -= (g - average) / 3;
+					 b -= (b - average) / 3;
 
 					 output[(x + y * width) * 4 + 0] = (uint8_t) r;
 					 output[(x + y * width) * 4 + 1] = (uint8_t) g;

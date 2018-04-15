@@ -212,8 +212,20 @@ static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lin
 
 // static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
 
-static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalDisabled, &scrollbarTrackVerticalEnabled, &scrollbarTrackVerticalPressed, };
-static struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalDisabled, &scrollbarTrackHorizontalEnabled, &scrollbarTrackHorizontalPressed, };
+static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { 
+	&scrollbarTrackVerticalEnabled, 
+	&scrollbarTrackVerticalDisabled, 
+	&scrollbarTrackVerticalEnabled, 
+	&scrollbarTrackVerticalPressed, 
+	&scrollbarTrackVerticalEnabled, 
+};
+static struct UIImage *scrollbarTrackHorizontalBackgrounds[] = { 
+	&scrollbarTrackHorizontalEnabled, 
+	&scrollbarTrackHorizontalDisabled, 
+	&scrollbarTrackHorizontalEnabled, 
+	&scrollbarTrackHorizontalPressed, 
+	&scrollbarTrackHorizontalEnabled, 
+};
 
 #define ICON16(x, y) {{x, x + 16, y, y + 16}, {x, x, y, y}}
 #define ICON24(x, y) {{x, x + 24, y, y + 24}, {x, x, y, y}}
@@ -244,6 +256,7 @@ static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
 	&scrollbarButtonDisabled,
 	&scrollbarButtonHorizontalHover,
 	&scrollbarButtonHorizontalPressed,
+	&scrollbarButtonVerticalNormal,
 };
 
 static UIImage *scrollbarButtonVerticalBackgrounds[] = {
@@ -251,6 +264,7 @@ static UIImage *scrollbarButtonVerticalBackgrounds[] = {
 	&scrollbarButtonDisabled,
 	&scrollbarButtonVerticalHover,
 	&scrollbarButtonVerticalPressed,
+	&scrollbarButtonVerticalNormal,
 };
 
 #if 0
@@ -267,6 +281,7 @@ static UIImage *menuItemBackgrounds[] = {
 	nullptr,
 	&menuItemHover,
 	&menuItemDragged,
+	&menuItemHover,
 };
 
 struct UIImage *toolbarItemBackgrounds[] = {
@@ -285,12 +300,14 @@ static UIImage *textboxBackgrounds[] = {
 	&textboxDisabled,
 	&textboxHover,
 	&textboxFocus,
+	&textboxFocus,
 };
 
 static UIImage *textboxCommandBackgrounds[] = {
 	&textboxCommand,
 	&textboxDisabled,
 	&textboxCommandHover,
+	&textboxFocus,
 	&textboxFocus,
 };
 
@@ -315,30 +332,31 @@ static UIImage *progressBarBackgrounds[] = {
 	&progressBarDisabled,
 	&progressBarBackground,
 	&progressBarBackground,
+	&progressBarBackground,
 };
 
-static UIImage *windowBorder11[] = {&activeWindowBorder11, &inactiveWindowBorder11, &activeWindowBorder11, &activeWindowBorder11};
-static UIImage *windowBorder12[] = {&activeWindowBorder12, &inactiveWindowBorder12, &activeWindowBorder12, &activeWindowBorder12};
-static UIImage *windowBorder13[] = {&activeWindowBorder13, &inactiveWindowBorder13, &activeWindowBorder13, &activeWindowBorder13};
-static UIImage *windowBorder21[] = {&activeWindowBorder21, &inactiveWindowBorder21, &activeWindowBorder21, &activeWindowBorder21};
-static UIImage *windowBorder22[] = {&activeWindowBorder22, &inactiveWindowBorder22, &activeWindowBorder22, &activeWindowBorder22};
-static UIImage *windowBorder23[] = {&activeWindowBorder23, &inactiveWindowBorder23, &activeWindowBorder23, &activeWindowBorder23};
-static UIImage *windowBorder31[] = {&activeWindowBorder31, &inactiveWindowBorder31, &activeWindowBorder31, &activeWindowBorder31};
-static UIImage *windowBorder33[] = {&activeWindowBorder33, &inactiveWindowBorder33, &activeWindowBorder33, &activeWindowBorder33};
-static UIImage *windowBorder41[] = {&activeWindowBorder41, &inactiveWindowBorder41, &activeWindowBorder41, &activeWindowBorder41};
-static UIImage *windowBorder42[] = {&activeWindowBorder42, &inactiveWindowBorder42, &activeWindowBorder42, &activeWindowBorder42};
-static UIImage *windowBorder43[] = {&activeWindowBorder43, &inactiveWindowBorder43, &activeWindowBorder43, &activeWindowBorder43};
-
-static UIImage *dialogBorder11[] = {&activeDialogBorder11, &inactiveDialogBorder11, &activeDialogBorder11, &activeDialogBorder11};
-static UIImage *dialogBorder12[] = {&activeDialogBorder12, &inactiveDialogBorder12, &activeDialogBorder12, &activeDialogBorder12};
-static UIImage *dialogBorder13[] = {&activeDialogBorder13, &inactiveDialogBorder13, &activeDialogBorder13, &activeDialogBorder13};
-static UIImage *dialogBorder21[] = {&activeDialogBorder21, &inactiveDialogBorder21, &activeDialogBorder21, &activeDialogBorder21};
-static UIImage *dialogBorder23[] = {&activeDialogBorder23, &inactiveDialogBorder23, &activeDialogBorder23, &activeDialogBorder23};
-static UIImage *dialogBorder31[] = {&activeDialogBorder31, &inactiveDialogBorder31, &activeDialogBorder31, &activeDialogBorder31};
-static UIImage *dialogBorder33[] = {&activeDialogBorder33, &inactiveDialogBorder33, &activeDialogBorder33, &activeDialogBorder33};
-static UIImage *dialogBorder41[] = {&activeDialogBorder41, &inactiveDialogBorder41, &activeDialogBorder41, &activeDialogBorder41};
-static UIImage *dialogBorder42[] = {&activeDialogBorder42, &inactiveDialogBorder42, &activeDialogBorder42, &activeDialogBorder42};
-static UIImage *dialogBorder43[] = {&activeDialogBorder43, &inactiveDialogBorder43, &activeDialogBorder43, &activeDialogBorder43};
+static UIImage *windowBorder11[] = {&activeWindowBorder11, &inactiveWindowBorder11, &activeWindowBorder11, &activeWindowBorder11, &activeWindowBorder11};
+static UIImage *windowBorder12[] = {&activeWindowBorder12, &inactiveWindowBorder12, &activeWindowBorder12, &activeWindowBorder12, &activeWindowBorder12};
+static UIImage *windowBorder13[] = {&activeWindowBorder13, &inactiveWindowBorder13, &activeWindowBorder13, &activeWindowBorder13, &activeWindowBorder13};
+static UIImage *windowBorder21[] = {&activeWindowBorder21, &inactiveWindowBorder21, &activeWindowBorder21, &activeWindowBorder21, &activeWindowBorder21};
+static UIImage *windowBorder22[] = {&activeWindowBorder22, &inactiveWindowBorder22, &activeWindowBorder22, &activeWindowBorder22, &activeWindowBorder22};
+static UIImage *windowBorder23[] = {&activeWindowBorder23, &inactiveWindowBorder23, &activeWindowBorder23, &activeWindowBorder23, &activeWindowBorder23};
+static UIImage *windowBorder31[] = {&activeWindowBorder31, &inactiveWindowBorder31, &activeWindowBorder31, &activeWindowBorder31, &activeWindowBorder31};
+static UIImage *windowBorder33[] = {&activeWindowBorder33, &inactiveWindowBorder33, &activeWindowBorder33, &activeWindowBorder33, &activeWindowBorder33};
+static UIImage *windowBorder41[] = {&activeWindowBorder41, &inactiveWindowBorder41, &activeWindowBorder41, &activeWindowBorder41, &activeWindowBorder41};
+static UIImage *windowBorder42[] = {&activeWindowBorder42, &inactiveWindowBorder42, &activeWindowBorder42, &activeWindowBorder42, &activeWindowBorder42};
+static UIImage *windowBorder43[] = {&activeWindowBorder43, &inactiveWindowBorder43, &activeWindowBorder43, &activeWindowBorder43, &activeWindowBorder43};
+                                                                                                                                
+static UIImage *dialogBorder11[] = {&activeDialogBorder11, &inactiveDialogBorder11, &activeDialogBorder11, &activeDialogBorder11, &activeDialogBorder11};
+static UIImage *dialogBorder12[] = {&activeDialogBorder12, &inactiveDialogBorder12, &activeDialogBorder12, &activeDialogBorder12, &activeDialogBorder12};
+static UIImage *dialogBorder13[] = {&activeDialogBorder13, &inactiveDialogBorder13, &activeDialogBorder13, &activeDialogBorder13, &activeDialogBorder13};
+static UIImage *dialogBorder21[] = {&activeDialogBorder21, &inactiveDialogBorder21, &activeDialogBorder21, &activeDialogBorder21, &activeDialogBorder21};
+static UIImage *dialogBorder23[] = {&activeDialogBorder23, &inactiveDialogBorder23, &activeDialogBorder23, &activeDialogBorder23, &activeDialogBorder23};
+static UIImage *dialogBorder31[] = {&activeDialogBorder31, &inactiveDialogBorder31, &activeDialogBorder31, &activeDialogBorder31, &activeDialogBorder31};
+static UIImage *dialogBorder33[] = {&activeDialogBorder33, &inactiveDialogBorder33, &activeDialogBorder33, &activeDialogBorder33, &activeDialogBorder33};
+static UIImage *dialogBorder41[] = {&activeDialogBorder41, &inactiveDialogBorder41, &activeDialogBorder41, &activeDialogBorder41, &activeDialogBorder41};
+static UIImage *dialogBorder42[] = {&activeDialogBorder42, &inactiveDialogBorder42, &activeDialogBorder42, &activeDialogBorder42, &activeDialogBorder42};
+static UIImage *dialogBorder43[] = {&activeDialogBorder43, &inactiveDialogBorder43, &activeDialogBorder43, &activeDialogBorder43, &activeDialogBorder43};
 
 static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
@@ -423,10 +441,11 @@ struct Control : GUIObject {
 
 	LinkedItem<Control> timerControlItem;
 
+	// Animation data:
 	uint8_t timerHz, timerStep;
 	uint8_t animationStep, finalAnimationStep;
-	uint8_t from1, from2, from3, from4;
-	uint8_t current1, current2, current3, current4;
+	uint8_t from1, from2, from3, from4, from5;
+	uint8_t current1, current2, current3, current4, current5;
 };
 
 struct ListView : Control {
@@ -658,6 +677,8 @@ void OSAnimateControl(OSObject _control, bool fast) {
 		control->from2 = control->current2;
 		control->from3 = control->current3;
 		control->from4 = control->current4;
+		control->from5 = control->current5;
+
 		control->animationStep = 0;
 		control->finalAnimationStep = fast ? 4 : 16;
 
@@ -849,7 +870,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 #endif
 
 				bool menuSource;
-				bool normal, hover, pressed, disabled, actuallyPressed;
+				bool normal, hover, pressed, disabled, focused;
 				uint32_t textShadowColor, textColor;
 
 				OSRectangle contentBounds = control->bounds;
@@ -884,16 +905,17 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 				}
 
-				actuallyPressed = (control->window->pressed == control && control->window->hover == control);
 				disabled = control->disabled;
-				pressed = (actuallyPressed || (control->window->focus == control && control->window->hover != control && control->window->pressed != control) || menuSource) && !disabled;
+				pressed = ((control->window->pressed == control && control->window->hover == control) || (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
 				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
-				normal = !hover && !pressed && !disabled;
+				focused = (control->window->focus == control && control->hasFocusedBackground) && !pressed && !hover && !disabled;
+				normal = !hover && !pressed && !disabled && !focused;
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
 				control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
 				control->current3 = ((pressed  ? 15 : 0) - control->from3) * control->animationStep / control->finalAnimationStep + control->from3;
 				control->current4 = ((disabled ? 15 : 0) - control->from4) * control->animationStep / control->finalAnimationStep + control->from4;
+				control->current5 = ((focused  ? 15 : 0) - control->from5) * control->animationStep / control->finalAnimationStep + control->from5;
 
 				if (control->backgrounds) {
 					uintptr_t offset = (control->isChecked && control->additionalCheckedBackgrounds) ? 4 : 0;
@@ -910,9 +932,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					}
 
 					if (control->backgrounds[offset + 3] && control->current3) {
-						uintptr_t index = offset + 3 + (control->hasFocusedBackground && !actuallyPressed && !menuSource ? 1 : 0);
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[index]->region, 
-								control->backgrounds[index]->border, control->backgrounds[index]->drawMode, 
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[3]->region, 
+								control->backgrounds[3]->border, control->backgrounds[3]->drawMode, 
 								control->current3 == 15 ? 0xFF : 0xF * control->current3, message->paint.clip);
 					}
 
@@ -920,6 +941,12 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 1]->region, 
 								control->backgrounds[offset + 1]->border, control->backgrounds[offset + 1]->drawMode, 
 								control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+					}
+
+					if (control->current5 && control->backgrounds[offset + 4]) {
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, control->backgrounds[offset + 4]->region, 
+								control->backgrounds[offset + 4]->border, control->backgrounds[offset + 4]->drawMode, 
+								control->current5 == 15 ? 0xFF : 0xF * control->current5, message->paint.clip);
 					}
 				}
 

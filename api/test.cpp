@@ -329,6 +329,9 @@ extern "C" void ProgramEntry() {
 	if (y2.b != 2) OSCrashProcess(602);
 	if (++z != 2) OSCrashProcess(603); // Is the data segment writable?
 
+	// TODO VirtualBox (build 'v') crashes a lot when running this program.
+
+#if 0
 	{
 		OSNodeInformation node;
 		OSHandle handles[16];
@@ -405,6 +408,7 @@ extern "C" void ProgramEntry() {
 		OSDeleteNode(node.handle);
 		OSCloseHandle(node.handle);
 	}
+#endif
 #endif
 
 	{
