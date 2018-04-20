@@ -13,7 +13,6 @@
 #include "../bin/OS/file_manager.manifest.h"
 
 // TODO Move the scrollbar to the top when switching folders.
-// TODO Closing instances.
 
 struct FolderChild {
 	OSDirectoryChild data;
@@ -738,12 +737,23 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	return true;
 }
 
+OSCallbackResponse DestroyInstance(OSObject object, OSMessage *message) {
+	(void) object;
+	Instance *instance = (Instance *) message->context;
+	OSHeapFree(instance->folderChildren);
+	OSHeapFree(instance->path);
+	global.instances.Remove(&instance->thisItem);
+	return OS_CALLBACK_HANDLED;
+}
+
 void Instance::Initialise() {
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
 
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);
+
+	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_CALLBACK(DestroyInstance, this));
 
 	OSObject rootLayout = OSCreateGrid(1, 6, OS_GRID_STYLE_LAYOUT);
 	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);

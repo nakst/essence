@@ -443,7 +443,7 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 
 	// TODO Notify anyone waiting for the file to be accessible.
 
-	Node *parent = node->parent;
+	Node *volatile parent = node->parent;
 	Node *node3 = nullptr;
 
 	if (node->handles == 0) {
@@ -758,8 +758,6 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 			return node;
 		}
 
-		// Bug: the following sometimes happens.
-		// 	-> I think I fixed this in the previous commit?
 		if (node == node->nextNodeInHashTableSlot) {
 			KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
 		}

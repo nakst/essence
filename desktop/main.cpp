@@ -155,7 +155,7 @@ extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/OS/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 
 #if 1
-	LoadImageIntoSurface((char *) "/OS/Sample Images/Nebula.jpg", OS_SURFACE_WALLPAPER, true);
+	LoadImageIntoSurface((char *) "/OS/Sample Images/Blue.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
 	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
@@ -165,14 +165,14 @@ extern "C" void ProgramEntry() {
 	OSInitialiseGUI();
 	OSRedrawAll();
 
-#if 1
+#if 0
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);
 		OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
 		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
 		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
 		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
 		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
@@ -182,8 +182,8 @@ extern "C" void ProgramEntry() {
 	{
 		for (int i = 0; i < 1; i++) {
 			// const char *path = "/OS/calculator";
-			const char *path = "/OS/test";
-			// const char *path = "/OS/file_manager";
+			// const char *path = "/OS/test";
+			const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

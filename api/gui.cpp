@@ -3994,6 +3994,15 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
+			{
+				OSMessage message = {};
+				message.type = OS_NOTIFICATION_COMMAND;
+				message.command.window = window;
+				message.command.command = osCommandDestroyWindow;
+				int32_t identifier = osCommandDestroyWindow->identifier;
+				OSForwardMessage(nullptr, window->commands[identifier].notificationCallback, &message);
+			}
+
 			if (!window->hasMenuParent) {
 				OSHeapFree(window->commands);
 			}

@@ -259,13 +259,13 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 	if (CompareTokens(attribute, "command")) {
 		fprintf(output, "extern OSCommand _%.*s;\n", section.bytes, section.text);
 		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::COMMAND\n", section.bytes, section.text);
-		fprintf(output, "#define %.*s &_%.*s\n", section.bytes, section.text, section.bytes, section.text);
+		fprintf(output, "#define %.*s (&_%.*s)\n", section.bytes, section.text, section.bytes, section.text);
 	} else if (CompareTokens(attribute, "window")) {
 		fprintf(output, "extern OSWindowSpecification *%.*s;\n", section.bytes, section.text);
 	} else if (CompareTokens(attribute, "menu")) {
 		fprintf(output, "extern OSMenuSpecification _%.*s;\n", section.bytes, section.text);
 		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::SUBMENU\n", section.bytes, section.text);
-		fprintf(output, "#define %.*s &_%.*s\n", section.bytes, section.text, section.bytes, section.text);
+		fprintf(output, "#define %.*s (&_%.*s)\n", section.bytes, section.text, section.bytes, section.text);
 	}
 }
 

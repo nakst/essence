@@ -1180,7 +1180,7 @@ void Scheduler::NotifyObject(LinkedList<Thread> *blockedThreads, bool schedulerA
 	if (!unblockedItem) {
 		if (schedulerAlreadyLocked == false) lock.Release();
 
-		// There weren't any threads blocking on the mutex.
+		// There weren't any threads blocking on the object.
 		return; 
 	}
 
@@ -1268,13 +1268,13 @@ void Mutex::Release() {
 		owner = nullptr;
 	}
 
+	if (scheduler.started) {
+		scheduler.NotifyObject(&blockedThreads, true);
+	}
+
 	scheduler.lock.Release();
 
 	__sync_synchronize();
-
-	if (scheduler.started) {
-		scheduler.NotifyObject(&blockedThreads, false);
-	}
 
 	releaseAddress = (uintptr_t) __builtin_return_address(0);
 }
@@ -1325,10 +1325,18 @@ void Event::Set(bool schedulerAlreadyLocked, bool maybeAlreadySet) {
 		KernelLog(LOG_WARNING, "Event::Set - Attempt to set a event that had already been set\n");
 	}
 
+	if (!schedulerAlreadyLocked) {
+		scheduler.lock.Acquire();
+	}
+
 	state = true;
 
 	if (scheduler.started) {
-		scheduler.NotifyObject(&blockedThreads, schedulerAlreadyLocked, !autoReset /*If this is a manually reset event, unblock all the waiting threads.*/);
+		scheduler.NotifyObject(&blockedThreads, true, !autoReset /*If this is a manually reset event, unblock all the waiting threads.*/);
+	}
+
+	if (!schedulerAlreadyLocked) {
+		scheduler.lock.Release();
 	}
 }
 
@@ -1373,6 +1381,10 @@ bool Event::Wait(uint64_t timeoutMs) {
 void Timer::Set(uint64_t triggerInMs, bool autoReset, AsyncTaskCallback _callback, void *_argument) {
 	scheduler.lock.Acquire();
 	Defer(scheduler.lock.Release());
+
+	if (item.list) {
+		KernelPanic("Timer::Set - Setting a timer that hasn't been reset.");
+	}
 
 	event.Reset();
 	event.autoReset = autoReset;
