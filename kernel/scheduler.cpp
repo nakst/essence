@@ -305,6 +305,8 @@ void Scheduler::AddActiveThread(Thread *thread, bool start) {
 		KernelPanic("Scheduler::AddActiveThread - Thread %d executing\n", thread->id);
 	} else if (thread->type != THREAD_NORMAL) {
 		KernelPanic("Scheduler::AddActiveThread - Thread %d has type %d\n", thread->id, thread->type);
+	} else if (thread->item[0].list) {
+		KernelPanic("Scheduler::AddActiveThread - Thread %d is already in queue %x.\n", thread->id, thread->item[0].list);
 	}
 
 	if (thread->paused) {
@@ -368,7 +370,9 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	thread->handles = 2;
 
 	// Allocate the thread's stacks.
-	uintptr_t kernelStackSize = userland ? 0x4000 : 0x10000;
+	// TODO Temporarily set very large, revert this?
+	// uintptr_t kernelStackSize = userland ? 0x4000 : 0x10000;
+	uintptr_t kernelStackSize = userland ? 0x20000 : 0x20000;
 	uintptr_t userStackSize = userland ? 0x100000 : 0x10000;
 	uintptr_t stack, kernelStack = (uintptr_t) kernelVMM.Allocate("KernStack", kernelStackSize, VMM_MAP_ALL);
 
@@ -944,6 +948,10 @@ void Scheduler::Yield(InterruptContext *context) {
 	ProcessorDisableInterrupts(); // We don't want interrupts to get reenabled after the context switch.
 	lock.Acquire();
 
+	if (lock.interruptsEnabled) {
+		KernelPanic("Scheduler::Yield - Interrupts were enabled when scheduler lock was acquired.\n");
+	}
+
 	local->currentThread->executing = false;
 
 	bool killThread = local->currentThread->terminatableState == THREAD_TERMINATABLE 
@@ -1159,7 +1167,6 @@ void Scheduler::UnblockThread(Thread *unblockedThread) {
 	if (!unblockedThread->executing) {
 		// Put the unblocked thread at the start of the activeThreads list
 		// so that it is immediately executed when the scheduler yields.
-		unblockedThread->state = THREAD_ACTIVE;
 		AddActiveThread(unblockedThread, true);
 	} 
 }

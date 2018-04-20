@@ -426,11 +426,16 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 
 	local->currentThread->lastKnownExecutionAddress = context->rip;
 
+	if (scheduler.lock.interruptsEnabled) {
+		KernelPanic("PostContextSwitch - Interrupts were enabled. (3)\n");
+	}
+
 	// We can only free the scheduler's spinlock when we are no longer using the stack
 	// from the previous thread. See DoContextSwitch in x86_64.s.
 	scheduler.lock.Release(true);
 
 	if (ProcessorAreInterruptsEnabled()) {
+		// TODO This sometimes happens when running 'v' builds.
 		KernelPanic("PostContextSwitch - Interrupts were enabled. (2)\n");
 	}
 }

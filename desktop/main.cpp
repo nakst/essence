@@ -169,14 +169,20 @@ extern "C" void ProgramEntry() {
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
 		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
 	}
 #else
 	{
 		for (int i = 0; i < 1; i++) {
-			const char *path = "/OS/calculator";
-			// const char *path = "/OS/test";
+			// const char *path = "/OS/calculator";
+			const char *path = "/OS/test";
 			// const char *path = "/OS/file_manager";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);

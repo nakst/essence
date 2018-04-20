@@ -170,7 +170,7 @@ void DebugWriteCharacter(uintptr_t character) {
 
 	if (debugCurrentColumn == debugColumns) {
 		debugCurrentRow++;
-		debugCurrentColumn = 0;
+		debugCurrentColumn = 4;
 	}
 }
 
@@ -184,6 +184,10 @@ void KernelPanic(const char *format, ...) {
 	ProcessorSendIPI(KERNEL_PANIC_IPI, true);
 
 	printToTerminal = true;
+
+	for (uintptr_t i = 0; i < graphics.resX * graphics.resY * 3; i++) {
+		graphics.linearBuffer[i] = 0x44;
+	}
 
 	Print("\n--- KERNEL PANIC ---\n[Fatal] ");
 
@@ -206,12 +210,12 @@ void KernelPanic(const char *format, ...) {
 			Thread *thread = item->thisItem;
 
 			if (thread->type == THREAD_NORMAL) {
-				Print("- %d %d %x ", thread->id, thread->state, thread);
+				Print("=> %d %d %x %x %x ", thread->id, thread->state, thread, thread->interruptContext->rip, thread->interruptContext->rbp);
 
 				if (thread->state == THREAD_WAITING_EVENT) {
 					Print("ev %d %x", thread->blockingEventCount, thread->blockingEvents[0]);
 				} else if (thread->state == THREAD_WAITING_MUTEX) {
-					Print("mu %x", thread->blockingMutex);
+					Print("mu %x %x", thread->blockingMutex, thread->blockingMutex->owner);
 				}
 
 				Print("\n");

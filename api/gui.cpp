@@ -58,6 +58,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Enter and escape in dialog boxes
 // 	- Keyboard shortcuts and access keys
 // 	- List view navigation
+// TODO Scrollbar buttons are broken.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Minor menu[bar] border adjustments; menu icons.
 // TODO Calculator textbox - selection extends out of top of textbox

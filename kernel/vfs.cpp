@@ -216,8 +216,10 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 	if (!takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Take();
 	Defer(if (!takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Return());
 
-	parent->semaphore.Take();
-	Defer(parent->semaphore.Return());
+	Node *oldDirectory = parent;
+
+	oldDirectory->semaphore.Take();
+	Defer(oldDirectory->semaphore.Return());
 
 	if (takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Take();
 	Defer(if (takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Return());
@@ -239,6 +241,10 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 			// The filesystem does not support node removal.
 			result = OS_ERROR_UNSUPPORTED_FILESYSTEM;
 		} break;
+	}
+
+	if (result == OS_SUCCESS) {
+		parent = newDirectory;
 	}
 
 	return result;

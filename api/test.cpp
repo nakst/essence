@@ -323,15 +323,33 @@ void Delete(OSHandle handle) {
 	OSDeleteNode(handle);
 }
 
+void EnumerateRootThread(void *argument) {
+	(void) argument;
+
+	OSNodeInformation node;
+	OSOpenNode(OSLiteral("/"), OS_OPEN_NODE_DIRECTORY, &node);
+	OSDirectoryChild *buffer = (OSDirectoryChild *) OSHeapAllocate(sizeof(OSDirectoryChild) * 1024, true);
+
+	while (true) {
+		OSEnumerateDirectoryChildren(node.handle, buffer, 1024);
+	}
+}
+
 extern "C" void ProgramEntry() {
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
 	if (++z != 2) OSCrashProcess(603); // Is the data segment writable?
 
+#if 0
+	{
+		OSThreadInformation information;
+		OSCreateThread(EnumerateRootThread, &information, nullptr);
+	}
+#endif
+
 	// TODO VirtualBox (build 'v') crashes a lot when running this program.
 
-#if 0
 	{
 		OSNodeInformation node;
 		OSHandle handles[16];
@@ -343,14 +361,12 @@ extern "C" void ProgramEntry() {
 			handles[i] = node.handle;
 		}
 
-#if 0
+#if 1
 		Delete(handles[0]);
-#endif
 		Delete(handles[1]);
 		Delete(handles[2]);
 		Delete(handles[3]);
 		Delete(handles[4]);
-#if 0
 		Delete(handles[5]);
 		Delete(handles[6]);
 		Delete(handles[7]);
@@ -364,8 +380,8 @@ extern "C" void ProgramEntry() {
 		Delete(handles[15]);
 #endif
 
-		OSError error = OSOpenNode(OSLiteral("/TestFolder/3"), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
-		if (error != OS_ERROR_FILE_DOES_NOT_EXIST) OSCrashProcess(704);
+		// OSError error = OSOpenNode(OSLiteral("/TestFolder/3"), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
+		// if (error != OS_ERROR_FILE_DOES_NOT_EXIST) OSCrashProcess(704);
 
 		OSOpenNode(OSLiteral("/TestFolder/File.txt"), OS_FLAGS_DEFAULT, &node);
 		OSCloseHandle(node.handle);
@@ -381,6 +397,7 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
+#if 1
 	{
 		OSNodeInformation node1, node2;
 

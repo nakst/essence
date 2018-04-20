@@ -15,7 +15,7 @@ char compilerPath[4096];
 
 char buffer[4096];
 
-void Build(bool enableOptimisations) {
+void Build(bool enableOptimisations, bool compile = true) {
 	srand(time(NULL));
 	printf("Build started...\n");
 
@@ -57,10 +57,12 @@ void Build(bool enableOptimisations) {
 
 	printf("Compiling the kernel and userspace programs...\n");
 
-	if (enableOptimisations) {
-		system("./compile.sh \"-O3\" \"-O3 -DDEBUG_BUILD\"");
-	} else {
-		system("./compile.sh \"\" \"-DDEBUG_BUILD\"");
+	if (compile) {
+		if (enableOptimisations) {
+			system("./compile.sh \"-O3\" \"-O3 -DDEBUG_BUILD\"");
+		} else {
+			system("./compile.sh \"\" \"-DDEBUG_BUILD\"");
+		}
 	}
 
 	printf("Removing temporary files...\n");
@@ -415,6 +417,9 @@ int main(int argc, char **argv) {
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "vbox") || 0 == strcmp(l, "v")) {
 			Build(true);
+			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
+		} else if (0 == strcmp(l, "v3")) {
+			Build(true, false);
 			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
 		} else if (0 == strcmp(l, "vbox-without-opt") || 0 == strcmp(l, "v2")) {
 			Build(false);

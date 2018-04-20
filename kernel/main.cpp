@@ -1,5 +1,7 @@
 // Timing problems:
 // 	- Qemu's timer (sometimes) runs too slow on SMP.
+//
+// TODO Reduce memory usage.
 
 #include "kernel.h"
 #define IMPLEMENTATION

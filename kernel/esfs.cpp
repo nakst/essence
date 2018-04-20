@@ -46,6 +46,8 @@ struct EsFSVolume {
 	EsFSGlobalExtent AllocateExtent(uint64_t localGroup, uint64_t desiredBlocks, bool exactly, uint64_t searchStart);
 	void FreeExtent(EsFSGlobalExtent extent);
 
+	void ValidateDirectory(Node *directory);
+
 	Device *drive;
 	Filesystem *filesystem;
 
@@ -386,6 +388,9 @@ bool EsFSVolume::AccessStream(IOPacket *packet, EsFSAttributeFileData *data, uin
 }
 
 void EsFSVolume::FreeExtent(EsFSGlobalExtent extent) {
+	mutex.Acquire();
+	Defer(mutex.Release());
+
 	uint64_t blockGroup = extent.offset / superblock.blocksPerGroup;
 	EsFSGroupDescriptor *descriptor = &groupDescriptorTable[blockGroup].d;
 
@@ -418,6 +423,9 @@ EsFSGlobalExtent EsFSVolume::AllocateExtent(uint64_t localGroup, uint64_t desire
 	//
 	// 	Reverse binary search ordering
 	// 	Allocate "next to"
+
+	mutex.Acquire();
+	Defer(mutex.Release());
 
 	uint8_t *blockBitmapBuffer = (uint8_t *) OSHeapAllocate(superblock.blocksPerGroupBlockBitmap * superblock.blockSize, false);
 	Defer(OSHeapFree(blockBitmapBuffer));
@@ -837,6 +845,66 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 	data->size = newSize;
 	return true;
 }
+
+#if 1
+void EsFSVolume::ValidateDirectory(Node *_directory) {
+	(void) _directory;
+}
+#else
+void EsFSVolume::ValidateDirectory(Node *_directory) {
+	if (!_directory) {
+		// This is the root node.
+		return;
+	}
+
+	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
+
+	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
+	EsFSAttributeFileData *data = (EsFSAttributeFileData *) FindAttribute(ESFS_ATTRIBUTE_FILE_DATA, fileEntry + 1);
+
+	if (!directory) {
+		KernelPanic("EsFSVolume::ValidateDirectory - Directory did not have a directory attribute.\n");
+	}
+
+	if (!data) {
+		KernelPanic("EsFSVolume::ValidateDirectory - Directory did not have a data attribute.\n");
+	}
+
+	uint8_t *directoryBuffer = (uint8_t *) OSHeapAllocate(superblock.blockSize, false);
+	Defer(OSHeapFree(directoryBuffer));
+	uint64_t blockPosition = 0, blockIndex = 0;
+	uint64_t lastAccessedActualBlock = 0;
+	AccessStream(nullptr, data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+
+	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
+		while (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
+			// We're reached the end of the block.
+			// The next directory entry will be at the start of the next block.
+			blockPosition = 0;
+			blockIndex++;
+			AccessStream(nullptr, data, blockIndex * superblock.blockSize, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
+		}
+
+		EsFSDirectoryEntry *entry = (EsFSDirectoryEntry *) (directoryBuffer + blockPosition);
+
+		if (CompareBytes(entry->signature, (void *) ESFS_DIRECTORY_ENTRY_SIGNATURE, CStringLength((char *) ESFS_DIRECTORY_ENTRY_SIGNATURE))) {
+			KernelPanic("EsFSVolume::ValidateDirectory - Directory entry had invalid signature.\n");
+		}
+
+		EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, entry + 1);
+		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (file + 1);
+
+		if (file) {
+			if (CompareBytes(fileEntry->signature, (void *) ESFS_FILE_ENTRY_SIGNATURE, CStringLength((char *) ESFS_FILE_ENTRY_SIGNATURE))) {
+				KernelPanic("EsFSVolume::ValidateDirectory - File entry had invalid signature.\n");
+			}
+		}
+
+		EsFSAttributeHeader *end = FindAttribute(ESFS_ATTRIBUTE_LIST_END, entry + 1);
+		blockPosition += end->size + (uintptr_t) end - (uintptr_t) entry;
+	}
+}
+#endif
 
 void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
@@ -1374,12 +1442,16 @@ bool EsFSVolume::CreateNode(char *name, size_t nameLength, uint16_t type, Node *
 
 inline bool EsFSCreate(char *name, size_t nameLength, OSNodeType type, Node *directory) {
 	EsFSVolume *fs = (EsFSVolume *) directory->filesystem->data;
-	return fs->CreateNode(name,  nameLength, type == OS_NODE_DIRECTORY ? ESFS_FILE_TYPE_DIRECTORY : ESFS_FILE_TYPE_FILE, directory);
+	bool result = fs->CreateNode(name,  nameLength, type == OS_NODE_DIRECTORY ? ESFS_FILE_TYPE_DIRECTORY : ESFS_FILE_TYPE_FILE, directory);
+	fs->ValidateDirectory(directory);
+	// Print("created in %x\n", directory);
+	return result;
 }
 
 inline Node *EsFSScan(char *name, size_t nameLength, Node *directory, uint64_t &flags) {
 	EsFSVolume *fs = (EsFSVolume *) directory->filesystem->data;
 	bool t = false;
+	fs->ValidateDirectory(directory);
 	Node *node = fs->SearchDirectory(name, nameLength, directory, flags, t);
 	return node;
 }
@@ -1412,6 +1484,7 @@ inline void EsFSSync(Node *node) {
 	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	fs->AccessBlock(nullptr, eFile->containerBlock, eFile->fileEntryLength, DRIVE_ACCESS_WRITE, eFile + 1, eFile->offsetIntoBlock);
+	fs->ValidateDirectory(node->parent);
 }
 
 inline bool EsFSResize(Node *file, uint64_t newSize) {
@@ -1426,11 +1499,15 @@ inline bool EsFSRemove(Node *file) {
 	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 	EsFSResize(file, 0);
 	EsFSSync(file);
-	return fs->RemoveNodeFromParent(file);
+	bool result = fs->RemoveNodeFromParent(file);
+	fs->ValidateDirectory(file->parent);
+	// Print("removed %x from %x\n", file, file->parent);
+	return result;
 }
 
 inline void EsFSEnumerate(Node *node, OSDirectoryChild *buffer) {
 	EsFSVolume *fs = (EsFSVolume *) node->filesystem->data;
+	fs->ValidateDirectory(node);
 	fs->Enumerate(node, buffer);
 }
 
@@ -1446,10 +1523,10 @@ inline void EsFSRegister(Device *device) {
 }
 
 inline bool EsFSMove(Node *file, Node *newDirectory, char *newName, size_t newNameLength) {
-	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
-
 	EsFSSync(file);
 	EsFSSync(newDirectory);
+
+	EsFSVolume *fs = (EsFSVolume *) file->filesystem->data;
 
 	EsFSFileEntry *fileEntry2 = (EsFSFileEntry *) ((EsFSFile *) (file + 1) + 1);
 	EsFSAttributeHeader *end = (EsFSAttributeHeader *) fs->FindAttribute(ESFS_ATTRIBUTE_LIST_END, fileEntry2 + 1);
@@ -1463,6 +1540,11 @@ inline bool EsFSMove(Node *file, Node *newDirectory, char *newName, size_t newNa
 
 	if (!fs->RemoveNodeFromParent(file)) return false;
 	if (!fs->CreateNode(newName, newNameLength, ESFS_FILE_TYPE_USE_EXISTING_ENTRY, newDirectory, fileEntry2, end->size + (uintptr_t) end - (uintptr_t) fileEntry2)) return false;
+
+	fs->ValidateDirectory(file->parent);
+	fs->ValidateDirectory(newDirectory);
+
+	// Print("moved %x from %x to %x\n", file, file->parent, newDirectory);
 
 	return true;
 }
