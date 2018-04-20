@@ -92,7 +92,6 @@ struct VFS {
 
 	Node *OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *error);
 	void CloseNode(Node *node, uint64_t flags);
-	void DestroyNode(Node *node);
 
 	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew);
 	Node *FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem);
@@ -426,36 +425,6 @@ void VFS::Initialise() {
 	}
 }
 
-void VFS::DestroyNode(Node *node2) {
-	nodeHashTableMutex.AssertLocked();
-
-	bool cacheNode = !node2->deleted;
-
-	if (cacheNode) {
-		vfs.cachedNodes.InsertEnd(&node2->noHandleCacheItem);
-	}
-
-	if (!cacheNode || vfs.cachedNodes.count > MAX_CACHED_NODES) {
-		Node *node = node2;
-
-		if (cacheNode) {
-			LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
-			vfs.cachedNodes.Remove(item);
-			node = item->thisItem;
-		}
-
-		if (node->nextNodeInHashTableSlot) {
-			node->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node->pointerToThisNodeInHashTableSlot;
-		}
-
-		*node->pointerToThisNodeInHashTableSlot = node->nextNodeInHashTableSlot;
-		node->Sync();
-		sharedMemoryManager.DestroySharedMemory(&node->region);
-
-		OSHeapFree(node);
-	}
-}
-
 void VFS::NodeUnmapped(Node *node) {
 	CloseNode(node, 0);
 }
@@ -475,12 +444,43 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 	// TODO Notify anyone waiting for the file to be accessible.
 
 	Node *parent = node->parent;
+	Node *node3 = nullptr;
 
 	if (node->handles == 0) {
-		DestroyNode(node);
+		Node *node2 = node;
+		bool cacheNode = !node2->deleted;
+
+		if (cacheNode) {
+			vfs.cachedNodes.InsertEnd(&node2->noHandleCacheItem);
+		}
+
+		if (!cacheNode || vfs.cachedNodes.count > MAX_CACHED_NODES) {
+			node3 = node2;
+
+			if (cacheNode) {
+				LinkedItem<Node> *item = vfs.cachedNodes.firstItem;
+				vfs.cachedNodes.Remove(item);
+				node3 = item->thisItem;
+			}
+
+			// Remove the node from the hash table.
+			{
+				if (node3->nextNodeInHashTableSlot) {
+					node3->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node3->pointerToThisNodeInHashTableSlot;
+				}
+
+				*node3->pointerToThisNodeInHashTableSlot = node3->nextNodeInHashTableSlot;
+			}
+		}
 	}
 
 	nodeHashTableMutex.Release();
+
+	if (node3) {
+		node3->Sync();
+		sharedMemoryManager.DestroySharedMemory(&node3->region);
+		OSHeapFree(node3);
+	}
 
 	if (parent) {
 		CloseNode(parent, DIRECTORY_ACCESS);
