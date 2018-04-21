@@ -427,6 +427,12 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.menubar = nullptr,\n");
 			}
 
+			if (FindProperty("defaultCommand", &value)) {
+				fprintf(output, "\t.defaultCommand = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.defaultCommand = nullptr,\n");
+			}
+
 			fprintf(output, "};\n\nOSWindowSpecification *%.*s = &_%.*s;\n\n", section.bytes, section.text, section.bytes, section.text);
 		} else if (CompareTokens(attribute, "menu")) {
 			fprintf(output, "};\n\nOSMenuSpecification _%.*s = {\n", section.bytes, section.text);

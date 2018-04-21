@@ -54,7 +54,6 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
-// 	- Enter and escape in dialog boxes.
 // 	- Keyboard shortcuts and access keys.
 // 	- Menus and list view navigation.
 // TODO Scrollbar buttons and checkboxes are broken.
@@ -64,6 +63,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // TODO Multiple-cell positions.
 // TODO Wrapping.
 // TODO Scrolling in textboxes.
+// TODO Right-clicking on textboxes still doesn't always position the cursor as desired.
 
 struct UIImage {
 	OSRectangle region;
@@ -563,6 +563,7 @@ struct Window : GUIObject {
 	int timerHz, caretBlinkStep, caretBlinkPause;
 
 	CommandWindow *commands;
+	OSCommand *defaultCommand;
 	void *instance;
 	bool hasMenuParent;
 };
@@ -790,6 +791,10 @@ void OSRemoveFocusedControl(OSObject _window, bool removeWeakFocus) {
 }
 
 void OSSetFocusedControl(OSObject _control, bool asDefaultForWindow) {
+	if (!_control) {
+		return;
+	}
+
 	Control *control = (Control *) _control;
 	Window *window = control->window;
 	OSMessage message;
@@ -895,6 +900,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				bool normal, hover, pressed, disabled, focused;
 				uint32_t textShadowColor, textColor;
 
+				bool isDefaultCommand = !control->pressedByKeyboard && control->window->defaultCommand == control->command && control->command;
+
 				OSRectangle contentBounds = control->bounds;
 				contentBounds.left += control->horizontalMargin;
 				contentBounds.right -= control->horizontalMargin;
@@ -929,8 +936,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 				disabled = control->disabled;
 				pressed = ((control->window->pressed == control && (control->window->hover == control || control->pressedByKeyboard)) 
-						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
-				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
+						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled && !isDefaultCommand;
+				hover = (control->window->hover == control || control->window->pressed == control || isDefaultCommand) && !pressed && !disabled;
 				focused = (control->window->focus == control && control->hasFocusedBackground) && !pressed && !hover && !disabled;
 				normal = !hover && !pressed && !disabled && !focused;
 
@@ -1755,25 +1762,38 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	return control;
 }
 
-static void IssueCommandForControl(Control *control) {
-	if (control->checkable) {
-		// Update the checked state.
-		control->isChecked = !control->isChecked;
+static void IssueCommand(Control *control, OSCommand *command = nullptr, Window *window = nullptr) {
+	if (!window) window = control->window;
+	if (!command) command = control->command;
 
-		if (control->command) {
+	bool checkable = control ? control->checkable : command->checkable;
+	bool isChecked = control ? control->isChecked : window->commands[command->identifier].checked;
+
+	if (checkable) {
+		// Update the checked state.
+		isChecked = !isChecked;
+
+		if (command) {
 			// Update the command.
-			OSCheckCommand(control->window, control->command, control->isChecked);
+			OSCheckCommand(window, command, isChecked);
+		} else {
+			control->isChecked = isChecked;
 		}
 	}
 
 	OSMessage message;
 	message.type = OS_NOTIFICATION_COMMAND;
-	message.command.checked = control->isChecked;
-	message.command.window = control->window;
-	message.command.command = control->command;
-	OSForwardMessage(control, control->notificationCallback, &message);
+	message.command.checked = isChecked;
+	message.command.window = window;
+	message.command.command = command;
 
-	if (control->window->flags & OS_CREATE_WINDOW_MENU) {
+	if (control) {
+		OSForwardMessage(control, control->notificationCallback, &message);
+	} else {
+		OSForwardMessage(nullptr, window->commands[command->identifier].notificationCallback, &message);
+	}
+
+	if (window->flags & OS_CREATE_WINDOW_MENU) {
 		message.type = OS_MESSAGE_DESTROY;
 		OSSendMessage(openMenus[0].window, &message);
 	}
@@ -1784,7 +1804,7 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 	
 	if (message->type == OS_MESSAGE_CLICKED) {
-		IssueCommandForControl(control);
+		IssueCommand(control);
 	} else if (message->type == OS_MESSAGE_KEY_PRESSED) {
 		if (message->keyboard.scancode == OS_SCANCODE_SPACE) {
 			control->window->pressed = control;
@@ -1798,7 +1818,7 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 			control->pressedByKeyboard = false;
 			OSAnimateControl(control, false);
 			result = OS_CALLBACK_HANDLED;
-			IssueCommandForControl(control);
+			IssueCommand(control);
 		}
 	}
 
@@ -3999,7 +4019,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSSendMessage(window->lastFocus, &message);
 			}
 
-			OSRemoveFocusedControl(window, true);
+			OSSetFocusedControl(window->defaultFocus, false);
 		} break;
 
 		case OS_MESSAGE_WINDOW_DEACTIVATED: {
@@ -4037,7 +4057,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			} else if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
 				EnterDebugger();
 			} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
-				OSRemoveFocusedControl(window, true);
+				if (window->hasMenuParent || (window->flags & OS_CREATE_WINDOW_DIALOG)) {
+					OSMessage m;
+					m.type = OS_MESSAGE_DESTROY;
+					OSSendMessage(window, &m);
+				} else {
+					OSRemoveFocusedControl(window, true);
+				}
 			} else {
 				OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
@@ -4061,6 +4087,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 							&& !message->keyboard.ctrl && !message->keyboard.alt) {
 						message->keyboard.notHandledBy = nullptr;
 						OSSendMessage(window->root, message);
+					} else if (message->keyboard.scancode == OS_SCANCODE_ENTER
+							&& !message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift
+							&& window->defaultCommand) {
+						IssueCommand(nullptr, window->defaultCommand, window);
 					}
 
 					// TODO Keyboard shortcuts and access keys.
@@ -4384,6 +4414,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->cursor = OS_CURSOR_NORMAL;
 	window->minimumWidth = specification->minimumWidth;
 	window->minimumHeight = specification->minimumHeight;
+	window->defaultCommand = specification->defaultCommand;
 
 	if (!menuParent) {
 		window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
@@ -4500,6 +4531,8 @@ void OSShowDialogAlert(char *title, size_t titleBytes,
 
 	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
+
+	OSSetFocusedControl(okButton, false);
 }
 
 OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {

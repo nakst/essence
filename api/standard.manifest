@@ -53,10 +53,10 @@ osCommandSelectAll;
 
 [command osDialogStandardOK]
 label = "\$OK";
-shortcut = "Enter";
 
 [window osDialogStandard]
 width = 400;
 height = 100;
 title = "Message";
 resizable = false;
+defaultCommand = osDialogStandardOK;
