@@ -54,10 +54,10 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
-// 	- Space to invoke focused buttons
 // 	- Enter and escape in dialog boxes
+// 	- Escape in normal windows to restore default focus
 // 	- Keyboard shortcuts and access keys
-// 	- List view navigation
+// 	- Menus and list view navigation
 // TODO Scrollbar buttons are broken.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Minor menu[bar] border adjustments; menu icons.
@@ -438,7 +438,8 @@ struct Control : GUIObject {
 
 	uint32_t isChecked : 1, 
 		firstPaint : 1,
-		repaintCustomOnly : 1;
+		repaintCustomOnly : 1,
+		pressedByKeyboard : 1;
 
 	LinkedItem<Control> timerControlItem;
 
@@ -907,7 +908,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				disabled = control->disabled;
-				pressed = ((control->window->pressed == control && control->window->hover == control) || (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
+				pressed = ((control->window->pressed == control && (control->window->hover == control || control->pressedByKeyboard)) 
+						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
 				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
 				focused = (control->window->focus == control && control->hasFocusedBackground) && !pressed && !hover && !disabled;
 				normal = !hover && !pressed && !disabled && !focused;
@@ -1738,31 +1740,50 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	return control;
 }
 
+static void IssueCommandForControl(Control *control) {
+	if (control->checkable) {
+		// Update the checked state.
+		control->isChecked = !control->isChecked;
+
+		if (control->command) {
+			// Update the command.
+			OSCheckCommand(control->window, control->command, control->isChecked);
+		}
+	}
+
+	OSMessage message;
+	message.type = OS_NOTIFICATION_COMMAND;
+	message.command.checked = control->isChecked;
+	message.command.window = control->window;
+	message.command.command = control->command;
+	OSForwardMessage(control, control->notificationCallback, &message);
+
+	if (control->window->flags & OS_CREATE_WINDOW_MENU) {
+		message.type = OS_MESSAGE_DESTROY;
+		OSSendMessage(openMenus[0].window, &message);
+	}
+}
+
 OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	Control *control = (Control *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 	
 	if (message->type == OS_MESSAGE_CLICKED) {
-		if (control->checkable) {
-			// Update the checked state.
-			control->isChecked = !control->isChecked;
-
-			if (control->command) {
-				// Update the command.
-				OSCheckCommand(control->window, control->command, control->isChecked);
-			}
+		IssueCommandForControl(control);
+	} else if (message->type == OS_MESSAGE_KEY_PRESSED) {
+		if (message->keyboard.scancode == OS_SCANCODE_SPACE) {
+			control->window->pressed = control;
+			control->pressedByKeyboard = true;
+			OSAnimateControl(control, true);
+			result = OS_CALLBACK_HANDLED;
 		}
-
-		OSMessage message;
-		message.type = OS_NOTIFICATION_COMMAND;
-		message.command.checked = control->isChecked;
-		message.command.window = control->window;
-		message.command.command = control->command;
-		OSForwardMessage(control, control->notificationCallback, &message);
-
-		if (control->window->flags & OS_CREATE_WINDOW_MENU) {
-			message.type = OS_MESSAGE_DESTROY;
-			OSSendMessage(openMenus[0].window, &message);
+	} else if (message->type == OS_MESSAGE_KEY_RELEASED) {
+		if (message->keyboard.scancode == OS_SCANCODE_SPACE) {
+			control->window->pressed = nullptr;
+			control->pressedByKeyboard = false;
+			OSAnimateControl(control, false);
+			result = OS_CALLBACK_HANDLED;
+			IssueCommandForControl(control);
 		}
 	}
 
@@ -2595,7 +2616,7 @@ void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
 			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
 
-	if (scrollY / LIST_VIEW_ROW_HEIGHT >= index) {
+	if (scrollY / LIST_VIEW_ROW_HEIGHT >= index && scrollY) {
 		OSSetScrollbarPosition(control->scrollbar, scrollY + count * LIST_VIEW_ROW_HEIGHT, true);
 	}
 }
@@ -4009,6 +4030,11 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 			OSHeapFree(window);
 			return response;
+		} break;
+
+		case OS_MESSAGE_KEY_RELEASED: {
+			GUIObject *control = window->lastFocus;
+			OSSendMessage(control, message);
 		} break;
 
 		case OS_MESSAGE_KEY_PRESSED: {

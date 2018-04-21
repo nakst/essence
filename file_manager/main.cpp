@@ -12,8 +12,6 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/file_manager.manifest.h"
 
-// TODO Move the scrollbar to the top when switching folders.
-
 struct FolderChild {
 	OSDirectoryChild data;
 	bool selected;
