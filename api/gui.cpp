@@ -54,18 +54,16 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
-// 	- Enter and escape in dialog boxes
-// 	- Escape in normal windows to restore default focus
-// 	- Keyboard shortcuts and access keys
-// 	- Menus and list view navigation
-// TODO Scrollbar buttons are broken.
+// 	- Enter and escape in dialog boxes.
+// 	- Keyboard shortcuts and access keys.
+// 	- Menus and list view navigation.
+// TODO Scrollbar buttons and checkboxes are broken.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Minor menu[bar] border adjustments; menu icons.
-// TODO Calculator textbox - selection extends out of top of textbox
 // TODO Memory "arenas".
-// TODO Is the automatic scrollbar positioning correct?
 // TODO Multiple-cell positions.
 // TODO Wrapping.
+// TODO Scrolling in textboxes.
 
 struct UIImage {
 	OSRectangle region;
@@ -85,10 +83,6 @@ struct UIImage {
 		return a;
 	}
 };
-
-#if 0
-#define SUPER_COOL_BUTTONS
-#endif
 
 static UIImage activeWindowBorder11	= {{1, 1 + 6, 144, 144 + 6}, 	{1, 1, 144, 144}};
 static UIImage activeWindowBorder12	= {{8, 8 + 1, 144, 144 + 6}, 	{8, 9, 144, 144}};
@@ -554,10 +548,11 @@ struct Window : GUIObject {
 	unsigned flags;
 	OSCursorStyle cursor, cursorOld;
 
-	struct Control *pressed,   // Mouse is pressing the control.
-		       *hover,     // Mouse is hovering over the control.
-		       *focus, 	   // Control has strong focus.
-		       *lastFocus; // Control has weak focus.
+	struct Control *pressed,      // Mouse is pressing the control.
+		       *hover,        // Mouse is hovering over the control.
+		       *focus, 	      // Control has strong focus.
+		       *lastFocus,    // Control has weak focus.
+		       *defaultFocus; // Control receives focus if no other control has focus.
 
 	bool destroyed, created;
 
@@ -771,23 +766,48 @@ OSObject OSGetFocusedControl(OSObject _window, bool ignoreWeakFocus) {
 	}
 }
 
-void OSSetFocusedControl(OSObject _control) {
+void OSRemoveFocusedControl(OSObject _window, bool removeWeakFocus) {
+	Window *window = (Window *) _window;
+	OSMessage message;
+
+	// Remove any focus.
+	if (window->focus) {
+		message.type = OS_MESSAGE_END_FOCUS;
+		OSSendMessage(window->focus, &message);
+		window->focus = nullptr;
+	}
+
+	// Remove any last focus.
+	if (window->lastFocus && removeWeakFocus) {
+		message.type = OS_MESSAGE_END_LAST_FOCUS;
+		OSSendMessage(window->lastFocus, &message);
+		window->lastFocus = nullptr;
+
+		if (window->defaultFocus) {
+			OSSetFocusedControl(window->defaultFocus, false);
+		}
+	}
+}
+
+void OSSetFocusedControl(OSObject _control, bool asDefaultForWindow) {
 	Control *control = (Control *) _control;
 	Window *window = control->window;
 	OSMessage message;
 
-	// Remove previous any last focus.
-	if (window->lastFocus && control != window->lastFocus) {
-		message.type = OS_MESSAGE_END_LAST_FOCUS;
-		OSSendMessage(window->lastFocus, &message);
+	if (control != window->focus) {
+		OSRemoveFocusedControl(window, true);
 	}
 
-	// And give this control focus, if it doesn't already have it.
+	// Give this control focus, if it doesn't already have it.
 	if (control != window->focus) {
 		window->focus = control;
 		window->lastFocus = control;
 		message.type = OS_MESSAGE_START_FOCUS;
 		OSSendMessage(control, &message);
+	}
+
+	if (asDefaultForWindow) {
+		window->defaultFocus = control;
 	}
 }
 
@@ -853,7 +873,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 		case OS_MESSAGE_KEY_PRESSED: {
 			if (control->tabStop && control->window->lastFocus != control) {
-				OSSetFocusedControl(control);
+				OSSetFocusedControl(control, false);
 			} else {
 				response = OS_CALLBACK_NOT_HANDLED;
 			}
@@ -1055,8 +1075,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			if (control->window->hover == control) control->window->hover = nullptr;
 			if (control->window->pressed == control) control->window->pressed = nullptr;
-			if (control->window->focus == control) control->window->focus = nullptr;
-			if (control->window->lastFocus == control) control->window->lastFocus = nullptr;
+			if (control->window->defaultFocus == control) control->window->defaultFocus = nullptr;
+			if (control->window->focus == control) OSRemoveFocusedControl(control->window, true);
 
 			OSHeapFree(control->text.buffer);
 			OSHeapFree(control);
@@ -1659,12 +1679,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 					CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
 				}
 
-				message.type = OS_MESSAGE_END_FOCUS;
-				OSSendMessage(control, &message);
-				control->window->focus = nullptr;
-				message.type = OS_MESSAGE_END_LAST_FOCUS;
-				OSSendMessage(control, &message);
-				control->window->lastFocus = nullptr;
+				OSRemoveFocusedControl(control->window, true);
 			} break;
 
 			default: {
@@ -3886,18 +3901,8 @@ void OSDisableControl(OSObject _control, bool disabled) {
 
 	OSAnimateControl(control, false);
 
-	if (control->window->focus == control) {
-		OSMessage message;
-		message.type = OS_MESSAGE_END_FOCUS;
-		OSSendMessage(control, &message);
-		control->window->focus = nullptr;
-	}
-
-	if (control->window->lastFocus == control) {
-		OSMessage message;
-		message.type = OS_MESSAGE_END_LAST_FOCUS;
-		OSSendMessage(control, &message);
-		control->window->lastFocus = nullptr;
+	if (control->window->focus) {
+		OSRemoveFocusedControl(control->window, true);
 	}
 }
 
@@ -3993,6 +3998,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSSyscall(OS_SYSCALL_GET_CLIPBOARD_HEADER, 0, (uintptr_t) &message.clipboard, 0, 0);
 				OSSendMessage(window->lastFocus, &message);
 			}
+
+			OSRemoveFocusedControl(window, true);
 		} break;
 
 		case OS_MESSAGE_WINDOW_DEACTIVATED: {
@@ -4001,12 +4008,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSDisableControl(window->root->objects[i], true);
 			}
 
-			if (window->focus) {
-				OSMessage message;
-				message.type = OS_MESSAGE_END_FOCUS;
-				OSSendMessage(window->focus, &message);
-				window->focus = nullptr;
-			}
+			OSRemoveFocusedControl(window, true);
 
 			if (window->flags & OS_CREATE_WINDOW_MENU) {
 				message->type = OS_MESSAGE_DESTROY;
@@ -4015,15 +4017,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
-			{
-				OSMessage message = {};
-				message.type = OS_NOTIFICATION_COMMAND;
-				message.command.window = window;
-				message.command.command = osCommandDestroyWindow;
-				int32_t identifier = osCommandDestroyWindow->identifier;
-				OSForwardMessage(nullptr, window->commands[identifier].notificationCallback, &message);
-			}
-
 			if (!window->hasMenuParent) {
 				OSHeapFree(window->commands);
 			}
@@ -4043,6 +4036,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSSendMessage(window, message);
 			} else if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
 				EnterDebugger();
+			} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
+				OSRemoveFocusedControl(window, true);
 			} else {
 				OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
@@ -4087,6 +4082,15 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 			}
 
+			if (!window->hasMenuParent) {
+				OSMessage message = {};
+				message.type = OS_NOTIFICATION_COMMAND;
+				message.command.window = window;
+				message.command.command = osCommandDestroyWindow;
+				int32_t identifier = osCommandDestroyWindow->identifier;
+				OSForwardMessage(nullptr, window->commands[identifier].notificationCallback, &message);
+			}
+
 			OSSendMessage(window->root, message);
 			OSCloseHandle(window->surface);
 			OSCloseHandle(window->window);
@@ -4123,13 +4127,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 			}
 
-			OSMessage message;
-
 			// If a different control had focus, it must lose it.
 			if (window->focus != window->hover) {
-				message.type = OS_MESSAGE_END_FOCUS;
-				OSSendMessage(window->focus, &message);
-				window->focus = nullptr;
+				OSRemoveFocusedControl(window, false);
 			}
 
 			// If this control should be given focus...
@@ -4138,7 +4138,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 				// And it is focusable...
 				if (control->focusable) {
-					OSSetFocusedControl(control);
+					OSSetFocusedControl(control, false);
 				}
 			}
 		} break;
@@ -4446,6 +4446,8 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 			OSAddGrid(grid, 0, 0, OSCreateMenu(specification->menubar, nullptr, OS_MAKE_POINT(0, 0), OS_CREATE_MENUBAR), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		}
 	}
+
+	OSRemoveFocusedControl(window, true);
 
 	return window;
 }

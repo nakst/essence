@@ -799,7 +799,7 @@ void Instance::Initialise() {
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);
 
 	LoadFolder(OSLiteral("/"));
-	OSSetFocusedControl(folderListing);
+	OSSetFocusedControl(folderListing, true);
 }
 
 void ProgramEntry() {

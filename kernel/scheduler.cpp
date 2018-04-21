@@ -723,6 +723,11 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 	}
 
 	process->crashMutex.Acquire();
+
+	if (process->crashed) {
+		return;
+	}
+
 	process->crashed = true;
 
 	if (process == kernelProcess) {
@@ -757,9 +762,9 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 	CopyMemory(&message.crash.reason, &crashReason, sizeof(OSCrashReason));
 	desktopProcess->messageQueue.SendMessage(message);
 
-	scheduler.PauseProcess(GetCurrentThread()->process, false);
-
 	process->crashMutex.Release();
+
+	scheduler.PauseProcess(GetCurrentThread()->process, false);
 }
 
 void Scheduler::PauseThread(Thread *thread, bool resume, bool lockAlreadyAcquired) {
