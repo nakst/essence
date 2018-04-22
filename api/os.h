@@ -77,7 +77,6 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_SCANCODE_RIGHT_SHIFT	(0x59)
 #define OS_SCANCODE_RIGHT_CTRL	(0x114)
 #define OS_SCANCODE_RIGHT_ALT	(0x111)
-#define OS_SCANCODE_RIGHT_FLAG	(0x127)
 #define OS_SCANCODE_PAUSE	(0xE1)
 #define OS_SCANCODE_CONTEXT_MENU (0x127)
 

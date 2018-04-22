@@ -82,13 +82,13 @@ shortcut = ".";
 callback = Insert;
 callbackArgument = '%';
 label = "%";
-shortcut = "%";
+shortcut = "Shift+%";
 
 [command insertAdd]
 callback = Insert;
 callbackArgument = '+';
 label = "+";
-shortcut = "+";
+shortcut = "Shift+=";
 
 [command insertSubtract]
 callback = Insert;
@@ -100,7 +100,7 @@ shortcut = "-";
 callback = Insert;
 callbackArgument = '*';
 label = "*";
-shortcut = "*";
+shortcut = "Shift+*";
 
 [command insertDivide]
 callback = Insert;
@@ -112,13 +112,13 @@ shortcut = "/";
 callback = Insert;
 callbackArgument = '(';
 label = "(";
-shortcut = "(*";
+shortcut = "Shift+(";
 
 [command insertRightBracket]
 callback = Insert;
 callbackArgument = ')';
 label = ")";
-shortcut = ")";
+shortcut = "Shift+)";
 
 [command evaluate]
 callback = Evaluate;

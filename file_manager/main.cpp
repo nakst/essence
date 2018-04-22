@@ -12,6 +12,8 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/file_manager.manifest.h"
 
+// TODO Wrong size reported for Sample Images' contents?
+
 struct FolderChild {
 	OSDirectoryChild data;
 	bool selected;

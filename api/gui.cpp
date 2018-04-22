@@ -54,7 +54,7 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
-// 	- Keyboard shortcuts and access keys.
+// 	- Access keys.
 // 	- Menus and list view navigation.
 // TODO Scrollbar buttons and checkboxes are broken.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
@@ -1547,6 +1547,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
 
 		int ic = -1, isc = -1;
+		bool withAltOrCtrl = false;
 
 		result = OS_CALLBACK_HANDLED;
 
@@ -1611,6 +1612,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				} else {
 					RemoveSelectedText(control);
 				}
+
+				withAltOrCtrl = true;
 			} break;
 
 			case OS_SCANCODE_DELETE: {
@@ -1624,6 +1627,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				} else {
 					RemoveSelectedText(control);
 				}
+
+				withAltOrCtrl = true;
 			} break;
 
 			case OS_SCANCODE_LEFT_ARROW: {
@@ -1640,6 +1645,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 						control->caret = control->caret2;
 					}
 				}
+
+				withAltOrCtrl = true;
 			} break;
 
 			case OS_SCANCODE_RIGHT_ARROW: {
@@ -1656,18 +1663,24 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 						control->caret = control->caret2;
 					}
 				}
+
+				withAltOrCtrl = true;
 			} break;
 
 			case OS_SCANCODE_HOME: {
 				control->caret2.byte = 0;
 				control->caret2.character = 0;
 				if (!message->keyboard.shift) control->caret = control->caret2;
+
+				withAltOrCtrl = true;
 			} break;
 
 			case OS_SCANCODE_END: {
 				control->caret2.byte = control->text.bytes;
 				control->caret2.character = control->text.characters;
 				if (!message->keyboard.shift) control->caret = control->caret2;
+
+				withAltOrCtrl = true;
 			} break;
 
 			case OS_SCANCODE_ENTER: {
@@ -1687,6 +1700,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				}
 
 				OSRemoveFocusedControl(control->window, true);
+
+				withAltOrCtrl = true;
 			} break;
 
 			default: {
@@ -1694,14 +1709,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			} break;
 		}
 
-		if (message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift) {
-			if (message->keyboard.scancode == OS_SCANCODE_A) {
-				control->caret.byte = 0;
-				control->caret.character = 0;
-
-				control->caret2.byte = control->text.bytes;
-				control->caret2.character = control->text.characters;
-			}
+		if ((message->keyboard.ctrl || message->keyboard.alt) && !withAltOrCtrl) {
+			return OS_CALLBACK_NOT_HANDLED;
 		}
 
 		if (ic != -1 && !message->keyboard.alt && !message->keyboard.ctrl) {
@@ -1765,6 +1774,10 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 static void IssueCommand(Control *control, OSCommand *command = nullptr, Window *window = nullptr) {
 	if (!window) window = control->window;
 	if (!command) command = control->command;
+
+	if (window->commands[command->identifier].disabled) {
+		return;
+	}
 
 	bool checkable = control ? control->checkable : command->checkable;
 	bool isChecked = control ? control->isChecked : window->commands[command->identifier].checked;
@@ -3987,6 +4000,445 @@ static inline int DistanceSquared(int x, int y) {
 	return x * x + y * y;
 }
 
+static bool CompareKeyboardShortcut(OSCommand *command, OSMessage *message) {
+	bool alt = message->keyboard.alt;
+	bool shift = message->keyboard.shift;
+	bool ctrl = message->keyboard.ctrl;
+	unsigned scancode = message->keyboard.scancode;
+
+	if (scancode == OS_SCANCODE_EQUALS && shift) {
+		EnterDebugger();
+	}
+
+	size_t shortcutBytes = command->shortcutBytes;
+
+	if (!shortcutBytes) {
+		// This command does not have a shortcut.
+		return false;
+	}
+
+	if (shortcutBytes >= 64) {
+		// This command's shortcut is too long.
+		return false;
+	}
+
+	char shortcut[64];
+	OSCopyMemory(shortcut, command->shortcut, command->shortcutBytes);
+	shortcut[command->shortcutBytes] = 0;
+
+	for (uintptr_t i = 0; i < command->shortcutBytes; i++) {
+		shortcut[i] = tolower(shortcut[i]);
+	}
+
+	// Look for prefixes.
+
+	if (strstr(shortcut, "ctrl+")) {
+		if (!ctrl) {
+			return false;
+		}
+	} else if (ctrl) {
+		return false;
+	}
+
+	if (strstr(shortcut, "shift+")) {
+		if (!shift) {
+			return false;
+		}
+	} else if (shift) {
+		return false;
+	}
+
+	if (strstr(shortcut, "alt+")) {
+		if (!alt) {
+			return false;
+		}
+	} else if (alt) {
+		return false;
+	}
+
+	// Then compare the actual scancode.
+
+	char *position = shortcut + command->shortcutBytes;
+
+	while (--position != shortcut) {
+		if (*position == '+') {
+			position++;
+			break;
+		}
+	}
+
+	const char *expected = nullptr;
+	const char *alias = nullptr;
+
+	switch (scancode) {
+		case OS_SCANCODE_A:
+			expected = "a";
+			break;
+		case OS_SCANCODE_B:
+			expected = "b";
+			break;
+		case OS_SCANCODE_C:
+			expected = "c";
+			break;
+		case OS_SCANCODE_D:
+			expected = "d";
+			break;
+		case OS_SCANCODE_E:
+			expected = "e";
+			break;
+		case OS_SCANCODE_F:
+			expected = "f";
+			break;
+		case OS_SCANCODE_G:
+			expected = "g";
+			break;
+		case OS_SCANCODE_H:
+			expected = "h";
+			break;
+		case OS_SCANCODE_I:
+			expected = "i";
+			break;
+		case OS_SCANCODE_J:
+			expected = "j";
+			break;
+		case OS_SCANCODE_K:
+			expected = "k";
+			break;
+		case OS_SCANCODE_L:
+			expected = "l";
+			break;
+		case OS_SCANCODE_M:
+			expected = "m";
+			break;
+		case OS_SCANCODE_N:
+			expected = "n";
+			break;
+		case OS_SCANCODE_O:
+			expected = "o";
+			break;
+		case OS_SCANCODE_P:
+			expected = "p";
+			break;
+		case OS_SCANCODE_Q:
+			expected = "q";
+			break;
+		case OS_SCANCODE_R:
+			expected = "r";
+			break;
+		case OS_SCANCODE_S:
+			expected = "s";
+			break;
+		case OS_SCANCODE_T:
+			expected = "t";
+			break;
+		case OS_SCANCODE_U:
+			expected = "u";
+			break;
+		case OS_SCANCODE_V:
+			expected = "v";
+			break;
+		case OS_SCANCODE_W:
+			expected = "w";
+			break;
+		case OS_SCANCODE_X:
+			expected = "x";
+			break;
+		case OS_SCANCODE_Y:
+			expected = "y";
+			break;
+		case OS_SCANCODE_Z:
+			expected = "z";
+			break;
+		case OS_SCANCODE_0:
+			expected = "0";
+			alias = ")";
+			break;
+		case OS_SCANCODE_1:
+			expected = "1";
+			alias = "!";
+			break;
+		case OS_SCANCODE_2:
+			expected = "2";
+			alias = "@";
+			break;
+		case OS_SCANCODE_3:
+			expected = "3";
+			alias = "#";
+			break;
+		case OS_SCANCODE_4:
+			expected = "4";
+			alias = "$";
+			break;
+		case OS_SCANCODE_5:
+			expected = "5";
+			alias = "%";
+			break;
+		case OS_SCANCODE_6:
+			expected = "6";
+			alias = "^";
+			break;
+		case OS_SCANCODE_7:
+			expected = "7";
+			alias = "&";
+			break;
+		case OS_SCANCODE_8:
+			expected = "8";
+			alias = "*";
+			break;
+		case OS_SCANCODE_9:
+			expected = "9";
+			alias = "(";
+			break;
+		case OS_SCANCODE_CAPS_LOCK:
+			break;
+		case OS_SCANCODE_SCROLL_LOCK:
+			break;
+		case OS_SCANCODE_NUM_LOCK:
+			break;
+		case OS_SCANCODE_LEFT_SHIFT:
+			break;
+		case OS_SCANCODE_LEFT_CTRL:
+			break;
+		case OS_SCANCODE_LEFT_ALT:
+			break;
+		case OS_SCANCODE_LEFT_FLAG:
+			break;
+		case OS_SCANCODE_RIGHT_SHIFT:
+			break;
+		case OS_SCANCODE_RIGHT_CTRL:
+			break;
+		case OS_SCANCODE_RIGHT_ALT:
+			break;
+		case OS_SCANCODE_PAUSE:
+			expected = "pause";
+			break;
+		case OS_SCANCODE_CONTEXT_MENU:
+			break;
+		case OS_SCANCODE_BACKSPACE:
+			expected = "backspace";
+			alias = "bkspc";
+			break;
+		case OS_SCANCODE_ESCAPE:
+			expected = "escape";
+			alias = "esc";
+			break;
+		case OS_SCANCODE_INSERT:
+			expected = "insert";
+			alias = "ins";
+			break;
+		case OS_SCANCODE_HOME:
+			expected = "home";
+			break;
+		case OS_SCANCODE_PAGE_UP:
+			expected = "page up";
+			alias = "pgup";
+			break;
+		case OS_SCANCODE_DELETE:
+			expected = "delete";
+			alias = "del";
+			break;
+		case OS_SCANCODE_END:
+			expected = "end";
+			break;
+		case OS_SCANCODE_PAGE_DOWN:
+			expected = "page down";
+			alias = "pgdn";
+			break;
+		case OS_SCANCODE_UP_ARROW:
+			expected = "up";
+			break;
+		case OS_SCANCODE_LEFT_ARROW:
+			expected = "left";
+			break;
+		case OS_SCANCODE_DOWN_ARROW:
+			expected = "down";
+			break;
+		case OS_SCANCODE_RIGHT_ARROW:
+			expected = "right";
+			break;
+		case OS_SCANCODE_SPACE:
+			expected = "space";
+			break;
+		case OS_SCANCODE_TAB:
+			expected = "tab";
+			break;
+		case OS_SCANCODE_ENTER:
+			expected = "enter";
+			alias = "return";
+			break;
+		case OS_SCANCODE_SLASH:
+			expected = "/";
+			alias = "?";
+			break;
+		case OS_SCANCODE_BACKSLASH:
+			expected = "\\";
+			alias = "|";
+			break;
+		case OS_SCANCODE_LEFT_BRACE:
+			expected = "[";
+			alias = "{";
+			break;
+		case OS_SCANCODE_RIGHT_BRACE:
+			expected = "]";
+			alias = "}";
+			break;
+		case OS_SCANCODE_EQUALS:
+			expected = "=";
+			alias = "+";
+			break;
+		case OS_SCANCODE_BACKTICK:
+			expected = "`";
+			alias = "~";
+			break;
+		case OS_SCANCODE_HYPHEN:
+			expected = "-";
+			alias = "_";
+			break;
+		case OS_SCANCODE_SEMICOLON:
+			expected = ";";
+			alias = ":";
+			break;
+		case OS_SCANCODE_QUOTE:
+			expected = "'";
+			alias = "\"";
+			break;
+		case OS_SCANCODE_COMMA:
+			expected = ",";
+			alias = "<";
+			break;
+		case OS_SCANCODE_PERIOD:
+			expected = ".";
+			alias = ">";
+			break;
+		case OS_SCANCODE_NUM_DIVIDE:
+			break;
+		case OS_SCANCODE_NUM_MULTIPLY:
+			break;
+		case OS_SCANCODE_NUM_SUBTRACT:
+			break;
+		case OS_SCANCODE_NUM_ADD:
+			break;
+		case OS_SCANCODE_NUM_ENTER:
+			break;
+		case OS_SCANCODE_NUM_POINT:
+			break;
+		case OS_SCANCODE_NUM_0:
+			break;
+		case OS_SCANCODE_NUM_1:
+			break;
+		case OS_SCANCODE_NUM_2:
+			break;
+		case OS_SCANCODE_NUM_3:
+			break;
+		case OS_SCANCODE_NUM_4:
+			break;
+		case OS_SCANCODE_NUM_5:
+			break;
+		case OS_SCANCODE_NUM_6:
+			break;
+		case OS_SCANCODE_NUM_7:
+			break;
+		case OS_SCANCODE_NUM_8:
+			break;
+		case OS_SCANCODE_NUM_9:
+			break;
+		case OS_SCANCODE_PRINT_SCREEN_1:
+			break;
+		case OS_SCANCODE_PRINT_SCREEN_2:
+			break;
+		case OS_SCANCODE_F1:
+			expected = "f1";
+			break;
+		case OS_SCANCODE_F2:
+			expected = "f2";
+			break;
+		case OS_SCANCODE_F3:
+			expected = "f3";
+			break;
+		case OS_SCANCODE_F4:
+			expected = "f4";
+			break;
+		case OS_SCANCODE_F5:
+			expected = "f5";
+			break;
+		case OS_SCANCODE_F6:
+			expected = "f6";
+			break;
+		case OS_SCANCODE_F7:
+			expected = "f7";
+			break;
+		case OS_SCANCODE_F8:
+			expected = "f8";
+			break;
+		case OS_SCANCODE_F9:
+			expected = "f9";
+			break;
+		case OS_SCANCODE_F10:
+			expected = "f10";
+			break;
+		case OS_SCANCODE_F11:
+			expected = "f11";
+			break;
+		case OS_SCANCODE_F12:
+			expected = "f12";
+			break;
+		case OS_SCANCODE_ACPI_POWER:
+			break;
+		case OS_SCANCODE_ACPI_SLEEP:
+			break;
+		case OS_SCANCODE_ACPI_WAKE:
+			break;
+		case OS_SCANCODE_MM_NEXT:
+			break;
+		case OS_SCANCODE_MM_PREVIOUS:
+			break;
+		case OS_SCANCODE_MM_STOP:
+			break;
+		case OS_SCANCODE_MM_PAUSE:
+			break;
+		case OS_SCANCODE_MM_MUTE:
+			break;
+		case OS_SCANCODE_MM_QUIETER:
+			break;
+		case OS_SCANCODE_MM_LOUDER:
+			break;
+		case OS_SCANCODE_MM_SELECT:
+			break;
+		case OS_SCANCODE_MM_EMAIL:
+			break;
+		case OS_SCANCODE_MM_CALC:
+			break;
+		case OS_SCANCODE_MM_FILES:
+			break;
+		case OS_SCANCODE_WWW_SEARCH:
+			break;
+		case OS_SCANCODE_WWW_HOME:
+			break;
+		case OS_SCANCODE_WWW_BACK:
+			break;
+		case OS_SCANCODE_WWW_FORWARD:
+			break;
+		case OS_SCANCODE_WWW_STOP:
+			break;
+		case OS_SCANCODE_WWW_REFRESH:
+			break;
+		case OS_SCANCODE_WWW_STARRED:
+			break;
+	}
+
+	if (expected && 0 == strcmp(position, expected)) {
+		// The strings matched.
+		return true;
+	}
+
+	if (alias && 0 == strcmp(position, alias)) {
+		// The strings matched.
+		return true;
+	}
+
+	return false;
+}
+
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Window *window = (Window *) _object;
@@ -4080,6 +4532,16 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					response = OSSendMessage(control, message);
 					message->keyboard.notHandledBy = control;
 					control = (GUIObject *) control->parent;
+				}
+
+				if (response == OS_CALLBACK_NOT_HANDLED) {
+					for (uintptr_t i = 0; i < _commandCount; i++) {
+						if (CompareKeyboardShortcut(_commands[i], message)) {
+							IssueCommand(nullptr, _commands[i], window);
+							response = OS_CALLBACK_HANDLED;
+							break;
+						}
+					}
 				}
 
 				if (response == OS_CALLBACK_NOT_HANDLED) {
