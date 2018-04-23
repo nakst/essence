@@ -266,11 +266,13 @@ void Spinlock::Release(bool force) {
 	if (!force) {
 		AssertLocked();
 	}
+	
+	volatile bool wereInterruptsEnabled = interruptsEnabled;
 
 	owner = nullptr;
 	state = 0;
 
-	if (interruptsEnabled) ProcessorEnableInterrupts();
+	if (wereInterruptsEnabled) ProcessorEnableInterrupts();
 
 	releaseAddress = (uintptr_t) __builtin_return_address(0);
 }

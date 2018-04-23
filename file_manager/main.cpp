@@ -12,8 +12,6 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/file_manager.manifest.h"
 
-// TODO Wrong size reported for Sample Images' contents?
-
 struct FolderChild {
 	OSDirectoryChild data;
 	bool selected;
@@ -378,11 +376,15 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			FolderChild *child = instance->folderChildren + index;
 			OSDirectoryChild *data = &child->data;
 
+			OSPrint("asking for %d, %d\n", index, message->listViewItem.column);
+
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
 				switch (message->listViewItem.column) {
 					case COLUMN_NAME: {
 						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%s", data->nameLengthBytes, data->name);
+
+						OSPrint("-> %s\n", data->nameLengthBytes, data->name);
 					} break;
 
 					case COLUMN_DATE_MODIFIED: {
@@ -414,11 +416,13 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 										"%d.%d KB", fileSize / 1000, (fileSize / 100) % 10);
 							} else if (fileSize < 1000000000) {
 								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
-										"%d.%d MB", fileSize / 1000000, (fileSize / 1000000) % 10);
+										"%d.%d MB", fileSize / 1000000, (fileSize / 100000) % 10);
 							} else {
 								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
-										"%d.%d GB", fileSize / 1000000000, (fileSize / 1000000000) % 10);
+										"%d.%d GB", fileSize / 1000000000, (fileSize / 100000000) % 10);
 							}
+
+							OSPrint("-> %s (%d)\n", message->listViewItem.textBytes, guiStringBuffer, fileSize);
 						} else if (data->information.type == OS_NODE_DIRECTORY) {
 							uint64_t children = data->information.directoryChildren;
 
@@ -658,6 +662,8 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		if (!children[i].information.present) {
 			childCount = i;
 			break;
+		} else {
+			OSPrint("] %s, %d\n", children[i].nameLengthBytes, children[i].name, children[i].information.fileSize);
 		}
 	}
 
@@ -673,6 +679,10 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 
 	// Sort the folder.
 	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, nullptr);
+
+	for (uintptr_t i = 0; i < folderChildCount; i++) {
+		OSPrint("[ %s, %d\n", folderChildren[i].data.nameLengthBytes, folderChildren[i].data.name, folderChildren[i].data.information.fileSize);
+	}
 
 	// Confirm the new path.
 	path = newPath;
