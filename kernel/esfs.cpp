@@ -926,7 +926,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	uint64_t lastAccessedActualBlock = 0;
 	AccessStream(nullptr, data, blockIndex, superblock.blockSize, directoryBuffer, false, &lastAccessedActualBlock);
 
-	Print("------\n");
+	// Print("------\n");
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
 		while (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
@@ -949,7 +949,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 		CopyMemory(childBuffer[i].name, name + 1, child->nameLengthBytes = name->nameLength);
 		child->information.present = true;
 
-		Print(": %s\n", name->nameLength, name + 1);
+		// Print(": %s\n", name->nameLength, name + 1);
 
 		EsFSAttributeDirectoryFile *file = (EsFSAttributeDirectoryFile *) FindAttribute(ESFS_ATTRIBUTE_DIRECTORY_FILE, entry + 1);
 		EsFSFileEntry *fileEntry = (EsFSFileEntry *) (file + 1);
@@ -964,7 +964,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 				} else if (node->data.type == OS_NODE_FILE) {
 					child->information.type = OS_NODE_FILE;
 					child->information.fileSize = node->data.file.fileSize;
-					Print("-> N %d\n", child->information.fileSize);
+					// Print("-> N %d\n", child->information.fileSize);
 				} else {
 					child->information.type = OS_NODE_INVALID;
 				}
@@ -978,7 +978,7 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 				} else if (fileEntry->fileType == ESFS_FILE_TYPE_FILE && data) {
 					child->information.type = OS_NODE_FILE;
 					child->information.fileSize = data->size;
-					Print("-> D %d\n", child->information.fileSize);
+					// Print("-> D %d\n", child->information.fileSize);
 				} else {
 					child->information.type = OS_NODE_INVALID;
 				}

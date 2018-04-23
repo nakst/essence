@@ -376,7 +376,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			FolderChild *child = instance->folderChildren + index;
 			OSDirectoryChild *data = &child->data;
 
-			OSPrint("asking for %d, %d\n", index, message->listViewItem.column);
+			// OSPrint("asking for %d, %d\n", index, message->listViewItem.column);
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
 				switch (message->listViewItem.column) {
@@ -384,7 +384,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%s", data->nameLengthBytes, data->name);
 
-						OSPrint("-> %s\n", data->nameLengthBytes, data->name);
+						// OSPrint("-> %s\n", data->nameLengthBytes, data->name);
 					} break;
 
 					case COLUMN_DATE_MODIFIED: {
@@ -422,7 +422,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 										"%d.%d GB", fileSize / 1000000000, (fileSize / 100000000) % 10);
 							}
 
-							OSPrint("-> %s (%d)\n", message->listViewItem.textBytes, guiStringBuffer, fileSize);
+							// OSPrint("-> %s (%d)\n", message->listViewItem.textBytes, guiStringBuffer, fileSize);
 						} else if (data->information.type == OS_NODE_DIRECTORY) {
 							uint64_t children = data->information.directoryChildren;
 
@@ -663,7 +663,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 			childCount = i;
 			break;
 		} else {
-			OSPrint("] %s, %d\n", children[i].nameLengthBytes, children[i].name, children[i].information.fileSize);
+			// OSPrint("] %s, %d\n", children[i].nameLengthBytes, children[i].name, children[i].information.fileSize);
 		}
 	}
 
@@ -681,7 +681,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, nullptr);
 
 	for (uintptr_t i = 0; i < folderChildCount; i++) {
-		OSPrint("[ %s, %d\n", folderChildren[i].data.nameLengthBytes, folderChildren[i].data.name, folderChildren[i].data.information.fileSize);
+		// OSPrint("[ %s, %d\n", folderChildren[i].data.nameLengthBytes, folderChildren[i].data.name, folderChildren[i].data.information.fileSize);
 	}
 
 	// Confirm the new path.
