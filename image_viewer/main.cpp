@@ -2,6 +2,9 @@
 #define Defer(x) OSDefer(x)
 #include "../api/linked_list.cpp"
 
+#define COMMAND_ROTATE_ANTI_CLOCKWISE (1)
+#define COMMAND_ROTATE_CLOCKWISE (2)
+
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/image_viewer.manifest.h"
 
@@ -11,6 +14,7 @@ struct Instance {
 	OSHandle imageSurface;
 	OSCallback imageDisplayParentCallback;
 	int imageWidth, imageHeight;
+	bool repaintImageDisplay;
 
 	LinkedItem<Instance> thisItem;
 
@@ -20,6 +24,7 @@ struct Instance {
 #define ERROR_INTERNAL (2)
 #define ERROR_INVALID_IMAGE_FORMAT (3)
 #define ERROR_INSUFFICIENT_MEMORY (4)
+#define ERROR_ROTATING_IMAGE (5)
 	void ReportError(unsigned where, OSError error);
 };
 
@@ -29,6 +34,59 @@ struct Global {
 
 Global global;
 
+OSCallbackResponse CommandRotate(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+	instance->repaintImageDisplay = true;
+	OSRepaintControl(instance->imageDisplay);
+
+	OSHandle newSurface = OSCreateSurface(instance->imageHeight, instance->imageWidth);
+
+	if (newSurface == OS_INVALID_HANDLE) {
+		instance->ReportError(ERROR_ROTATING_IMAGE, ERROR_INSUFFICIENT_MEMORY);
+		return OS_CALLBACK_REJECTED;
+	}
+
+	OSLinearBuffer buffer; 
+	OSGetLinearBuffer(instance->imageSurface, &buffer);
+	uint8_t *oldBitmap = (uint8_t *) OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
+	OSCloseHandle(buffer.handle);
+	OSCloseHandle(instance->imageSurface);
+	size_t oldStride = buffer.stride;
+	instance->imageSurface = newSurface;
+	OSGetLinearBuffer(newSurface, &buffer);
+	uint8_t *newBitmap = (uint8_t *) OSMapObject(buffer.handle, 0, buffer.height * buffer.stride, OS_MAP_OBJECT_READ_WRITE);
+	OSCloseHandle(buffer.handle);
+
+	int exchange = instance->imageWidth;
+	instance->imageWidth = instance->imageHeight;
+	instance->imageHeight = exchange;
+
+	for (int y = 0; y < instance->imageHeight; y++) {
+		for (int x = 0; x < instance->imageWidth; x++) {
+			uint32_t *destination = (uint32_t *) (newBitmap + y * buffer.stride + x * 4), *source;
+
+			if (message->context == (void *) COMMAND_ROTATE_ANTI_CLOCKWISE) {
+				source = (uint32_t *) (oldBitmap + x * oldStride + (instance->imageHeight - y - 1) * 4);
+			} else {
+				source = (uint32_t *) (oldBitmap + (instance->imageWidth - x - 1) * oldStride + y * 4);
+			}
+
+			*destination = *source;
+		}
+	}
+
+	OSFree(oldBitmap);
+	OSFree(newBitmap);
+
+	return OS_CALLBACK_HANDLED;
+}
+
 void Instance::ReportError(unsigned where, OSError error) {
 	const char *message = "An unknown error occurred.";
 	const char *description = "Please try again.";
@@ -36,6 +94,10 @@ void Instance::ReportError(unsigned where, OSError error) {
 	switch (where) {
 		case ERROR_LOADING_IMAGE: {
 			message = "Could not load the image.";
+		} break;
+
+		case ERROR_ROTATING_IMAGE: {
+			message = "Could not rotate the image.";
 		} break;
 
 		case ERROR_INTERNAL: {
@@ -74,7 +136,9 @@ OSCallbackResponse ProcessImageDisplayMessage(OSObject object, OSMessage *messag
 	if (message->type == OS_MESSAGE_PAINT) {
 		response = OS_CALLBACK_HANDLED;
 
-		if (message->paint.force) {
+		if (message->paint.force || instance->repaintImageDisplay) {
+			instance->repaintImageDisplay = false;
+
 			// Fill the background.
 			OSFillRectangle(message->paint.surface, message->paint.clip, OSColor(0xEA, 0xF0, 0xFC));
 
@@ -188,18 +252,27 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 
 	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_CALLBACK(DestroyInstance, this));
 
-	OSObject rootLayout = OSCreateGrid(1, 1, OS_GRID_STYLE_LAYOUT);
+	OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
 	OSSetRootGrid(window, rootLayout);
 
+	OSObject toolbar = OSCreateGrid(5, 1, OS_GRID_STYLE_TOOLBAR);
+	OSAddControl(rootLayout, 0, 0, toolbar, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
+
+	OSAddControl(toolbar, 0, 0, OSCreateButton(commandRotateAntiClockwise, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 1, 0, OSCreateButton(commandRotateClockwise, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+
 	imageDisplay = OSCreateBlankControl(0, 0, false, true, false, OS_CURSOR_NORMAL);
-	OSAddControl(rootLayout, 0, 0, imageDisplay, OS_CELL_H_EXPAND | OS_CELL_H_PUSH 
+	OSAddControl(rootLayout, 0, 1, imageDisplay, OS_CELL_H_EXPAND | OS_CELL_H_PUSH 
 							| OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 	imageDisplayParentCallback = OSSetCallback(imageDisplay, OS_MAKE_CALLBACK(ProcessImageDisplayMessage, this)); 
+
+	OSEnableCommand(window, commandRotateAntiClockwise, true);
+	OSEnableCommand(window, commandRotateClockwise, true);
 
 	OSEndGUIAllocationBlock();
 }
 
 void ProgramEntry() {
-	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(OSLiteral("/OS/Sample Images/Nebula 2.jpg"));
+	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(OSLiteral("/OS/Sample Images/Flower.jpg"));
 	OSProcessMessages();
 }

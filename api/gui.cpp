@@ -234,6 +234,8 @@ static UIImage icons16[] = {
 	ICON16(512 + 320, 160),
 	ICON16(512 + 64, 192),
 	ICON16(512 + 320, 288),
+	ICON16(512 + 192, 16),
+	ICON16(512 + 0, 432),
 };
 
 static UIImage icons32[] = {
@@ -671,7 +673,7 @@ static size_t ClipboardTextBytes() {
 	return clipboard.textBytes;
 }
 
-static inline void OSRepaintControl(OSObject _control, bool customOnly = false) {
+static inline void RepaintControl(OSObject _control, bool customOnly = false) {
 	Control *control = (Control *) _control;
 
 	if (!control->repaint) {
@@ -682,6 +684,10 @@ static inline void OSRepaintControl(OSObject _control, bool customOnly = false) 
 	if (!customOnly) {
 		control->repaintCustomOnly = false;
 	}
+}
+
+void OSRepaintControl(OSObject object) {
+	RepaintControl(object, false);
 }
 
 static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
@@ -746,7 +752,7 @@ void OSAnimateControl(OSObject _control, bool fast) {
 		control->finalAnimationStep = 16;
 	}
 
-	OSRepaintControl(control);
+	RepaintControl(control);
 }
 
 static void StandardCellLayout(GUIObject *object) {
@@ -903,7 +909,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 
 			control->relayout = false;
-			OSRepaintControl(control);
+			RepaintControl(control);
 			SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 
 			{
@@ -1126,7 +1132,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			control->window = (Window *) message->parentUpdated.window;
 			control->animationStep = 16;
 			control->finalAnimationStep = 16;
-			OSRepaintControl(control);
+			RepaintControl(control);
 
 			if (control->command) {
 				OSSetControlCommand(control, control->command);
@@ -1196,7 +1202,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->window->timerControls.Remove(&control->timerControlItem);
 			} else {
 				control->animationStep++;
-				OSRepaintControl(control);
+				RepaintControl(control);
 			}
 		} break;
 
@@ -1487,7 +1493,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_CARET_BLINK) {
 		control->caretBlink = !control->caretBlink;
 		result = OS_CALLBACK_HANDLED;
-		OSRepaintControl(control);
+		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_END_FOCUS) {
 		OSMessage message;
 
@@ -1592,19 +1598,19 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			control->caret2 = control->caret;
 		}
 
-		OSRepaintControl(control);
+		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_PRESS) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
-		OSRepaintControl(control);
+		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_DRAG 
 			|| (message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED && control->caret.byte == control->caret2.byte)) {
 		FindCaret(control, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY, true, lastClickChainCount);
 		control->caret = control->caret2;
-		OSRepaintControl(control);
+		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
-		OSRepaintControl(control);
+		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
 		control->caret = control->caret2;
 	} else if (message->type == OS_MESSAGE_DESTROY) {
@@ -1798,7 +1804,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			control->caret2 = control->caret;
 		}
 
-		OSRepaintControl(control);
+		RepaintControl(control);
 	}
 
 	if (control->window && control->window->lastFocus == control) {
@@ -2011,7 +2017,7 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 }
 
 static void RepaintListViewRows(ListView *control, int from, int to) {
-	OSRepaintControl(control, true);
+	RepaintControl(control, true);
 
 	if (from > to) {
 		int temp = from;
@@ -2031,7 +2037,7 @@ static OSCallbackResponse ListViewScrollbarMoved(OSObject object, OSMessage *mes
 	ListView *control = (ListView *) message->context;
 
 	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
-		OSRepaintControl(control);
+		RepaintControl(control);
 		control->scrollY = message->valueChanged.newValue;
 		return OS_CALLBACK_HANDLED;
 	}
@@ -2401,7 +2407,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 				// If neither CTRL nor SHIFT were pressed, remove the old selection.
 				m.type = OS_NOTIFICATION_DESELECT_ALL;
 				OSForwardMessage(control, control->notificationCallback, &m);
-				OSRepaintControl(control);
+				RepaintControl(control);
 			}
 
 			OSRectangle inputArea = OS_MAKE_RECTANGLE(bounds.left, control->columns ? control->rowWidth + bounds.left : bounds.right, bounds.top, bounds.bottom);
@@ -2499,17 +2505,17 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 
 			control->dragging = ListView::DRAGGING_SELECTION;
 
-			OSRepaintControl(control);
+			RepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
 			control->dragging = ListView::DRAGGING_NONE;
-			OSRepaintControl(control);
+			RepaintControl(control);
 		} break;
 
 		case OS_MESSAGE_MOUSE_DRAGGED: {
 			if (control->dragging == ListView::DRAGGING_COLUMN) {
-				OSRepaintControl(control);
+				RepaintControl(control);
 
 				int newWidth = message->mouseDragged.newPositionX - control->draggingColumnX - control->bounds.left;
 				if (newWidth < 64) newWidth = 64;
@@ -2522,7 +2528,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			}
 
 			control->selectionBoxPosition = OS_MAKE_POINT(message->mouseDragged.newPositionX, message->mouseDragged.newPositionY);
-			OSRepaintControl(control, true);
+			RepaintControl(control, true);
 			control->repaintSelectionBox = true;
 
 			OSRectangle selectionBox;
@@ -2716,7 +2722,7 @@ void OSListViewSetColumns(OSObject _listView, OSListViewColumn *columns, int32_t
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
 			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
 
-	OSRepaintControl(control);
+	RepaintControl(control);
 }
 
 void OSListViewReset(OSObject _listView) {
@@ -2728,7 +2734,7 @@ void OSListViewReset(OSObject _listView) {
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
 			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
 
-	OSRepaintControl(control);
+	RepaintControl(control);
 }
 
 void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
@@ -2948,7 +2954,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 void OSSetProgressBarValue(OSObject _control, int newValue) {
 	ProgressBar *control = (ProgressBar *) _control;
 	control->value = newValue;
-	OSRepaintControl(control);
+	RepaintControl(control);
 }
 
 OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small) {
@@ -3018,7 +3024,7 @@ void OSSetText(OSObject _control, char *text, size_t textBytes, unsigned resizeM
 		OSSendMessage(control->parent, &message);
 	}
 
-	OSRepaintControl(control);
+	RepaintControl(control);
 	message.type = OS_MESSAGE_TEXT_UPDATED;
 	OSSendMessage(control, &message);
 }
@@ -3960,11 +3966,11 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 		OSSendMessage(scrollbar, &message);
 	}
 
-	OSRepaintControl(scrollbar->objects[0]);
-	OSRepaintControl(scrollbar->objects[1]);
-	OSRepaintControl(scrollbar->objects[2]);
-	OSRepaintControl(scrollbar->objects[3]);
-	OSRepaintControl(scrollbar->objects[4]);
+	RepaintControl(scrollbar->objects[0]);
+	RepaintControl(scrollbar->objects[1]);
+	RepaintControl(scrollbar->objects[2]);
+	RepaintControl(scrollbar->objects[3]);
+	RepaintControl(scrollbar->objects[4]);
 
 	ScrollbarPositionChanged(scrollbar);
 }
@@ -4102,7 +4108,7 @@ void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 
 	while (item) {
 		item->thisItem->isChecked = checked;
-		OSRepaintControl(item->thisItem);
+		RepaintControl(item->thisItem);
 		item = item->nextItem;
 	}
 }
@@ -4751,7 +4757,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				// Send the raw message.
 				OSSendMessage(window->pressed, message);
 
-				OSRepaintControl(window->pressed);
+				RepaintControl(window->pressed);
 
 				if (window->pressed == window->hover) {
 					OSMessage clicked;

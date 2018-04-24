@@ -166,14 +166,16 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_SCANCODE_WWW_REFRESH	(0x120)
 #define OS_SCANCODE_WWW_STARRED	(0x118)
 
-#define OS_ICON_NONE 		(0)
-#define OS_ICON_FILE 		(1)
-#define OS_ICON_FOLDER 		(2)
-#define OS_ICON_ERROR 		(3)
-#define OS_ICON_FORWARD		(4)
-#define OS_ICON_BACK 		(5)
-#define OS_ICON_PARENT		(6)
-#define OS_ICON_BOOKMARK	(7)
+#define OS_ICON_NONE 			(0)
+#define OS_ICON_FILE 			(1)
+#define OS_ICON_FOLDER 			(2)
+#define OS_ICON_ERROR 			(3)
+#define OS_ICON_FORWARD			(4)
+#define OS_ICON_BACK 			(5)
+#define OS_ICON_PARENT			(6)
+#define OS_ICON_BOOKMARK		(7)
+#define OS_ICON_ROTATE_CLOCKWISE 	(8)
+#define OS_ICON_ROTATE_ANTI_CLOCKWISE 	(9)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -1000,6 +1002,7 @@ OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);
+OS_EXTERN_C void OSRepaintControl(OSObject object);
 
 OS_EXTERN_C OSObject OSCreateBlankControl(int width, int height, bool drawParentBackground, bool ignoreActivationClicks, bool focusable, OSCursorStyle cursor);
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);

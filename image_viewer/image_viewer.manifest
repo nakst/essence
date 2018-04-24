@@ -11,3 +11,17 @@ height = 600;
 minimumWidth = 300;
 minimumHeight = 200;
 title = "Image Viewer";
+
+[command commandRotateClockwise]
+label = "Rotate clockwise";
+defaultDisabled = true;
+callback = CommandRotate;
+callbackArgument = COMMAND_ROTATE_CLOCKWISE;
+iconID = OS_ICON_ROTATE_CLOCKWISE;
+
+[command commandRotateAntiClockwise]
+label = "Rotate anti-clockwise";
+defaultDisabled = true;
+callback = CommandRotate;
+callbackArgument = COMMAND_ROTATE_ANTI_CLOCKWISE;
+iconID = OS_ICON_ROTATE_ANTI_CLOCKWISE;
