@@ -990,6 +990,9 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 #define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_CELL_FILL)
 
+OS_EXTERN_C void OSStartGUIAllocationBlock(size_t bytes);
+OS_EXTERN_C size_t OSEndGUIAllocationBlock();
+
 OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,

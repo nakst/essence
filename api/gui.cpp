@@ -58,7 +58,6 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Menus and list view navigation.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
 // TODO Menu icons.
-// TODO Memory "arenas".
 // TODO Multiple-cell positions.
 // TODO Wrapping.
 // TODO Scrolling in textboxes.
@@ -568,6 +567,69 @@ struct OpenMenu {
 
 static OpenMenu openMenus[8];
 static unsigned openMenuCount;
+
+struct GUIAllocationBlock {
+	size_t allocationCount;
+	size_t totalBytes;
+	size_t allocatedBytes;
+};
+
+static GUIAllocationBlock *guiAllocationBlock;
+
+void OSStartGUIAllocationBlock(size_t bytes) {
+	guiAllocationBlock = (GUIAllocationBlock *) OSHeapAllocate(bytes + sizeof(GUIAllocationBlock), false);
+	guiAllocationBlock->allocationCount = 0;
+	guiAllocationBlock->totalBytes = bytes;
+	guiAllocationBlock->allocatedBytes = 0;
+}
+
+size_t OSEndGUIAllocationBlock() {
+	size_t allocatedBytes = guiAllocationBlock->allocatedBytes;
+
+	// OSPrint("End GUI block %x, using %d/%d bytes (%d allocations).\n", guiAllocationBlock, allocatedBytes, guiAllocationBlock->totalBytes, guiAllocationBlock->allocationCount);
+
+	if (!guiAllocationBlock->allocationCount) {
+		OSHeapFree(guiAllocationBlock);
+	}
+
+	guiAllocationBlock = nullptr;
+	return allocatedBytes;
+}
+
+static void *GUIAllocate(size_t bytes, bool clear) {
+	bytes += 8;
+
+	if (guiAllocationBlock) {
+		guiAllocationBlock->allocatedBytes += bytes;
+
+		if (guiAllocationBlock->allocatedBytes < guiAllocationBlock->totalBytes) {
+			guiAllocationBlock->allocationCount++;
+			uintptr_t *a = (uintptr_t *) (((uint8_t *) (guiAllocationBlock + 1)) + guiAllocationBlock->allocatedBytes - bytes);
+			*a = (uintptr_t) guiAllocationBlock;
+			return a + 1;
+		}
+	}
+
+	uintptr_t *a = (uintptr_t *) OSHeapAllocate(bytes, clear);
+	*a = (uintptr_t) -1;
+	return a + 1;
+}
+
+static void GUIFree(void *address) {
+	uintptr_t *a = (uintptr_t *) address - 1;
+
+	if (*a == (uintptr_t) -1) {
+		OSHeapFree(a);
+	} else {
+		GUIAllocationBlock *block = (GUIAllocationBlock *) *a;
+		block->allocationCount--;
+
+		if (block->allocationCount == 0) {
+			// OSPrint("Freeing GUI block %x\n", block);
+			OSHeapFree(block);
+		}
+	}
+}
 
 static bool ClipRectangle(OSRectangle parent, OSRectangle rectangle, OSRectangle *output) {
 	OSRectangle current = parent;
@@ -1085,7 +1147,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (control->window->focus == control) OSRemoveFocusedControl(control->window, true);
 
 			OSHeapFree(control->text.buffer);
-			OSHeapFree(control);
+			GUIFree(control);
 		} break;
 
 		case OS_MESSAGE_HIT_TEST: {
@@ -1231,7 +1293,7 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 }
 
 static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
-	WindowResizeControl *control = (WindowResizeControl *) OSHeapAllocate(sizeof(WindowResizeControl), true);
+	WindowResizeControl *control = (WindowResizeControl *) GUIAllocate(sizeof(WindowResizeControl), true);
 	control->type = API_OBJECT_CONTROL;
 	control->backgrounds = images;
 	control->preferredWidth = images[0]->region.right - images[0]->region.left;
@@ -1753,7 +1815,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 }
 
 OSObject OSCreateTextbox(OSTextboxStyle style) {
-	Textbox *control = (Textbox *) OSHeapAllocate(sizeof(Textbox), true);
+	Textbox *control = (Textbox *) GUIAllocate(sizeof(Textbox), true);
 
 	control->type = API_OBJECT_CONTROL;
 	control->tabStop = true;
@@ -1847,7 +1909,7 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 }
 
 OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->tabStop = true;
 
@@ -2586,7 +2648,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 }
 
 OSObject OSCreateListView(unsigned flags) {
-	ListView *control = (ListView *) OSHeapAllocate(sizeof(ListView), true);
+	ListView *control = (ListView *) GUIAllocate(sizeof(ListView), true);
 	control->type = API_OBJECT_CONTROL;
 	control->flags = flags;
 	control->tabStop = true;
@@ -2679,7 +2741,7 @@ void OSListViewInvalidate(OSObject _listView, int32_t index, int32_t count) {
 }
 
 static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
-	MenuItem *control = (MenuItem *) OSHeapAllocate(sizeof(MenuItem), true);
+	MenuItem *control = (MenuItem *) GUIAllocate(sizeof(MenuItem), true);
 	control->type = API_OBJECT_CONTROL;
 
 	control->preferredWidth = !menubar ? 70 : 21;
@@ -2733,7 +2795,7 @@ OSCallbackResponse ProcessMenuSeparatorMessage(OSObject object, OSMessage *messa
 }
 
 OSObject CreateMenuSeparator() {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->drawParentBackground = true;
 	control->preferredWidth = 1;
@@ -2743,7 +2805,7 @@ OSObject CreateMenuSeparator() {
 }
 
 OSObject OSCreateLine(bool orientation) {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->backgrounds = orientation ? lineVerticalBackgrounds : lineHorizontalBackgrounds;
 	control->drawParentBackground = true;
@@ -2771,7 +2833,7 @@ static OSCallbackResponse ProcessIconDisplayMessage(OSObject _object, OSMessage 
 }
 
 OSObject OSCreateIconDisplay(uint16_t iconID) {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->drawParentBackground = true;
 	control->preferredWidth = 32;
@@ -2782,7 +2844,7 @@ OSObject OSCreateIconDisplay(uint16_t iconID) {
 }
 
 OSObject OSCreateLabel(char *text, size_t textBytes) {
-	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->drawParentBackground = true;
 	control->textAlign = OS_DRAW_STRING_HALIGN_LEFT;
@@ -2868,7 +2930,7 @@ void OSSetProgressBarValue(OSObject _control, int newValue) {
 }
 
 OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small) {
-	ProgressBar *control = (ProgressBar *) OSHeapAllocate(sizeof(ProgressBar), true);
+	ProgressBar *control = (ProgressBar *) GUIAllocate(sizeof(ProgressBar), true);
 
 	control->type = API_OBJECT_CONTROL;
 
@@ -3276,7 +3338,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				OSSendMessage(grid->objects[i], message);
 			}
 
-			OSHeapFree(grid);
+			GUIFree(grid);
 		} break;
 
 		case OS_MESSAGE_MOUSE_MOVED: {
@@ -3373,7 +3435,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 }
 
 OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
-	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + 2 * sizeof(int) * (columns + rows), true);
+	uint8_t *memory = (uint8_t *) GUIAllocate(sizeof(Grid) + sizeof(OSObject) * columns * rows + 2 * sizeof(int) * (columns + rows), true);
 
 	Grid *grid = (Grid *) memory;
 	grid->type = API_OBJECT_GRID;
@@ -3886,7 +3948,7 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 }
 
 OSObject OSCreateScrollbar(bool orientation) {
-	uint8_t *memory = (uint8_t *) OSHeapAllocate(sizeof(Scrollbar) + sizeof(OSObject) * 5, true);
+	uint8_t *memory = (uint8_t *) GUIAllocate(sizeof(Scrollbar) + sizeof(OSObject) * 5, true);
 
 	Scrollbar *scrollbar = (Scrollbar *) memory;
 	scrollbar->type = API_OBJECT_GRID;
@@ -3904,7 +3966,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	command.defaultDisabled = true;
 	command.identifier = OS_COMMAND_DYNAMIC;
 
-	Control *nudgeUp = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *nudgeUp = (Control *) GUIAllocate(sizeof(Control), true);
 	nudgeUp->type = API_OBJECT_CONTROL;
 	nudgeUp->context = scrollbar;
 	nudgeUp->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_UP);
@@ -3912,7 +3974,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	OSSetCallback(nudgeUp, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
-	Control *nudgeDown = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *nudgeDown = (Control *) GUIAllocate(sizeof(Control), true);
 	nudgeDown->type = API_OBJECT_CONTROL;
 	nudgeDown->context = scrollbar;
 	nudgeDown->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
@@ -3928,7 +3990,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	up->centerIcons = true;
 	up->focusable = false;
 
-	Control *grip = (Control *) OSHeapAllocate(sizeof(Control), true);
+	Control *grip = (Control *) GUIAllocate(sizeof(Control), true);
 	grip->type = API_OBJECT_CONTROL;
 	grip->context = scrollbar;
 	grip->backgrounds = orientation ? scrollbarButtonVerticalBackgrounds : scrollbarButtonHorizontalBackgrounds;
@@ -4517,10 +4579,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
 			if (!window->hasMenuParent) {
-				OSHeapFree(window->commands);
+				GUIFree(window->commands);
 			}
 
-			OSHeapFree(window);
+			GUIFree(window);
 			return response;
 		} break;
 
@@ -4884,7 +4946,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 		specification->minimumHeight += totalBorderHeight;
 	}
 
-	Window *window = (Window *) OSHeapAllocate(sizeof(Window), true);
+	Window *window = (Window *) GUIAllocate(sizeof(Window), true);
 	window->type = API_OBJECT_WINDOW;
 
 	OSRectangle bounds;
@@ -4906,7 +4968,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->defaultCommand = specification->defaultCommand;
 
 	if (!menuParent) {
-		window->commands = (CommandWindow *) OSHeapAllocate(sizeof(CommandWindow) * _commandCount, true);
+		window->commands = (CommandWindow *) GUIAllocate(sizeof(CommandWindow) * _commandCount, true);
 
 		for (uintptr_t i = 0; i < _commandCount; i++) {
 			CommandWindow *command = window->commands + i;

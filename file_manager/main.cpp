@@ -760,6 +760,8 @@ void Instance::Initialise() {
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
 
+	OSStartGUIAllocationBlock(16384);
+
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);
 
@@ -812,6 +814,8 @@ void Instance::Initialise() {
 
 	LoadFolder(OSLiteral("/"));
 	OSSetFocusedControl(folderListing, true);
+
+	OSEndGUIAllocationBlock();
 }
 
 void ProgramEntry() {
