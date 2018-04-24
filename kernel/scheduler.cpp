@@ -17,6 +17,7 @@ struct Semaphore {
 	Event available;
 	Mutex mutex;
 	volatile uintptr_t units;
+	uintptr_t lastTaken;
 };
 
 struct Timer {
@@ -1309,6 +1310,8 @@ void Semaphore::Take(uintptr_t u) {
 		if (units) { units--; u--; }
 		if (!units && available.state) available.Reset();
 		mutex.Release();
+
+		lastTaken = (uintptr_t) __builtin_return_address(0);
 	}
 }
 

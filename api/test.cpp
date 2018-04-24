@@ -711,6 +711,7 @@ extern "C" void ProgramEntry() {
 		if (error11 != OS_ERROR_FILE_IN_EXCLUSIVE_USE) OSCrashProcess(130);
 	}
 
+#if 0
 	{
 		char *path = (char *) "/OS/test.txt";
 		OSNodeInformation node;
@@ -738,6 +739,7 @@ extern "C" void ProgramEntry() {
 
 		// OSCreateWindow((char *) "Test Program", 12, 320, 200, 0);
 	}
+#endif
 
 	{
 		OSHandle region = OSOpenSharedMemory(512 * 1024 * 1024, nullptr, 0, 0);

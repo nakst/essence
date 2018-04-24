@@ -165,26 +165,21 @@ extern "C" void ProgramEntry() {
 	OSInitialiseGUI();
 	OSRedrawAll();
 
-#if 0
+#if 1
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/Calculator.esx"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/Test.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/Test.esx"), &process, nullptr);
 		OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/Image Viewer.esx"), &process, nullptr);
 	}
 #else
 	{
 		for (int i = 0; i < 1; i++) {
 			// const char *path = "/OS/Calculator.esx";
-			// const char *path = "/OS/Test.esx";
+			const char *path = "/OS/Test.esx";
 			// const char *path = "/OS/File Manager.esx";
-			const char *path = "/OS/Image Viewer.esx";
+			// const char *path = "/OS/Image Viewer.esx";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

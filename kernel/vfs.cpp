@@ -153,7 +153,9 @@ OSError Node::Delete() {
 	semaphore.Take();
 	Defer(semaphore.Return());
 
-	if (deleted) return OS_ERROR_NODE_ALREADY_DELETED;
+	if (deleted) {
+		return OS_ERROR_NODE_ALREADY_DELETED;
+	}
 
 	if (data.type == OS_NODE_DIRECTORY && data.directory.entryCount) {
 		return OS_ERROR_DIRECTORY_NOT_EMPTY;
@@ -163,7 +165,9 @@ OSError Node::Delete() {
 
 	switch (filesystem->type) {
 		case FILESYSTEM_ESFS: {
-			if (EsFSRemove(this)) result = OS_SUCCESS;
+			if (EsFSRemove(this)) {
+				result = OS_SUCCESS;
+			}
 		} break;
 
 		default: {
@@ -212,16 +216,16 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 
 	// Eww....
 
-	if (!takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Take();
-	Defer(if (!takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Return());
-
 	Node *oldDirectory = parent;
+
+	if (!takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Take();
+	Defer(if (!takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Return());
 
 	oldDirectory->semaphore.Take();
 	Defer(oldDirectory->semaphore.Return());
 
-	if (takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Take();
-	Defer(if (takeSemaphoreOnParentFirst && parent != newDirectory) newDirectory->semaphore.Return());
+	if (takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Take();
+	Defer(if (takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Return());
 
 	semaphore.Take();
 	Defer(semaphore.Return());
