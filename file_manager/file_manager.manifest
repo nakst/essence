@@ -15,6 +15,7 @@ title = "File Manager";
 [command commandNavigatePath]
 callback = CommandNavigate;
 callbackArgument = COMMAND_NAVIGATE_PATH;
+textbox;
 
 [command commandNavigateBackwards]
 label = "Back";

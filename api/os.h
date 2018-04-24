@@ -881,6 +881,14 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
 #define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
 
+#define OS_SLIDER_MODE_HORIZONTAL       (1)
+#define OS_SLIDER_MODE_VERTICAL         (2)
+#define OS_SLIDER_MODE_TICKS_LEFT       (4)
+#define OS_SLIDER_MODE_TICKS_ABOVE      (4)
+#define OS_SLIDER_MODE_TICKS_RIGHT      (8)
+#define OS_SLIDER_MODE_TICKS_BENEATH    (8)
+#define OS_SLIDER_MODE_TICKS_BOTH_SIDES (16)
+
 OS_EXTERN_C void OSInitialiseAPI();
 
 OS_EXTERN_C void OSBatch(OSBatchCall *calls, size_t count); 
@@ -1013,6 +1021,7 @@ OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small);
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
+OS_EXTERN_C OSObject OSCreateSlider(int minimum, int maximum, int initialValue, int mode, int minorTickSpacing, int majorTickSpacing);
 #define OSCreateIndeterminateProgressBar(small) OSCreateProgressBar(0, 0, 0, small)
 
 OS_EXTERN_C void OSSetFocusedControl(OSObject control, bool asDefaultForWindow);

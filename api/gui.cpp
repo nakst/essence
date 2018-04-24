@@ -204,6 +204,10 @@ static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal
 static UIImage lineVertical		= {{35, 36, 110, 122}, {35, 35, 111, 111}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
+static UIImage sliderBox = {{208, 212, 145, 149}, {210, 211, 146, 147}};
+static UIImage tickHorizontal = {{208, 213, 151, 153}, {209, 211, 151, 153}};
+static UIImage tickVertical = {{209, 211, 155, 160}, {209, 211, 156, 158}};
+
 // static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
 
 static struct UIImage *scrollbarTrackVerticalBackgrounds[] = { 
@@ -483,6 +487,10 @@ struct Textbox : Control {
 
 struct ProgressBar : Control {
 	int minimum, maximum, value;
+};
+
+struct Slider : Control {
+	int minimum, maximum, value, minorTickSpacing, majorTickSpacing, mode;
 };
 
 struct WindowResizeControl : Control {
@@ -2976,6 +2984,32 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool sm
 	}
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessProgressBarMessage, nullptr));
+
+	return control;
+}
+
+OSObject OSCreateSlider(int minimum, int maximum, int initialValue, 
+		int mode, int minorTickSpacing, int majorTickSpacing) {
+	Slider *control = (Slider *) GUIAllocate(sizeof(Slider), true);
+
+	control->type = API_OBJECT_CONTROL;
+
+	control->minimum = minimum;
+	control->maximum = maximum;
+	control->value = initialValue;
+	control->mode = mode;
+	control->minorTickSpacing = minorTickSpacing;
+	control->majorTickSpacing = majorTickSpacing;
+
+	if (mode & OS_SLIDER_MODE_HORIZONTAL) {
+		control->preferredWidth = 168;
+		control->preferredHeight = 28;
+	} else {
+		control->preferredHeight = 168;
+		control->preferredWidth = 28;
+	}
+
+	// OSSetCallback(control, OS_MAKE_CALLBACK(ProcessSliderMessage, nullptr));
 
 	return control;
 }
