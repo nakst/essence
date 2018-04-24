@@ -1104,7 +1104,7 @@ void AddFile(char *path, char *name, uint16_t type) {
 	{
 		EsFSLoadInformation temp;
 		if (SearchDirectory(fileEntry, nullptr, name, strlen(name), &temp)) {
-			printf("Error: File already exists in the directory.\n");
+			printf("Error: File already exists in the directory (%s).\n", name);
 			exit(1);
 		}
 	}
@@ -1475,6 +1475,18 @@ void Import(char *target, char *source) {
 	if (d) {
 		while ((dir = readdir(d))) {
 			if (dir->d_name[0] != '.') {
+				size_t length = strlen(dir->d_name);
+
+				if (length > 12) {
+					if (0 == strcmp(dir->d_name + length - 12, ".esx_symbols")) {
+						goto next;
+					}
+
+					if (0 == strcmp(dir->d_name + length - 11, ".manifest.h")) {
+						goto next;
+					}
+				}
+
 				sprintf(nameBuffer1, "%s%s", target, dir->d_name);
 				sprintf(nameBuffer2, "%s%s", source, dir->d_name);
 
@@ -1506,6 +1518,8 @@ void Import(char *target, char *source) {
 					}
 				}
 			}
+
+			next:;
 		}
 
 		closedir(d);

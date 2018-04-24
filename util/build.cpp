@@ -68,9 +68,10 @@ void Build(bool enableOptimisations, bool compile = true) {
 	printf("Removing temporary files...\n");
 	system("rm bin/mbr");
 	system("rm bin/stage1");
+	system("rm bin/stage2");
 
 	printf("Formatting drive...\n");
-	system("./esfs drive 2048 format 66060288 \"Essence HD\" bin/OS/kernel");
+	system("./esfs drive 2048 format 66060288 \"Essence HD\" bin/OS/Kernel.esx");
 	sprintf(buffer, "./esfs drive 2048 set-installation %s", installationIdentifier);
 	system(buffer);
 

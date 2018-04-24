@@ -34,17 +34,17 @@ dangerous = true;
 [command commandLaunchCalculator]
 label = "Calculator";
 callback = Launch;
-callbackArgument = "/OS/calculator";
+callbackArgument = "/OS/Calculator.esx";
 
 [command commandLaunchFileManager]
 label = "File Manager";
 callback = Launch;
-callbackArgument = "/OS/file_manager";
+callbackArgument = "/OS/File Manager.esx";
 
 [menu menuPrograms]
 commandLaunchCalculator;
 commandLaunchFileManager;
 
 [build]
-output = test;
+output = "Test.esx";
 source = "api/test.cpp";

@@ -2,7 +2,7 @@
 name = "Calculator";
 
 [build]
-output = calculator;
+output = "Calculator.esx";
 source = "calculator/main.cpp";
 
 [window mainWindow]

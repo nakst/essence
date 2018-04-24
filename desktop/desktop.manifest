@@ -2,5 +2,5 @@
 name = "Desktop";
 
 [build]
-output = desktop;
+output = "Desktop.esx";
 source = "desktop/main.cpp";

@@ -168,22 +168,22 @@ extern "C" void ProgramEntry() {
 #if 0
 	{
 		OSProcessInformation process;
-		OSCreateProcess(OSLiteral("/OS/calculator"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/test"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/file_manager"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/Calculator.esx"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/Test.esx"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
 	}
 #else
 	{
 		for (int i = 0; i < 1; i++) {
-			// const char *path = "/OS/calculator";
-			// const char *path = "/OS/test";
-			const char *path = "/OS/file_manager";
+			// const char *path = "/OS/Calculator.esx";
+			// const char *path = "/OS/Test.esx";
+			const char *path = "/OS/File Manager.esx";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

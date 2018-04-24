@@ -2,7 +2,7 @@
 name = "File Manager";
 
 [build]
-output = file_manager;
+output = "File Manager.esx";
 source = "file_manager/main.cpp";
 
 [window mainWindow]

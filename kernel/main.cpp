@@ -15,7 +15,7 @@ void KernelInitialisation() {
 	deviceManager.Initialise();
 	windowManager.Initialise();
 
-	char *desktop = (char *) "/OS/desktop";
+	char *desktop = (char *) "/OS/Desktop.esx";
 	desktopProcess = scheduler.SpawnProcess(desktop, CStringLength(desktop));
 
 	scheduler.TerminateThread(GetCurrentThread());

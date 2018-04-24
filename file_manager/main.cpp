@@ -366,6 +366,42 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 	}
 }
 
+const char *GetFileType(char *name, size_t bytes) {
+	int lastSeparator = 0;
+
+	for (intptr_t i = bytes - 1; i >= 0; i--) {
+		if (name[i] == '.') {
+			lastSeparator = i;
+			break;
+		}
+	}
+
+	name += lastSeparator;
+	bytes -= lastSeparator;
+
+#define MATCH_EXTENSION(a) (OSCStringLength(name) == bytes && 0 == OSCompareBytes((void *) (a), name, bytes))
+
+	if (MATCH_EXTENSION(".esx")) {
+		return "Executable";
+	} else if (MATCH_EXTENSION(".esx_symbols")) {
+		return "Debugger data";
+	} else if (MATCH_EXTENSION(".png")) {
+		return "PNG image";
+	} else if (MATCH_EXTENSION(".jpg")) {
+		return "JPG image";
+	} else if (MATCH_EXTENSION(".ttf")) {
+		return "TTF font";
+	} else if (MATCH_EXTENSION(".a")) {
+		return "Static library";
+	} else if (MATCH_EXTENSION(".h")) {
+		return "C/C++ header";
+	} else if (MATCH_EXTENSION(".txt")) {
+		return "Plain text";
+	} else {
+		return "File";
+	}
+}
+
 OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *message) {
 	Instance *instance = (Instance *) message->context;
 	(void) object;
@@ -393,7 +429,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 					case COLUMN_TYPE: {
 						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
-								"%z", data->information.type == OS_NODE_FILE ? "File" : "Directory");
+								"%z", data->information.type == OS_NODE_FILE ? GetFileType(data->name, data->nameLengthBytes) : "Folder");
 					} break;
 
 					case COLUMN_SIZE: {
@@ -820,7 +856,6 @@ void Instance::Initialise() {
 
 void ProgramEntry() {
 	global.AddBookmark(OSLiteral("/OS"));
-	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
 	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
 	OSProcessMessages();
 }
