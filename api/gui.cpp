@@ -56,14 +56,13 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // TODO Keyboard controls.
 // 	- Access keys.
 // 	- Menus and list view navigation.
-// TODO Scrollbar buttons and checkboxes are broken.
 // TODO Send repeat messages for held left press? Scrollbar buttons, scrollbar nudges, scroll-selections.
-// TODO Minor menu[bar] border adjustments; menu icons.
+// TODO Menu icons.
 // TODO Memory "arenas".
 // TODO Multiple-cell positions.
 // TODO Wrapping.
 // TODO Scrolling in textboxes.
-// TODO Right-clicking on textboxes still doesn't always position the cursor as desired.
+// TODO Dragging and right-clicking in list views.
 
 struct UIImage {
 	OSRectangle region;
@@ -130,9 +129,10 @@ static UIImage inactiveDialogBorder41	= {{16 + 1, 16 + 1 + 3, 181, 181 + 3}, 	{1
 static UIImage inactiveDialogBorder42	= {{5, 5 + 1, 189, 189 + 3}, 	{5, 5 + 1, 189, 189}};
 static UIImage inactiveDialogBorder43	= {{16 + 10 + 3, 16 + 10 + 3 + 3, 181, 181 + 3}, {16 + 10 + 3, 16 + 10 + 3, 181, 181}};
 
-static UIImage progressBarBackground 	= {{1, 8, 122, 143}, {3, 6, 125, 139}};
-static UIImage progressBarDisabled   	= {{9, 16, 122, 143}, {11, 14, 125, 139}};
-static UIImage progressBarPellet     	= {{18, 26, 128, 143}, {18, 18, 128, 128}};
+static UIImage progressBarBackground 	= {{34, 62, 0, 16}, {36, 60, 8, 14}, OS_DRAW_MODE_STRECH};
+static UIImage progressBarDisabled 	= {{29 + 34, 29 + 62, 0, 16}, {29 + 36, 29 + 60, 8, 14}, OS_DRAW_MODE_STRECH};
+static UIImage progressBarFilled 	= {{1 + 29 + 29 + 34, 29 + 29 + 62 - 1, 1, 15}, {29 + 29 + 36, 29 + 29 + 60, 8, 14}, OS_DRAW_MODE_STRECH};
+static UIImage progressBarMarquee 	= {{95, 185, 17, 30}, {95, 185, 24, 29}, OS_DRAW_MODE_STRECH};
 
 static UIImage buttonNormal		= {{0 * 9 + 0, 0 * 9 + 8, 88, 109}, {0 * 9 + 3, 0 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 static UIImage buttonDisabled		= {{1 * 9 + 0, 1 * 9 + 8, 88, 109}, {1 * 9 + 3, 1 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
@@ -143,7 +143,7 @@ static UIImage buttonDangerousHover	= {{5 * 9 + 0, 5 * 9 + 8, 88, 109}, {5 * 9 +
 static UIImage buttonDangerousPressed	= {{6 * 9 + 0, 6 * 9 + 8, 88, 109}, {6 * 9 + 3, 6 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 static UIImage buttonDangerousFocused	= {{7 * 9 + 0, 7 * 9 + 8, 88, 109}, {7 * 9 + 3, 7 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 
-static UIImage checkboxHover		= {{99, 112, 242, 255}, {99, 100, 242, 243}};
+static UIImage checkboxHover		= {{48, 61, 242, 255}, {48, 49, 242, 243}};
 
 static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
 static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
@@ -200,9 +200,9 @@ static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 
 static UIImage listViewColumnHeaderDivider = {{239, 240, 87, 112}, {239, 239, 87, 88}};
 static UIImage listViewColumnHeader        = {{233, 239, 87, 112}, {233, 239, 87, 88}};
 
-static UIImage lineHorizontal		= {{40, 52, 115, 116}, {41, 42, 115, 115}};
+static UIImage lineHorizontal		= {{40, 52, 115, 116}, {41, 41, 115, 115}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
-static UIImage lineVertical		= {{35, 36, 110, 122}, {35, 35, 111, 112}};
+static UIImage lineVertical		= {{35, 36, 110, 122}, {35, 35, 111, 111}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
 // static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
@@ -322,14 +322,6 @@ static UIImage *buttonDangerousBackgrounds[] = {
 	&buttonDangerousFocused,
 };
 
-static UIImage *progressBarBackgrounds[] = {
-	&progressBarBackground,
-	&progressBarDisabled,
-	&progressBarBackground,
-	&progressBarBackground,
-	&progressBarBackground,
-};
-
 static UIImage *windowBorder11[] = {&activeWindowBorder11, &inactiveWindowBorder11, &activeWindowBorder11, &activeWindowBorder11, &activeWindowBorder11};
 static UIImage *windowBorder12[] = {&activeWindowBorder12, &inactiveWindowBorder12, &activeWindowBorder12, &activeWindowBorder12, &activeWindowBorder12};
 static UIImage *windowBorder13[] = {&activeWindowBorder13, &inactiveWindowBorder13, &activeWindowBorder13, &activeWindowBorder13, &activeWindowBorder13};
@@ -380,7 +372,7 @@ static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint1
 #define DESCENDENT_RELAYOUT (2)
 
 struct Control : GUIObject {
-	// Current size: ~260 bytes.
+	// Current size: ~290 bytes.
 	// Is this too big?
 	
 	struct Window *window;
@@ -424,6 +416,7 @@ struct Control : GUIObject {
 		hasFocusedBackground : 1,
 		centerIcons : 1,
 		iconHasVariants : 1,
+		iconHasFocusVariant : 1,
 
 		keepCustomCursorWhenDisabled : 1,
 		cursor : 5;
@@ -995,7 +988,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						bounds.bottom = bounds.top + icon->region.bottom - icon->region.top;
 					}
 
-					uintptr_t offset = (control->isChecked && control->additionalCheckedIcons) ? 4 : 0;
+					uintptr_t offset = (control->isChecked && control->additionalCheckedIcons) ? (control->iconHasFocusVariant ? 5 : 4) : 0;
 
 					if (control->current1 || !control->iconHasVariants) {
 						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * (0 + offset), 0);
@@ -1019,6 +1012,12 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * (1 + offset), 0);
 						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
 								icon.border, icon.drawMode, control->current4 == 15 ? 0xFF : 0xF * control->current4, message->paint.clip);
+					}
+
+					if (control->current5 && control->iconHasVariants) {
+						UIImage icon = control->icon->Translate((control->icon->region.right - control->icon->region.left) * ((control->iconHasFocusVariant ? 4 : 3) + offset), 0);
+						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, icon.region,
+								icon.border, icon.drawMode, control->current5 == 15 ? 0xFF : 0xF * control->current5, message->paint.clip);
 					}
 				}
 
@@ -1194,27 +1193,32 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 		if (newHeight < window->minimumHeight && control->direction & RESIZE_TOP) bounds.top = bounds.bottom - window->minimumHeight;
 		if (newHeight < window->minimumHeight && control->direction & RESIZE_BOTTOM) bounds.bottom = bounds.top + window->minimumHeight;
 
+		bool relayout = true;
+
 		if (control->direction == RESIZE_MOVE) {
 			bounds.left = message->mouseDragged.newPositionXScreen - message->mouseDragged.originalPositionX;
 			bounds.top = message->mouseDragged.newPositionYScreen - message->mouseDragged.originalPositionY;
 			bounds.right = bounds.left + oldWidth;
 			bounds.bottom = bounds.top + oldHeight;
+			relayout = false;
 		}
 		
 		OSSyscall(OS_SYSCALL_MOVE_WINDOW, window->window, (uintptr_t) &bounds, 0, 0);
 
-		window->width = bounds.right - bounds.left;
-		window->height = bounds.bottom - bounds.top;
-
-		OSMessage layout;
-		layout.type = OS_MESSAGE_LAYOUT;
-		layout.layout.left = 0;
-		layout.layout.top = 0;
-		layout.layout.right = window->width;
-		layout.layout.bottom = window->height;
-		layout.layout.force = true;
-		layout.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
-		OSSendMessage(window->root, &layout);
+		if (relayout) {
+			window->width = bounds.right - bounds.left;
+			window->height = bounds.bottom - bounds.top;
+		
+			OSMessage layout;
+			layout.type = OS_MESSAGE_LAYOUT;
+			layout.layout.left = 0;
+			layout.layout.top = 0;
+			layout.layout.right = window->width;
+			layout.layout.bottom = window->height;
+			layout.layout.force = true;
+			layout.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
+			OSSendMessage(window->root, &layout);
+		}
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
 		control->textBounds = control->bounds;
 		control->textBounds.top -= 3;
@@ -1403,7 +1407,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				&control->text, control->textAlign, control->textColor, -1, control->window->focus == control ? TEXTBOX_SELECTED_COLOR_1 : TEXTBOX_SELECTED_COLOR_2,
 				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
-				control->window->lastFocus != control || control->caretBlink,
+				control->window->focus != control || control->caretBlink || control->disabled,
 				control->textSize, fontRegular, message->paint.clip, 0);
 
 #if 0
@@ -1775,7 +1779,7 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, Window 
 	if (!window) window = control->window;
 	if (!command) command = control->command;
 
-	if (window->commands[command->identifier].disabled) {
+	if (control ? (control->disabled) : (window->commands[command->identifier].disabled)) {
 		return;
 	}
 
@@ -1880,6 +1884,7 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 			control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
 			control->icon = &checkboxHover;
 			control->iconHasVariants = true;
+			control->iconHasFocusVariant = true;
 			control->additionalCheckedIcons = true;
 		} else {
 			control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
@@ -2709,6 +2714,34 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	return control;
 }
 
+OSCallbackResponse ProcessMenuSeparatorMessage(OSObject object, OSMessage *message) {
+	Control *control = (Control *) object;
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
+		OSDrawSurface(message->paint.surface, OS_SURFACE_UI_SHEET, 
+				OS_MAKE_RECTANGLE(control->bounds.left, control->bounds.right + 1, control->bounds.top + 1, control->bounds.bottom - 1),
+				lineHorizontal.region, lineHorizontal.border, lineHorizontal.drawMode, 0xFF);
+		response = OS_CALLBACK_HANDLED;
+	}
+
+	if (response == OS_CALLBACK_NOT_HANDLED) {
+		response = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	return response;
+}
+
+OSObject CreateMenuSeparator() {
+	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+	control->drawParentBackground = true;
+	control->preferredWidth = 1;
+	control->preferredHeight = 3;
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuSeparatorMessage, nullptr));
+	return control;
+}
+
 OSObject OSCreateLine(bool orientation) {
 	Control *control = (Control *) OSHeapAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
@@ -2761,10 +2794,12 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 }
 
 static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage *message) {
-	OSCallbackResponse response = OS_CALLBACK_HANDLED;
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 	ProgressBar *control = (ProgressBar *) _object;
 
 	if (message->type == OS_MESSAGE_PAINT) {
+		response = OS_CALLBACK_HANDLED;
+
 		if (control->repaint || message->paint.force) {
 			{
 				OSMessage m = *message;
@@ -2780,41 +2815,28 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 
 			if (control->disabled) {
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->backgrounds[1]->region, control->backgrounds[1]->border, control->backgrounds[1]->drawMode, 0xFF, message->paint.clip);
+						progressBarDisabled.region, progressBarDisabled.border, progressBarDisabled.drawMode, 0xFF, message->paint.clip);
 			} else {
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->bounds, 
-						control->backgrounds[0]->region, control->backgrounds[0]->border, control->backgrounds[0]->drawMode, 0xFF, message->paint.clip);
-
-				int pelletCount = (control->bounds.right - control->bounds.left - 6) / 9;
+						progressBarBackground.region, progressBarBackground.border, progressBarBackground.drawMode, 0xFF, message->paint.clip);
 
 				if (control->maximum) {
 					float progress = (float) (control->value - control->minimum) / (float) (control->maximum - control->minimum);
+					OSRectangle filled = OS_MAKE_RECTANGLE(
+							control->bounds.left + 1, control->bounds.left + 1 + (int) (progress * (control->bounds.right - control->bounds.left - 2)),
+							control->bounds.top + 1, control->bounds.bottom - 1);
 
-					pelletCount *= progress;
-
-					for (int i = 0; i < pelletCount; i++) {
-						OSRectangle bounds = control->bounds;
-						bounds.top += 3;
-						bounds.bottom = bounds.top + 15;
-						bounds.left += 3 + i * 9;
-						bounds.right = bounds.left + 8;
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, progressBarPellet.drawMode, 0xFF, message->paint.clip);
-					}
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, filled, 
+							progressBarFilled.region, progressBarFilled.border, progressBarFilled.drawMode, 0xFF, message->paint.clip);
 				} else {
-					if (control->value >= pelletCount) control->value -= pelletCount;
-
-					for (int i = 0; i < 4; i++) {
-						int j = i + control->value;
-						if (j >= pelletCount) j -= pelletCount;
-						OSRectangle bounds = control->bounds;
-						bounds.top += 3;
-						bounds.bottom = bounds.top + 15;
-						bounds.left += 3 + j * 9;
-						bounds.right = bounds.left + 8;
-						OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds,
-								progressBarPellet.region, progressBarPellet.border, progressBarPellet.drawMode, 0xFF, message->paint.clip);
-					}
+					OSRectangle clip;
+					ClipRectangle(message->paint.clip, OS_MAKE_RECTANGLE(control->bounds.left + 1, control->bounds.right - 1, control->bounds.top + 1, control->bounds.bottom - 1), &clip);
+					if (control->value >= control->bounds.right - control->bounds.left) control->value = -100;
+					OSRectangle marquee = OS_MAKE_RECTANGLE(
+							control->bounds.left + 1 + control->value, control->bounds.left + 101 + control->value,
+							control->bounds.top + 1, control->bounds.bottom - 1);
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, marquee, 
+							progressBarMarquee.region, progressBarMarquee.border, progressBarMarquee.drawMode, 0xFF, clip);
 				}
 			}
 
@@ -2822,12 +2844,17 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 			control->repaintCustomOnly = true;
 		}
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
-		OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
-		control->timerHz = 5;
-		control->window->timerControls.InsertStart(&control->timerControlItem);
+		if (!control->maximum) {
+			OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+			control->timerHz = 30;
+			control->window->timerControls.InsertStart(&control->timerControlItem);
+		}
 	} else if (message->type == OS_MESSAGE_WM_TIMER) {
-		OSSetProgressBarValue(control, control->value + 1);
-	} else {
+		response = OS_CALLBACK_HANDLED;
+		OSSetProgressBarValue(control, control->value + 2);
+	}
+
+	if (response == OS_CALLBACK_NOT_HANDLED) {
 		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
@@ -2840,24 +2867,22 @@ void OSSetProgressBarValue(OSObject _control, int newValue) {
 	OSRepaintControl(control);
 }
 
-OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue) {
+OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small) {
 	ProgressBar *control = (ProgressBar *) OSHeapAllocate(sizeof(ProgressBar), true);
 
 	control->type = API_OBJECT_CONTROL;
-	control->backgrounds = progressBarBackgrounds;
 
 	control->minimum = minimum;
 	control->maximum = maximum;
 	control->value = initialValue;
 
 	control->preferredWidth = 168;
-	control->preferredHeight = 21;
-
-	control->drawParentBackground = true;
+	control->preferredHeight = small ? 16 : 21;
 
 	if (!control->maximum) {
 		// Indeterminate progress bar.
 		control->timerControlItem.thisItem = control;
+		control->value = -50;
 	}
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessProgressBarMessage, nullptr));
@@ -3372,13 +3397,13 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 		} break;
 
 		case OS_GRID_STYLE_MENU: {
-			grid->borderSize = OS_MAKE_RECTANGLE_ALL(4);
+			grid->borderSize = OS_MAKE_RECTANGLE(4, 4, 3, 1);
 			grid->gapSize = 0;
 			grid->background = &menuBox;
 		} break;
 
 		case OS_GRID_STYLE_MENUBAR: {
-			grid->borderSize = OS_MAKE_RECTANGLE_ALL(0);
+			grid->borderSize = OS_MAKE_RECTANGLE(0, 0, -1, 2);
 			grid->gapSize = 0;
 			grid->background = &menubarBackground;
 		} break;
@@ -3901,6 +3926,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	up->icon = orientation ? &smallArrowUpNormal : &smallArrowLeftNormal;
 	up->iconHasVariants = true;
 	up->centerIcons = true;
+	up->focusable = false;
 
 	Control *grip = (Control *) OSHeapAllocate(sizeof(Control), true);
 	grip->type = API_OBJECT_CONTROL;
@@ -3915,6 +3941,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	down->icon = orientation ? &smallArrowDownNormal : &smallArrowRightNormal;
 	down->iconHasVariants = true;
 	down->centerIcons = true;
+	down->focusable = false;
 
 	OSAddControl(scrollbar, 0, 0, up, OS_CELL_H_EXPAND);
 	OSAddControl(scrollbar, 0, 1, grip, OS_CELL_V_EXPAND | OS_CELL_H_EXPAND);
@@ -3934,7 +3961,7 @@ void OSDisableControl(OSObject _control, bool disabled) {
 
 	OSAnimateControl(control, false);
 
-	if (control->window->focus) {
+	if (control->window->focus == control) {
 		OSRemoveFocusedControl(control->window, true);
 	}
 }
@@ -5004,12 +5031,12 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 	bool menubar = flags & OS_CREATE_MENUBAR;
 
 	Control *items[itemCount];
-	int width = 0, height = 8;
+	int width = 0, height = 7;
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
 		switch (menuSpecification->items[i].type) {
 			case OSMenuItem::SEPARATOR: {
-				items[i] = (Control *) OSCreateLine(menubar ? OS_ORIENTATION_VERTICAL : OS_ORIENTATION_HORIZONTAL);
+				items[i] = (Control *) CreateMenuSeparator();
 			} break;
 
 			case OSMenuItem::SUBMENU:

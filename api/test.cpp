@@ -787,7 +787,7 @@ extern "C" void ProgramEntry() {
 	window = OSCreateWindow(&ws);
 
 	OSObject b;
-	OSObject content = OSCreateGrid(4, 5, OS_GRID_STYLE_CONTAINER);
+	OSObject content = OSCreateGrid(4, 6, OS_GRID_STYLE_CONTAINER);
 	OSObject scrollPane = OSCreateScrollPane(content, OS_CREATE_SCROLL_PANE_VERTICAL | OS_CREATE_SCROLL_PANE_HORIZONTAL);
 	OSSetRootGrid(window, scrollPane);
 	OSAddControl(content, 1, 1, b = OSCreateButton(actionOK, OS_BUTTON_STYLE_NORMAL), 0);
@@ -801,8 +801,9 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	// OSAddControl(content, 0, 0, OSCreateIndeterminateProgressBar(), 0);
+	OSAddControl(content, 0, 0, OSCreateProgressBar(0, 100, 20, false), 0);
 	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything, OS_BUTTON_STYLE_NORMAL), 0);
+	OSAddControl(content, 0, 5, OSCreateIndeterminateProgressBar(false), 0);
 
 	{
 		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);

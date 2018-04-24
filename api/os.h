@@ -1002,10 +1002,10 @@ OS_EXTERN_C OSObject OSCreateButton(OSCommand *command, OSButtonStyle style);
 OS_EXTERN_C OSObject OSCreateTextbox(OSTextboxStyle style);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
-OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue);
+OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small);
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
-#define OSCreateIndeterminateProgressBar() OSCreateProgressBar(0, 0, 0)
+#define OSCreateIndeterminateProgressBar(small) OSCreateProgressBar(0, 0, 0, small)
 
 OS_EXTERN_C void OSSetFocusedControl(OSObject control, bool asDefaultForWindow);
 OS_EXTERN_C void OSRemoveFocusedControl(OSObject window, bool removeWeakFocus);
