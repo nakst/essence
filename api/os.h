@@ -999,7 +999,9 @@ OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 				   uint16_t iconID, OSObject modalParent);
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
+OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);
 
+OS_EXTERN_C OSObject OSCreateBlankControl(int width, int height, bool drawParentBackground, bool ignoreActivationClicks, bool focusable, OSCursorStyle cursor);
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command, OSButtonStyle style);
 OS_EXTERN_C OSObject OSCreateTextbox(OSTextboxStyle style);

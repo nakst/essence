@@ -26,6 +26,8 @@ echo -e "-> Building ${ColorBlue}calculator${ColorNormal}..."
 ./manifest_parser calculator/calculator.manifest bin/OS/calculator.manifest.h
 echo -e "-> Building ${ColorBlue}file manager${ColorNormal}..."
 ./manifest_parser file_manager/file_manager.manifest bin/OS/file_manager.manifest.h
+echo -e "-> Building ${ColorBlue}image viewer${ColorNormal}..."
+./manifest_parser image_viewer/image_viewer.manifest bin/OS/image_viewer.manifest.h
 
 echo -e "-> Building ${ColorBlue}kernel${ColorNormal}..."
 nasm -felf64 kernel/x86_64.s -o bin/OS/kernel_x86_64.o -Fdwarf

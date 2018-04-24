@@ -605,6 +605,7 @@ static void *GUIAllocate(size_t bytes, bool clear) {
 		if (guiAllocationBlock->allocatedBytes < guiAllocationBlock->totalBytes) {
 			guiAllocationBlock->allocationCount++;
 			uintptr_t *a = (uintptr_t *) (((uint8_t *) (guiAllocationBlock + 1)) + guiAllocationBlock->allocatedBytes - bytes);
+			if (clear) OSZeroMemory(a, bytes);
 			*a = (uintptr_t) guiAllocationBlock;
 			return a + 1;
 		}
@@ -1908,6 +1909,22 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
+OSObject OSCreateBlankControl(int width, int height, 
+		bool drawParentBackground, bool ignoreActivationClicks, bool focusable, OSCursorStyle cursor) {
+	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
+	control->type = API_OBJECT_CONTROL;
+	control->preferredWidth = width;
+	control->preferredHeight = height;
+	control->drawParentBackground = drawParentBackground;
+	control->ignoreActivationClicks = ignoreActivationClicks;
+	control->focusable = focusable;
+	control->noAnimations = true;
+	control->customTextRendering = true;
+	control->cursor = cursor;
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+	return control;
+}
+
 OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
@@ -2853,6 +2870,11 @@ OSObject OSCreateLabel(char *text, size_t textBytes) {
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
 
 	return control;
+}
+
+OSRectangle OSGetControlBounds(OSObject _control) {
+	Control *control = (Control *) _control;
+	return control->bounds;
 }
 
 static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage *message) {

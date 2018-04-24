@@ -204,7 +204,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			Handle _handle = {};
 			_handle.type = KERNEL_OBJECT_SURFACE;
 			_handle.object = surface;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(_handle), true);
+			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(_handle), false);
 		} break;
 
 		case OS_SYSCALL_GET_LINEAR_BUFFER: {

@@ -789,6 +789,7 @@ OSCallbackResponse DestroyInstance(OSObject object, OSMessage *message) {
 	OSHeapFree(instance->folderChildren);
 	OSHeapFree(instance->path);
 	global.instances.Remove(&instance->thisItem);
+	OSHeapFree(instance);
 	return OS_CALLBACK_HANDLED;
 }
 
