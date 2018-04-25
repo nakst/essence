@@ -30,6 +30,17 @@ size_t wordCount;
 Word words[50000];
 char buffer[1024];
 
+OSCallbackResponse SliderValueChanged(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type != OS_NOTIFICATION_VALUE_CHANGED) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	OSSetProgressBarValue(message->context, message->valueChanged.newValue);
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 	(void) object;
 
@@ -803,9 +814,18 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
-	OSAddControl(content, 0, 0, OSCreateProgressBar(0, 100, 20, false), 0);
+	OSAddControl(content, 0, 0, progressBar = OSCreateProgressBar(0, 100, 20, false), 0);
 	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything, OS_BUTTON_STYLE_NORMAL), 0);
-	OSAddControl(content, 0, 5, OSCreateSlider(0, 100, 50, OS_SLIDER_MODE_HORIZONTAL | OS_SLIDER_MODE_TICKS_BENEATH | OS_SLIDER_MODE_TICKS_ABOVE | OS_SLIDER_MODE_SNAP_TO_TICKS, 5, 4), 0);
+
+	OSObject sliderH, sliderV;
+	OSAddControl(content, 2, 4, sliderV = OSCreateSlider(0, 100, 50, 
+				OS_SLIDER_MODE_VERTICAL | OS_SLIDER_MODE_TICKS_BOTH_SIDES | OS_SLIDER_MODE_OPPOSITE_VALUE, 
+				5, 4), 0);
+	OSAddControl(content, 0, 5, sliderH = OSCreateSlider(0, 100, 50, 
+				OS_SLIDER_MODE_HORIZONTAL | OS_SLIDER_MODE_TICKS_BOTH_SIDES | OS_SLIDER_MODE_SNAP_TO_TICKS, 
+				5, 4), 0);
+
+	OSSetObjectNotificationCallback(sliderV, OS_MAKE_CALLBACK(SliderValueChanged, progressBar));
 
 	{
 		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);

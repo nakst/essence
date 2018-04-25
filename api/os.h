@@ -547,6 +547,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_END_LAST_FOCUS		= 0x0248,
 	OS_MESSAGE_MOUSE_DRAGGED		= 0x0249,
 	OS_MESSAGE_KEY_TYPED			= 0x024A,
+	OS_MESSAGE_DISABLE			= 0x024B,
 
 	// Window manager messages:
 	OS_MESSAGE_MOUSE_MOVED 			= 0x1000,
@@ -704,6 +705,10 @@ typedef struct OSMessage {
 			uintptr_t index;
 			void *value;
 		} setProperty;
+
+		struct {
+			bool disabled;
+		} disable;
 
 		struct OSClipboardHeader clipboard;
 	};
@@ -889,6 +894,7 @@ typedef struct OSListViewColumn {
 #define OS_SLIDER_MODE_TICKS_BENEATH    (8)
 #define OS_SLIDER_MODE_TICKS_BOTH_SIDES (12)
 #define OS_SLIDER_MODE_SNAP_TO_TICKS	(32)
+#define OS_SLIDER_MODE_OPPOSITE_VALUE   (64)
 
 #define OS_BLANK_CONTROL_DRAW_PARENT_BACKGROUND   (1)
 #define OS_BLANK_CONTROL_IGNORE_ACTIVATION_CLICKS (2)
@@ -1028,13 +1034,18 @@ OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialVa
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
 OS_EXTERN_C OSObject OSCreateSlider(int minimum, int maximum, int initialValue, int mode, int minorTickSpacing, int majorTickSpacing);
+
 #define OSCreateIndeterminateProgressBar(small) OSCreateProgressBar(0, 0, 0, small)
+#define OSCreateSpacer(w, h) OSCreateBlankControl(0, 0, OS_CURSOR_NORMAL, OS_FLAGS_DEFAULT)
 
 OS_EXTERN_C void OSSetFocusedControl(OSObject control, bool asDefaultForWindow);
 OS_EXTERN_C void OSRemoveFocusedControl(OSObject window, bool removeWeakFocus);
 OS_EXTERN_C OSObject OSGetFocusedControl(OSObject window, bool ignoreWeakFocus);
 
 OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
+
+OS_EXTERN_C void OSSetSliderPosition(OSObject slider, int position, bool sendValueChangedNotification);
+OS_EXTERN_C int OSGetSliderPosition(OSObject slider);
 
 OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);
 OS_EXTERN_C void OSListViewReset(OSObject listView);
