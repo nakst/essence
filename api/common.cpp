@@ -438,25 +438,28 @@ void OSClipDrawSourceRegion(OSRectangle *source, OSRectangle *border, OSRectangl
 			source->top += clip->top - destination->top;
 			source->bottom += clip->bottom - destination->bottom;
 
+			int borderWidth = border->right - border->left;
+			int borderHeight = border->bottom - border->top;
+
 			// If the source is inside content, then interpolate its new position.
-			//
+
 			if (source->left > border->left) { 
-				source->left = border->left + (clip->left - destination->left) * (border->right - border->left) / (destination->right - destination->left); 
+				source->left = border->left + (clip->left - destination->left) * borderWidth / (destination->right - destination->left); 
 				border->left = source->left; 
 			}
 
 			if (source->right < border->right) { 
-				source->right = border->right + (clip->right - destination->right) * (border->right - border->left) / (destination->right - destination->left); 
+				source->right = border->right + (clip->right - destination->right) * borderWidth / (destination->right - destination->left); 
 				border->right = source->right; 
 			}
 
 			if (source->top > border->top) { 
-				source->top = border->top + (clip->top - destination->top) * (border->bottom - border->top) / (destination->bottom - destination->top); 
+				source->top = border->top + (clip->top - destination->top) * borderHeight / (destination->bottom - destination->top); 
 				border->top = source->top; 
 			}
 
 			if (source->bottom < border->bottom) { 
-				source->bottom = border->bottom + (clip->bottom - destination->bottom) * (border->bottom - border->top) / (destination->bottom - destination->top); 
+				source->bottom = border->bottom + (clip->bottom - destination->bottom) * borderHeight / (destination->bottom - destination->top); 
 				border->bottom = source->bottom; 
 			}
 		} break;
