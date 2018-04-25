@@ -1487,6 +1487,12 @@ void Import(char *target, char *source) {
 					}
 				}
 
+				if (length > 2) {
+					if (0 == strcmp(dir->d_name + length - 2, ".a")) {
+						goto next;
+					}
+				}
+
 				sprintf(nameBuffer1, "%s%s", target, dir->d_name);
 				sprintf(nameBuffer2, "%s%s", source, dir->d_name);
 

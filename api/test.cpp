@@ -124,7 +124,7 @@ OSListViewColumn columns[] = {
 
 void CreateList(OSObject content) {
 	size_t length;
-	char *file = (char *) OSReadEntireFile(OSLiteral("/OS/scarlet.txt"), &length);
+	char *file = (char *) OSReadEntireFile(OSLiteral("/OS/A Study in Scarlet.txt"), &length);
 
 	if (!file || !length) {
 		OSCrashProcess(2000);
