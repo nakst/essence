@@ -260,6 +260,7 @@ typedef enum OSFatalError {
 #define OS_ERROR_VOLUME_MISMATCH		(-43)
 #define OS_ERROR_TARGET_WITHIN_SOURCE		(-44)
 #define OS_ERROR_TARGET_INVALID_TYPE		(-45)
+#define OS_ERROR_NOTHING_TO_DRAW		(-46)
 
 typedef intptr_t OSError;
 
@@ -665,7 +666,6 @@ typedef struct OSMessage {
 		struct {
 			OSHandle surface;
 			OSRectangle clip;
-			int left, right, top, bottom;
 		} paintBackground;
 
 		struct {
@@ -887,7 +887,13 @@ typedef struct OSListViewColumn {
 #define OS_SLIDER_MODE_TICKS_ABOVE      (4)
 #define OS_SLIDER_MODE_TICKS_RIGHT      (8)
 #define OS_SLIDER_MODE_TICKS_BENEATH    (8)
-#define OS_SLIDER_MODE_TICKS_BOTH_SIDES (16)
+#define OS_SLIDER_MODE_TICKS_BOTH_SIDES (12)
+#define OS_SLIDER_MODE_SNAP_TO_TICKS	(32)
+
+#define OS_BLANK_CONTROL_DRAW_PARENT_BACKGROUND   (1)
+#define OS_BLANK_CONTROL_IGNORE_ACTIVATION_CLICKS (2)
+#define OS_BLANK_CONTROL_FOCUSABLE                (4)
+#define OS_BLANK_CONTROL_TAB_STOP                 (8)
 
 OS_EXTERN_C void OSInitialiseAPI();
 
@@ -1012,7 +1018,7 @@ OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);
 OS_EXTERN_C void OSRepaintControl(OSObject object);
 
-OS_EXTERN_C OSObject OSCreateBlankControl(int width, int height, bool drawParentBackground, bool ignoreActivationClicks, bool focusable, OSCursorStyle cursor);
+OS_EXTERN_C OSObject OSCreateBlankControl(int width, int height, OSCursorStyle cursor, unsigned flags);
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command, OSButtonStyle style);
 OS_EXTERN_C OSObject OSCreateTextbox(OSTextboxStyle style);

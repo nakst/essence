@@ -261,7 +261,7 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 	OSAddControl(toolbar, 0, 0, OSCreateButton(commandRotateAntiClockwise, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSAddControl(toolbar, 1, 0, OSCreateButton(commandRotateClockwise, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
-	imageDisplay = OSCreateBlankControl(0, 0, false, true, false, OS_CURSOR_NORMAL);
+	imageDisplay = OSCreateBlankControl(0, 0, OS_CURSOR_NORMAL, OS_BLANK_CONTROL_IGNORE_ACTIVATION_CLICKS);
 	OSAddControl(rootLayout, 0, 1, imageDisplay, OS_CELL_H_EXPAND | OS_CELL_H_PUSH 
 							| OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 	imageDisplayParentCallback = OSSetCallback(imageDisplay, OS_MAKE_CALLBACK(ProcessImageDisplayMessage, this)); 

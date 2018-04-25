@@ -165,7 +165,7 @@ extern "C" void ProgramEntry() {
 	OSInitialiseGUI();
 	OSRedrawAll();
 
-#if 1
+#if 0
 	{
 		OSProcessInformation process;
 		OSCreateProcess(OSLiteral("/OS/Calculator.esx"), &process, nullptr);

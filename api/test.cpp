@@ -805,7 +805,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 0, 0, OSCreateProgressBar(0, 100, 20, false), 0);
 	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything, OS_BUTTON_STYLE_NORMAL), 0);
-	OSAddControl(content, 0, 5, OSCreateIndeterminateProgressBar(false), 0);
+	OSAddControl(content, 0, 5, OSCreateSlider(0, 100, 50, OS_SLIDER_MODE_HORIZONTAL | OS_SLIDER_MODE_TICKS_BENEATH | OS_SLIDER_MODE_TICKS_ABOVE | OS_SLIDER_MODE_SNAP_TO_TICKS, 5, 4), 0);
 
 	{
 		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);

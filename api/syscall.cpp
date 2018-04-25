@@ -85,6 +85,10 @@ OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destina
 	arg.border = borderRegion;
 	arg.alpha = alpha;
 
+	if (destinationRegion.left >= destinationRegion.right || destinationRegion.top >= destinationRegion.bottom) {
+		return OS_ERROR_NOTHING_TO_DRAW;
+	}
+
 	return OSSyscall(OS_SYSCALL_DRAW_SURFACE, destination, source, (uintptr_t) &arg, mode);
 }
 

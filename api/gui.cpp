@@ -204,9 +204,51 @@ static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal
 static UIImage lineVertical		= {{35, 36, 110, 122}, {35, 35, 111, 111}};
 static UIImage *lineVerticalBackgrounds[] = { &lineVertical, &lineVertical, &lineVertical, &lineVertical, };
 
-static UIImage sliderBox = {{208, 212, 145, 149}, {210, 211, 146, 147}};
+static UIImage sliderBox = {{98, 126, 132, 160}, {112, 113, 145, 146}};
 static UIImage tickHorizontal = {{208, 213, 151, 153}, {209, 211, 151, 153}};
 static UIImage tickVertical = {{209, 211, 155, 160}, {209, 211, 156, 158}};
+
+static UIImage sliderDownHover = {{206, 219, 171, 191}, {206, 206, 171, 171}};
+static UIImage sliderDownNormal = {{12 + 206, 12 + 219, 171, 191}, {12 + 206, 12 + 206, 171, 171}};
+static UIImage sliderDownFocused = {{24 + 206, 24 + 219, 171, 191}, {24 + 206, 24 + 206, 171, 171}};
+static UIImage sliderDownPressed = {{36 + 206, 36 + 219, 171, 191}, {36 + 206, 36 + 206, 171, 171}};
+static UIImage sliderDownDisabled = {{136, 145, 176, 192}, {136, 136, 176, 176}};
+
+static UIImage sliderUpHover = {{206, 219, 19 + 171, 19 + 191}, {206, 206, 19 + 171, 19 + 171}};
+static UIImage sliderUpNormal = {{12 + 206, 12 + 219, 19 + 171, 19 + 191}, {12 + 206, 12 + 206, 19 + 171, 19 + 171}};
+static UIImage sliderUpFocused = {{24 + 206, 24 + 219, 19 + 171, 19 + 191}, {24 + 206, 24 + 206, 19 + 171, 19 + 171}};
+static UIImage sliderUpPressed = {{36 + 206, 36 + 219, 19 + 171, 19 + 191}, {36 + 206, 36 + 206, 19 + 171, 19 + 171}};
+static UIImage sliderUpDisabled = {{136 - 10, 145 - 10, 176, 192}, {136 - 10, 136 - 10, 176, 176}};
+
+static UIImage sliderVerticalHover = {{206, 219, 19 + 19 + 171, 19 + 19 + 191}, {206, 206, 19 + 19 + 171, 19 + 19 + 171}};
+static UIImage sliderVerticalNormal = {{12 + 206, 12 + 219, 19 + 19 + 171, 19 + 19 + 191}, {12 + 206, 12 + 206, 19 + 19 + 171, 19 + 19 + 171}};
+static UIImage sliderVerticalFocused = {{24 + 206, 24 + 219, 19 + 19 + 171, 19 + 19 + 191}, {24 + 206, 24 + 206, 19 + 19 + 171, 19 + 19 + 171}};
+static UIImage sliderVerticalPressed = {{36 + 206, 36 + 219, 19 + 19 + 171, 19 + 19 + 191}, {36 + 206, 36 + 206, 19 + 19 + 171, 19 + 19 + 171}};
+static UIImage sliderVerticalDisabled = {{136 - 10 - 10, 145 - 10 - 10, 176, 192}, {136 - 10 - 10, 136 - 10 - 10, 176, 176}};
+
+static struct UIImage *sliderDown[] = {
+	&sliderDownNormal,
+	&sliderDownDisabled,
+	&sliderDownHover,
+	&sliderDownPressed,
+	&sliderDownFocused,
+};
+
+static struct UIImage *sliderUp[] = {
+	&sliderUpNormal,
+	&sliderUpDisabled,
+	&sliderUpHover,
+	&sliderUpPressed,
+	&sliderUpFocused,
+};
+
+static struct UIImage *sliderVertical[] = {
+	&sliderVerticalNormal,
+	&sliderVerticalDisabled,
+	&sliderVerticalHover,
+	&sliderVerticalPressed,
+	&sliderVerticalFocused,
+};
 
 // static UIImage testImage = {{57, 61, 111, 115}, {58, 60, 112, 114}};
 
@@ -489,10 +531,6 @@ struct ProgressBar : Control {
 	int minimum, maximum, value;
 };
 
-struct Slider : Control {
-	int minimum, maximum, value, minorTickSpacing, majorTickSpacing, mode;
-};
-
 struct WindowResizeControl : Control {
 	unsigned direction;
 };
@@ -511,6 +549,14 @@ struct Grid : GUIObject {
 	OSCallback notificationCallback;
 	int xOffset, yOffset;
 	bool treatPreferredDimensionsAsMinima; // Used with scroll panes for PUSH objects.
+};
+
+struct Slider : Grid {
+	int minimum, maximum, value, minorTickSpacing, majorTickSpacing, mode;
+};
+
+struct SliderHandle : Control {
+	Slider *slider;
 };
 
 struct Scrollbar : Grid {
@@ -987,11 +1033,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					OSMessage m = *message;
 					m.type = OS_MESSAGE_PAINT_BACKGROUND;
 					m.paintBackground.surface = message->paint.surface;
-					m.paintBackground.left = control->bounds.left;
-					m.paintBackground.right = control->bounds.right;
-					m.paintBackground.top = control->bounds.top;
-					m.paintBackground.bottom = control->bounds.bottom;
-					m.paintBackground.clip = message->paint.clip;
+					ClipRectangle(message->paint.clip, control->bounds, &m.paintBackground.clip);
 					OSSendMessage(control->parent, &m);
 				}
 
@@ -1191,6 +1233,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 
 			if (control->window->hover != control) {
+				if (control->verbose) {
+					EnterDebugger();
+				}
+
 				if (!control->disabled || control->keepCustomCursorWhenDisabled) {
 					control->window->cursor = (OSCursorStyle) control->cursor;
 				}
@@ -1923,15 +1969,15 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
-OSObject OSCreateBlankControl(int width, int height, 
-		bool drawParentBackground, bool ignoreActivationClicks, bool focusable, OSCursorStyle cursor) {
+OSObject OSCreateBlankControl(int width, int height, OSCursorStyle cursor, unsigned flags) {
 	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->preferredWidth = width;
 	control->preferredHeight = height;
-	control->drawParentBackground = drawParentBackground;
-	control->ignoreActivationClicks = ignoreActivationClicks;
-	control->focusable = focusable;
+	control->drawParentBackground = flags & OS_BLANK_CONTROL_DRAW_PARENT_BACKGROUND;
+	control->ignoreActivationClicks = flags & OS_BLANK_CONTROL_IGNORE_ACTIVATION_CLICKS;
+	control->focusable = flags & OS_BLANK_CONTROL_FOCUSABLE;
+	control->tabStop = flags & OS_BLANK_CONTROL_TAB_STOP;
 	control->noAnimations = true;
 	control->customTextRendering = true;
 	control->cursor = cursor;
@@ -2903,11 +2949,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 				OSMessage m = *message;
 				m.type = OS_MESSAGE_PAINT_BACKGROUND;
 				m.paintBackground.surface = message->paint.surface;
-				m.paintBackground.left = control->bounds.left;
-				m.paintBackground.right = control->bounds.right;
-				m.paintBackground.top = control->bounds.top;
-				m.paintBackground.bottom = control->bounds.bottom;
-				m.paintBackground.clip = message->paint.clip;
+				ClipRectangle(message->paint.clip, control->bounds, &m.paintBackground.clip);
 				OSSendMessage(control->parent, &m);
 			}
 
@@ -2984,32 +3026,6 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool sm
 	}
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessProgressBarMessage, nullptr));
-
-	return control;
-}
-
-OSObject OSCreateSlider(int minimum, int maximum, int initialValue, 
-		int mode, int minorTickSpacing, int majorTickSpacing) {
-	Slider *control = (Slider *) GUIAllocate(sizeof(Slider), true);
-
-	control->type = API_OBJECT_CONTROL;
-
-	control->minimum = minimum;
-	control->maximum = maximum;
-	control->value = initialValue;
-	control->mode = mode;
-	control->minorTickSpacing = minorTickSpacing;
-	control->majorTickSpacing = majorTickSpacing;
-
-	if (mode & OS_SLIDER_MODE_HORIZONTAL) {
-		control->preferredWidth = 168;
-		control->preferredHeight = 28;
-	} else {
-		control->preferredHeight = 168;
-		control->preferredWidth = 28;
-	}
-
-	// OSSetCallback(control, OS_MAKE_CALLBACK(ProcessSliderMessage, nullptr));
 
 	return control;
 }
@@ -3343,12 +3359,11 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				if (ClipRectangle(message->paint.clip, grid->bounds, &clip)) {
 					if (m.paint.force) {
-						if (grid->background) {
-							OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
-									grid->background->border, grid->background->drawMode, 0xFF, clip);
-						} else if (grid->backgroundColor) {
-							OSFillRectangle(message->paint.surface, clip, OSColor(grid->backgroundColor));
-						}
+						OSMessage m;
+						m.type = OS_MESSAGE_PAINT_BACKGROUND;
+						m.paintBackground.surface = message->paint.surface;
+						ClipRectangle(message->paint.clip, grid->bounds, &m.paintBackground.clip);
+						OSSendMessage(grid, &m);
 					}
 
 					for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
@@ -3363,22 +3378,11 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		} break;
 
 		case OS_MESSAGE_PAINT_BACKGROUND: {
-			OSRectangle destination = OS_MAKE_RECTANGLE(message->paintBackground.left, message->paintBackground.right, 
-					message->paintBackground.top, message->paintBackground.bottom);
-			OSRectangle full = OS_MAKE_RECTANGLE(grid->bounds.left, grid->bounds.right, 
-					grid->bounds.top, grid->bounds.bottom);
-			OSRectangle clip;
-
-			if (ClipRectangle(message->paintBackground.clip, destination, &clip)) {
-				if (grid->background) {
-					OSRectangle region = grid->background->region;
-					OSRectangle border = grid->background->border;
-
-					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, full, region,
-							border, grid->background->drawMode, 0xFF, clip);
-				} else if (grid->backgroundColor) {
-					OSFillRectangle(message->paint.surface, clip, OSColor(grid->backgroundColor));
-				}
+			if (grid->background) {
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
+						grid->background->border, grid->background->drawMode, 0xFF, message->paintBackground.clip);
+			} else if (grid->backgroundColor) {
+				OSFillRectangle(message->paint.surface, message->paintBackground.clip, OSColor(grid->backgroundColor));
 			}
 		} break;
 
@@ -3434,21 +3438,37 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				end = i - (i % grid->columns) - 1;
 				start = end + grid->columns;
 				loopAround = true;
+
+				if (grid->columns == 1) {
+					break;
+				}
 			} else if (message->keyboard.scancode == OS_SCANCODE_UP_ARROW && foundFirstTime) {
 				delta = -grid->columns;
 				end = (i % grid->columns) - grid->columns;
 				start = end + grid->columns * grid->rows;
 				loopAround = true;
+
+				if (grid->rows == 1) {
+					break;
+				}
 			} else if (message->keyboard.scancode == OS_SCANCODE_DOWN_ARROW && foundFirstTime) {
 				delta = grid->columns;
 				start = (i % grid->columns);
 				end = start + grid->columns * grid->rows;
 				loopAround = true;
+
+				if (grid->rows == 1) {
+					break;
+				}
 			} else if (message->keyboard.scancode == OS_SCANCODE_RIGHT_ARROW && foundFirstTime) {
 				delta = 1;
 				start = i - (i % grid->columns);
 				end = start + grid->columns;
 				loopAround = true;
+
+				if (grid->columns == 1) {
+					break;
+				}
 			} else {
 				break;
 			}
@@ -3582,6 +3602,205 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 	return grid;
 }
 
+OSCallbackResponse ProcessSliderMessage(OSObject object, OSMessage *message) {
+	Slider *grid = (Slider *) object;
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_LAYOUT) {
+		if (grid->relayout || message->layout.force) {
+			grid->relayout = false;
+			grid->bounds = OS_MAKE_RECTANGLE(
+					message->layout.left, message->layout.right,
+					message->layout.top, message->layout.bottom);
+			grid->cellBounds = grid->bounds;
+			grid->repaint = true;
+			SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+
+			int start = grid->bounds.left + 14;
+			int end = grid->bounds.right - 14;
+			int length = end - start;
+			int position = length * (grid->value - grid->minimum) / (grid->maximum - grid->minimum) + start;
+
+			OSMessage m;
+			m.type = OS_MESSAGE_LAYOUT;
+			m.layout.force = true;
+			m.layout.clip = message->layout.clip;
+
+			if ((grid->mode & OS_SLIDER_MODE_TICKS_BENEATH) && (grid->mode & OS_SLIDER_MODE_TICKS_ABOVE)) {
+				m.layout.top = message->layout.top + 4;
+				m.layout.bottom = message->layout.bottom - 4;
+			} else if (grid->mode & OS_SLIDER_MODE_TICKS_ABOVE) {
+				m.layout.top = message->layout.bottom - 2 - 20;
+				m.layout.bottom = message->layout.bottom - 2;
+			} else if (grid->mode & OS_SLIDER_MODE_TICKS_BENEATH) {
+				m.layout.top = message->layout.top + 2;
+				m.layout.bottom = message->layout.top + 2 + 20;
+			} else {
+				m.layout.top = message->layout.top + 4;
+				m.layout.bottom = message->layout.bottom - 4;
+			}
+
+			m.layout.left = position - 6;
+			m.layout.right = position - 6 + 13;
+			OSSendMessage(grid->objects[0], &m);
+
+			response = OS_CALLBACK_HANDLED;
+		}
+	} else if (message->type == OS_MESSAGE_MEASURE) {
+		message->measure.preferredWidth = grid->preferredWidth;
+		message->measure.preferredHeight = grid->preferredHeight;
+		response = OS_CALLBACK_HANDLED;
+	} else if (message->type == OS_MESSAGE_PAINT_BACKGROUND) {
+		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, sliderBox.region,
+				sliderBox.border, sliderBox.drawMode, 0xFF, message->paintBackground.clip);
+
+		int start = grid->bounds.left + 14;
+		int end = grid->bounds.right - 14;
+		int length = end - start;
+		float lengthPerTick = (float) length / (float) (grid->maximum - grid->minimum);
+		float lengthPerMinorTick = lengthPerTick * grid->minorTickSpacing;
+
+		{
+			float i = start;
+			int j = 0;
+
+			while (i < end) {
+				if (grid->mode & OS_SLIDER_MODE_TICKS_ABOVE) {
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
+							OS_MAKE_RECTANGLE((int) i, (int) i + 2, grid->bounds.top + 11 - (j ? 5 : 7), grid->bounds.top + 11), 
+							tickHorizontal.region, tickHorizontal.border, tickHorizontal.drawMode, 0xFF, message->paintBackground.clip);
+				}
+
+				if (grid->mode & OS_SLIDER_MODE_TICKS_BENEATH) {
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
+							OS_MAKE_RECTANGLE((int) i, (int) i + 2, grid->bounds.top + 17, grid->bounds.top + 17 + (j ? 5 : 7)), 
+							tickHorizontal.region, tickHorizontal.border, tickHorizontal.drawMode, 0xFF, message->paintBackground.clip);
+				}
+
+				i += lengthPerMinorTick;
+				j++;
+
+				if (j == grid->majorTickSpacing) {
+					j = 0;
+				}
+			}
+		}
+	} else if (message->type == OS_MESSAGE_KEY_PRESSED) {
+		if (!message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift) {
+			response = OS_CALLBACK_HANDLED;
+
+			if (message->keyboard.scancode == OS_SCANCODE_LEFT_ARROW || message->keyboard.scancode == OS_SCANCODE_UP_ARROW) {
+				grid->value -= grid->minorTickSpacing;
+			} else if (message->keyboard.scancode == OS_SCANCODE_RIGHT_ARROW || message->keyboard.scancode == OS_SCANCODE_DOWN_ARROW) {
+				grid->value += grid->minorTickSpacing;
+			} else {
+				response = OS_CALLBACK_NOT_HANDLED;
+			}
+
+			if (grid->value < grid->minimum) grid->value = grid->minimum;
+			if (grid->value > grid->maximum) grid->value = grid->maximum;
+
+			{
+				OSMessage message;
+				message.type = OS_MESSAGE_CHILD_UPDATED;
+				OSSendMessage(object, &message);
+			}
+		}
+	}
+
+	if (response == OS_CALLBACK_NOT_HANDLED) {
+		response = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr), message);
+	}
+
+	return response;
+}
+
+OSCallbackResponse ProcessSliderHandleMessage(OSObject object, OSMessage *message) {
+	SliderHandle *control = (SliderHandle *) object;
+	Slider *slider = control->slider;
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		{
+			OSMessage message;
+			message.type = OS_MESSAGE_CHILD_UPDATED;
+			OSSendMessage(slider, &message);
+		}
+
+		int start = slider->bounds.left + 14;
+		int end = slider->bounds.right - 14;
+		float position = (float) (message->mouseDragged.newPositionX + 3 - start) / (float) (end - start);
+		slider->value = (int) (position * (slider->maximum - slider->minimum) + slider->minimum);
+		if (slider->value < slider->minimum) slider->value = slider->minimum;
+		if (slider->value > slider->maximum) slider->value = slider->maximum;
+		if (slider->mode & OS_SLIDER_MODE_SNAP_TO_TICKS) slider->value -= slider->value % slider->minorTickSpacing;
+
+		OSRepaintControl(control);
+		response = OS_CALLBACK_HANDLED;
+	}
+
+	if (response == OS_CALLBACK_NOT_HANDLED) {
+		response = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	return response;
+}
+
+OSObject OSCreateSlider(int minimum, int maximum, int initialValue, 
+		int mode, int minorTickSpacing, int majorTickSpacing) {
+	uint8_t *memory = (uint8_t *) GUIAllocate(sizeof(Slider) + sizeof(OSObject) * 1, true);
+
+	Slider *slider = (Slider *) memory;
+	slider->type = API_OBJECT_GRID;
+
+	slider->tabStop = true;
+	slider->columns = 1;
+	slider->rows = 1;
+	slider->objects = (GUIObject **) (memory + sizeof(Slider));
+
+	slider->minimum = minimum;
+	slider->maximum = maximum;
+	slider->value = initialValue;
+	slider->mode = mode;
+	slider->minorTickSpacing = minorTickSpacing;
+	slider->majorTickSpacing = majorTickSpacing;
+
+	if (mode & OS_SLIDER_MODE_HORIZONTAL) {
+		slider->preferredWidth = 168;
+		slider->preferredHeight = 28;
+	} else {
+		slider->preferredHeight = 168;
+		slider->preferredWidth = 28;
+	}
+
+	OSSetCallback(slider, OS_MAKE_CALLBACK(ProcessSliderMessage, nullptr));
+
+	{
+		SliderHandle *handle = (SliderHandle *) GUIAllocate(sizeof(SliderHandle), true);
+		handle->type = API_OBJECT_CONTROL;
+		handle->slider = slider;
+		handle->focusable = true;
+		handle->tabStop = true;
+		handle->drawParentBackground = true;
+		handle->hasFocusedBackground = true;
+		handle->preferredWidth = 13;
+		handle->preferredHeight = 20;
+		OSAddControl(slider, 0, 0, handle, 0);
+		OSSetCallback(handle, OS_MAKE_CALLBACK(ProcessSliderHandleMessage, nullptr));
+
+		if ((mode & OS_SLIDER_MODE_TICKS_BENEATH) && (mode & OS_SLIDER_MODE_TICKS_ABOVE)) {
+			handle->backgrounds = sliderVertical;
+		} else if (mode & OS_SLIDER_MODE_TICKS_BENEATH) {
+			handle->backgrounds = sliderDown;
+		} else if (mode & OS_SLIDER_MODE_TICKS_ABOVE) {
+			handle->backgrounds = sliderUp;
+		} else {
+			handle->backgrounds = sliderVertical;
+		}
+	}
+
+	return slider;
+}
 
 static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
