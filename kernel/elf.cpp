@@ -115,8 +115,8 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 				(header->segmentSize / PAGE_SIZE) + 1, 0, VMM_REGION_STANDARD, VMM_MAP_ALL, true, nullptr);
 		thisProcess->vmm->lock.Release();
 #else
-		header->dataInFile = (header->dataInFile + 0x1000) & ~0xFFF;
-		header->segmentSize = (header->segmentSize + 0x1000) & ~0xFFF;
+		header->dataInFile = (header->dataInFile + 0xFFF) & ~0xFFF;
+		header->segmentSize = (header->segmentSize + 0xFFF) & ~0xFFF;
 		void *success = thisProcess->vmm->Allocate("Executable", header->dataInFile, VMM_MAP_CHUNKS, VMM_REGION_SHARED,
 				header->fileOffset, VMM_REGION_FLAG_CACHABLE | VMM_REGION_FLAG_READ_ONLY, &((Node *) object)->region, (uintptr_t) segment);
 		if (success && header->segmentSize - header->dataInFile) success = thisProcess->vmm->Allocate("Executable", header->segmentSize - header->dataInFile, VMM_MAP_LAZY, VMM_REGION_STANDARD,

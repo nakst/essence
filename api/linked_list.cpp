@@ -1,5 +1,5 @@
 #ifndef KERNEL
-#define LLPanic(...) OSCrashProcess(OS_FATAL_ERROR_CORRUPT_LINKED_LIST)
+#define LLPanic(...) do { OSPrint(__VA_ARGS__); OSCrashProcess(OS_FATAL_ERROR_CORRUPT_LINKED_LIST); } while (0)
 #else
 #define LLPanic(...) KernelPanic(__VA_ARGS__)
 #endif

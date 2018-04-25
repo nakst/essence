@@ -154,7 +154,7 @@ extern "C" void ProgramEntry() {
 	LoadImageIntoSurface((char *) "/OS/Visual Styles/Default.png", OS_SURFACE_UI_SHEET, false);
 	LoadImageIntoSurface((char *) "/OS/Icons/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 
-#if 1
+#if 0
 	LoadImageIntoSurface((char *) "/OS/Sample Images/Blue.jpg", OS_SURFACE_WALLPAPER, true);
 #else
 	OSHandle surface = OS_SURFACE_WALLPAPER;
@@ -178,8 +178,8 @@ extern "C" void ProgramEntry() {
 		for (int i = 0; i < 1; i++) {
 			// const char *path = "/OS/Calculator.esx";
 			// const char *path = "/OS/Test.esx";
-			const char *path = "/OS/File Manager.esx";
-			// const char *path = "/OS/Image Viewer.esx";
+			// const char *path = "/OS/File Manager.esx";
+			const char *path = "/OS/Image Viewer.esx";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
 			OSCloseHandle(process.mainThread.handle);

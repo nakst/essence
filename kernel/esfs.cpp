@@ -1215,10 +1215,10 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 			EsFSFile *nodeFile = (EsFSFile *) (node + 1);
 
 			if (node) {
-				node->semaphore.Take();
+				// Note: We don't need to acquire the node's semaphore,
+				// since these values are only read when the parent's semaphore is acquired.
 				nodeFile->offsetIntoBlock -= directoryEntrySize;
 				nodeFile->offsetIntoBlock2 -= directoryEntrySize;
-				node->semaphore.Return();
 			} else {
 				// The file was not open.
 			}
@@ -1269,11 +1269,10 @@ bool EsFSVolume::RemoveNodeFromParent(Node *node) {
 					EsFSFile *nodeFile = (EsFSFile *) (node + 1);
 
 					if (node) {
-						node->semaphore.Take();
+						// See above why we're not taking the semaphore on the node.
 						nodeFile->containerBlock = newContainerBlock;
 						nodeFile->offsetIntoBlock = positionInBlock + ((uintptr_t) fileEntry - (uintptr_t) lastEntry);
 						nodeFile->offsetIntoBlock2 = positionInBlock;
-						node->semaphore.Return();
 					} else {
 						// The file was not open.
 					}

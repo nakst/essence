@@ -1,7 +1,6 @@
 // TODO
-// 	-> Moving files/directories
-// 	-> Wait for file access
-// 	-> Prevent opening/accessing deleted nodes
+// 	-> Wait for file access.
+//	-> Asynchronous semaphore waiting.
 
 #ifndef IMPLEMENTATION
 
@@ -56,6 +55,7 @@ struct Node {
 	struct Node *nextNodeInHashTableSlot;
 	struct Node **pointerToThisNodeInHashTableSlot;
 
+	// Must be acquired BEFORE ITS PARENT.
 	Semaphore semaphore; 
 
 	NodeData data;
@@ -120,11 +120,11 @@ VFS vfs;
 #ifdef IMPLEMENTATION
 
 bool Node::Resize(uint64_t newSize) {
-	parent->semaphore.Take();
-	Defer(parent->semaphore.Return());
-
 	semaphore.Take();
 	Defer(semaphore.Return());
+
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
 
 	if (deleted) return false;
 	bool success = false;
@@ -147,11 +147,11 @@ bool Node::Resize(uint64_t newSize) {
 }
 
 OSError Node::Delete() {
-	parent->semaphore.Take();
-	Defer(parent->semaphore.Return());
-
 	semaphore.Take();
 	Defer(semaphore.Return());
+
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
 
 	if (deleted) {
 		return OS_ERROR_NODE_ALREADY_DELETED;
@@ -196,7 +196,7 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 		return OS_ERROR_TARGET_INVALID_TYPE;
 	}
 
-	bool takeSemaphoreOnParentFirst = false;
+	bool takeSemaphoreOnParentFirst = true;
 
 	{
 		Node *n = newDirectory;
@@ -206,7 +206,7 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 
 			if (n == parent) {
 				// We are trying to move this node into a child folder of the current parent.
-				takeSemaphoreOnParentFirst = true;
+				takeSemaphoreOnParentFirst = false;
 			} else if (n == this) {
 				// We are trying to move this node into a folder within itself.
 				return OS_ERROR_TARGET_WITHIN_SOURCE;
@@ -218,6 +218,9 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 
 	Node *oldDirectory = parent;
 
+	semaphore.Take();
+	Defer(semaphore.Return());
+
 	if (!takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Take();
 	Defer(if (!takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Return());
 
@@ -226,9 +229,6 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 
 	if (takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Take();
 	Defer(if (takeSemaphoreOnParentFirst && oldDirectory != newDirectory) newDirectory->semaphore.Return());
-
-	semaphore.Take();
-	Defer(semaphore.Return());
 
 	if (deleted) return OS_ERROR_NODE_ALREADY_DELETED;
 	if (newDirectory->filesystem != parent->filesystem) return OS_ERROR_VOLUME_MISMATCH;
@@ -254,11 +254,11 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 }
 
 void Node::Sync() {
-	parent->semaphore.Take();
-	Defer(parent->semaphore.Return());
-
 	semaphore.Take();
 	Defer(semaphore.Return());
+
+	parent->semaphore.Take();
+	Defer(parent->semaphore.Return());
 
 	if (deleted) return;
 	
