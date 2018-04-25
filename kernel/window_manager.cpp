@@ -215,6 +215,24 @@ void WindowManager::RefreshCursor(Window *window) {
 			windowManager.cursorImageHeight = 19;
 		} break;
 
+		case OS_CURSOR_PAN_HOVER: {
+			windowManager.cursorImageX = 184;
+			windowManager.cursorImageY = 116;
+			windowManager.cursorImageOffsetX = -7;
+			windowManager.cursorImageOffsetY = -9;
+			windowManager.cursorImageWidth = 15;
+			windowManager.cursorImageHeight = 18;
+		} break;
+
+		case OS_CURSOR_PAN_DRAG: {
+			windowManager.cursorImageX = 201;
+			windowManager.cursorImageY = 119;
+			windowManager.cursorImageOffsetX = -7;
+			windowManager.cursorImageOffsetY = -6;
+			windowManager.cursorImageWidth = 15;
+			windowManager.cursorImageHeight = 15;
+		} break;
+
 		case OS_CURSOR_NORMAL:
 		default: {
 			windowManager.cursorImageX = 125;

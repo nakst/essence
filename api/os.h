@@ -176,6 +176,7 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_BOOKMARK		(7)
 #define OS_ICON_ROTATE_CLOCKWISE 	(8)
 #define OS_ICON_ROTATE_ANTI_CLOCKWISE 	(9)
+#define OS_ICON_MAGNIFYING_GLASS	(10)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -459,6 +460,8 @@ typedef enum OSCursorStyle {
 	OS_CURSOR_RESIZE_DIAGONAL_2, // '\'
 	OS_CURSOR_SPLIT_VERTICAL,
 	OS_CURSOR_SPLIT_HORIZONTAL,
+	OS_CURSOR_PAN_HOVER,
+	OS_CURSOR_PAN_DRAG,
 } OSCursorStyle;
 
 typedef struct OSString {
@@ -516,6 +519,7 @@ typedef enum OSGridStyle {
 	OS_GRID_STYLE_STATUS_BAR,
 	OS_GRID_STYLE_TOOLBAR,
 	OS_GRID_STYLE_TOOLBAR_ALT,
+	OS_GRID_STYLE_BLANK_MENU,
 } OSGridStyle;
 
 typedef enum OSMessageType {
@@ -567,6 +571,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MOUSE_MIDDLE_PRESSED 	= 0x100E,
 	OS_MESSAGE_MOUSE_MIDDLE_RELEASED 	= 0x100F,
 	OS_MESSAGE_MODAL_PARENT_CLICKED		= 0x1010,
+	OS_MESSAGE_UPDATE_WINDOW		= 0x1011,
 
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
@@ -748,6 +753,8 @@ typedef struct OSMenuSpecification {
 	char *name;
 	size_t nameBytes;
 
+	int minimumWidth, minimumHeight;
+
 	OSMenuItem *items;
 	size_t itemCount;
 } OSMenuSpecification;
@@ -883,6 +890,7 @@ typedef struct OSListViewColumn {
 
 #define OS_CREATE_MENUBAR (1)
 #define OS_CREATE_SUBMENU (2)
+#define OS_CREATE_MENU_BLANK (4)
 #define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
 #define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
 
@@ -976,8 +984,12 @@ OS_EXTERN_C void OSInitialiseGUI();
 #define OS_GRID_PROPERTY_GAP_SIZE (2)
 #define OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH (3)
 #define OS_GUI_OBJECT_PROPERTY_SUGGESTED_HEIGHT (4)
+#define OS_CONTROL_PROPERTY_CURSOR (5)
 OS_EXTERN_C void OSSetProperty(OSObject object, uintptr_t index, void *value);
 
+OS_EXTERN_C void OSSetCursor(OSObject window, OSCursorStyle cursor);
+
+OS_EXTERN_C OSError OSPostMessage(OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message);
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.

@@ -445,6 +445,18 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.nameBytes = 0,\n");
 			}
 
+			if (FindProperty("minimumWidth", &value)) {
+				fprintf(output, "\t.minimumWidth = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.minimumWidth = 0,\n");
+			}
+
+			if (FindProperty("minimumHeight", &value)) {
+				fprintf(output, "\t.minimumHeight = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.minimumHeight = 0,\n");
+			}
+
 			fprintf(output, "\t.items = __%.*s,\n", section.bytes, section.text);
 			fprintf(output, "\t.itemCount = %d,\n", menuItemCount);
 

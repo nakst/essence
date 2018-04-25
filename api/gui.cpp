@@ -157,6 +157,7 @@ static UIImage textboxCommandHover	= {{44 + 52, 44 + 61, 166, 189}, {44 + 55, 44
 
 static UIImage gridBox 			= {{1, 7, 17, 23}, {3, 4, 19, 20}};
 static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
+static UIImage menuBoxBlank		= {{22, 27, 16, 24}, {24, 25, 19, 20}};
 static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 128, 144}, OS_DRAW_MODE_STRECH};
 static UIImage dialogAltAreaBox		= {{18, 19, 17, 22}, {18, 19, 21, 22}};
 
@@ -328,6 +329,7 @@ static UIImage icons16[] = {
 	ICON16(512 + 320, 288),
 	ICON16(512 + 192, 16),
 	ICON16(512 + 0, 432),
+	ICON16(512 + 64, 288),
 };
 
 static UIImage icons32[] = {
@@ -453,13 +455,6 @@ struct GUIObject : APIObject {
 		relayout : 1, repaint : 1,
 		tabStop : 1, disabled : 1;
 };
-
-static inline void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
-	do {
-		object->descendentInvalidationFlags |= mask;
-		object = (GUIObject *) object->parent;
-	} while (object);
-}
 
 #define DESCENDENT_REPAINT  (1)
 #define DESCENDENT_RELAYOUT (2)
@@ -663,6 +658,8 @@ struct Window : GUIObject {
 	OSCommand *defaultCommand;
 	void *instance;
 	bool hasMenuParent;
+
+	bool willUpdateAfterMessageProcessing;
 };
 
 struct OpenMenu {
@@ -680,6 +677,26 @@ struct GUIAllocationBlock {
 };
 
 static GUIAllocationBlock *guiAllocationBlock;
+
+static void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
+	do {
+		if (object->type == API_OBJECT_WINDOW) {
+			Window *window = (Window *) object;
+
+			if (!window->willUpdateAfterMessageProcessing) {
+				window->willUpdateAfterMessageProcessing = true;
+
+				OSMessage message;
+				message.type = OS_MESSAGE_UPDATE_WINDOW;
+				message.context = window;
+				OSPostMessage(&message);
+			}
+		}
+
+		object->descendentInvalidationFlags |= mask;
+		object = (GUIObject *) object->parent;
+	} while (object);
+}
 
 void OSStartGUIAllocationBlock(size_t bytes) {
 	guiAllocationBlock = (GUIAllocationBlock *) OSHeapAllocate(bytes + sizeof(GUIAllocationBlock), false);
@@ -779,10 +796,8 @@ static size_t ClipboardTextBytes() {
 static inline void RepaintControl(OSObject _control, bool customOnly = false) {
 	Control *control = (Control *) _control;
 
-	if (!control->repaint) {
-		control->repaint = true;
-		SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
-	}
+	control->repaint = true;
+	SetParentDescendentInvalidationFlags(control, DESCENDENT_REPAINT);
 
 	if (!customOnly) {
 		control->repaintCustomOnly = false;
@@ -1282,10 +1297,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			}
 
 			if (control->window->hover != control) {
-				if (control->verbose) {
-					EnterDebugger();
-				}
-
 				if (!control->disabled || control->keepCustomCursorWhenDisabled) {
 					control->window->cursor = (OSCursorStyle) control->cursor;
 				}
@@ -1310,6 +1321,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 		} break;
 
 		case OS_MESSAGE_SET_PROPERTY: {
+			if (message->setProperty.index == OS_CONTROL_PROPERTY_CURSOR) {
+				control->cursor = (uintptr_t) message->setProperty.value;
+			}
+
 			SetGUIObjectProperty(control, message);
 		} break;
 
@@ -1330,6 +1345,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 	}
 
 	return response;
+}
+
+void OSSetCursor(OSObject object, OSCursorStyle cursor) {
+	Window *window = (Window *) object;
+	window->cursor = cursor;
 }
 
 static void CreateString(char *text, size_t textBytes, OSString *string, size_t characterCount = 0) {
@@ -3619,6 +3639,12 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 			grid->background = &menuBox;
 		} break;
 
+		case OS_GRID_STYLE_BLANK_MENU: {
+			grid->borderSize = OS_MAKE_RECTANGLE(2, 2, 2, 2);
+			grid->gapSize = 0;
+			grid->background = &menuBoxBlank;
+		} break;
+
 		case OS_GRID_STYLE_MENUBAR: {
 			grid->borderSize = OS_MAKE_RECTANGLE(0, 0, -1, 2);
 			grid->gapSize = 0;
@@ -3704,7 +3730,12 @@ static void SliderValueModified(Slider *grid, bool sendNotification = true) {
 }
 
 void OSSetSliderPosition(Slider *slider, int position, bool sendValueChangedNotification) {
-	slider->value = position;
+	if (slider->mode & OS_SLIDER_MODE_OPPOSITE_VALUE) {
+		slider->value = slider->maximum - position + slider->minimum;
+	} else {
+		slider->value = position;
+	}
+
 	SliderValueModified(slider, sendValueChangedNotification);
 }
 
@@ -3918,10 +3949,11 @@ OSObject OSCreateSlider(int minimum, int maximum, int initialValue,
 
 	slider->minimum = minimum;
 	slider->maximum = maximum;
-	slider->value = initialValue;
 	slider->mode = mode;
 	slider->minorTickSpacing = minorTickSpacing;
 	slider->majorTickSpacing = majorTickSpacing;
+
+	OSSetSliderPosition(slider, initialValue, false);
 
 	if (mode & OS_SLIDER_MODE_HORIZONTAL) {
 		slider->preferredWidth = 168;
@@ -4982,6 +5014,7 @@ static bool CompareKeyboardShortcut(OSCommand *command, OSMessage *message) {
 static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_HANDLED;
 	Window *window = (Window *) _object;
+	window->willUpdateAfterMessageProcessing = true;
 
 	static int lastClickX = 0, lastClickY = 0;
 	static bool draggingStarted = false;
@@ -5383,6 +5416,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
 	}
 
+	window->willUpdateAfterMessageProcessing = false;
+
 	return response;
 }
 
@@ -5582,14 +5617,25 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 		}
 	}
 
-	if (!menubar) {
+	if (!menubar && !(flags & OS_CREATE_MENU_BLANK)) {
 		if (width < 100) width = 100;
 		width += 8;
 	}
 
+	if (width < menuSpecification->minimumWidth) {
+		width = menuSpecification->minimumWidth;
+	}
 
-	OSObject grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, menubar ? OS_GRID_STYLE_MENUBAR : OS_GRID_STYLE_MENU);
+	if (height < menuSpecification->minimumHeight) {
+		height = menuSpecification->minimumHeight;
+	}
 
+	OSObject grid = nullptr;
+
+	if (!(flags & OS_CREATE_MENU_BLANK)) {
+		grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, menubar ? OS_GRID_STYLE_MENUBAR : OS_GRID_STYLE_MENU);
+	}
+	
 	OSObject returnValue = grid;
 
 	if (!menubar) {
@@ -5641,7 +5687,10 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 		openMenus[openMenuCount].window = window;
 		openMenuCount++;
 
-		OSSetRootGrid(window, grid);
+		if (grid) {
+			OSSetRootGrid(window, grid);
+		}
+
 		returnValue = window;
 	}
 

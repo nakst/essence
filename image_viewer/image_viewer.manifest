@@ -8,8 +8,8 @@ source = "image_viewer/main.cpp";
 [window mainWindow]
 width = 850;
 height = 600;
-minimumWidth = 300;
-minimumHeight = 200;
+minimumWidth = 100;
+minimumHeight = 100;
 title = "Image Viewer";
 
 [command commandRotateClockwise]
@@ -25,3 +25,14 @@ defaultDisabled = true;
 callback = CommandRotate;
 callbackArgument = COMMAND_ROTATE_ANTI_CLOCKWISE;
 iconID = OS_ICON_ROTATE_ANTI_CLOCKWISE;
+
+[command commandZoom]
+label = "Zoom";
+defaultDisabled = true;
+callback = CommandZoom;
+iconID = OS_ICON_MAGNIFYING_GLASS;
+
+[menu menuZoom]
+name = "Zoom";
+minimumWidth = 32;
+minimumHeight = 105;

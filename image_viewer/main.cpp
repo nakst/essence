@@ -11,9 +11,14 @@
 struct Instance {
 	OSObject window,
 		 imageDisplay;
+
 	OSHandle imageSurface;
 	OSCallback imageDisplayParentCallback;
 	int imageWidth, imageHeight;
+	float zoom, panX, panY, minimumZoom;
+	float minimumPanX, maximumPanX, minimumPanY, maximumPanY;
+	float panOffsetX, panOffsetY;
+	bool panEnabled;
 	bool repaintImageDisplay;
 
 	LinkedItem<Instance> thisItem;
@@ -33,6 +38,41 @@ struct Global {
 };
 
 Global global;
+
+OSCallbackResponse CommandZoom(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type == OS_NOTIFICATION_COMMAND) {
+		Instance *instance = (Instance *) OSGetInstanceFromControl(object);
+
+		OSPoint position;
+		OSGetMousePosition(nullptr, &position);
+		position.x -= 15;
+		position.y -= 100 - 14;
+		// TODO What happens at the top of the screen?
+
+		OSObject menu = OSCreateMenu(menuZoom, object, position, OS_CREATE_MENU_BLANK);
+		OSObject grid = OSCreateGrid(1, 1, OS_GRID_STYLE_BLANK_MENU);
+
+		OSSetRootGrid(menu, grid);
+
+		OSObject slider = OSCreateSlider(0, 100, instance->zoom * 5, OS_SLIDER_MODE_VERTICAL | OS_SLIDER_MODE_OPPOSITE_VALUE, 5, 1);
+		OSAddControl(grid, 0, 0, slider, OS_CELL_FILL);
+		OSSetObjectNotificationCallback(slider, OS_MAKE_CALLBACK(CommandZoom, instance));
+	} else if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
+		Instance *instance = (Instance *) message->context;
+		instance->repaintImageDisplay = true;
+		instance->zoom = sqrt((float) message->valueChanged.newValue / 5);
+		OSRepaintControl(instance->imageDisplay);
+	} else {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
 
 OSCallbackResponse CommandRotate(OSObject object, OSMessage *message) {
 	(void) object;
@@ -140,45 +180,91 @@ OSCallbackResponse ProcessImageDisplayMessage(OSObject object, OSMessage *messag
 			instance->repaintImageDisplay = false;
 
 			// Fill the background.
-			OSFillRectangle(message->paint.surface, message->paint.clip, OSColor(0xEA, 0xF0, 0xFC));
+			OSFillRectangle(message->paint.surface, message->paint.clip, OSColor(0xE9, 0xF0, 0xFD));
 
-			OSRectangle bounds = OSGetControlBounds(instance->imageDisplay);
+			float zoom = instance->zoom + instance->minimumZoom;
 
-			int displayWidth = bounds.right - bounds.left;
-			int displayHeight = bounds.bottom - bounds.top;
-
-			int imageWidth = instance->imageWidth;
-			int imageHeight = instance->imageHeight;
-			float aspectRatio = (float) imageHeight / (float) imageWidth;
-
-			int widthToHeight = (int) (displayWidth * aspectRatio);
-			int heightToWidth = (int) (displayHeight / aspectRatio);
-
-			int useWidth, useHeight;
-
-			if (widthToHeight > displayHeight) {
-				useHeight = displayHeight;
-				useWidth = heightToWidth;
-			} else {
-				useWidth = displayWidth;
-				useHeight = widthToHeight;
-			}
-
+			OSRectangle bounds = OSGetControlBounds(object);
 			OSRectangle sourceRegion = OS_MAKE_RECTANGLE(0, instance->imageWidth, 0, instance->imageHeight);
-			OSRectangle destinationRegion = OSGetControlBounds(instance->imageDisplay);
+			OSRectangle destinationRegion = OS_MAKE_RECTANGLE(
+					0, zoom * instance->imageWidth, 
+					0, zoom * instance->imageHeight);
 
-			int xOffset = (displayWidth - useWidth) / 2;
-			int yOffset = (displayHeight - useHeight) / 2;
+			destinationRegion.left += (bounds.right - bounds.left) / 2;
+			destinationRegion.top += (bounds.bottom - bounds.top) / 2;
+			destinationRegion.right += (bounds.right - bounds.left) / 2;
+			destinationRegion.bottom += (bounds.bottom - bounds.top) / 2;
 
-			destinationRegion.left += xOffset;
-			destinationRegion.right -= xOffset;
-			destinationRegion.top += yOffset;
-			destinationRegion.bottom -= yOffset;
+			destinationRegion.left -= instance->imageWidth * zoom / 2;
+			destinationRegion.top -= instance->imageHeight * zoom / 2;
+			destinationRegion.right -= instance->imageWidth * zoom / 2;
+			destinationRegion.bottom -= instance->imageHeight * zoom / 2;
+
+			instance->minimumPanX = destinationRegion.left;
+			instance->minimumPanY = destinationRegion.top;
+
+			if (instance->minimumPanX > 0) instance->minimumPanX = 0;
+			if (instance->minimumPanY > 0) instance->minimumPanY = 0;
+
+			instance->panEnabled = instance->minimumPanX || instance->minimumPanY;
+			instance->maximumPanX = -instance->minimumPanX;
+			instance->maximumPanY = -instance->minimumPanY;
+
+			if (instance->panX < instance->minimumPanX) instance->panX = instance->minimumPanX;
+			if (instance->panY < instance->minimumPanY) instance->panY = instance->minimumPanY;
+			if (instance->panX > instance->maximumPanX) instance->panX = instance->maximumPanX;
+			if (instance->panY > instance->maximumPanY) instance->panY = instance->maximumPanY;
+
+			destinationRegion.left += instance->panX;
+			destinationRegion.top += instance->panY;
+			destinationRegion.right += instance->panX;
+			destinationRegion.bottom += instance->panY;
+
+			destinationRegion.left += bounds.left;
+			destinationRegion.top += bounds.top;
+			destinationRegion.right += bounds.left;
+			destinationRegion.bottom += bounds.top;
 
 			OSDrawSurfaceClipped(message->paint.surface, instance->imageSurface, 
 					destinationRegion, sourceRegion, sourceRegion,
 					OS_DRAW_MODE_STRECH, 0xFF, message->paint.clip);
 		}
+	} else if (message->type == OS_MESSAGE_LAYOUT) {
+		int displayWidth = message->layout.right - message->layout.left;
+		int displayHeight = message->layout.bottom - message->layout.top;
+
+		int imageWidth = instance->imageWidth;
+		int imageHeight = instance->imageHeight;
+
+		if (imageWidth <= displayWidth && imageHeight <= displayHeight) {
+			instance->minimumZoom = 1.0f;
+		} else {
+			float aspectRatio = (float) imageHeight / (float) imageWidth;
+			int widthToHeight = (int) (displayWidth * aspectRatio);
+
+			if (widthToHeight > displayHeight) {
+				instance->minimumZoom = (float) displayHeight / (float) imageHeight;
+			} else {
+				instance->minimumZoom = (float) displayWidth / (float) imageWidth;
+			}
+		}
+	} else if (message->type == OS_MESSAGE_START_HOVER && instance->panEnabled) {
+		OSSetCursor(instance->window, OS_CURSOR_PAN_HOVER);
+	} else if (message->type == OS_MESSAGE_START_PRESS && instance->panEnabled) {
+		OSSetCursor(instance->window, OS_CURSOR_PAN_DRAG);
+
+		OSPoint mousePosition;
+		OSGetMousePosition(instance->window, &mousePosition);
+
+		instance->panOffsetX = instance->panX - mousePosition.x;
+		instance->panOffsetY = instance->panY - mousePosition.y;
+	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED && instance->panEnabled) {
+		instance->panX = instance->panOffsetX + message->mouseDragged.newPositionX;
+		instance->panY = instance->panOffsetY + message->mouseDragged.newPositionY;
+		instance->repaintImageDisplay = true;
+		OSRepaintControl(instance->imageDisplay);
+	} else if (message->type == OS_MESSAGE_END_PRESS && instance->panEnabled) {
+		OSSetCursor(instance->window, OS_CURSOR_PAN_HOVER);
 	}
 
 	if (response == OS_CALLBACK_NOT_HANDLED) {
@@ -260,6 +346,7 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 
 	OSAddControl(toolbar, 0, 0, OSCreateButton(commandRotateAntiClockwise, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSAddControl(toolbar, 1, 0, OSCreateButton(commandRotateClockwise, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 2, 0, OSCreateButton(commandZoom, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	imageDisplay = OSCreateBlankControl(0, 0, OS_CURSOR_NORMAL, OS_BLANK_CONTROL_IGNORE_ACTIVATION_CLICKS);
 	OSAddControl(rootLayout, 0, 1, imageDisplay, OS_CELL_H_EXPAND | OS_CELL_H_PUSH 
@@ -268,6 +355,7 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 
 	OSEnableCommand(window, commandRotateAntiClockwise, true);
 	OSEnableCommand(window, commandRotateClockwise, true);
+	OSEnableCommand(window, commandZoom, true);
 
 	OSEndGUIAllocationBlock();
 }
