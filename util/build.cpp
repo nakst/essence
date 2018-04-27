@@ -59,7 +59,7 @@ void Build(bool enableOptimisations, bool compile = true) {
 
 	if (compile) {
 		if (enableOptimisations) {
-			system("./compile.sh \"-O3\" \"-O3 -DDEBUG_BUILD\"");
+			system("./compile.sh \"-O2\" \"-O2 -DDEBUG_BUILD\"");
 		} else {
 			system("./compile.sh \"\" \"-DDEBUG_BUILD\"");
 		}

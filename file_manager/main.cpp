@@ -366,7 +366,7 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 	}
 }
 
-const char *GetFileType(char *name, size_t bytes) {
+int GetFileType(char *name, size_t bytes) {
 	int lastSeparator = 0;
 
 	for (intptr_t i = bytes - 1; i >= 0; i--) {
@@ -381,21 +381,58 @@ const char *GetFileType(char *name, size_t bytes) {
 
 #define MATCH_EXTENSION(a) (OSCStringLength(name) == bytes && 0 == OSCompareBytes((void *) (a), name, bytes))
 
+#define FILE_CLASS_EXECUTABLE (0x1000)
+#define FILE_CLASS_IMAGE (0x2000)
+#define FILE_CLASS_TEXT (0x4000)
+#define FILE_CLASS_FONT (0x8000)
+#define FILE_CLASS_MISC (0x10000)
+
 	if (MATCH_EXTENSION(".esx")) {
-		return "Executable";
+#define FILE_TYPE_EXECUTABLE (FILE_CLASS_EXECUTABLE | 1)
+		return FILE_TYPE_EXECUTABLE;
 	} else if (MATCH_EXTENSION(".esx_symbols")) {
-		return "Debugger data";
+#define FILE_TYPE_DEBUGGER_DATA (FILE_CLASS_EXECUTABLE | 2)
+		return FILE_TYPE_DEBUGGER_DATA;
 	} else if (MATCH_EXTENSION(".png")) {
-		return "PNG image";
+#define FILE_TYPE_PNG_IMAGE (FILE_CLASS_IMAGE | 1)
+		return FILE_TYPE_PNG_IMAGE;
 	} else if (MATCH_EXTENSION(".jpg")) {
-		return "JPG image";
+#define FILE_TYPE_JPG_IMAGE (FILE_CLASS_IMAGE | 2)
+		return FILE_TYPE_JPG_IMAGE;
 	} else if (MATCH_EXTENSION(".ttf")) {
-		return "TTF font";
+#define FILE_TYPE_TTF_FONT (FILE_CLASS_FONT | 1)
+		return FILE_TYPE_TTF_FONT;
 	} else if (MATCH_EXTENSION(".a")) {
-		return "Static library";
+#define FILE_TYPE_STATIC_LIBRARY (FILE_CLASS_MISC | 1)
+		return FILE_TYPE_STATIC_LIBRARY;
 	} else if (MATCH_EXTENSION(".h")) {
-		return "C/C++ header";
+#define FILE_TYPE_C_HEADER (FILE_CLASS_TEXT | 1)
+		return FILE_TYPE_C_HEADER;
 	} else if (MATCH_EXTENSION(".txt")) {
+#define FILE_TYPE_PLAIN_TEXT (FILE_CLASS_TEXT | 2)
+		return FILE_TYPE_PLAIN_TEXT;
+	} else {
+#define FILE_TYPE_UNKNOWN (0)
+		return FILE_TYPE_UNKNOWN;
+	}
+}
+
+const char *GetFileType(int index) {
+	if (index == FILE_TYPE_EXECUTABLE) {
+		return "Executable";
+	} else if (index == FILE_TYPE_DEBUGGER_DATA) {
+		return "Debugger data";
+	} else if (index == FILE_TYPE_PNG_IMAGE) {
+		return "PNG image";
+	} else if (index == FILE_TYPE_JPG_IMAGE) {
+		return "JPG image";
+	} else if (index == FILE_TYPE_TTF_FONT) {
+		return "TTF font";
+	} else if (index == FILE_TYPE_STATIC_LIBRARY) {
+		return "Static library";
+	} else if (index == FILE_TYPE_C_HEADER) {
+		return "C/C++ header";
+	} else if (index == FILE_TYPE_PLAIN_TEXT) {
 		return "Plain text";
 	} else {
 		return "File";
@@ -429,7 +466,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 					case COLUMN_TYPE: {
 						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
-								"%z", data->information.type == OS_NODE_FILE ? GetFileType(data->name, data->nameLengthBytes) : "Folder");
+								"%z", data->information.type == OS_NODE_FILE ? GetFileType(GetFileType(data->name, data->nameLengthBytes)) : "Folder");
 					} break;
 
 					case COLUMN_SIZE: {
@@ -510,7 +547,16 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			OSDirectoryChild *data = &child->data;
 
 			if (data->information.type == OS_NODE_FILE) {
-				// TODO Opening files.
+				int fileType = GetFileType(data->name, data->nameLengthBytes);
+
+				if (fileType & FILE_CLASS_EXECUTABLE) {
+					size_t length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%s/%s", 
+							instance->pathBytes, instance->path, data->nameLengthBytes, data->name);
+					OSProcessInformation information;
+					OSCreateProcess(guiStringBuffer, length, &information, nullptr);
+					OSCloseHandle(information.handle);
+					OSCloseHandle(information.mainThread.handle);
+				}
 			} else if (data->information.type == OS_NODE_DIRECTORY) {
 				char *existingPath = instance->path;
 				size_t existingPathBytes = instance->pathBytes;

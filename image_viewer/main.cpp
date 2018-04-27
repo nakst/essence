@@ -8,9 +8,12 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/image_viewer.manifest.h"
 
+// TODO Be able to open the image viewer from the file manager.
+
 // TODO Make the zoom slider's range easier to use.
-// TODO Have a decent minimum zoom.
+// 	- Have a decent minimum zoom.
 // TODO Clip the panning positions.
+// TODO Prevent zooming changing the pan?
 
 struct Instance {
 	OSObject window,

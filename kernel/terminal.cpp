@@ -209,8 +209,8 @@ void KernelPanic(const char *format, ...) {
 		while (item) {
 			Thread *thread = item->thisItem;
 
-			if (thread->type == THREAD_NORMAL) {
-				Print("=> %d %d %x %x %x ", thread->id, thread->state, thread, thread->interruptContext->rip, thread->interruptContext->rbp);
+			// if (thread->type == THREAD_NORMAL) {
+				Print("=> %d %d %d %x %x %x ", thread->id, thread->state, thread->type, thread, thread->interruptContext->rip, thread->interruptContext->rbp);
 
 				if (thread->state == THREAD_WAITING_EVENT) {
 					Print("ev %d %x", thread->blockingEventCount, thread->blockingEvents[0]);
@@ -219,7 +219,7 @@ void KernelPanic(const char *format, ...) {
 				}
 
 				Print("\n");
-			}
+			// }
 
 			item = item->nextItem;
 		}

@@ -697,13 +697,15 @@ typedef struct OSMessage {
 #define OS_LIST_VIEW_ITEM_CUSTOM	   (0x0002)
 #define OS_LIST_VIEW_ITEM_TEXT             (0x10000)
 #define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
+#define OS_LIST_VIEW_ITEM_WIDTH		   (0x40000)
+#define OS_LIST_VIEW_ITEM_HEIGHT	   (0x80000)
 		struct {
 			char *text; 
 			size_t textBytes;
 			uint32_t mask;
 			int32_t index, column;
-			uint16_t iconID;
-			uint16_t state;
+			uint16_t iconID, state;
+			uint16_t width, height;
 		} listViewItem;
 
 		struct {
@@ -1060,6 +1062,7 @@ OS_EXTERN_C void OSSetSliderPosition(OSObject slider, int position, bool sendVal
 OS_EXTERN_C int OSGetSliderPosition(OSObject slider);
 
 OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);
+OS_EXTERN_C void OSListViewRemove(OSObject listView, int32_t index, int32_t count);
 OS_EXTERN_C void OSListViewReset(OSObject listView);
 OS_EXTERN_C void OSListViewInvalidate(OSObject listView, int32_t index, int32_t count);
 OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, int32_t count);

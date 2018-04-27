@@ -1206,6 +1206,10 @@ void Scheduler::NotifyObject(LinkedList<Thread> *blockedThreads, bool schedulerA
 void Mutex::Acquire() {
 	if (scheduler.panic) return;
 
+	if (((uintptr_t) this & 0xFFFFFFFF00000000) == 0xFFFF8F8000000000) {
+		ProcessorBreakpointHelper();
+	}
+
 	Thread *currentThread = GetCurrentThread();
 	bool hasThread = currentThread;
 
