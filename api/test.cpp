@@ -49,10 +49,9 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		Word *word = words + index;
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-			// message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
 			switch (message->listViewItem.column) {
 				case 0: {
-					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
+					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d/%d)", word->length, word->text, index + 1, wordCount);
 				} break;
 
 				case 1: {
@@ -185,6 +184,7 @@ void CreateList(OSObject content) {
 	}
 #endif
 
+#if 1
 #if 0
 	listView = OSCreateListView(OS_FLAGS_DEFAULT | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
 #else
@@ -194,7 +194,10 @@ void CreateList(OSObject content) {
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
 	OSListViewInsert(listView, 0, wordCount/* / 16*/);
 
-	OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
+	// OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
+#else
+	(void) content;
+#endif
 
 	OSPrint("Loaded test list with %d words (%d total)\n", wordCount, totalWords);
 }

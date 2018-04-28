@@ -35,6 +35,9 @@ char *errorMessages[] = {
 	(char *) "OVERWRITE_GRID_OBJECT",
 	(char *) "CORRUPT_LINKED_LIST",
 	(char *) "NO_MENU_POSITION",
+	(char *) "BAD_OBJECT_TYPE",
+	(char *) "MESSAGE_SHOULD_BE_HANDLED",
+	(char *) "INDEX_OUT_OF_BOUNDS",
 };
 
 OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) {
@@ -168,17 +171,17 @@ extern "C" void ProgramEntry() {
 #if 0
 	{
 		OSProcessInformation process;
-		OSCreateProcess(OSLiteral("/OS/Calculator.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/Test.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/Calculator.esx"), &process, nullptr);
+		OSCreateProcess(OSLiteral("/OS/Test.esx"), &process, nullptr);
 		OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/Image Viewer.esx"), &process, nullptr);
+		// OSCreateProcess(OSLiteral("/OS/Image Viewer.esx"), &process, nullptr);
 	}
 #else
 	{
 		for (int i = 0; i < 1; i++) {
 			// const char *path = "/OS/Calculator.esx";
-			// const char *path = "/OS/Test.esx";
-			const char *path = "/OS/File Manager.esx";
+			const char *path = "/OS/Test.esx";
+			// const char *path = "/OS/File Manager.esx";
 			// const char *path = "/OS/Image Viewer.esx";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);

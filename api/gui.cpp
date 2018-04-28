@@ -26,20 +26,9 @@ static void EnterDebugger() {
 
 #define STANDARD_BORDER_SIZE (2)
 
-#define LIST_VIEW_MARGIN (10)
-#define LIST_VIEW_TEXT_MARGIN (6)
-#define LIST_VIEW_WITH_BORDER_MARGIN (LIST_VIEW_MARGIN + STANDARD_BORDER_SIZE)
-#define LIST_VIEW_ROW_HEIGHT (21)
-#define LIST_VIEW_HEADER_HEIGHT (25)
-
 #define ICON_TEXT_GAP (5)
 
 uint32_t STANDARD_BACKGROUND_COLOR = 0xF5F6F9;
-
-uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
-uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
-uint32_t LIST_VIEW_SECONDARY_TEXT_COLOR = 0x686868;
-uint32_t LIST_VIEW_BACKGROUND_COLOR = 0xFFFFFFFF;
 
 uint32_t TEXT_COLOR_DEFAULT = 0x000515;
 uint32_t TEXT_COLOR_DISABLED = 0x777777;
@@ -66,6 +55,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // TODO Wrapping.
 // TODO Scrolling in textboxes.
 // TODO Dragging and right-clicking in list views.
+// TODO Using the textbox context menu with OS_TEXTBOX_STYLE_COMMAND doesn't work.
 
 struct UIImage {
 	OSRectangle region;
@@ -195,14 +185,6 @@ static UIImage smallArrowUpNormal      = {{206, 217, 25, 34}, {206, 206, 25, 25}
 static UIImage smallArrowDownNormal    = {{206, 217, 35, 44}, {206, 206, 35, 35}};
 static UIImage smallArrowLeftNormal    = {{204, 213, 14, 25}, {204, 204, 14, 14}};
 static UIImage smallArrowRightNormal   = {{204, 213, 3, 14}, {204, 204, 3, 3}};
-
-static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 3, 241 - 3, 59 + 3, 72 - 3}};
-static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 3, 14 + 241 - 3, 59 + 3, 72 - 3}};
-static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3, 28 + 72 - 3}};
-static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
-static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
-static UIImage listViewColumnHeaderDivider = {{212, 213, 45, 70}, {122, 122, 45, 45}};
-static UIImage listViewColumnHeader        = {{206, 212, 45, 70}, {206, 212, 45, 70}, OS_DRAW_MODE_STRECH};
 
 static UIImage lineHorizontal		= {{40, 52, 115, 116}, {41, 41, 115, 115}};
 static UIImage *lineHorizontalBackgrounds[] = { &lineHorizontal, &lineHorizontal, &lineHorizontal, &lineHorizontal, };
@@ -369,9 +351,15 @@ static UIImage *scrollbarResizePadBackgrounds[] = {
 static UIImage *menuItemBackgrounds[] = {
 	nullptr,
 	nullptr,
+#if 1
 	&menuItemHover,
 	&menuItemDragged,
 	&menuItemHover,
+#else
+	&listViewHighlight,
+	&listViewSelected,
+	&listViewHighlight,
+#endif
 };
 
 struct UIImage *toolbarItemBackgrounds[] = {
@@ -525,6 +513,7 @@ struct Control : GUIObject {
 	uint8_t current1, current2, current3, current4, current5;
 };
 
+#if 0
 struct ListView : Control {
 	unsigned flags;
 	size_t itemCount;
@@ -552,6 +541,7 @@ struct ListView : Control {
 		DRAGGING_COLUMN,
 	} dragging;
 };
+#endif
 
 struct MenuItem : Control {
 	OSMenuItem item;
@@ -604,6 +594,7 @@ struct SliderHandle : Control {
 struct Scrollbar : Grid {
 	bool enabled;
 	bool orientation;
+	bool automaticallyUpdatePosition;
 
 	int contentSize;
 	int viewportSize;
@@ -677,6 +668,9 @@ struct GUIAllocationBlock {
 };
 
 static GUIAllocationBlock *guiAllocationBlock;
+
+#include "list_view.cpp"
+#define IMPLEMENTATION
 
 static void SetParentDescendentInvalidationFlags(GUIObject *object, uint16_t mask) {
 	do {
@@ -2150,6 +2144,7 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	return result;
 }
 
+#if 0
 static void RepaintListViewRows(ListView *control, int from, int to) {
 	RepaintControl(control, true);
 
@@ -2779,7 +2774,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *mes
 			OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
 					control->bounds.bottom - control->bounds.top 
 					- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
-					- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
+					- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0), true);
 
 			OSSendMessage(control->scrollbar, &m);
 			control->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
@@ -2854,7 +2849,7 @@ void OSListViewSetColumns(OSObject _listView, OSListViewColumn *columns, int32_t
 	OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
 			control->bounds.bottom - control->bounds.top 
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
-			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
+			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0), true);
 
 	RepaintControl(control);
 }
@@ -2866,7 +2861,7 @@ void OSListViewReset(OSObject _listView) {
 	OSSetScrollbarMeasurements(control->scrollbar, 0, 
 			control->bounds.bottom - control->bounds.top 
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
-			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
+			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0), true);
 
 	RepaintControl(control);
 }
@@ -2886,7 +2881,7 @@ void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
 	OSSetScrollbarMeasurements(control->scrollbar, control->itemCount * LIST_VIEW_ROW_HEIGHT, 
 			control->bounds.bottom - control->bounds.top 
 			- ((control->flags & OS_CREATE_LIST_VIEW_BORDER) ? LIST_VIEW_WITH_BORDER_MARGIN : LIST_VIEW_MARGIN)
-			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0));
+			- (control->columns ? LIST_VIEW_HEADER_HEIGHT : 0), true);
 
 	if (scrollY / LIST_VIEW_ROW_HEIGHT >= index && scrollY) {
 		OSSetScrollbarPosition(control->scrollbar, scrollY + count * LIST_VIEW_ROW_HEIGHT, true);
@@ -2896,6 +2891,7 @@ void OSListViewInsert(OSObject _listView, int32_t index, int32_t count) {
 void OSListViewInvalidate(OSObject _listView, int32_t index, int32_t count) {
 	RepaintListViewRows((ListView *) _listView, index, index + count - 1);
 }
+#endif
 
 static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	MenuItem *control = (MenuItem *) GUIAllocate(sizeof(MenuItem), true);
@@ -4115,14 +4111,14 @@ OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
 	((Grid *) content)->treatPreferredDimensionsAsMinima = true;
 
 	if (flags & OS_CREATE_SCROLL_PANE_VERTICAL) {
-		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL);
+		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL, true);
 		OSAddGrid(grid, 1, 0, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
 		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
 		// OSPrint("vertical %x\n", scrollbar);
 	}
 
 	if (flags & OS_CREATE_SCROLL_PANE_HORIZONTAL) {
-		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL);
+		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL, true);
 		OSAddGrid(grid, 0, 1, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
 		// OSPrint("horizontal %x\n", scrollbar);
@@ -4394,7 +4390,7 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 
 		float fraction = -1;
 
-		if (height != scrollbar->height && scrollbar->height > 0) {
+		if (height != scrollbar->height && scrollbar->height > 0 && scrollbar->automaticallyUpdatePosition) {
 			fraction = (float) scrollbar->position / (float) scrollbar->maxPosition;
 		}
 
@@ -4432,10 +4428,12 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 	RepaintControl(scrollbar->objects[3]);
 	RepaintControl(scrollbar->objects[4]);
 
-	ScrollbarPositionChanged(scrollbar);
+	if (scrollbar->automaticallyUpdatePosition) {
+		ScrollbarPositionChanged(scrollbar);
+	}
 }
 
-OSObject OSCreateScrollbar(bool orientation) {
+OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 	uint8_t *memory = (uint8_t *) GUIAllocate(sizeof(Scrollbar) + sizeof(OSObject) * 5, true);
 
 	Scrollbar *scrollbar = (Scrollbar *) memory;
@@ -4443,6 +4441,7 @@ OSObject OSCreateScrollbar(bool orientation) {
 	OSSetCallback(scrollbar, OS_MAKE_CALLBACK(ProcessScrollbarMessage, nullptr));
 
 	scrollbar->orientation = orientation;
+	scrollbar->automaticallyUpdatePosition = automaticallyUpdatePosition;
 
 	scrollbar->columns = 1;
 	scrollbar->rows = 5;
@@ -5749,3 +5748,5 @@ void OSInitialiseGUI() {
 	OSFree(skin);
 	OSCloseHandle(buffer.handle);
 }
+
+#include "list_view.cpp"

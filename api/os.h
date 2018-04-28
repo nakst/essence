@@ -220,10 +220,10 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_OVERWRITE_GRID_OBJECT,
 	OS_FATAL_ERROR_CORRUPT_LINKED_LIST,
 	OS_FATAL_ERROR_NO_MENU_POSITION,
-	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
 	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
 	OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS,
+	OS_FATAL_ERROR_COUNT,
 } OSFatalError;
 
 // These must be negative.
@@ -584,6 +584,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_CANCEL_EDIT		= 0x2007,
 	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
 	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
+	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -707,6 +708,12 @@ typedef struct OSMessage {
 			uint16_t iconID, state;
 			uint16_t width, height;
 		} listViewItem;
+
+		struct {
+			int y;
+			uintptr_t index;
+			int offset;
+		} convertYToIndex;
 
 		struct {
 			uintptr_t index;
@@ -836,14 +843,17 @@ typedef struct OSListViewColumn {
 // Some common layouts...
 #define OS_CELL_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
 #define OS_CELL_CENTER	  (OS_CELL_H_CENTER | OS_CELL_V_CENTER)
+#define OS_CELL_EXPAND    (OS_CELL_H_EXPAND | OS_CELL_V_EXPAND)
+#define OS_CELL_CORNER	  (OS_CELL_H_LEFT | OS_CELL_V_TOP)
 
 #define OS_CREATE_SCROLL_PANE_VERTICAL      (1)
 #define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)
 
-#define OS_CREATE_LIST_VIEW_BORDER          (1)
 #define OS_CREATE_LIST_VIEW_SINGLE_SELECT   (2)
 #define OS_CREATE_LIST_VIEW_MULTI_SELECT    (4)
 #define OS_CREATE_LIST_VIEW_ANY_SELECTIONS  (OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_MULTI_SELECT)
+#define OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT (16)
+#define OS_CREATE_LIST_VIEW_BORDER	    (32)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
@@ -1045,7 +1055,7 @@ OS_EXTERN_C OSObject OSCreateTextbox(OSTextboxStyle style);
 OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small);
-OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation);
+OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition);
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
 OS_EXTERN_C OSObject OSCreateSlider(int minimum, int maximum, int initialValue, int mode, int minorTickSpacing, int majorTickSpacing);
 
@@ -1061,11 +1071,11 @@ OS_EXTERN_C void OSSetProgressBarValue(OSObject control, int newValue);
 OS_EXTERN_C void OSSetSliderPosition(OSObject slider, int position, bool sendValueChangedNotification);
 OS_EXTERN_C int OSGetSliderPosition(OSObject slider);
 
-OS_EXTERN_C void OSListViewInsert(OSObject listView, int32_t index, int32_t count);
-OS_EXTERN_C void OSListViewRemove(OSObject listView, int32_t index, int32_t count);
+OS_EXTERN_C void OSListViewInsert(OSObject listView, uintptr_t index, size_t count);
+OS_EXTERN_C void OSListViewRemove(OSObject listView, uintptr_t index, size_t count);
 OS_EXTERN_C void OSListViewReset(OSObject listView);
-OS_EXTERN_C void OSListViewInvalidate(OSObject listView, int32_t index, int32_t count);
-OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, int32_t count);
+OS_EXTERN_C void OSListViewInvalidate(OSObject listView, uintptr_t index, size_t count);
+OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, size_t count);
 
 OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
 OS_EXTERN_C void OSSetScrollbarPosition(OSObject _scrollbar, int position, bool sendValueChangedNotification);

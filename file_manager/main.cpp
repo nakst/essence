@@ -862,16 +862,16 @@ void Instance::Initialise() {
 	OSAddGrid(rootLayout, 0, 1, toolbar2, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSAddGrid(rootLayout, 0, 5, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
-	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT);
+	OSSetObjectNotificationCallback(bookmarkList, OS_MAKE_CALLBACK(ProcessBookmarkListingNotification, this));
 	OSAddControl(contentSplit, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSSetProperty(bookmarkList, OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH, (void *) 160);
 	OSListViewInsert(bookmarkList, 0, global.bookmarkCount);
-	OSSetObjectNotificationCallback(bookmarkList, OS_MAKE_CALLBACK(ProcessBookmarkListingNotification, this));
 
-	folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT);
+	folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT);
+	OSSetObjectNotificationCallback(folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, this));
 	OSAddControl(contentSplit, 2, 0, folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
-	OSSetObjectNotificationCallback(folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, this));
 
 	OSAddControl(contentSplit, 1, 0, OSCreateLine(OS_ORIENTATION_VERTICAL), OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 
