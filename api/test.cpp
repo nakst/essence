@@ -71,6 +71,10 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 				message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
 			}
 		}
+
+		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
+			message->listViewItem.height = 300;
+		}
 	} else if (message->type == OS_NOTIFICATION_SET_ITEM) {
 		uintptr_t index = message->listViewItem.index;
 		Word *word = words + index;

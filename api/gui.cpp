@@ -3245,6 +3245,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 		case OS_MESSAGE_LAYOUT: {
 			if (grid->relayout || message->layout.force) {
+				grid->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
 				grid->relayout = false;
 
 				grid->bounds = OS_MAKE_RECTANGLE(
@@ -3380,6 +3381,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				grid->repaint = true;
 				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
 			} else if (grid->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
+				grid->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
+
 				for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
 					if (grid->objects[i]) {
 						message->layout.left   = ((GUIObject *) grid->objects[i])->cellBounds.left;
@@ -3391,8 +3394,6 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					}
 				}
 			}
-
-			grid->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
 		} break;
 
 		case OS_MESSAGE_MEASURE: {
@@ -4184,6 +4185,8 @@ void OSSetScrollbarPosition(OSObject object, int newPosition, bool sendValueChan
 	Scrollbar *scrollbar = (Scrollbar *) object;
 
 	if (scrollbar->enabled) {
+		// OSPrint("Set scrollbar position to %d\n", newPosition);
+
 		float range = (float) (scrollbar->contentSize - scrollbar->viewportSize);
 		float fraction = (float) newPosition / range;
 		scrollbar->position = (fraction * (float) scrollbar->maxPosition);
@@ -4244,6 +4247,9 @@ static OSCallbackResponse ProcessScrollbarGripMessage(OSObject object, OSMessage
 					scrollbar->orientation ? scrollbarNotchesHorizontal.region : scrollbarNotchesVertical.region,
 					scrollbar->orientation ? scrollbarNotchesHorizontal.border : scrollbarNotchesVertical.border,
 					OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
+		} else if (message->type == OS_MESSAGE_LAYOUT) {
+			// OSPrint("Layout scrollbar grip, %d, %d, %d, %d\n",
+					// message->layout.left, message->layout.right, message->layout.top, message->layout.bottom);
 		}
 	}
 
@@ -4279,6 +4285,8 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 
 				grid->repaint = true;
 				SetParentDescendentInvalidationFlags(grid, DESCENDENT_REPAINT);
+
+				// OSPrint("layout scrollbar %x\n", object);
 
 				{
 					OSMessage message;

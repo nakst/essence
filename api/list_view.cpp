@@ -4,11 +4,7 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Scrollbar bad at bottom and top.
-// 	- Need to move scroll up when increasing height.
-// 	- Scroll head disappears
 // TODO Vertical margins.
-
 // TODO Hover/select.
 // TODO Keyboard controls.
 // TODO Click/double-click/right-click.
@@ -26,6 +22,7 @@ uint32_t LIST_VIEW_BACKGROUND_COLOR = 0xFFFFFFFF;
 struct ListViewItem {
 	bool repaint;
 	int height;
+	uintptr_t index;
 };
 
 struct ListView : Control {
@@ -47,6 +44,7 @@ struct ListView : Control {
 
 	OSRectangle layoutClip;
 	OSRectangle margin;
+	OSRectangle oldBounds;
 
 	bool receivedLayout;
 };
@@ -88,7 +86,7 @@ OSRectangle ListViewGetContentBounds(ListView *list) {
 		contentBounds.bottom--;
 	}
 
-	OSPrint("CB: %d->%d\n", contentBounds.top, contentBounds.bottom);
+	// OSPrint("CB: %d->%d\n", contentBounds.top, contentBounds.bottom);
 
 	return contentBounds;
 }
@@ -106,6 +104,7 @@ ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) {
 
 	OSMoveMemory(list->visibleItems + index, list->visibleItems + list->visibleItemCount, sizeof(ListViewItem), true);
 	list->visibleItemCount++;
+	list->visibleItems[index].index = index + list->firstVisibleItem;
 	return list->visibleItems + index;
 }
 
@@ -135,7 +134,7 @@ void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, si
 	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 	for (i = index; i < index + count && remaining > 0; i++) {
-		ListViewItem *item = ListViewInsertVisibleItem(list, index);
+		ListViewItem *item = ListViewInsertVisibleItem(list, i);
 		item->repaint = true;
 
 		m.listViewItem.index = i;
@@ -152,7 +151,7 @@ void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, si
 }
 
 void ListViewUpdate(ListView *list) {
-	OSPrint("totalY = %d\n", list->totalY);
+	// OSPrint("totalY = %d\n", list->totalY);
 
 	list->showScrollbarX = list->showScrollbarY = false;
 
@@ -202,6 +201,166 @@ void ListViewUpdate(ListView *list) {
 	}
 }
 
+void ListViewScrollVertically(ListView *list, int newScrollY) {
+	RepaintControl(list);
+	int oldScrollY = list->scrollY;
+
+	int delta = newScrollY - oldScrollY;
+	if (delta < 0) delta = -delta;
+
+	if (!delta) {
+		return;
+	}
+
+	// OSPrint("SCROLLY %d -> %d\n", oldScrollY, newScrollY);
+
+	int constantHeight = 0;
+
+	OSMessage m = {};
+	m.type = OS_NOTIFICATION_GET_ITEM;
+	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+
+	if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
+		m.listViewItem.index = 0;
+		OSForwardMessage(list, list->notificationCallback, &m);
+		constantHeight = m.listViewItem.height;
+
+		if (!constantHeight) {
+			constantHeight = LIST_VIEW_DEFAULT_ROW_HEIGHT;
+		}
+	}
+
+	OSRectangle contentBounds = ListViewGetContentBounds(list);
+
+	if (delta > contentBounds.bottom - contentBounds.top) {
+		// We're moving past at least an entire screen, so the contents of the list will completely change.
+
+		list->visibleItemCount = 0;
+
+		if (newScrollY) {
+			if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
+				list->firstVisibleItem = newScrollY / constantHeight;
+				list->offsetIntoFirstVisibleItem = newScrollY % constantHeight;
+			} else {
+				m.type = OS_NOTIFICATION_CONVERT_Y_TO_INDEX;
+				m.convertYToIndex.y = newScrollY;
+
+				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+					// Start from the beginning....
+
+					int height = 0;
+					m.type = OS_NOTIFICATION_GET_ITEM;
+					m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+
+					for (uintptr_t i = 0; i < list->itemCount; i++) {
+						m.listViewItem.index = i;
+
+						if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+							OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+						}
+
+						int startHeight = height;
+						height += m.listViewItem.height ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+
+						if (height > newScrollY) {
+							list->firstVisibleItem = i;
+							list->offsetIntoFirstVisibleItem = newScrollY - startHeight;
+							break;
+						}
+					}
+				} else {
+					list->firstVisibleItem = m.convertYToIndex.index;
+					list->offsetIntoFirstVisibleItem = m.convertYToIndex.offset;
+				}
+			}
+		} else {
+			list->firstVisibleItem = 0;
+			list->offsetIntoFirstVisibleItem = 0;
+		}
+
+		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem, list->itemCount - list->firstVisibleItem);
+	} else if (oldScrollY < newScrollY) {
+		// Move content up.
+
+		delta += list->offsetIntoFirstVisibleItem;
+		uintptr_t i;
+
+		for (i = 0; i < list->visibleItemCount; i++) {
+			if (list->visibleItems[i].height <= delta) {
+				delta -= list->visibleItems[i].height;
+			} else {
+				break;
+			}
+		}
+
+		list->offsetIntoFirstVisibleItem = delta;
+		OSMoveMemory(list->visibleItems + i, list->visibleItems + list->visibleItemCount, -i * sizeof(ListViewItem), false);
+		list->visibleItemCount -= i;
+		list->firstVisibleItem += i;
+		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
+	} else if (oldScrollY > newScrollY) {
+		// Move content down.
+
+		if (delta < list->offsetIntoFirstVisibleItem) {
+			list->offsetIntoFirstVisibleItem -= delta;
+		} else {
+			delta -= list->offsetIntoFirstVisibleItem;
+			list->offsetIntoFirstVisibleItem = 0;
+
+			while (delta > 0) {
+				ListViewItem *item = ListViewInsertVisibleItem(list, list->firstVisibleItem);
+				list->firstVisibleItem--;
+				item->index--;
+
+				int height = constantHeight;
+
+				if (!height) {
+					m.listViewItem.index = list->firstVisibleItem;
+					OSForwardMessage(list, list->notificationCallback, &m);
+					height = m.listViewItem.height;
+					if (!height) height = LIST_VIEW_DEFAULT_ROW_HEIGHT;
+				}
+
+				item->repaint = true;
+				item->height = height;
+
+				if (delta < height) {
+					list->offsetIntoFirstVisibleItem = height - delta;
+					break;
+				} else {
+					delta -= height;
+				}
+			}
+
+			int remaining = contentBounds.bottom - contentBounds.top;
+			uintptr_t i = 0;
+
+			while (remaining >= 0 && i < list->visibleItemCount) {
+				remaining -= list->visibleItems[i].height;
+				i++;
+			}
+
+			list->visibleItemCount = i;
+
+			if (list->visibleItemCount + list->firstVisibleItem != list->itemCount) {
+				list->visibleItemCount++;
+			}
+		}
+	}
+
+	list->scrollY = newScrollY;
+
+#if 0
+	if (list->scrollY != list->firstVisibleItem * 21 + list->offsetIntoFirstVisibleItem) {
+		OSPrint("bad positions!!!!\n");
+	}
+#endif
+
+	if (list->visibleItemCount == 0) {
+		EnterDebugger();
+	}
+}
+
 OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message) {
 	ListView *list = (ListView *) listView;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
@@ -237,17 +396,17 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 
 			int y = -list->offsetIntoFirstVisibleItem;
 
-			OSPrint("<<<<<<<<\n");
+			// OSPrint("<<<<<<<<\n");
 
 			for (uintptr_t i = list->firstVisibleItem; i < list->firstVisibleItem + list->visibleItemCount; i++) {
 				ListViewItem *item = list->visibleItems + (i - list->firstVisibleItem);
 
 				if (!item->repaint && list->repaintCustomOnly) {
-					OSPrint("Not repainting %d\n", i);
+					// OSPrint("Not repainting %d\n", i);
 					continue;
 				} else {
 					item->repaint = false;
-					OSPrint("painting %d\n", i);
+					// OSPrint("painting %d (%dpx)\n", i, item->height);
 				}
 
 				OSMessage m = {};
@@ -272,7 +431,7 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 				string.buffer = m.listViewItem.text;
 				string.bytes = m.listViewItem.textBytes;
 
-				OSFillRectangle(message->paint.surface, rowClip, OSColor(255 - 20 * (i & 1), 255 - 10 * (i & 1), 255));
+				OSFillRectangle(message->paint.surface, rowClip, OSColor(255 - 20 * ((i + 1) & 1), 255 - 10 * ((i + 1) & 1), 255));
 
 				DrawString(message->paint.surface, row, &string, 
 						OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
@@ -294,9 +453,39 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 		list->layoutClip = message->layout.clip;
 		list->receivedLayout = true;
 
+		if (list->oldBounds.left == list->bounds.left && 
+				list->oldBounds.right == list->bounds.right && 
+				list->oldBounds.top == list->bounds.top && 
+				list->oldBounds.bottom == list->bounds.bottom) {
+			goto done;
+		} else {
+			list->oldBounds = list->bounds;
+		}
+
 		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
-		OSPrint("%d\n", list->visibleItemCount);
-		// TODO Decreasing scroll.
+
+		{
+			int height = -list->offsetIntoFirstVisibleItem;
+
+			for (uintptr_t i = 0; i < list->visibleItemCount; i++) {
+				height += list->visibleItems[i].height;
+			}
+
+			OSRectangle contentBounds = ListViewGetContentBounds(list);
+
+			if (height < contentBounds.bottom - contentBounds.top) {
+				int newScrollY = list->scrollY - (contentBounds.bottom - contentBounds.top - height);
+				// OSPrint("Adjust scroll y to be %d\n", newScrollY);
+
+				if (newScrollY >= 0) {
+					ListViewScrollVertically(list, newScrollY);
+				} else {
+					ListViewScrollVertically(list, 0);
+				}
+			}
+		}
+
+		done:;
 		ListViewUpdate(list);
 	} else if (message->type == OS_MESSAGE_PAINT) {
 		if ((list->descendentInvalidationFlags & DESCENDENT_REPAINT) || message->paint.force || redrawScrollbars) {
@@ -308,6 +497,14 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 			if (list->showScrollbarY) OSSendMessage(list->scrollbarY, &m);
 		}
 	}
+
+#if 0
+	for (uintptr_t i = 0; i < list->visibleItemCount; i++) {
+		if (list->visibleItems[i].index != list->firstVisibleItem + i) {
+			OSCrashProcess(OS_FATAL_ERROR_UNKNOWN);
+		}
+	}
+#endif
 
 	return response;
 }
@@ -330,139 +527,8 @@ OSCallbackResponse ListViewScrollbarYMoved(OSObject scrollbar, OSMessage *messag
 	ListView *list = (ListView *) message->context;
 
 	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
-		RepaintControl(list);
-
-		int oldScrollY = list->scrollY;
 		int newScrollY = message->valueChanged.newValue;
-		int delta = newScrollY - oldScrollY;
-		if (delta < 0) delta = -delta;
-
-		OSPrint("SCROLLY %d -> %d\n", oldScrollY, newScrollY);
-
-		int constantHeight = 0;
-
-		OSMessage m = {};
-		m.type = OS_NOTIFICATION_GET_ITEM;
-		m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
-
-		if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
-			m.listViewItem.index = 0;
-			OSForwardMessage(list, list->notificationCallback, &m);
-			constantHeight = m.listViewItem.height;
-
-			if (!constantHeight) {
-				constantHeight = LIST_VIEW_DEFAULT_ROW_HEIGHT;
-			}
-		}
-
-		OSRectangle contentBounds = ListViewGetContentBounds(list);
-
-		if (delta > contentBounds.bottom - contentBounds.top) {
-			// We're moving past at least an entire screen, so the contents of the list will completely change.
-
-			list->visibleItemCount = 0;
-
-			if (newScrollY) {
-				if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
-					list->firstVisibleItem = newScrollY / constantHeight;
-					list->offsetIntoFirstVisibleItem = newScrollY % constantHeight;
-				} else {
-					m.type = OS_NOTIFICATION_CONVERT_Y_TO_INDEX;
-					m.convertYToIndex.y = newScrollY;
-
-					if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
-						// Start from the beginning....
-
-						int height = 0;
-						m.type = OS_NOTIFICATION_GET_ITEM;
-						m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
-
-						for (uintptr_t i = 0; i < list->itemCount; i++) {
-							m.listViewItem.index = i;
-
-							if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
-								OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
-							}
-
-							height += m.listViewItem.height ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
-
-							if (height > newScrollY) {
-								list->firstVisibleItem = i;
-								list->offsetIntoFirstVisibleItem = height - newScrollY;
-								break;
-							}
-						}
-					} else {
-						list->firstVisibleItem = m.convertYToIndex.index;
-						list->offsetIntoFirstVisibleItem = m.convertYToIndex.offset;
-					}
-				}
-			} else {
-				list->firstVisibleItem = 0;
-				list->offsetIntoFirstVisibleItem = 0;
-			}
-
-			ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem, list->itemCount - list->firstVisibleItem);
-		} else if (oldScrollY < newScrollY) {
-			// Move content up.
-
-			delta += list->offsetIntoFirstVisibleItem;
-			uintptr_t i;
-
-			for (i = 0; i < list->visibleItemCount; i++) {
-				if (list->visibleItems[i].height <= delta) {
-					delta -= list->visibleItems[i].height;
-				} else {
-					break;
-				}
-			}
-
-			list->offsetIntoFirstVisibleItem = delta;
-			OSMoveMemory(list->visibleItems + i, list->visibleItems + list->visibleItemCount, -i * sizeof(ListViewItem), false);
-			list->visibleItemCount -= i;
-			list->firstVisibleItem += i;
-			ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
-		} else if (oldScrollY > newScrollY) {
-			// Move content down.
-
-			if (delta < list->offsetIntoFirstVisibleItem) {
-				list->offsetIntoFirstVisibleItem -= delta;
-			} else {
-				delta -= list->offsetIntoFirstVisibleItem;
-				list->offsetIntoFirstVisibleItem = 0;
-
-				while (delta > 0) {
-					list->firstVisibleItem--;
-
-					int height = constantHeight;
-
-					if (!height) {
-						m.listViewItem.index = list->firstVisibleItem;
-						OSForwardMessage(list, list->notificationCallback, &m);
-						height = m.listViewItem.height;
-						if (!height) height = LIST_VIEW_DEFAULT_ROW_HEIGHT;
-					}
-
-					if (delta < height) {
-						list->offsetIntoFirstVisibleItem = height - delta;
-						break;
-					} else {
-						delta -= height;
-					}
-				}
-
-				int remaining = contentBounds.bottom - contentBounds.top;
-				uintptr_t i = 0;
-
-				while (remaining >= 0 && i < list->visibleItemCount) {
-					remaining -= list->visibleItems[i].height;
-				}
-
-				list->visibleItemCount = i;
-			}
-		}
-
-		list->scrollY = newScrollY;
+		ListViewScrollVertically(list, newScrollY);
 		return OS_CALLBACK_HANDLED;
 	}
 
@@ -510,6 +576,12 @@ OSObject OSCreateListView(unsigned flags) {
 void OSListViewInsert(OSObject listView, uintptr_t index, size_t count) {
 	ListView *list = (ListView *) listView;
 	list->itemCount += count;
+
+	for (uintptr_t i = 0; i < list->visibleItemCount; i++) {
+		if (list->visibleItems[i].index >= index) {
+			list->visibleItems[i].index += count;
+		}
+	}
 
 	int itemsHeight = 0;
 
