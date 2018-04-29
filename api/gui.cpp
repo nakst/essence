@@ -2175,8 +2175,6 @@ static OSCallbackResponse ListViewScrollbarMoved(OSObject object, OSMessage *mes
 }
 
 static OSCallbackResponse ProcessListViewMessage(OSObject object, OSMessage *message) {
-	// TODO Rewrite all of this.
-
 	ListView *control = (ListView *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 

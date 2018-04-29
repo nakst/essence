@@ -13,6 +13,7 @@
 // TODO Custom controls.
 // TODO Dragging.
 // TODO Tile view.
+// TODO Clear scrollbar corner.
 
 uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
 uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
@@ -67,6 +68,13 @@ OSRectangle ListViewGetContentBounds(ListView *list) {
 
 	OSRectangle contentBounds = list->bounds;
 
+	if (list->flags & OS_CREATE_LIST_VIEW_BORDER) {
+		contentBounds.left++;
+		contentBounds.right--;
+		contentBounds.top++;
+		contentBounds.bottom--;
+	}
+
 	if (list->columns) {
 		contentBounds.top += LIST_VIEW_HEADER_HEIGHT;
 	}
@@ -79,16 +87,28 @@ OSRectangle ListViewGetContentBounds(ListView *list) {
 		contentBounds.right -= SCROLLBAR_SIZE;
 	}
 
-	if (list->flags & OS_CREATE_LIST_VIEW_BORDER) {
-		contentBounds.left++;
-		contentBounds.right--;
-		contentBounds.top++;
-		contentBounds.bottom--;
-	}
-
 	// OSPrint("CB: %d->%d\n", contentBounds.top, contentBounds.bottom);
 
 	return contentBounds;
+}
+
+OSRectangle ListViewGetHeaderBounds(ListView *list) {
+	if (!list->receivedLayout) {
+		return OS_MAKE_RECTANGLE_ALL(0);
+	}
+
+	OSRectangle headerBounds = list->bounds;
+
+	if (list->flags & OS_CREATE_LIST_VIEW_BORDER) {
+		headerBounds.left++;
+		headerBounds.right--;
+		headerBounds.top++;
+		headerBounds.bottom--;
+	}
+
+	headerBounds.bottom = headerBounds.top + LIST_VIEW_HEADER_HEIGHT;
+
+	return headerBounds;
 }
 
 ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) {
@@ -143,7 +163,7 @@ void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, si
 			OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 		}
 
-		item->height = m.listViewItem.height ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+		item->height = m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
 		remaining -= item->height;
 	}
 
@@ -225,7 +245,7 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 		OSForwardMessage(list, list->notificationCallback, &m);
 		constantHeight = m.listViewItem.height;
 
-		if (!constantHeight) {
+		if (constantHeight == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT) {
 			constantHeight = LIST_VIEW_DEFAULT_ROW_HEIGHT;
 		}
 	}
@@ -260,7 +280,7 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 						}
 
 						int startHeight = height;
-						height += m.listViewItem.height ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+						height += m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
 
 						if (height > newScrollY) {
 							list->firstVisibleItem = i;
@@ -318,7 +338,7 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 					m.listViewItem.index = list->firstVisibleItem;
 					OSForwardMessage(list, list->notificationCallback, &m);
 					height = m.listViewItem.height;
-					if (!height) height = LIST_VIEW_DEFAULT_ROW_HEIGHT;
+					if (height == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT) height = LIST_VIEW_DEFAULT_ROW_HEIGHT;
 				}
 
 				item->repaint = true;
@@ -361,6 +381,74 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 	}
 }
 
+void ListViewPaint(ListView *list, OSMessage *message) {
+	OSRectangle contentBounds = ListViewGetContentBounds(list);
+	OSRectangle contentClip;
+
+	OSRectangle headerBounds = ListViewGetHeaderBounds(list);
+	OSRectangle headerClip;
+
+	if (!list->repaintCustomOnly && (list->flags & OS_CREATE_LIST_VIEW_BORDER)) {
+		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, list->bounds,
+				listViewBorder.region, listViewBorder.border, listViewBorder.drawMode, 0xFF, message->paint.clip);
+	}
+
+	if (ClipRectangle(headerBounds, message->paint.clip, &headerClip)
+			&& list->columns && !list->repaintCustomOnly) {
+		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, headerBounds,
+				listViewColumnHeader.region, listViewColumnHeader.border, listViewColumnHeader.drawMode, 0xFF, headerClip);
+	}
+
+	if (ClipRectangle(contentBounds, message->paint.clip, &contentClip)) {
+		if (!list->repaintCustomOnly && !(list->flags & OS_CREATE_LIST_VIEW_BORDER)) {
+			OSFillRectangle(message->paint.surface, contentClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
+		}
+
+		int y = -list->offsetIntoFirstVisibleItem;
+
+		for (uintptr_t i = list->firstVisibleItem; i < list->firstVisibleItem + list->visibleItemCount; i++) {
+			ListViewItem *item = list->visibleItems + (i - list->firstVisibleItem);
+
+			if (!item->repaint && list->repaintCustomOnly) {
+				return;
+			} else {
+				item->repaint = false;
+			}
+
+			OSMessage m = {};
+			m.type = OS_NOTIFICATION_GET_ITEM;
+			m.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
+			m.listViewItem.index = i;
+
+			if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+				OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+			}
+
+			OSRectangle row = OS_MAKE_RECTANGLE(
+					contentBounds.left + list->margin.left, 
+					contentBounds.right - list->margin.right,
+					contentBounds.top + list->margin.top + y,
+					contentBounds.top + list->margin.top + y + item->height);
+
+			OSRectangle rowClip;
+			ClipRectangle(contentClip, row, &rowClip);
+
+			OSString string;
+			string.buffer = m.listViewItem.text;
+			string.bytes = m.listViewItem.textBytes;
+
+			OSFillRectangle(message->paint.surface, rowClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
+
+			DrawString(message->paint.surface, row, &string, 
+					OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+					LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
+					OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
+
+			y += item->height;
+		}
+	}
+}
+
 OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message) {
 	ListView *list = (ListView *) listView;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
@@ -381,67 +469,7 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 
 		response = OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
-		OSRectangle contentBounds = ListViewGetContentBounds(list);
-		OSRectangle contentClip;
-
-		if (!list->repaintCustomOnly && (list->flags & OS_CREATE_LIST_VIEW_BORDER)) {
-			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, list->bounds,
-					listViewBorder.region, listViewBorder.border, listViewBorder.drawMode, 0xFF, message->paint.clip);
-		}
-
-		if (ClipRectangle(contentBounds, message->paint.clip, &contentClip)) {
-			if (!list->repaintCustomOnly && !(list->flags & OS_CREATE_LIST_VIEW_BORDER)) {
-				OSFillRectangle(message->paint.surface, contentClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
-			}
-
-			int y = -list->offsetIntoFirstVisibleItem;
-
-			// OSPrint("<<<<<<<<\n");
-
-			for (uintptr_t i = list->firstVisibleItem; i < list->firstVisibleItem + list->visibleItemCount; i++) {
-				ListViewItem *item = list->visibleItems + (i - list->firstVisibleItem);
-
-				if (!item->repaint && list->repaintCustomOnly) {
-					// OSPrint("Not repainting %d\n", i);
-					continue;
-				} else {
-					item->repaint = false;
-					// OSPrint("painting %d (%dpx)\n", i, item->height);
-				}
-
-				OSMessage m = {};
-				m.type = OS_NOTIFICATION_GET_ITEM;
-				m.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
-				m.listViewItem.index = i;
-
-				if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
-					OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
-				}
-
-				OSRectangle row = OS_MAKE_RECTANGLE(
-						contentBounds.left + list->margin.left, 
-						contentBounds.right - list->margin.right,
-						contentBounds.top + list->margin.top + y,
-						contentBounds.top + list->margin.top + y + item->height);
-
-				OSRectangle rowClip;
-				ClipRectangle(contentClip, row, &rowClip);
-
-				OSString string;
-				string.buffer = m.listViewItem.text;
-				string.bytes = m.listViewItem.textBytes;
-
-				OSFillRectangle(message->paint.surface, rowClip, OSColor(255 - 20 * ((i + 1) & 1), 255 - 10 * ((i + 1) & 1), 255));
-
-				DrawString(message->paint.surface, row, &string, 
-						OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-						LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
-						OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
-
-				y += item->height;
-			}
-		}
-
+		ListViewPaint(list, message);
 		response = OS_CALLBACK_HANDLED;
 	}
 
@@ -592,16 +620,27 @@ void OSListViewInsert(OSObject listView, uintptr_t index, size_t count) {
 	if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
 		OSForwardMessage(list, list->notificationCallback, &m);
 
-		itemsHeight = count * (m.listViewItem.height ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
+		itemsHeight = count * (m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
 	} else {
-		for (uintptr_t i = 0; i < count; i++) {
-			m.listViewItem.index = index + i;
+		m.type = OS_NOTIFICATION_MEASURE_HEIGHT;
+		m.measureHeight.fromIndex = index;
+		m.measureHeight.toIndex = index + count;
 
-			if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
-				OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+		if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
+			itemsHeight = m.measureHeight.height;
+		} else {
+			m.type = OS_NOTIFICATION_GET_ITEM;
+			m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+
+			for (uintptr_t i = 0; i < count; i++) {
+				m.listViewItem.index = index + i;
+
+				if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+					OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+				}
+
+				itemsHeight += (m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
 			}
-
-			itemsHeight += (m.listViewItem.height ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
 		}
 	}
 
@@ -666,6 +705,12 @@ void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, size_t c
 	ListView *list = (ListView *) listView;
 	list->columns = columns;
 	list->columnCount = count;
+	list->totalX = list->margin.left + list->margin.right;
+
+	for (uintptr_t i = 0; i < count; i++) {
+		list->totalX += columns[i].width;
+	}
+
 	RepaintControl(list);
 	ListViewUpdate(list);
 }

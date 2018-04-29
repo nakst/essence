@@ -180,8 +180,8 @@ extern "C" void ProgramEntry() {
 	{
 		for (int i = 0; i < 1; i++) {
 			// const char *path = "/OS/Calculator.esx";
-			const char *path = "/OS/Test.esx";
-			// const char *path = "/OS/File Manager.esx";
+			// const char *path = "/OS/Test.esx";
+			const char *path = "/OS/File Manager.esx";
 			// const char *path = "/OS/Image Viewer.esx";
 			OSProcessInformation process;
 			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);

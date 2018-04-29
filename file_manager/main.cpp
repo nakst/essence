@@ -340,6 +340,10 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 				message->listViewItem.iconID = OS_ICON_FOLDER;
 			}
 
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
+				message->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
+			}
+
 			return OS_CALLBACK_HANDLED;
 		} break;
 
@@ -517,6 +521,10 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
 				message->listViewItem.iconID = data->information.type == OS_NODE_DIRECTORY ? OS_ICON_FOLDER : OS_ICON_FILE;
+			}
+
+			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
+				message->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
 			}
 
 			return OS_CALLBACK_HANDLED;

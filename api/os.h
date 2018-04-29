@@ -585,6 +585,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
 	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
 	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
+	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -700,13 +701,14 @@ typedef struct OSMessage {
 #define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
 #define OS_LIST_VIEW_ITEM_WIDTH		   (0x40000)
 #define OS_LIST_VIEW_ITEM_HEIGHT	   (0x80000)
+#define OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT   (-1)
 		struct {
 			char *text; 
 			size_t textBytes;
 			uint32_t mask;
 			int32_t index, column;
 			uint16_t iconID, state;
-			uint16_t width, height;
+			int16_t width, height;
 		} listViewItem;
 
 		struct {
@@ -714,6 +716,17 @@ typedef struct OSMessage {
 			uintptr_t index;
 			int offset;
 		} convertYToIndex;
+
+		struct {
+			uintptr_t fromIndex, toIndex;
+			int height;
+		} measureHeight;
+
+		struct {
+			OSHandle surface;
+			OSRectangle bounds;
+			int32_t index;
+		} renderItem;
 
 		struct {
 			uintptr_t index;
