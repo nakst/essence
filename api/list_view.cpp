@@ -4,7 +4,6 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Vertical margins.
 // TODO Hover/select.
 // TODO Keyboard controls.
 // TODO Click/double-click/right-click.
@@ -224,11 +223,25 @@ void ListViewUpdate(ListView *list) {
 void ListViewScrollVertically(ListView *list, int newScrollY) {
 	RepaintControl(list);
 	int oldScrollY = list->scrollY;
+	int baseNewScrollY = newScrollY;
+
+	if (oldScrollY < list->margin.top) {
+		oldScrollY = 0;
+	} else {
+		oldScrollY -= list->margin.top;
+	}
+
+	if (newScrollY < list->margin.top) {
+		newScrollY = 0;
+	} else {
+		newScrollY -= list->margin.top;
+	}
 
 	int delta = newScrollY - oldScrollY;
 	if (delta < 0) delta = -delta;
 
 	if (!delta) {
+		list->scrollY = baseNewScrollY;
 		return;
 	}
 
@@ -368,7 +381,7 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 		}
 	}
 
-	list->scrollY = newScrollY;
+	list->scrollY = baseNewScrollY;
 
 #if 0
 	if (list->scrollY != list->firstVisibleItem * 21 + list->offsetIntoFirstVisibleItem) {
@@ -405,6 +418,7 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 		}
 
 		int y = -list->offsetIntoFirstVisibleItem;
+		int marginOffset = list->scrollY < list->margin.top ? (list->margin.top - list->scrollY) : 0;
 
 		for (uintptr_t i = list->firstVisibleItem; i < list->firstVisibleItem + list->visibleItemCount; i++) {
 			ListViewItem *item = list->visibleItems + (i - list->firstVisibleItem);
@@ -427,24 +441,34 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			OSRectangle row = OS_MAKE_RECTANGLE(
 					contentBounds.left + list->margin.left, 
 					contentBounds.right - list->margin.right,
-					contentBounds.top + list->margin.top + y,
-					contentBounds.top + list->margin.top + y + item->height);
+					contentBounds.top + marginOffset + y,
+					contentBounds.top + marginOffset + y + item->height);
 
 			OSRectangle rowClip;
 			ClipRectangle(contentClip, row, &rowClip);
 
-			OSString string;
-			string.buffer = m.listViewItem.text;
-			string.bytes = m.listViewItem.textBytes;
+			m.type = OS_NOTIFICATION_PAINT_ITEM;
+			m.paintItem.index = i;
+			m.paintItem.surface = message->paint.surface;
+			m.paintItem.clip = rowClip;
+			m.paintItem.bounds = row;
 
-			OSFillRectangle(message->paint.surface, rowClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
+			OSCallbackResponse response = OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED;
+			
+			if (response == OS_CALLBACK_NOT_HANDLED) {
+				OSString string;
+				string.buffer = m.listViewItem.text;
+				string.bytes = m.listViewItem.textBytes;
 
-			DrawString(message->paint.surface, row, &string, 
-					OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-					LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
-					OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
+				OSFillRectangle(message->paint.surface, rowClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 
-			y += item->height;
+				DrawString(message->paint.surface, row, &string, 
+						OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+						LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
+						OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
+
+				y += item->height;
+			}
 		}
 	}
 }
@@ -492,6 +516,8 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 
 		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
 
+		// TODO Update to be vertical margin aware.
+#if 0
 		{
 			int height = -list->offsetIntoFirstVisibleItem;
 
@@ -512,6 +538,7 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 				}
 			}
 		}
+#endif
 
 		done:;
 		ListViewUpdate(list);
@@ -589,8 +616,8 @@ OSObject OSCreateListView(unsigned flags) {
 
 	list->margin.left = 20;
 	list->margin.right = 20;
-	list->margin.top = 0;
-	list->margin.bottom = 0;
+	list->margin.top = 7;
+	list->margin.bottom = 7;
 
 	list->totalX = list->margin.left + list->margin.right;
 	list->totalY = list->margin.top + list->margin.bottom;

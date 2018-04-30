@@ -586,6 +586,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
 	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
 	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
+	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -725,8 +726,9 @@ typedef struct OSMessage {
 		struct {
 			OSHandle surface;
 			OSRectangle bounds;
+			OSRectangle clip;
 			int32_t index;
-		} renderItem;
+		} paintItem;
 
 		struct {
 			uintptr_t index;
