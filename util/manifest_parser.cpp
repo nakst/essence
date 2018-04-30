@@ -154,8 +154,8 @@ bool CompareTokens(Token a, const char *string) {
 
 bool ParseManifest(char *text, ParseCallback callback) {
 	Token token, section, attribute;
-	attribute = {nullptr, 0, Token::IDENTIFIER};
-	section = {nullptr, 0, Token::IDENTIFIER};
+	attribute = (Token){nullptr, 0, Token::IDENTIFIER};
+	section = (Token){nullptr, 0, Token::IDENTIFIER};
 
 	while (true) {
 		if (!NextToken(text, &token)) return false;
@@ -163,7 +163,7 @@ bool ParseManifest(char *text, ParseCallback callback) {
 		if (token.type == Token::END) break;
 
 		if (token.type == Token::LEFT_BRACKET) {
-			callback(attribute, section, {}, {}, EVENT_END_SECTION);
+			callback(attribute, section, (Token){}, (Token){}, EVENT_END_SECTION);
 
 			token.type = Token::IDENTIFIER;
 			if (!NextToken(text, &token, true)) return false;
@@ -176,14 +176,14 @@ bool ParseManifest(char *text, ParseCallback callback) {
 				token.type = Token::RIGHT_BRACKET;
 				if (!NextToken(text, &token, true)) return false;
 			} else if (token2.type == Token::RIGHT_BRACKET) {
-				attribute = {nullptr, 0, Token::IDENTIFIER};
+				attribute = (Token){nullptr, 0, Token::IDENTIFIER};
 				section = token;
 			} else {
 				printf("Unexpected token type. Found '%.*s'\n", token2.bytes, token2.text);
 				return false;
 			}
 
-			callback(attribute, section, {}, {}, EVENT_START_SECTION);
+			callback(attribute, section, (Token){}, (Token){}, EVENT_START_SECTION);
 		} else if (token.type == Token::IDENTIFIER) {
 			Token name = token;
 
@@ -215,7 +215,7 @@ bool ParseManifest(char *text, ParseCallback callback) {
 		}
 	}
 
-	callback(attribute, section, {}, {}, EVENT_END_SECTION);
+	callback(attribute, section, (Token){}, (Token){}, EVENT_END_SECTION);
 
 	return true;
 }
